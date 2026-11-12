@@ -110,6 +110,7 @@ src/facegen/
   sync.py                 snapshot into the database, classify, plan
   manual.py               the UI's requests: generate, new face, pin, remove, retry
   worker.py               GPU job runner
+  quantise.py             INT8 weights for the UNet's Linear layers
   service.py              facegen serve's worker thread and "sync now"
   qc.py                   quality and content checks
   publish.py              pictures and config.xml into FM27

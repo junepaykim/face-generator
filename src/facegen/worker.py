@@ -40,6 +40,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 from facegen import qc
 from facegen.age import age_wording
 from facegen.db import ACTIVE_CAREER_ORDER, transaction
+from facegen.gpu import on_gpu
 from facegen.kits import KitTable
 from facegen.picture import crop_to_aspect, face_box
 from facegen.planner import reference_scale
@@ -164,13 +165,37 @@ def _encode(pipe: Any, text: str, n_chunks: int) -> tuple[Any, Any]:
     return torch.cat(per_encoder, dim=-1), pooled
 
 
+INT8_SCOPE = "transformer_blocks"
+"""The UNet's Linear layers stored as INT8: the 700 in its transformer blocks (attention and
+feed-forward), 4.1 of its 4.8 GiB in fp16."""
+
+
 class AnimagineRenderer:
-    """Animagine XL 4.0 Opt in fp16 with its own fp16-fix VAE (docs/research.md section 5)."""
+    """Animagine XL 4.0 Opt in fp16 with its own fp16-fix VAE (docs/research.md section 5).
+
+    Three speed and memory settings, all on by default (user, 2026-11-11; docs/research.md,
+    run `inference`), with no torch.compile and so no warm-up:
+    - `fp16_accumulation`: fp16 matmuls accumulate in fp16 while the pipeline runs.
+    - `int8_weights`: the UNet's transformer-block Linear layers are stored as INT8 and
+      rebuilt in fp16 per layer (`facegen.quantise`): the UNet's weights go from 4.8 to
+      2.8 GiB.
+    - `offload_text_encoders`: the text encoders (1.5 GiB) wait in system memory and come
+      onto the GPU only to encode a job's prompt. With the tagger doing the same, a group A
+      job's peak reserved memory stays under 8 GiB, so FM27 and a browser fit beside it.
+    The first two change the pictures slightly; offloading does not. With the first two off
+    the renderer draws exactly as before; the spikes use that for their baseline.
+    """
 
     model = MODEL_REPO
 
     def __init__(
-        self, detail_scale: float = DETAIL_SCALE, detail_strength: float = DETAIL_STRENGTH
+        self,
+        detail_scale: float = DETAIL_SCALE,
+        detail_strength: float = DETAIL_STRENGTH,
+        *,
+        fp16_accumulation: bool = True,
+        int8_weights: bool = True,
+        offload_text_encoders: bool = True,
     ) -> None:
         from facegen.gpu import prepare_environment
 
@@ -183,11 +208,25 @@ class AnimagineRenderer:
         )
 
         self._torch = torch
+        self.fp16_accumulation = fp16_accumulation
         pipe = StableDiffusionXLPipeline.from_pretrained(
             MODEL_REPO, dtype=torch.float16, use_safetensors=True
         )
+        self.int8_layers = 0
+        if int8_weights:
+            from facegen.quantise import quantise_linears
+
+            # Layer by layer straight onto the GPU, before the rest of the model follows.
+            self.int8_layers = quantise_linears(pipe.unet, INT8_SCOPE, "cuda")
         pipe.scheduler = EulerAncestralDiscreteScheduler.from_config(pipe.scheduler.config)
-        pipe.to("cuda")
+        self.offload_text_encoders = offload_text_encoders
+        if offload_text_encoders:
+            # The text encoders stay in system memory. diffusers 0.42 reports a split
+            # pipeline's device as that of its GPU components, so it still runs on the GPU.
+            pipe.unet.to("cuda")
+            pipe.vae.to("cuda")
+        else:
+            pipe.to("cuda")
         pipe.set_progress_bar_config(disable=True)
         self.pipe = pipe
         # Share the loaded modules. Not `from_pipe`: in diffusers 0.42 it casts the shared
@@ -210,7 +249,8 @@ class AnimagineRenderer:
     def _embeddings(self, prompt: Prompt) -> tuple[Any, ...]:
         key = (prompt.positive, prompt.negative)
         if key not in self._embeds:
-            with self._torch.no_grad():
+            encoders = (self.pipe.text_encoder, self.pipe.text_encoder_2)
+            with self._torch.no_grad(), on_gpu(*encoders, enabled=self.offload_text_encoders):
                 n = max(len(_token_chunks(self.pipe.tokenizer, t)) for t in key)
                 pe, pp = _encode(self.pipe, prompt.positive, n)
                 ne, npool = _encode(self.pipe, prompt.negative, n)
@@ -270,29 +310,46 @@ class AnimagineRenderer:
         self._switch_adapter(True)
         self.pipe.set_ip_adapter_scale(reference.scale)
         if reference.key not in self._reference_embeds:
-            encoder = self.pipe.image_encoder
-            encoder.to("cuda")
-            try:
-                with self._torch.no_grad():
-                    embeds = self.pipe.prepare_ip_adapter_image_embeds(
-                        ip_adapter_image=reference.image.convert("RGB"),
-                        ip_adapter_image_embeds=None,
-                        device=self._torch.device("cuda"),
-                        num_images_per_prompt=1,
-                        do_classifier_free_guidance=True,
-                    )
-            finally:
-                encoder.to("cpu")
+            with self._torch.no_grad(), on_gpu(self.pipe.image_encoder):
+                embeds = self.pipe.prepare_ip_adapter_image_embeds(
+                    ip_adapter_image=reference.image.convert("RGB"),
+                    ip_adapter_image_embeds=None,
+                    device=self._torch.device("cuda"),
+                    num_images_per_prompt=1,
+                    do_classifier_free_guidance=True,
+                )
             self._reference_embeds = {reference.key: embeds}  # one reference per job
         return {"ip_adapter_image_embeds": self._reference_embeds[reference.key]}
 
     # -- drawing --
 
+    @contextmanager
+    def _fp16_accumulation(self) -> Iterator[None]:
+        """Let fp16 matmuls accumulate in fp16 while the pipeline runs.
+
+        GeForce cards run fp16 tensor cores at half rate when they accumulate in fp32,
+        PyTorch's default: one UNet call goes from 184 to 145 ms, and the noise prediction
+        moves less than bf16 would move it (docs/research.md, run `inference`). The flag is
+        process-wide, so it is set only around the pipeline: the text encoders, the
+        IP-Adapter image encoder and the tagger keep fp32 accumulation. With
+        `fp16_accumulation` off the flag is left as it is.
+        """
+        if not self.fp16_accumulation:
+            yield
+            return
+        matmul = self._torch.backends.cuda.matmul
+        before = matmul.allow_fp16_accumulation
+        matmul.allow_fp16_accumulation = True
+        try:
+            yield
+        finally:
+            matmul.allow_fp16_accumulation = before
+
     def render(self, prompt: Prompt, seed: int, reference: Reference | None = None) -> Image:
         pe, pp, ne, npool, _ = self._embeddings(prompt)
         extra = self._conditioning(reference)
         generator = self._torch.Generator("cuda").manual_seed(seed)
-        with self._torch.no_grad():
+        with self._torch.no_grad(), self._fp16_accumulation():
             return self.pipe(
                 prompt_embeds=pe,
                 pooled_prompt_embeds=pp,
@@ -317,7 +374,7 @@ class AnimagineRenderer:
         pe, pp, ne, npool, _ = self._embeddings(prompt)
         extra = self._conditioning(reference)
         generator = self._torch.Generator("cuda").manual_seed(seed)
-        with self._torch.no_grad():
+        with self._torch.no_grad(), self._fp16_accumulation():
             return self.img2img(
                 prompt_embeds=pe,
                 pooled_prompt_embeds=pp,
@@ -339,6 +396,13 @@ class AnimagineRenderer:
             "cfg": CFG,
             "sampler": SAMPLER,
             "dtype": "float16",
+            "matmul_accumulation": "float16" if self.fp16_accumulation else "float32",
+            "unet_weights": (
+                f"int8 per output channel in {self.int8_layers} {INT8_SCOPE} Linear layers,"
+                " rebuilt in float16 per call"
+                if self.int8_layers
+                else "float16"
+            ),
             "vae": f"{MODEL_REPO}/vae (fp16-fix)",
             "prompt_encoding": "75-token chunks",
         }

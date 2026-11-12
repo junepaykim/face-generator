@@ -220,11 +220,15 @@ _KEEP_FLOOR = 0.01  # probabilities below this are dropped from TagResult.tags
 
 
 class Eva02Tagger:
-    """WD EVA02-Large tagger v3 through timm, as in the bake-off. Loads onto the GPU."""
+    """WD EVA02-Large tagger v3 through timm, as in the bake-off, in fp16.
+
+    With `offload` (the default) the model (0.6 GiB) waits in system memory and comes onto
+    the GPU only while it tags, so it holds no VRAM while the UNet runs (gpu.on_gpu).
+    """
 
     name = TAGGER_REPO
 
-    def __init__(self, device: str = "cuda") -> None:
+    def __init__(self, device: str = "cuda", *, offload: bool = True) -> None:
         from facegen.gpu import prepare_environment
 
         prepare_environment()
@@ -234,8 +238,9 @@ class Eva02Tagger:
 
         self._torch = torch
         self.device = device
+        self.offload = offload and device != "cpu"
         model = timm.create_model(f"hf-hub:{TAGGER_REPO}", pretrained=True)
-        self.model = model.eval().to(device, torch.float16)
+        self.model = model.eval().to("cpu" if self.offload else device, torch.float16)
         config = timm.data.resolve_data_config(model.pretrained_cfg, model=model)
         self.transform = timm.data.create_transform(**config)
         with open(hf_hub_download(TAGGER_REPO, "selected_tags.csv"), newline="") as f:
@@ -254,10 +259,12 @@ class Eva02Tagger:
         self._torch.cuda.empty_cache()
 
     def __call__(self, images: Sequence[Image]) -> list[TagResult]:
+        from facegen.gpu import on_gpu
+
         torch = self._torch
         batch = torch.stack([self.transform(im.convert("RGB")) for im in images])
         x = batch[:, [2, 1, 0]].to(self.device, torch.float16)  # the model wants BGR
-        with torch.no_grad():
+        with torch.no_grad(), on_gpu(self.model, device=self.device, enabled=self.offload):
             probs = torch.sigmoid(self.model(x)).float().cpu().tolist()
         out = []
         for row in probs:

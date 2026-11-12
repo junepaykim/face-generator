@@ -107,3 +107,38 @@ def test_reference_picture(gpu: tuple[Any, Any], case: tuple[Any, Any, Any]) -> 
 
     # Switched out: the UNet is the plain model again.
     assert _difference(renderer.render(prompt, seed), plain) < 2.0
+
+
+def test_offloaded_models_keep_peak_vram_under_8_gib(
+    gpu: tuple[Any, Any], case: tuple[Any, Any, Any]
+) -> None:
+    """A group A job, with a reference, as the worker runs it: PyTorch's peak reserved memory
+    stays under 8 GiB (user, 2026-11-11), and the text encoders, the tagger and the image
+    encoder are back in system memory afterwards."""
+    import torch
+
+    from facegen.picture import face_box
+    from facegen.prompt import build_prompt
+    from facegen.worker import Reference
+
+    renderer, tagger = gpu
+    sheet, kit, _ = case
+    prompt = build_prompt(sheet, "W03", kit, "crossed")  # new prompt: the encoders must load
+    torch.cuda.reset_peak_memory_stats()
+    candidates = [renderer.render(prompt, sheet.base_seed + k) for k in range(3)]
+    tagger(candidates)
+    reference = Reference("gpu-test-vram", candidates[0].crop(face_box(candidates[0])), 0.1)
+    redraw = renderer.render(prompt, sheet.base_seed, reference)
+    tagger([redraw])
+    detailed = renderer.detail(redraw, prompt, sheet.base_seed, reference)
+    tagger([detailed])
+    reserved = torch.cuda.max_memory_reserved() / 2**30
+    allocated = torch.cuda.max_memory_allocated() / 2**30
+    print(
+        f"group A job with a reference: peak reserved {reserved:.2f} GiB, allocated {allocated:.2f}"
+    )
+    assert reserved < 8.0
+    pipe = renderer.pipe
+    for model in (pipe.text_encoder, pipe.text_encoder_2, pipe.image_encoder, tagger.model):
+        assert next(model.parameters()).device.type == "cpu"
+    assert pipe.unet.device.type == "cuda"
