@@ -176,3 +176,46 @@ def test_body_thresholds_are_checked(conn: sqlite3.Connection) -> None:
         set_override(conn, "body.slim_strength_at_most", 14)  # not below muscular
     s = set_override(conn, "body.tall_from_cm", 193)
     assert s.body.tall_from_cm == 193
+
+
+def test_several_overrides_are_checked_together(conn: sqlite3.Connection) -> None:
+    from facegen.settings import set_overrides
+
+    # Each alone would put short_below_cm above tall_from_cm; together they are fine.
+    s = set_overrides(conn, {"body.short_below_cm": 195, "body.tall_from_cm": 200})
+    assert (s.body.short_below_cm, s.body.tall_from_cm) == (195, 200)
+    with pytest.raises(SettingsError):
+        set_overrides(conn, {"groups.a.ca_above": 150, "groups.b.candidates": 0})
+    # Nothing of a refused batch is stored.
+    assert load_settings(conn).groups.a.ca_above == 155
+
+
+def test_entering_the_default_again_clears_the_override(conn: sqlite3.Connection) -> None:
+    from facegen.settings import merge_overrides, set_overrides
+
+    set_overrides(conn, {"groups.a.ca_above": 150, "groups.a.pa_above": 160})
+    assert merge_overrides(conn, {"groups.a.ca_above": 155}).overridden == {"groups.a.pa_above"}
+    s = set_overrides(conn, {"groups.a.ca_above": 155})
+    assert s.overridden == frozenset({"groups.a.pa_above"})
+    assert load_settings(conn).overridden == frozenset({"groups.a.pa_above"})
+
+
+def test_where_the_ui_listens_is_not_a_ui_setting(conn: sqlite3.Connection) -> None:
+    """A browser must not be able to open the tool to the network."""
+    from facegen.settings import is_fixed
+
+    for key, value in (("ui.host", "0.0.0.0"), ("ui.port", 9000)):
+        assert is_fixed(key)
+        with pytest.raises(SettingsError, match="defaults file"):
+            set_override(conn, key, value)
+
+
+def test_auto_groups(conn: sqlite3.Connection) -> None:
+    assert load_settings().schedule.auto_groups == frozenset({"a"})
+    assert set_override(conn, "schedule.auto_groups", ["a", "b", "c"]).schedule.auto_groups == {
+        "a",
+        "b",
+        "c",
+    }
+    with pytest.raises(SettingsError):
+        set_override(conn, "schedule.auto_groups", ["d"])

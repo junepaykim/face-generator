@@ -9,9 +9,10 @@ managed club, qualifying newgens elsewhere, and manual picks), generates an anim
 portrait for each on the local GPU, and publishes the pictures into FM27's graphics
 folder. It has a small web UI for thresholds and manual requests.
 
-Status: the Phase 1 data pipeline is built and tested (`facegen sync`, `facegen status`).
-Phase 0.2 (FM27 display test) and 0.3 (model bake-off) still need the user. Build the rest
-phase by phase from `docs/implementation-plan.md`.
+Status: Phases 0.2, 0.3, 1 and 2 have passed (the Colchester squad's pictures show in
+FM27). Phase 3, the web UI (`facegen serve`), is built and tested with fakes; its exit test
+needs the user in a browser with the GPU worker running. Build the rest phase by phase from
+`docs/implementation-plan.md`.
 
 ## Read first
 
@@ -42,6 +43,8 @@ uv run pytest           # run tests
 uv run ruff check .     # lint
 uv run ruff format .    # format
 uv run facegen sync --dry-run   # read the newest save (via a snapshot copy), store nothing
+uv run facegen serve            # web UI on http://127.0.0.1:8765/ with the GPU worker
+uv run facegen serve --no-worker   # the UI only: no GPU work
 ```
 
 `FACEGEN_TEST_SAVE=data/snapshots/<file>.fm uv run pytest` also runs the one test that
@@ -103,11 +106,13 @@ src/facegen/
   prompt.py               prompt assembly
   planner.py              snapshot diff to jobs
   sync.py                 snapshot into the database, classify, plan
+  manual.py               the UI's requests: generate, new face, pin, remove, retry
   worker.py               GPU job runner
+  service.py              facegen serve's worker thread and "sync now"
   qc.py                   quality and content checks
   publish.py              pictures and config.xml into FM27
   poller.py               save-folder watcher
-  web/                    FastAPI app and templates
+  web/                    FastAPI app, queries, templates, static CSS and JS
   cli.py                  command-line entry points
 scripts/spikes/           throwaway Phase 0 experiments
 tests/                    unit tests for the pure modules

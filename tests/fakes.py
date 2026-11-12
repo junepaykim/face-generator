@@ -83,6 +83,11 @@ class FakeRenderer:
     def settings(self) -> dict[str, Any]:
         return {"size": 64, "steps": 1, "cfg": 5.5, "sampler": "fake"}
 
+    closed = 0
+
+    def close(self) -> None:
+        self.closed += 1
+
     def detail_settings(self) -> dict[str, Any]:
         return {"scale": 1.5, "strength": 0.35}
 
@@ -103,6 +108,11 @@ class FakeTagger:
     def __init__(self, verdicts: Sequence[str] = ()) -> None:
         self.verdicts = list(verdicts)
         self.seen: list[tuple[int | None, str]] = []
+
+    closed = 0
+
+    def close(self) -> None:
+        self.closed += 1
 
     def __call__(self, images: Sequence[Image.Image]) -> list[TagResult]:
         out = []

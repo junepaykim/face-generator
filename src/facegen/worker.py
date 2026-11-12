@@ -19,6 +19,7 @@ Rules carried from the spec:
 from __future__ import annotations
 
 import fcntl
+import gc
 import json
 import os
 import sqlite3
@@ -234,6 +235,13 @@ class AnimagineRenderer:
     def detail_settings(self) -> dict[str, Any]:
         return {"scale": self.detail_scale, "strength": self.detail_strength, "steps": STEPS}
 
+    def close(self) -> None:
+        """Free the GPU memory the model holds."""
+        self.pipe = self.img2img = None
+        self._embeds = {}
+        gc.collect()
+        self._torch.cuda.empty_cache()
+
     def memory(self) -> dict[str, float]:
         cuda = self._torch.cuda
         return {
@@ -251,6 +259,10 @@ def _now() -> str:
 
 class WorkerBusy(RuntimeError):
     """Another worker holds the lock."""
+
+
+class JobGone(RuntimeError):
+    """The job was cancelled or taken between choosing it and starting it."""
 
 
 @contextmanager
@@ -291,6 +303,7 @@ class Job:
     height_cm: int | None
     strength: int | None
     age: int | None
+    manual: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -298,6 +311,15 @@ class JobFilter:
     groups: frozenset[str] | None = None
     """Only jobs in these groups; None for all."""
     my_club_only: bool = False
+    manual_always: bool = False
+    """Manual requests from the UI pass whatever the other conditions say."""
+
+    def accepts(self, job: Job) -> bool:
+        if self.manual_always and job.manual:
+            return True
+        return (self.groups is None or job.group in self.groups) and (
+            job.at_my_club or not self.my_club_only
+        )
 
 
 @dataclass
@@ -367,7 +389,7 @@ def queued_jobs(conn: sqlite3.Connection, career_id: int, f: JobFilter) -> list[
     """Queued jobs that match the filter, in queue order."""
     rows = conn.execute(
         "SELECT j.id, j.unique_id, j.kind, j.group_name, j.target_club_id, j.target_band,"
-        " p.name, p.at_my_club, p.is_goalkeeper, p.height_cm, p.strength, p.age"
+        " j.manual, p.name, p.at_my_club, p.is_goalkeeper, p.height_cm, p.strength, p.age"
         " FROM jobs j JOIN players p ON p.career_id = j.career_id AND p.unique_id = j.unique_id"
         " WHERE j.career_id = ? AND j.status = 'queued' ORDER BY j.tier, j.rank, j.id",
         (career_id,),
@@ -386,14 +408,11 @@ def queued_jobs(conn: sqlite3.Connection, career_id: int, f: JobFilter) -> list[
             height_cm=r["height_cm"],
             strength=r["strength"],
             age=r["age"],
+            manual=bool(r["manual"]),
         )
         for r in rows
     ]
-    return [
-        j
-        for j in jobs
-        if (f.groups is None or j.group in f.groups) and (j.at_my_club or not f.my_club_only)
-    ]
+    return [j for j in jobs if f.accepts(j)]
 
 
 def master_dir(data_dir: Path, career_key: str, unique_id: int) -> Path:
@@ -443,6 +462,23 @@ class Worker:
         if self._tagger is None:
             self._tagger = self._tagger_factory()
         return self._tagger
+
+    @property
+    def models_loaded(self) -> bool:
+        return self._renderer is not None or self._tagger is not None
+
+    def unload(self) -> bool:
+        """Free the GPU: drop the model and the tagger; they load again on the next job.
+
+        Returns whether anything was loaded.
+        """
+        loaded = self.models_loaded
+        for model in (self._renderer, self._tagger):
+            close = getattr(model, "close", None)
+            if close is not None:
+                close()
+        self._renderer = self._tagger = None
+        return loaded
 
     # -- queue --
 
@@ -570,7 +606,7 @@ class Worker:
                 (_now(), job.id),
             )
         if cur.rowcount != 1:
-            raise RuntimeError(f"job {job.id} is no longer queued")
+            raise JobGone(f"job {job.id} is no longer queued")
 
     def _release(self, job: Job, error: str) -> None:
         with transaction(self.conn):

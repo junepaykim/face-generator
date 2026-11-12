@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}facegen{% endblock %} · facegen</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/">facegen</a>
+  <nav>
+    <a href="/" class="{{ 'on' if path == '/' }}">Dashboard</a>
+    <a href="/players" class="{{ 'on' if path.startswith('/players') }}">Players</a>
+    <a href="/review" class="{{ 'on' if path == '/review' }}">Review{% if review_count %} <span class="count">{{ review_count }}</span>{% endif %}</a>
+    <a href="/settings" class="{{ 'on' if path == '/settings' }}">Settings</a>
+  </nav>
+  <div class="career">
+    {% if career %}{{ career.display_name }} <span class="muted">· in-game {{ game_date or "unknown" }}</span>
+    {% else %}<span class="muted">no career yet</span>{% endif %}
+  </div>
+</header>
+<main>
+{% if msg %}<div class="flash ok">{{ msg }}</div>{% endif %}
+{% if err %}<div class="flash bad">{{ err }}</div>{% endif %}
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

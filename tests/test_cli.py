@@ -202,3 +202,40 @@ def test_run_stops_while_fm27_runs(env: dict[str, Path]) -> None:
     code, text = run_gpu(env, "run", "--no-publish", "--now", fm=True)
     assert code == 0 and "Done        2 pictures" in text and "Not published" in text
     assert not (env["games"].parent / "graphics").exists()
+
+
+def test_serve_starts_the_ui_and_the_worker_and_stops_cleanly(env: dict[str, Path]) -> None:
+    from fakes import FakeRenderer, FakeTagger
+    from fastapi.testclient import TestClient
+
+    from facegen.cli import Gpu
+
+    run(env, "sync")
+    seen: dict[str, object] = {}
+
+    def fake_server(app, host: str, port: int) -> None:  # type: ignore[no-untyped-def]
+        seen.update(host=host, port=port)
+        with TestClient(app, base_url=f"http://{host}:{port}") as client:
+            seen["page"] = client.get("/").text
+
+    out = io.StringIO()
+    gpu = Gpu(renderer=FakeRenderer, tagger=FakeTagger, fm_check=lambda: True)
+    code = main(
+        ["--config", str(env["config"]), "serve", "--port", "8799", "--paused"],
+        source_factory=lambda: FakeSource(world()),
+        gpu=gpu,
+        out=out,
+        run_server=fake_server,
+    )
+    assert code == 0
+    assert (seen["host"], seen["port"]) == ("127.0.0.1", 8799)
+    assert "Old Hand" in str(seen["page"])
+    assert "http://127.0.0.1:8799/" in out.getvalue()
+    assert "Stopping the worker" in out.getvalue()
+
+
+def test_serve_refuses_to_listen_beyond_this_pc(env: dict[str, Path]) -> None:
+    config = env["config"]
+    config.write_text(config.read_text().replace('host = "127.0.0.1"', 'host = "0.0.0.0"'))
+    code, text = run(env, "serve")
+    assert code == 2 and "this PC only" in text

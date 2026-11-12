@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div id="status" data-refresh="/status">{% include "_status.html" %}</div>
+{% endblock %}

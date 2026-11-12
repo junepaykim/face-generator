@@ -449,3 +449,40 @@ def test_no_managed_club(conn: sqlite3.Connection, settings: Settings, managed: 
     assert report.managed_club is None
     assert any("no managed club" in w for w in report.warnings)
     assert groups(conn) == {ABROAD_A: "a"}
+
+
+def test_preview_settings_shows_the_change_and_writes_nothing(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    from facegen.settings import merge_overrides
+    from facegen.sync import preview_settings
+
+    report = sync(conn, snapshot(world()), settings)
+    before_groups = groups(conn)
+    jobs_before = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+    proposed = merge_overrides(conn, {"groups.c.league_ca_above": 125, "groups.a.ca_above": 150})
+    p = preview_settings(conn, report.career.id, settings, proposed)
+    # RIVAL_C (CA 120) drops out of C; nobody new reaches A at 150 in this world.
+    assert p.before["c"] == 1 and p.after["c"] == 0
+    assert p.before["a"] == p.after["a"]
+    assert p.cancelled == 1 and not p.enqueue and p.changed_total == 1
+    assert [(c.unique_id, c.before, c.after) for c in p.changes] == [(RIVAL_C, "c", None)]
+    assert not p.empty
+    # Nothing was written.
+    assert groups(conn) == before_groups
+    assert conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == jobs_before
+    assert conn.execute("SELECT COUNT(*) FROM settings").fetchone()[0] == 0
+    assert preview_settings(conn, report.career.id, settings, settings).empty
+
+
+def test_preview_lists_newly_queued_players(conn: sqlite3.Connection, settings: Settings) -> None:
+    from facegen.settings import merge_overrides
+    from facegen.sync import preview_settings
+
+    report = sync(conn, snapshot(world()), settings)
+    proposed = merge_overrides(conn, {"groups.b.any_ca_above": 59})
+    p = preview_settings(conn, report.career.id, settings, proposed)
+    # ABROAD_LOW (CA 60) and CONT_NEWGEN (CA 131) now reach B anywhere; RIVAL_C's queued C
+    # job becomes a B job.
+    assert p.enqueue == {("initial", "b"): 2} and p.updated == 1
+    assert {ABROAD_LOW, CONT_NEWGEN, RIVAL_C} <= {c.unique_id for c in p.changes}

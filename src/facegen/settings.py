@@ -22,8 +22,11 @@ from facegen.traits import BANNABLE, BodyThresholds
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULTS_PATH = PROJECT_ROOT / "config" / "default.toml"
 
-# Keys the UI may not override: where things live on disk.
-_FIXED_PREFIXES = ("paths.",)
+# Keys the UI may not override: where things live on disk, and where the web UI listens (a
+# browser must not be able to open the tool to the network; AGENTS.md hard rule 6).
+_FIXED_PREFIXES = ("paths.", "ui.")
+
+GROUP_NAMES = ("a", "b", "c")
 
 
 class SettingsError(ValueError):
@@ -131,6 +134,8 @@ class MyClubSettings:
 class Schedule:
     poll_seconds: int
     generate_while_fm_running: bool
+    auto_groups: frozenset[str]
+    """Groups whose automatic jobs `facegen serve` draws; manual requests always run."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -268,6 +273,11 @@ def build_settings(values: Mapping[str, Any], overridden: frozenset[str] = froze
             f"my_club.banned_traits: unknown traits {unknown}; choose from {sorted(BANNABLE)}"
         )
 
+    auto_groups = v["schedule.auto_groups"]
+    if any(g not in GROUP_NAMES for g in auto_groups):
+        raise SettingsError(f"schedule.auto_groups lists groups from {list(GROUP_NAMES)}")
+    auto_groups = frozenset(auto_groups)
+
     body = BodyThresholds(
         short_below_cm=_range("body.short_below_cm", v["body.short_below_cm"], 100, 250),
         tall_from_cm=_range("body.tall_from_cm", v["body.tall_from_cm"], 100, 250),
@@ -331,6 +341,7 @@ def build_settings(values: Mapping[str, Any], overridden: frozenset[str] = froze
         schedule=Schedule(
             poll_seconds=_range("schedule.poll_seconds", v["schedule.poll_seconds"], 5, 86400),
             generate_while_fm_running=v["schedule.generate_while_fm_running"],
+            auto_groups=auto_groups,
         ),
         ui=UI(host=v["ui.host"], port=_range("ui.port", v["ui.port"], 1, 65535)),
         values=dict(values),
@@ -387,6 +398,54 @@ def set_override(
         "ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
         (key, json.dumps(value), now),
     )
+    return result
+
+
+def is_fixed(key: str) -> bool:
+    """Whether a key can only be changed in the defaults file, not from the UI."""
+    return key.startswith(_FIXED_PREFIXES)
+
+
+def merge_overrides(
+    conn: sqlite3.Connection, changes: Mapping[str, Any], defaults_path: Path | None = None
+) -> Settings:
+    """The settings that storing `changes` would give, without storing anything.
+
+    Every value is checked, then the whole result is range-checked, so changes that only
+    make sense together (say, both body height cut-offs) are judged together. A value equal
+    to its default clears that override.
+    """
+    defaults = load_defaults(defaults_path)
+    for key, value in changes.items():
+        check_override(key, value, defaults)
+    current = load_settings(conn, defaults_path)
+    merged = {**current.values, **changes}
+    overridden = set(current.overridden) | set(changes)
+    overridden -= {
+        k for k, v in changes.items() if v == defaults[k] and type(v) is type(defaults[k])
+    }
+    return build_settings(merged, frozenset(overridden))
+
+
+def set_overrides(
+    conn: sqlite3.Connection, changes: Mapping[str, Any], defaults_path: Path | None = None
+) -> Settings:
+    """Check and store several overrides at once (the settings page); return the result.
+
+    Nothing is written unless every change is valid. A value equal to its default removes
+    the override, so "reset" is just entering the default again.
+    """
+    result = merge_overrides(conn, changes, defaults_path)
+    now = datetime.now(UTC).isoformat()
+    for key, value in changes.items():
+        if key in result.overridden:
+            conn.execute(
+                "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT (key)"
+                " DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+                (key, json.dumps(value), now),
+            )
+        else:
+            conn.execute("DELETE FROM settings WHERE key = ?", (key,))
     return result
 
 

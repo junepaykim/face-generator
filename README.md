@@ -4,9 +4,10 @@ Generates anime-style portraits for Football Manager 27 players on a local GPU a
 publishes them into FM27's graphics folder: everyone at your club, the best newgens
 elsewhere, and anyone you pick by hand.
 
-> **Status: generation MVP (Phase 2).** The tool reads a save, builds the picture queue,
-> draws the pictures on the GPU and publishes them into FM27 by hand (`facegen run`). The
-> web UI and automation come later; see [docs/implementation-plan.md](docs/implementation-plan.md).
+> **Status: web UI (Phase 3).** The tool reads a save, builds the picture queue, draws the
+> pictures on the GPU and publishes them into FM27, from the command line (`facegen run`)
+> or from a local web page (`facegen serve`). Watching the saves folder by itself comes in
+> Phase 4; see [docs/implementation-plan.md](docs/implementation-plan.md).
 
 ## What it will do
 
@@ -21,7 +22,8 @@ elsewhere, and anyone you pick by hand.
   a new kit after a transfer, keeping a similar face.
 - Publish pictures where FM27 loads them, per career.
 - Serve a small local web page to change group thresholds while it runs, pick
-  pre-existing players to generate, and request a new face for any player.
+  pre-existing players to generate, and request a new face for any player (built in
+  Phase 3).
 
 ## Requirements
 
@@ -72,6 +74,25 @@ FM27: Settings → Reload Skin. Add `--no-publish` to look first, then `facegen 
 `--limit N` stops after N jobs; `--now` draws even while FM27 runs. Each run writes a local
 page, `data/masters/<career>/index.html`, showing every picture, its candidates and checks.
 Running it again changes nothing.
+
+The web UI:
+
+```bash
+uv run facegen serve
+```
+
+Then open <http://127.0.0.1:8765/> in a browser on this PC. The dashboard shows the
+worker, the last sync and the queue (pause, resume, Sync now, Generate now). Players lists
+everyone in the save with filters: tick players and Generate them as group A, B or C,
+which is how pre-existing players outside your club get a picture. Each player's page has
+New face, New picture, Pin and Remove picture. Review lists pictures that failed the
+quality check. Settings changes the group thresholds and the rest, with a preview of how
+the groups and the queue would change. Pinning a player to a group is the same as
+Generate. On its own the worker draws your requests and group A, only while FM27 is
+closed, and frees the GPU when FM27 starts; Generate now draws the whole queue, every
+group, even while FM27 runs. `--paused` starts with the
+worker paused; `--no-worker` serves the pages only. The page is local only: it answers on
+127.0.0.1 and nowhere else.
 
 Kit colours per club are in `config/kits.toml`; a club not listed gets a neutral kit. Height
 and build words go to the tenth of players at each end; the cut-offs are in

@@ -130,7 +130,12 @@ muscular_strength_from = 14         # Strength this or higher: "muscular female"
 [schedule]
 poll_seconds = 60
 generate_while_fm_running = false
+# Groups whose automatic jobs `facegen serve` draws. Manual requests from the UI always run,
+# whatever their group. Groups B and C are switched on in Phase 4 (implementation plan).
+auto_groups = ["a"]
 
 [ui]
+# Local only: there is no login, so `facegen serve` refuses any address but loopback. These
+# keys can only be changed here, not from the UI.
 host = "127.0.0.1"
 port = 8765

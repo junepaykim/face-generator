@@ -5,6 +5,7 @@ facegen run [--group a|b|c ...] [--my-club] [--limit N] [--no-publish] [--now] [
 facegen publish
 facegen gallery
 facegen status
+facegen serve [--port N] [--paused] [--no-worker]
 """
 
 from __future__ import annotations
@@ -19,13 +20,13 @@ from pathlib import Path
 from typing import TextIO
 
 from facegen import db
-from facegen.datasource.base import DataSource, SaveReadError, UnsupportedSaveError
+from facegen.datasource.base import DataSource
 from facegen.gallery import write_gallery
 from facegen.kits import KitError, load_kits
-from facegen.poller import copy_snapshot, find_latest_save
+from facegen.poller import NoSaveError, SaveUnreadableError, sync_save
 from facegen.publish import RELOAD_HINT, PublishError, PublishReport
 from facegen.settings import Settings, load_settings
-from facegen.sync import SyncReport, record_failed_sync, run_sync
+from facegen.sync import SyncReport
 from facegen.worker import (
     Career,
     JobFilter,
@@ -65,10 +66,6 @@ class Gpu:
     renderer: Callable[[], Renderer] = _default_renderer
     tagger: Callable[[], Tagger] = _default_tagger
     fm_check: Callable[[], bool | None] = fm_running
-
-
-def _is_within(path: Path, folder: Path) -> bool:
-    return path.resolve().is_relative_to(folder.resolve())
 
 
 def format_report(r: SyncReport) -> str:
@@ -133,35 +130,23 @@ def cmd_sync(
     source: DataSource,
     out: TextIO,
 ) -> int:
-    save: Path | None = args.save or find_latest_save(settings.paths.games_dir)
-    if save is None:
-        print(f"No save found in {settings.paths.games_dir}", file=out)
-        return 2
-    if not save.is_file():
-        print(f"No such save: {save}", file=out)
-        return 2
-    if _is_within(save, settings.paths.snapshots_dir):
-        snapshot_path = save
-    else:
-        snapshot_path = copy_snapshot(save, settings.paths.snapshots_dir)
     try:
-        snapshot = source.load(snapshot_path)
-    except (UnsupportedSaveError, SaveReadError) as exc:
-        if not args.dry_run:
-            record_failed_sync(conn, save.name, str(exc))
-        print(f"Cannot read {save.name}: {exc}", file=out)
+        report = sync_save(
+            conn,
+            settings,
+            source,
+            args.save,
+            dry_run=args.dry_run,
+            preview=args.show,
+            with_table=args.csv is not None,
+        )
+    except NoSaveError as exc:
+        print(str(exc), file=out)
+        return 2
+    except SaveUnreadableError as exc:
+        print(str(exc), file=out)
         print("Existing pictures and the queue are unchanged.", file=out)
         return 3
-    report = run_sync(
-        conn,
-        snapshot,
-        settings,
-        save_file=save.name,
-        save_mtime=save.stat().st_mtime,
-        dry_run=args.dry_run,
-        preview=args.show,
-        with_table=args.csv is not None,
-    )
     print(format_report(report), file=out)
     if args.csv is not None:
         write_csv(report.table, args.csv)
@@ -351,6 +336,69 @@ def cmd_gallery(
     return 0
 
 
+LOOPBACK = ("127.0.0.1", "localhost", "::1")
+
+
+def cmd_serve(
+    args: argparse.Namespace,
+    settings: Settings,
+    source_factory: Callable[[], DataSource],
+    gpu: Gpu,
+    out: TextIO,
+    *,
+    run_server: Callable[..., None] | None = None,
+) -> int:
+    """The web UI with the worker in the background, until Ctrl+C."""
+    from facegen.service import SyncService, WorkerService
+    from facegen.web.app import AppContext, create_app
+
+    host = settings.ui.host
+    port = args.port or settings.ui.port
+    if host not in LOOPBACK:
+        print(f"ui.host is {host!r}: facegen serves on this PC only (127.0.0.1).", file=out)
+        return 2
+    try:
+        kits = load_kits()
+    except KitError as exc:
+        print(f"config/kits.toml: {exc}", file=out)
+        return 2
+    db_path = settings.paths.db_path
+    worker = None
+    if not args.no_worker:
+        worker = WorkerService(
+            db_path,
+            renderer_factory=gpu.renderer,
+            tagger_factory=gpu.tagger,
+            defaults_path=args.config,
+            kits=kits,
+            fm_check=gpu.fm_check,
+            start_paused=args.paused,
+        )
+    syncer = SyncService(
+        db_path,
+        source_factory,
+        defaults_path=args.config,
+        on_done=worker.wake if worker else (lambda: None),
+    )
+    app = create_app(AppContext(db_path, args.config, worker, syncer))
+    url = f"http://{'[::1]' if host == '::1' else host}:{port}/"
+    print(f"facegen UI at {url}  (Ctrl+C to stop)", file=out, flush=True)
+    if worker is not None:
+        worker.start()
+    try:
+        if run_server is None:
+            import uvicorn
+
+            uvicorn.run(app, host=host, port=port, log_level="warning")
+        else:
+            run_server(app, host=host, port=port)
+    finally:
+        if worker is not None:
+            print("Stopping the worker after the current job...", file=out, flush=True)
+            worker.stop(timeout=None)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="facegen", description=__doc__.splitlines()[0])
     parser.add_argument("--config", type=Path, help="defaults file (default: config/default.toml)")
@@ -374,6 +422,10 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--career", metavar="KEY", help="career key (default: last synced)")
     g = sub.add_parser("gallery", help="write the local page of generated pictures")
     g.add_argument("--career", metavar="KEY", help="career key (default: last synced)")
+    v = sub.add_parser("serve", help="the web UI on 127.0.0.1, with the worker in the background")
+    v.add_argument("--port", type=int, help="port (default: ui.port in the settings)")
+    v.add_argument("--paused", action="store_true", help="start with the worker paused")
+    v.add_argument("--no-worker", action="store_true", help="the UI only; no GPU work")
     return parser
 
 
@@ -383,6 +435,7 @@ def main(
     source_factory: Callable[[], DataSource] = _default_source,
     gpu: Gpu | None = None,
     out: TextIO | None = None,
+    run_server: Callable[..., None] | None = None,
 ) -> int:
     out = out or sys.stdout
     args = build_parser().parse_args(argv)
@@ -398,6 +451,11 @@ def main(
             return cmd_publish(args, settings, conn, out)
         if args.command == "gallery":
             return cmd_gallery(args, settings, conn, out)
+        if args.command == "serve":
+            conn.close()  # the server's threads open their own connections
+            return cmd_serve(
+                args, settings, source_factory, gpu or Gpu(), out, run_server=run_server
+            )
         return cmd_status(settings, conn, out)
     finally:
         conn.close()

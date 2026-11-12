@@ -1,0 +1,101 @@
+<section class="cards">
+  <div class="card">
+    <h2>Worker</h2>
+    {% if worker %}
+      <p><span class="state state-{{ worker.state }}">{{ worker.state }}</span> {{ worker.detail }}</p>
+      {% if worker.current %}<p>Drawing <a href="/players/{{ worker.current.unique_id }}">{{ worker.current.name }}</a>: {{ kind_name(worker.current.kind) }}, group {{ worker.current.group|upper }}</p>{% endif %}
+      <p class="muted small">GPU model {{ "loaded" if worker.models_loaded else "not loaded" }} · this session {{ worker.done }} drawn, {{ worker.failed }} sent to review{% if worker.generate_now %} · <strong>generating now</strong> (FM27 check off until the queue is empty){% endif %}</p>
+      {% if worker.last_error %}<p class="bad small">{{ worker.last_error }}</p>{% endif %}
+      <div class="buttons">
+        {% if worker.paused %}
+          <form method="post" action="/worker/resume"><button class="primary">Resume</button></form>
+        {% else %}
+          <form method="post" action="/worker/pause"><button>Pause</button></form>
+        {% endif %}
+        {% if not worker.generate_now %}
+          <form method="post" action="/worker/generate-now"><button title="Draw the whole queue now, every group, even while FM27 is running">Generate now</button></form>
+        {% endif %}
+      </div>
+    {% else %}
+      <p class="muted">The worker is not running in this process (<code>facegen serve --no-worker</code>).</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Last sync</h2>
+    {% if last_sync %}
+      <table class="kv">
+        <tr><th>Save</th><td>{{ last_sync.save_file }}</td></tr>
+        <tr><th>When</th><td>{{ (last_sync.finished_at or last_sync.started_at)[:19]|replace("T", " ") }} UTC</td></tr>
+        <tr><th>In-game</th><td>{{ last_sync.game_date or "unknown" }}</td></tr>
+        <tr><th>Build</th><td>{{ last_sync.build or "unknown" }}</td></tr>
+      </table>
+      {% if last_sync.error %}<p class="bad small">Failed: {{ last_sync.error }}</p>{% endif %}
+    {% else %}
+      <p class="muted">Never synced.</p>
+    {% endif %}
+    {% if sync %}
+      {% if sync.running %}<p><span class="state state-running">syncing</span> started {{ sync.started }}; this takes about half a minute.</p>
+      {% elif sync.message %}<p class="ok small">{{ sync.message }}</p>{% endif %}
+      {% if sync.error %}<p class="bad small">{{ sync.error }}</p>{% endif %}
+      {% for w in sync.warnings %}<p class="muted small">Warning: {{ w }}</p>{% endfor %}
+    {% endif %}
+    <div class="buttons">
+      <form method="post" action="/sync"><button {% if not sync or sync.running %}disabled{% endif %} title="Copy the newest save, read the copy and update the queue">Sync now</button></form>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Players</h2>
+    {% if counts %}
+      <table class="kv">
+        <tr><th>Group A</th><td><a href="/players?group=a">{{ counts.a }}</a> <span class="muted">({{ counts.a_my_club }} at my club)</span></td></tr>
+        <tr><th>Group B</th><td><a href="/players?group=b">{{ counts.b }}</a></td></tr>
+        <tr><th>Group C</th><td><a href="/players?group=c">{{ counts.c }}</a></td></tr>
+        <tr><th>Tracked</th><td>{{ counts.tracked }}</td></tr>
+        <tr><th>Pinned</th><td><a href="/players?group=pinned">{{ counts.pinned }}</a></td></tr>
+        <tr><th>Pictures</th><td><a href="/players?picture=yes">{{ counts.pictures }}</a> current, {{ counts.published }} published</td></tr>
+        <tr><th>Review</th><td><a href="/review">{{ counts.review }}</a></td></tr>
+      </table>
+    {% else %}
+      <p class="muted">No career yet. Sync a save to begin.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="card">
+  <h2>Queue
+    <span class="muted small">{{ counts.queued if counts else 0 }} queued{% if counts and counts.manual %}, {{ counts.manual }} requested by hand{% endif %}{% if worker and worker.waiting_for_reference %}, {{ worker.waiting_for_reference }} wait for a reference picture (Phase 5){% endif %}</span>
+  </h2>
+  <p class="muted small">The worker draws manual requests first, then the automatic jobs of group {{ auto_groups|join(", ")|upper }}{% if not settings.schedule.generate_while_fm_running %}, only while FM27 is closed{% endif %}. Generate now draws the whole queue, every group{% if not settings.schedule.generate_while_fm_running %}, even while FM27 runs{% endif %}.</p>
+  {% if queue %}
+  <table class="list">
+    <thead><tr><th>Player</th><th>Club</th><th>Job</th><th>Group</th><th>Order</th><th>Why</th><th></th></tr></thead>
+    <tbody>
+    {% for j in queue %}
+      <tr class="{{ 'running' if j.status == 'running' }}">
+        <td><a href="/players/{{ j.unique_id }}">{{ j.name }}</a></td>
+        <td>{{ j.club or "free agent" }}</td>
+        <td>{{ kind_name(j.kind) }}{% if j.status == "running" %} <span class="st run">drawing</span>{% endif %}</td>
+        <td><span class="grp grp-{{ j.group_name }}">{{ j.group_name|upper }}</span></td>
+        <td>{{ tier_name(j.tier) }}</td>
+        <td class="why">{{ j.reason }}
+          {% if waits(j.kind, j.at_my_club, settings) %}<span class="tag warn">waits for Phase 5 (reference picture)</span>
+          {% elif not j.manual and j.group_name not in auto_groups %}<span class="tag warn">not drawn automatically yet: Generate now draws it</span>{% endif %}</td>
+        <td>{% if j.manual and j.status == "queued" %}<form method="post" action="/players/{{ j.unique_id }}/cancel"><input type="hidden" name="next" value="/"><button class="link">cancel</button></form>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">The queue is empty.</p>
+  {% endif %}
+</section>
+
+{% if worker %}
+<section class="card">
+  <h2>Log</h2>
+  <pre class="log">{% for line in worker.log[-20:]|reverse %}{{ line }}
+{% else %}Nothing yet.{% endfor %}</pre>
+</section>
+{% endif %}

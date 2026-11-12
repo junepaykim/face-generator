@@ -1,0 +1,736 @@
+"""The local web UI (docs/spec.md section 7): dashboard, players, review and settings.
+
+Server-rendered pages with plain forms and a little JavaScript; no script or font is loaded
+from the network. The app is meant for 127.0.0.1 only and has no login, so:
+
+- requests must name a loopback host (a page on another site cannot reach it through DNS
+  rebinding), and a form posted from another site is refused (its Origin is not ours);
+- pictures are served only from data/masters/, and thumbnails are cached in data/thumbs/.
+
+Each request opens its own database connection; the worker and syncs run in their own
+threads (service.py) and are woken when a request changes the queue.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import os
+import re
+import sqlite3
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+from urllib.parse import quote, urlsplit
+
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import FormData
+
+from facegen import db, manual
+from facegen.age import WORDINGS, table_name
+from facegen.classify import Group
+from facegen.db import transaction
+from facegen.manual import ManualError
+from facegen.planner import REFERENCE_KINDS, reference_scale
+from facegen.publish import RELOAD_HINT
+from facegen.service import BUSY_TIMEOUT_MS, SyncService, WorkerService
+from facegen.settings import (
+    Settings,
+    SettingsError,
+    is_fixed,
+    load_defaults,
+    load_settings,
+    merge_overrides,
+    set_overrides,
+)
+from facegen.sync import SettingsPreview, classify_and_plan, preview_settings
+from facegen.traits import TRAIT_TABLES
+from facegen.web import queries
+from facegen.web.queries import PlayerFilter
+from facegen.worker import Career, load_career
+
+HERE = Path(__file__).resolve().parent
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+THUMB_SIZES = (96, 192, 384)
+_PICTURE_SUFFIXES = (".png", ".webp")
+
+TIER_NAMES = {0: "manual", 1: "A, my club", 2: "A", 3: "B", 4: "C"}
+KIND_NAMES = {
+    "initial": "first picture",
+    "kit": "new kit",
+    "age": "new age band",
+    "upgrade": "upgrade to A",
+    "reroll": "new face",
+    "redraw": "new picture",
+}
+
+
+@dataclass
+class AppContext:
+    db_path: Path
+    defaults_path: Path | None = None
+    worker: WorkerService | None = None
+    syncer: SyncService | None = None
+
+
+# --- settings form ---------------------------------------------------------------------------
+
+SECTION_NOTES = {
+    "groups": "Thresholds re-classify the stored save at once. Sizes, candidates and the "
+    "detail pass apply to pictures drawn from now on.",
+    "eligibility": "Applies at the next sync: these decide, when a save is read, who is in "
+    "men's football, at my club and in a continental competition.",
+    "newgen": "Used only when a new career is first synced.",
+    "age": "Re-classifies at once. Tracked players whose age wording changes are queued for a "
+    "re-draw.",
+    "reference": "Applies to re-draws from now on (Phase 5 draws them).",
+    "my_club": "Applies to pictures drawn from now on.",
+    "body": "Applies to character sheets sampled from now on; stored sheets keep their class.",
+    "schedule": "The worker uses it at once.",
+}
+# The thresholds first: they are what the page is mostly for (spec section 7).
+SECTION_ORDER = (
+    "groups", "age", "schedule", "eligibility", "my_club", "body", "reference", "newgen"
+)  # fmt: skip
+SECTION_TITLES = {
+    "groups.a": "Group A",
+    "groups.b": "Group B",
+    "groups.c": "Group C",
+    "eligibility": "Who counts",
+    "newgen": "Newgens",
+    "age.a_my_club": "Age wordings: group A at my club",
+    "age.a_other_club": "Age wordings: group A elsewhere",
+    "age.b": "Age wordings: group B",
+    "age.c": "Age wordings: group C",
+    "reference": "Reference picture",
+    "my_club": "Players at my club",
+    "body": "Height and build",
+    "schedule": "Worker",
+}
+LABELS = {
+    "ca_above": "CA above",
+    "pa_above": "PA above",
+    "published_long_edge": "Published size (px)",
+    "candidates": "Candidates per picture",
+    "detail_pass": "Detail pass",
+    "my_academy": "Academy newgens stay in B and tracked after they leave",
+    "league_ca_above": "In my league or a continental competition: CA above",
+    "league_pa_above": "In my league or a continental competition: PA above",
+    "any_ca_above": "Anywhere: CA above",
+    "any_pa_above": "Anywhere: PA above",
+    "mens_football_only": "Men's football only",
+    "continental_competition_ids": "Continental competition IDs (editor database IDs)",
+    "loaned_out_at_my_club": "Players I loaned out count as at my club",
+    "fallback_min_unique_id": "Fallback newgen boundary (unique ID)",
+    "enabled": "Use the existing picture as a reference on re-draws",
+    "scale": "Reference strength (0 to 1)",
+    "other_clubs": "Also for players outside my club",
+    "banned_traits": "Banned traits (comma-separated)",
+    "soften_skin": "Draw tan and dark skin lighter by (steps, 0 to 2)",
+    "short_below_cm": "Petite below (cm)",
+    "tall_from_cm": "Tall from (cm)",
+    "slim_strength_at_most": "Skinny at Strength at most",
+    "muscular_strength_from": "Muscular from Strength",
+    "poll_seconds": "Check the saves folder every (seconds)",
+    "generate_while_fm_running": "Generate while FM27 is running",
+    "auto_groups": "Groups drawn without a request (comma-separated)",
+}
+LABELS_IN = {
+    "groups.c.league_ca_above": "In my league: CA above",
+    "groups.c.league_pa_above": "In my league: PA above",
+}
+
+
+@dataclass(frozen=True, slots=True)
+class Field:
+    key: str
+    label: str
+    kind: str  # bool, int, float, list
+    value: Any
+    default: Any
+    changed: bool
+    """Differs from the default."""
+
+    @property
+    def text(self) -> str:
+        if isinstance(self.value, list):
+            return ", ".join(str(v) for v in self.value)
+        return str(self.value)
+
+    @property
+    def default_text(self) -> str:
+        if isinstance(self.default, list):
+            return ", ".join(str(v) for v in self.default) or "none"
+        if isinstance(self.default, bool):
+            return "on" if self.default else "off"
+        return str(self.default)
+
+
+def _kind(default: Any) -> str:
+    if isinstance(default, bool):
+        return "bool"
+    if isinstance(default, int):
+        return "int"
+    if isinstance(default, float):
+        return "float"
+    return "list"
+
+
+def _label(key: str) -> str:
+    if key in LABELS_IN:
+        return LABELS_IN[key]
+    section, _, name = key.rpartition(".")
+    if section.startswith("age."):
+        return f"{name} from age ({WORDINGS[name].text})"
+    return LABELS.get(name, name.replace("_", " "))
+
+
+def editable_keys(defaults: dict[str, Any]) -> list[str]:
+    return [k for k in defaults if not is_fixed(k)]
+
+
+def settings_sections(
+    values: dict[str, Any], defaults: dict[str, Any]
+) -> list[tuple[str, str, str, list[Field]]]:
+    """(section key, title, note, fields) in the order of the defaults file."""
+    sections: dict[str, list[Field]] = {}
+    for key in editable_keys(defaults):
+        section = key.rpartition(".")[0]
+        sections.setdefault(section, []).append(
+            Field(
+                key=key,
+                label=_label(key),
+                kind=_kind(defaults[key]),
+                value=values[key],
+                default=defaults[key],
+                changed=values[key] != defaults[key],
+            )
+        )
+
+    def order(section: str) -> int:
+        top = section.split(".")[0]
+        return SECTION_ORDER.index(top) if top in SECTION_ORDER else len(SECTION_ORDER)
+
+    return [
+        (
+            section,
+            SECTION_TITLES.get(section, section),
+            SECTION_NOTES.get(section.split(".")[0], ""),
+            fields,
+        )
+        for section, fields in sorted(sections.items(), key=lambda kv: order(kv[0]))
+    ]
+
+
+def parse_settings_form(
+    form: FormData, defaults: dict[str, Any]
+) -> tuple[dict[str, Any], dict[str, str]]:
+    """Every editable key's posted value, typed as its default; and errors per key."""
+    values: dict[str, Any] = {}
+    errors: dict[str, str] = {}
+    for key in editable_keys(defaults):
+        default = defaults[key]
+        raw = form.get(key)
+        text = raw.strip() if isinstance(raw, str) else ""
+        kind = _kind(default)
+        try:
+            if kind == "bool":
+                values[key] = raw is not None
+            elif kind == "int":
+                values[key] = int(text)
+            elif kind == "float":
+                values[key] = float(text)
+            else:
+                items = [x for x in re.split(r"[,\s]+", text) if x]
+                if default and isinstance(default[0], str):
+                    values[key] = [x.lower() for x in items]
+                else:
+                    values[key] = [int(x) for x in items]
+        except ValueError:
+            errors[key] = "needs a number" if kind != "list" else "needs whole numbers"
+            values[key] = text
+    return values, errors
+
+
+# --- helpers ----------------------------------------------------------------------------------
+
+
+def _safe_next(target: str | None, fallback: str) -> str:
+    """A local path to go back to; anything else (another site) falls back."""
+    if not target:
+        return fallback
+    parts = urlsplit(target)
+    if parts.scheme or parts.netloc or not target.startswith("/") or target.startswith("//"):
+        return fallback
+    return target
+
+
+def _with_message(url: str, msg: str | None = None, err: str | None = None) -> str:
+    base, _, query = url.partition("?")
+    params = [p for p in query.split("&") if p and not p.startswith(("msg=", "err="))]
+    if msg:
+        params.append(f"msg={quote(msg)}")
+    if err:
+        params.append(f"err={quote(err)}")
+    return base + ("?" + "&".join(params) if params else "")
+
+
+def _redirect(url: str, msg: str | None = None, err: str | None = None) -> RedirectResponse:
+    return RedirectResponse(_with_message(url, msg, err), status_code=303)
+
+
+def _within(path: Path, folder: Path) -> bool:
+    try:
+        return path.resolve().is_relative_to(folder.resolve())
+    except OSError:
+        return False
+
+
+def make_thumb(source: Path, size: int, cache_dir: Path) -> Path:
+    """A cached square WebP thumbnail of a picture. Masters never change once written."""
+    st = source.stat()
+    key = hashlib.sha1(f"{source.resolve()}|{st.st_mtime_ns}|{size}".encode()).hexdigest()[:20]
+    dest = cache_dir / f"{key}-{size}.webp"
+    if dest.is_file():
+        return dest
+    from PIL import Image
+
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    with Image.open(source) as im:
+        img = im.convert("RGB")
+    img.thumbnail((size, size), Image.Resampling.LANCZOS)
+    tmp = dest.with_name(f".{dest.name}.{os.getpid()}.part")
+    img.save(tmp, format="WEBP", quality=85)
+    os.replace(tmp, dest)
+    return dest
+
+
+def describe_job(kind: str) -> str:
+    return KIND_NAMES.get(kind, kind)
+
+
+def waits_for_reference(kind: str, at_my_club: bool, settings: Settings) -> bool:
+    return reference_scale(kind, at_my_club, settings.reference) is not None
+
+
+def create_app(ctx: AppContext) -> FastAPI:
+    # FastAPI's own telemetry is off; nothing leaves this PC (AGENTS.md hard rule 6).
+    app = FastAPI(
+        title="facegen",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+        telemetry={"tracing": False, "metrics": False, "logs": False, "auto_configure": False},
+    )
+    app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
+    templates = Jinja2Templates(directory=HERE / "templates")
+    env = templates.env
+    env.globals.update(
+        tier_name=lambda t: TIER_NAMES.get(t, str(t)),
+        kind_name=describe_job,
+        reload_hint=RELOAD_HINT,
+        trait_tables=TRAIT_TABLES,
+        waits=waits_for_reference,
+    )
+    env.filters["upper_group"] = lambda g: (g or "-").upper()
+
+    def settings_now(conn: sqlite3.Connection) -> Settings:
+        return load_settings(conn, ctx.defaults_path)
+
+    data_dir = load_settings(defaults_path=ctx.defaults_path).paths.data_dir
+    masters_dir = data_dir / "masters"
+    thumbs_dir = data_dir / "thumbs"
+
+    @app.middleware("http")
+    async def local_only(request: Request, call_next: Callable[[Request], Any]) -> Response:
+        try:
+            host = urlsplit("//" + (request.headers.get("host") or "")).hostname or ""
+        except ValueError:
+            host = "?"
+        if host and host not in LOOPBACK_HOSTS:
+            return Response("facegen only answers on 127.0.0.1", status_code=403)
+        if request.method == "POST":
+            origin = request.headers.get("origin")
+            if origin and origin != "null":
+                origin_host = (urlsplit(origin).hostname or "").lower()
+                if origin_host not in LOOPBACK_HOSTS:
+                    return Response("cross-site request refused", status_code=403)
+        return await call_next(request)
+
+    def get_conn() -> Iterator[sqlite3.Connection]:
+        conn = db.connect(ctx.db_path, busy_timeout_ms=BUSY_TIMEOUT_MS)
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    Conn = Depends(get_conn)
+
+    def page(request: Request, name: str, conn: sqlite3.Connection, **context: Any) -> Response:
+        career = load_career(conn)
+        return templates.TemplateResponse(
+            request,
+            name,
+            {
+                "career": career,
+                "game_date": _game_date(conn, career),
+                "review_count": queries.review_count(conn, career.id) if career else 0,
+                "msg": request.query_params.get("msg"),
+                "err": request.query_params.get("err"),
+                "path": request.url.path,
+                **context,
+            },
+        )
+
+    def wake() -> None:
+        if ctx.worker is not None:
+            ctx.worker.wake()
+
+    def need_career(conn: sqlite3.Connection) -> Career:
+        career = load_career(conn)
+        if career is None:
+            raise HTTPException(409, "No career yet: sync a save first.")
+        return career
+
+    async def form_of(request: Request) -> FormData:
+        return await request.form()
+
+    # -- dashboard --
+
+    def dashboard_context(conn: sqlite3.Connection) -> dict[str, Any]:
+        career = load_career(conn)
+        settings = settings_now(conn)
+        return {
+            "counts": queries.counts(conn, career.id) if career else None,
+            "queue": queries.queue(conn, career.id) if career else [],
+            "last_sync": queries.last_sync(conn),
+            "worker": ctx.worker.status() if ctx.worker else None,
+            "sync": ctx.syncer.status() if ctx.syncer else None,
+            "settings": settings,
+            "auto_groups": sorted(settings.schedule.auto_groups),
+        }
+
+    @app.get("/", response_class=HTMLResponse)
+    def dashboard(request: Request, conn: sqlite3.Connection = Conn) -> Response:
+        return page(request, "dashboard.html", conn, **dashboard_context(conn))
+
+    @app.get("/status", response_class=HTMLResponse)
+    def status(request: Request, conn: sqlite3.Connection = Conn) -> Response:
+        return templates.TemplateResponse(
+            request, "_status.html", {"career": load_career(conn), **dashboard_context(conn)}
+        )
+
+    @app.post("/worker/{action}")
+    def worker_action(action: str) -> Response:
+        if ctx.worker is None:
+            return _redirect("/", err="The worker is not running in this process.")
+        match action:
+            case "pause":
+                ctx.worker.pause()
+            case "resume":
+                ctx.worker.resume()
+            case "generate-now":
+                ctx.worker.generate_now()
+            case _:
+                raise HTTPException(404)
+        return _redirect("/")
+
+    @app.post("/sync")
+    def sync_now() -> Response:
+        if ctx.syncer is None:
+            return _redirect("/", err="Syncing is not available in this process.")
+        if not ctx.syncer.start():
+            return _redirect("/", err="A sync is already running.")
+        return _redirect("/", msg="Sync started: reading the newest save.")
+
+    # -- players --
+
+    @app.get("/players", response_class=HTMLResponse)
+    def players(request: Request, conn: sqlite3.Connection = Conn) -> Response:
+        career = load_career(conn)
+        f = PlayerFilter.from_query(request.query_params)
+        rows, total = queries.players_page(conn, career.id, f) if career else ([], 0)
+        club_name = None
+        if f.club_id is not None and career is not None:
+            r = conn.execute(
+                "SELECT name FROM clubs WHERE career_id = ? AND club_id = ?",
+                (career.id, f.club_id),
+            ).fetchone()
+            club_name = r[0] if r else str(f.club_id)
+        pages = max(1, -(-total // queries.PER_PAGE))
+        return page(
+            request,
+            "players.html",
+            conn,
+            f=f,
+            rows=rows,
+            total=total,
+            pages=pages,
+            club_name=club_name,
+            leagues=queries.LEAGUES,
+            origins=queries.ORIGINS,
+            group_filters=queries.GROUP_FILTERS,
+            picture_filters=queries.PICTURE_FILTERS,
+            scopes=queries.SCOPES,
+            sorts=list(queries.SORTS),
+            here=str(request.url.path) + ("?" + request.url.query if request.url.query else ""),
+        )
+
+    @app.post("/players/action")
+    async def players_action(request: Request) -> Response:
+        form = await form_of(request)
+        back = _safe_next(str(form.get("next") or ""), "/players")
+        try:
+            uids = [int(x) for x in form.getlist("uid")]
+        except ValueError:
+            return _redirect(back, err="Bad player ID.")
+        if not uids:
+            return _redirect(back, err="Tick at least one player first.")
+        action = form.get("action")
+
+        def run() -> str:
+            conn = db.connect(ctx.db_path, busy_timeout_ms=BUSY_TIMEOUT_MS)
+            try:
+                career = need_career(conn)
+                settings = settings_now(conn)
+                if action == "generate":
+                    group = str(form.get("group") or manual.DEFAULT_GROUP)
+                    r = manual.generate(conn, career.id, uids, settings, group)
+                    return f"Generate as group {group.upper()}: {r.summary()}."
+                if action == "pin":
+                    pin = str(form.get("pin") or "")
+                    r = manual.set_pin(conn, career.id, uids, pin or None, settings)
+                    if pin in ("a", "b", "c"):
+                        return f"Pin to {pin.upper()} (a hand-pick, as Generate): {r.summary()}."
+                    what = "pinned to never" if pin == "never" else "unpinned"
+                    return f"{len(r.pinned)} player(s) {what}."
+                raise ManualError(f"unknown action {action!r}")
+            finally:
+                conn.close()
+
+        try:
+            message = await run_in_threadpool(run)
+        except (ManualError, HTTPException) as exc:
+            return _redirect(back, err=getattr(exc, "detail", None) or str(exc))
+        wake()
+        return _redirect(back, msg=message)
+
+    @app.get("/players/{uid}", response_class=HTMLResponse)
+    def player(uid: int, request: Request, conn: sqlite3.Connection = Conn) -> Response:
+        career = need_career(conn)
+        detail = queries.player_detail(conn, career.id, uid)
+        if detail is None:
+            raise HTTPException(404, f"No player {uid} in this career.")
+        settings = settings_now(conn)
+        p = detail["player"]
+        group_for_redraw = p["group_name"] or (
+            detail["current"]["group_name"] if detail["current"] else None
+        )
+        return page(
+            request,
+            "player.html",
+            conn,
+            d=detail,
+            p=p,
+            settings=settings,
+            age_table=table_name(p["group_name"], bool(p["at_my_club"])),
+            redraw_waits=waits_for_reference("redraw", bool(p["at_my_club"]), settings),
+            group_for_redraw=group_for_redraw,
+            reference_kinds=REFERENCE_KINDS,
+            groups=[g.value for g in Group],
+        )
+
+    @app.post("/players/{uid}/{action}")
+    async def player_action(uid: int, action: str, request: Request) -> Response:
+        form = await form_of(request)
+        back = f"/players/{uid}"
+
+        def run() -> str:
+            conn = db.connect(ctx.db_path, busy_timeout_ms=BUSY_TIMEOUT_MS)
+            try:
+                career = need_career(conn)
+                settings = settings_now(conn)
+                match action:
+                    case "generate":
+                        group = str(form.get("group") or manual.DEFAULT_GROUP)
+                        r = manual.generate(conn, career.id, [uid], settings, group)
+                        if r.skipped:
+                            raise ManualError(r.skipped[0][1])
+                        if r.pinned:
+                            return f"Pinned to {group.upper()}; the picture is already good enough."
+                        return f"Queued as group {group.upper()}."
+                    case "new-face":
+                        manual.new_face(conn, career.id, uid, settings)
+                        return "New face queued: a new character sheet, drawn next."
+                    case "new-picture":
+                        manual.new_picture(conn, career.id, uid, settings)
+                        return "New picture queued with the same character sheet."
+                    case "pin":
+                        pin = str(form.get("pin") or "")
+                        r = manual.set_pin(conn, career.id, [uid], pin or None, settings)
+                        if r.skipped:
+                            raise ManualError(r.skipped[0][1])
+                        if r.queued:
+                            return f"Pinned to {pin.upper()} and queued as a request."
+                        if pin in ("a", "b", "c"):
+                            return f"Pinned to {pin.upper()}; the picture is already good enough."
+                        if pin == "never":
+                            return "Pinned to never; queued jobs cancelled."
+                        return "Pin cleared; the rules decide."
+                    case "remove":
+                        removed = manual.remove_picture(conn, career.id, career.key, uid, settings)
+                        return (
+                            "Picture removed and pinned to never. " + RELOAD_HINT
+                            if removed
+                            else "Pinned to never; there was no published picture."
+                        )
+                    case "retry":
+                        manual.retry(conn, career.id, uid, settings)
+                        return "Queued again with new seeds."
+                    case "cancel":
+                        done = manual.cancel(conn, career.id, uid, settings)
+                        return "Request cancelled." if done else "Nothing to cancel."
+                raise ManualError(f"unknown action {action!r}")
+            finally:
+                conn.close()
+
+        try:
+            message = await run_in_threadpool(run)
+        except (ManualError, HTTPException) as exc:
+            target = _safe_next(str(form.get("next") or ""), back)
+            return _redirect(target, err=getattr(exc, "detail", None) or str(exc))
+        wake()
+        return _redirect(_safe_next(str(form.get("next") or ""), back), msg=message)
+
+    # -- review --
+
+    @app.get("/review", response_class=HTMLResponse)
+    def review(request: Request, conn: sqlite3.Connection = Conn) -> Response:
+        career = load_career(conn)
+        items = queries.review_items(conn, career.id) if career else []
+        return page(request, "review.html", conn, items=items)
+
+    # -- settings --
+
+    def settings_page(
+        request: Request,
+        conn: sqlite3.Connection,
+        values: dict[str, Any] | None = None,
+        *,
+        errors: dict[str, str] | None = None,
+        error: str | None = None,
+        preview: SettingsPreview | None = None,
+        changes: dict[str, Any] | None = None,
+    ) -> Response:
+        defaults = load_defaults(ctx.defaults_path)
+        current = settings_now(conn)
+        shown = dict(current.values) | (values or {})
+        return page(
+            request,
+            "settings.html",
+            conn,
+            sections=settings_sections(shown, defaults),
+            current=current.values,
+            errors=errors or {},
+            error=error,
+            preview=preview,
+            changes=changes or {},
+        )
+
+    @app.get("/settings", response_class=HTMLResponse)
+    def settings_get(request: Request, conn: sqlite3.Connection = Conn) -> Response:
+        return settings_page(request, conn)
+
+    @app.post("/settings", response_class=HTMLResponse)
+    async def settings_post(request: Request) -> Response:
+        form = await form_of(request)
+        action = form.get("action")
+
+        def run() -> Response:
+            conn = db.connect(ctx.db_path, busy_timeout_ms=BUSY_TIMEOUT_MS)
+            try:
+                defaults = load_defaults(ctx.defaults_path)
+                if action == "defaults":
+                    values = {k: defaults[k] for k in editable_keys(defaults)}
+                    errors: dict[str, str] = {}
+                else:
+                    values, errors = parse_settings_form(form, defaults)
+                if errors:
+                    return settings_page(request, conn, values, errors=errors)
+                current = settings_now(conn)
+                changes = {k: v for k, v in values.items() if v != current.values[k]}
+                if not changes:
+                    return _redirect("/settings", msg="Nothing changed.")
+                try:
+                    proposed = merge_overrides(conn, changes, ctx.defaults_path)
+                except SettingsError as exc:
+                    return settings_page(request, conn, values, error=str(exc))
+                career = load_career(conn)
+                if action in ("preview", "defaults"):
+                    preview = (
+                        preview_settings(conn, career.id, current, proposed) if career else None
+                    )
+                    return settings_page(request, conn, values, preview=preview, changes=changes)
+                if action != "apply":
+                    raise HTTPException(400, "unknown action")
+                with transaction(conn):
+                    applied = set_overrides(conn, changes, ctx.defaults_path)
+                    result = classify_and_plan(conn, career.id, applied) if career else None
+                note = f"Applied {len(changes)} change(s)."
+                if result is not None:
+                    p = result.plan
+                    note += (
+                        f" Queue: {len(p.enqueue)} queued, {len(p.update)} updated,"
+                        f" {len(p.cancel)} cancelled."
+                    )
+                if any(k.startswith("eligibility.") for k in changes):
+                    note += " Eligibility changes take effect at the next sync."
+                wake()
+                return _redirect("/settings", msg=note)
+            finally:
+                conn.close()
+
+        return await run_in_threadpool(run)
+
+    # -- pictures --
+
+    def send_picture(path: Path, size: int | None) -> Response:
+        if not _within(path, masters_dir) or path.suffix not in _PICTURE_SUFFIXES:
+            raise HTTPException(404)
+        if not path.is_file():
+            raise HTTPException(404, "picture file missing")
+        if size is not None:
+            if size not in THUMB_SIZES:
+                raise HTTPException(400, f"size must be one of {THUMB_SIZES}")
+            path = make_thumb(path, size, thumbs_dir)
+        return FileResponse(path, headers={"Cache-Control": "private, max-age=86400"})
+
+    @app.get("/pictures/{image_id}")
+    def picture(
+        image_id: int, size: int | None = None, conn: sqlite3.Connection = Conn
+    ) -> Response:
+        row = conn.execute("SELECT master_path FROM images WHERE id = ?", (image_id,)).fetchone()
+        if row is None or not row["master_path"]:
+            raise HTTPException(404)
+        return send_picture(data_dir / row["master_path"], size)
+
+    @app.get("/files")
+    def files(path: str, size: int | None = None) -> Response:
+        """A candidate picture, by its path relative to data/ as stored in check results."""
+        rel = Path(path)
+        if rel.is_absolute() or ".." in rel.parts or not path.startswith("masters/"):
+            raise HTTPException(404)
+        return send_picture(data_dir / rel, size)
+
+    return app
+
+
+def _game_date(conn: sqlite3.Connection, career: Career | None) -> str | None:
+    if career is None:
+        return None
+    row = conn.execute("SELECT last_game_date FROM careers WHERE id = ?", (career.id,)).fetchone()
+    return row[0] if row else None

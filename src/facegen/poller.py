@@ -1,4 +1,4 @@
-"""Finding the save to read and copying it safely.
+"""Finding the save to read, copying it safely, and syncing it.
 
 The tool never parses a save in the game's folder: it copies it to data/snapshots/ and
 reads the copy (AGENTS.md hard rule 1). A save that changes while it is copied is mid-write;
@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import os
 import shutil
+import sqlite3
 import time
 from collections.abc import Callable
 from pathlib import Path
 
-from facegen.datasource.base import SaveReadError
+from facegen.datasource.base import DataSource, SaveReadError, UnsupportedSaveError
+from facegen.settings import Settings
+from facegen.sync import SyncReport, record_failed_sync, run_sync
 
 # FM27 keeps the previous save under this name when one is overwritten.
 _BACKUP_PREFIX = "last save overwrite backup"
@@ -73,3 +76,59 @@ def copy_snapshot(
             sleep(settle_seconds)
     partial.unlink(missing_ok=True)
     raise SaveReadError(f"{source.name} kept changing while it was copied; is FM27 saving?")
+
+
+class NoSaveError(LookupError):
+    """There is no save to read."""
+
+
+class SaveUnreadableError(RuntimeError):
+    """The save could not be copied or parsed; existing pictures and the queue are unchanged."""
+
+    def __init__(self, save: Path, cause: Exception) -> None:
+        super().__init__(f"Cannot read {save.name}: {cause}")
+        self.save = save
+
+
+def sync_save(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    source: DataSource,
+    save: Path | None = None,
+    *,
+    dry_run: bool = False,
+    preview: int = 20,
+    with_table: bool = False,
+) -> SyncReport:
+    """Copy a save (default: the newest in FM27's games folder), parse the copy and sync it.
+
+    A save already inside data/snapshots/ is read in place. A save that cannot be read is
+    recorded as a failed sync (except in a dry run) and raises SaveUnreadableError.
+    """
+    snapshots = settings.paths.snapshots_dir
+    if save is None:
+        save = find_latest_save(settings.paths.games_dir)
+        if save is None:
+            raise NoSaveError(f"No save found in {settings.paths.games_dir}")
+    if not save.is_file():
+        raise NoSaveError(f"No such save: {save}")
+    try:
+        if save.resolve().is_relative_to(snapshots.resolve()):
+            snapshot_path = save
+        else:
+            snapshot_path = copy_snapshot(save, snapshots)
+        snapshot = source.load(snapshot_path)
+    except (UnsupportedSaveError, SaveReadError) as exc:
+        if not dry_run:
+            record_failed_sync(conn, save.name, str(exc))
+        raise SaveUnreadableError(save, exc) from exc
+    return run_sync(
+        conn,
+        snapshot,
+        settings,
+        save_file=save.name,
+        save_mtime=save.stat().st_mtime,
+        dry_run=dry_run,
+        preview=preview,
+        with_table=with_table,
+    )

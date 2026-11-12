@@ -355,10 +355,12 @@ def _job_state(r: sqlite3.Row) -> JobState:
     )
 
 
-def classify_and_plan(conn: sqlite3.Connection, career_id: int, settings: Settings) -> PlanResult:
-    """Classify every stored player of a career and bring the queue in line.
+def _classify(
+    conn: sqlite3.Connection, career_id: int, settings: Settings
+) -> tuple[PlanResult, list[tuple[Any, ...]]]:
+    """Classify every stored player and plan the queue, reading only.
 
-    Reads only the database, so a settings change can re-classify without a new save.
+    Returns the plan and the player rows whose group, tracking or reasons would change.
     """
     images = {
         r["unique_id"]: ImageState(Group(r["group_name"]), r["club_id"], r["age_band"])
@@ -426,14 +428,22 @@ def classify_and_plan(conn: sqlite3.Connection, career_id: int, settings: Settin
                 last_failed_job=failed.get(uid),
             )
         )
+    return PlanResult(plan(states), classifications), changed
+
+
+def classify_and_plan(conn: sqlite3.Connection, career_id: int, settings: Settings) -> PlanResult:
+    """Classify every stored player of a career and bring the queue in line.
+
+    Reads only the database, so a settings change can re-classify without a new save.
+    """
+    result, changed = _classify(conn, career_id, settings)
     conn.executemany(
         "UPDATE players SET group_name = ?, tracked = ?, reasons = ?"
         " WHERE career_id = ? AND unique_id = ?",
         changed,
     )
-    result = plan(states)
-    apply_plan(conn, career_id, result)
-    return PlanResult(result, classifications)
+    apply_plan(conn, career_id, result.plan)
+    return result
 
 
 def apply_plan(conn: sqlite3.Connection, career_id: int, p: Plan) -> None:
@@ -645,6 +655,118 @@ def reclassify(
     """Re-classify from the stored snapshot after a settings change (spec section 7)."""
     with transaction(conn, rollback=dry_run):
         return classify_and_plan(conn, career_id, settings)
+
+
+@dataclass(frozen=True, slots=True)
+class GroupChange:
+    unique_id: int
+    name: str
+    club: str | None
+    ca: int
+    pa: int | None
+    before: str | None
+    after: str | None
+    tracked_before: bool
+    tracked_after: bool
+    reasons: tuple[str, ...]
+
+
+@dataclass
+class SettingsPreview:
+    """How a settings change would move players between groups and change the queue."""
+
+    before: dict[str, int]
+    after: dict[str, int]
+    enqueue: Counter[tuple[str, str]]
+    updated: int
+    cancelled: int
+    changes: list[GroupChange]
+    """Players whose group or tracking would change, best first, at most `limit`."""
+    changed_total: int
+
+    @property
+    def empty(self) -> bool:
+        return not (self.changed_total or self.enqueue or self.updated or self.cancelled)
+
+
+def _group_counts(classifications: dict[int, Classification]) -> dict[str, int]:
+    counts = Counter(c.group.value for c in classifications.values() if c.group is not None)
+    return {
+        "a": counts["a"],
+        "b": counts["b"],
+        "c": counts["c"],
+        "tracked": sum(1 for c in classifications.values() if c.tracked),
+    }
+
+
+def preview_settings(
+    conn: sqlite3.Connection,
+    career_id: int,
+    current: Settings,
+    proposed: Settings,
+    *,
+    limit: int = 50,
+) -> SettingsPreview:
+    """What applying `proposed` would do, against the stored snapshot; writes nothing.
+
+    Both classifications run inside one read transaction, so a sync or the worker writing
+    meanwhile cannot make the two sides disagree.
+    """
+    conn.execute("BEGIN")
+    try:
+        before, _ = _classify(conn, career_id, current)
+        after, _ = _classify(conn, career_id, proposed)
+        moved = [
+            uid
+            for uid, c in after.classifications.items()
+            if (c.group, c.tracked)
+            != (before.classifications[uid].group, before.classifications[uid].tracked)
+        ]
+        wanted = set(moved)
+        rows = {
+            r["unique_id"]: r
+            for r in conn.execute(
+                "SELECT p.unique_id, p.name, p.ca, p.pa, c.name AS club FROM players p"
+                " LEFT JOIN clubs c ON c.career_id = p.career_id AND c.club_id = p.club_id"
+                " WHERE p.career_id = ?",
+                (career_id,),
+            )
+            if r["unique_id"] in wanted
+        }
+    finally:
+        conn.execute("ROLLBACK")
+
+    def sort_key(uid: int) -> tuple[int, int]:
+        r = rows[uid]
+        return -(r["pa"] or 0), -r["ca"]
+
+    changes = []
+    for uid in sorted(moved, key=sort_key)[:limit]:
+        b, a, r = before.classifications[uid], after.classifications[uid], rows[uid]
+        changes.append(
+            GroupChange(
+                unique_id=uid,
+                name=r["name"],
+                club=r["club"],
+                ca=r["ca"],
+                pa=r["pa"],
+                before=b.group.value if b.group else None,
+                after=a.group.value if a.group else None,
+                tracked_before=b.tracked,
+                tracked_after=a.tracked,
+                reasons=a.reasons or b.reasons,
+            )
+        )
+    p = after.plan
+    return SettingsPreview(
+        before=_group_counts(before.classifications),
+        after=_group_counts(after.classifications),
+        enqueue=Counter((e.job.kind, e.job.group.value) for e in p.enqueue),
+        updated=len(p.update),
+        cancelled=len(p.cancel),
+        changes=changes,
+        changed_total=len(moved),
+    )
 
 
 def record_failed_sync(

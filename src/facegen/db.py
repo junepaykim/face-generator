@@ -161,7 +161,13 @@ _V2 = """
 ALTER TABLE images ADD COLUMN render TEXT;     -- JSON
 """
 
-MIGRATIONS: tuple[str, ...] = (_V1, _V2)
+# Phase 3: the web UI's player list and detail page look up each player's jobs, the latest
+# first (queued, running, or failed and waiting in the review list).
+_V3 = """
+CREATE INDEX jobs_by_player ON jobs (career_id, unique_id, id);
+"""
+
+MIGRATIONS: tuple[str, ...] = (_V1, _V2, _V3)
 
 
 def schema_version(conn: sqlite3.Connection) -> int:
@@ -180,14 +186,18 @@ def migrate(conn: sqlite3.Connection) -> int:
     return schema_version(conn)
 
 
-def connect(path: Path | str) -> sqlite3.Connection:
-    """Open (creating if needed) and migrate the state database."""
+def connect(path: Path | str, *, busy_timeout_ms: int = 5000) -> sqlite3.Connection:
+    """Open (creating if needed) and migrate the state database.
+
+    `facegen serve` uses a longer busy timeout: its worker, its syncs and the web pages
+    share the database, and a sync holds the write lock for a second or two.
+    """
     if str(path) != ":memory:":
         Path(path).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA busy_timeout = 5000")
+    conn.execute(f"PRAGMA busy_timeout = {int(busy_timeout_ms)}")
     if str(path) != ":memory:":
         conn.execute("PRAGMA journal_mode = WAL")
     migrate(conn)

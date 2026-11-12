@@ -245,6 +245,14 @@ class Eva02Tagger:
         self.rating_idx = [i for i, c in enumerate(categories) if c == 9]
         self.general_idx = [i for i, c in enumerate(categories) if c == 0]
 
+    def close(self) -> None:
+        """Free the GPU memory the tagger holds."""
+        import gc
+
+        self.model = None
+        gc.collect()
+        self._torch.cuda.empty_cache()
+
     def __call__(self, images: Sequence[Image]) -> list[TagResult]:
         torch = self._torch
         batch = torch.stack([self.transform(im.convert("RGB")) for im in images])

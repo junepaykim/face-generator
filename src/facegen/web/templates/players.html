@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Players{% endblock %}
+{% block content %}
+<form class="filters" method="get" action="/players">
+  <input type="search" name="q" value="{{ f.q }}" placeholder="Name or unique ID" aria-label="Name or unique ID">
+  {% if f.club_id is not none %}
+    <input type="hidden" name="club_id" value="{{ f.club_id }}">
+    <span class="chip">club: {{ club_name }} <a href="/players?{{ f.query(club_id=None, page=1) }}" title="any club">×</a></span>
+  {% else %}
+    <input type="search" name="club" value="{{ f.club }}" placeholder="Club" aria-label="Club">
+  {% endif %}
+  <select name="league" aria-label="League">{% for k, v in leagues.items() %}<option value="{{ k }}" {{ "selected" if f.league == k }}>{{ v }}</option>{% endfor %}</select>
+  <span class="range">CA <input type="number" name="ca_min" min="0" max="200" value="{{ f.ca_min if f.ca_min is not none }}" placeholder="min" aria-label="CA at least">–<input type="number" name="ca_max" min="0" max="200" value="{{ f.ca_max if f.ca_max is not none }}" placeholder="max" aria-label="CA at most"></span>
+  <span class="range">PA <input type="number" name="pa_min" min="0" max="200" value="{{ f.pa_min if f.pa_min is not none }}" placeholder="min" aria-label="PA at least">–<input type="number" name="pa_max" min="0" max="200" value="{{ f.pa_max if f.pa_max is not none }}" placeholder="max" aria-label="PA at most"></span>
+  <select name="origin" aria-label="Newgen or pre-existing">{% for k, v in origins.items() %}<option value="{{ k }}" {{ "selected" if f.origin == k }}>{{ v }}</option>{% endfor %}</select>
+  <select name="group" aria-label="Group">{% for k, v in group_filters.items() %}<option value="{{ k }}" {{ "selected" if f.group == k }}>{{ v }}</option>{% endfor %}</select>
+  <select name="picture" aria-label="Picture">{% for k, v in picture_filters.items() %}<option value="{{ k }}" {{ "selected" if f.picture == k }}>{{ v }}</option>{% endfor %}</select>
+  <select name="scope" aria-label="Scope">{% for k, v in scopes.items() %}<option value="{{ k }}" {{ "selected" if f.scope == k }}>{{ v }}</option>{% endfor %}</select>
+  <select name="sort" aria-label="Sort">{% for k in sorts %}<option value="{{ k }}" {{ "selected" if f.sort == k }}>sort by {{ k|upper if k in ("ca", "pa") else k }}</option>{% endfor %}</select>
+  <button class="primary">Filter</button>
+  {% if f.active %}<a href="/players">clear</a>{% endif %}
+</form>
+
+<form method="post" action="/players/action" id="bulk">
+  <input type="hidden" name="next" value="{{ here }}">
+  <div class="bulk">
+    <span class="ticked" data-ticked>0 ticked</span>
+    <label>as group
+      <select name="group">{% for g in ("a", "b", "c") %}<option value="{{ g }}" {{ "selected" if g == "b" }}>{{ g|upper }}</option>{% endfor %}</select>
+    </label>
+    <button class="primary" name="action" value="generate" data-needs-tick title="Pin to the group and queue a picture, drawn before every automatic job">Generate</button>
+    <span class="sep"></span>
+    <select name="pin" aria-label="Pin">
+      <option value="never">pin to never</option><option value="">clear pin</option>
+    </select>
+    <button name="action" value="pin" data-needs-tick>Pin</button>
+    <span class="muted grow">{{ "{:,}".format(total) }} players{% if pages > 1 %} · page {{ f.page }} of {{ pages }}{% endif %}</span>
+  </div>
+
+  <table class="list players">
+    <thead><tr>
+      <th><input type="checkbox" data-tick-all aria-label="Tick every player on this page"></th>
+      <th></th><th>Name</th><th>Age</th><th>Club</th><th class="num">CA</th><th class="num">PA</th>
+      <th>Origin</th><th>Group</th><th>Why</th><th>Picture</th>
+    </tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td><input type="checkbox" name="uid" value="{{ r.unique_id }}" aria-label="Tick {{ r.name }}"></td>
+        <td>{% if r.image_id %}<img class="face" src="/pictures/{{ r.image_id }}?size=96" loading="lazy" alt="">{% else %}<span class="face none"></span>{% endif %}</td>
+        <td><a href="/players/{{ r.unique_id }}">{{ r.name }}</a>{% if r.is_goalkeeper %} <span class="tag">GK</span>{% endif %}</td>
+        <td>{{ r.age if r.age is not none else "?" }}</td>
+        <td>{% if r.club_id is not none %}<a href="/players?{{ f.query(club_id=r.club_id, club='', page=1) }}">{{ r.club or r.club_id }}</a>{% else %}<span class="muted">free agent</span>{% endif %}
+          {% if r.at_my_club %}<span class="tag mine">my club</span>{% elif r.in_my_league %}<span class="tag">my league</span>{% endif %}{% if r.in_continental %}<span class="tag">continental</span>{% endif %}
+          {% if not r.in_scope %}<span class="tag">not men's</span>{% endif %}</td>
+        <td class="num">{{ r.ca }}</td>
+        <td class="num">{{ r.pa if r.pa is not none else "?" }}</td>
+        <td>{{ "newgen" if r.is_newgen else "pre-existing" }}{% if r.academy %} <span class="tag">academy</span>{% endif %}</td>
+        <td>{% if r.group_name %}<span class="grp grp-{{ r.group_name }}">{{ r.group_name|upper }}</span>{% endif %}{% if r.pin %} <span class="tag">pin {{ r.pin }}</span>{% endif %}{% if r.tracked %} <span class="tag">tracked</span>{% endif %}</td>
+        <td class="why">{{ r.reasons|join("; ") }}</td>
+        <td>{% if r.job_status == "running" %}<span class="st run">drawing</span>
+          {% elif r.job_status == "queued" %}<span class="st q">queued: {{ kind_name(r.job_kind) }}</span>
+          {% elif r.latest_job == "failed" %}<a class="st bad" href="/review">in review</a>
+          {% elif r.image_id %}<span class="st ok">{{ "published" if r.published_path else "drawn" }}</span>{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="11" class="muted">No players match.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</form>
+
+{% if pages > 1 %}
+<nav class="pager">
+  {% if f.page > 1 %}<a href="/players?{{ f.query(page=1) }}">« first</a> <a href="/players?{{ f.query(page=f.page - 1) }}">‹ previous</a>{% endif %}
+  <span>page {{ f.page }} of {{ pages }}</span>
+  {% if f.page < pages %}<a href="/players?{{ f.query(page=f.page + 1) }}">next ›</a> <a href="/players?{{ f.query(page=pages) }}">last »</a>{% endif %}
+</nav>
+{% endif %}
+{% endblock %}
