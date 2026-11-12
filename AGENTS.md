@@ -9,10 +9,10 @@ managed club, qualifying newgens elsewhere, and manual picks), generates an anim
 portrait for each on the local GPU, and publishes the pictures into FM27's graphics
 folder. It has a small web UI for thresholds and manual requests.
 
-Status: Phases 0.2, 0.3, 1 and 2 have passed (the Colchester squad's pictures show in
-FM27). Phase 3, the web UI (`facegen serve`), is built and tested with fakes; its exit test
-needs the user in a browser with the GPU worker running. Build the rest phase by phase from
-`docs/implementation-plan.md`.
+Status: Phases 0.2, 0.3, 1, 2 and 3 have passed: the Colchester squad's pictures show in
+FM27, and the web UI (`facegen serve`) works with the GPU worker. Phase 4 (automation) is
+next. Still open from Phase 0.1: the continental competition IDs. Build the rest phase by
+phase from `docs/implementation-plan.md`.
 
 ## Read first
 

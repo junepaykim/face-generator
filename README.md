@@ -4,10 +4,10 @@ Generates anime-style portraits for Football Manager 27 players on a local GPU a
 publishes them into FM27's graphics folder: everyone at your club, the best newgens
 elsewhere, and anyone you pick by hand.
 
-> **Status: web UI (Phase 3).** The tool reads a save, builds the picture queue, draws the
-> pictures on the GPU and publishes them into FM27, from the command line (`facegen run`)
-> or from a local web page (`facegen serve`). Watching the saves folder by itself comes in
-> Phase 4; see [docs/implementation-plan.md](docs/implementation-plan.md).
+> **Status: web UI done (Phase 3).** The tool reads a save, builds the picture queue, draws
+> the pictures on the GPU and publishes them into FM27, from the command line
+> (`facegen run`) or from a local web page (`facegen serve`). Watching the saves folder by
+> itself comes in Phase 4; see [docs/implementation-plan.md](docs/implementation-plan.md).
 
 ## What it will do
 
