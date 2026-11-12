@@ -21,7 +21,7 @@
   {% if f.active %}<a href="/players">clear</a>{% endif %}
 </form>
 
-<form method="post" action="/players/action" id="bulk">
+<form method="post" action="/players/action" id="bulk"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <input type="hidden" name="next" value="{{ here }}">
   <div class="bulk">
     <span class="ticked" data-ticked>0 ticked</span>

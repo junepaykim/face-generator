@@ -44,7 +44,7 @@
 </section>
 {% endif %}
 
-<form method="post" action="/settings" class="settings">
+<form method="post" action="/settings" class="settings"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div class="bulk sticky">
     <button name="action" value="preview">Preview</button>
     <button name="action" value="apply" class="primary">Apply</button>

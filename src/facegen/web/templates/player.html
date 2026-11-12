@@ -37,31 +37,31 @@
     <div class="actions">
       {% if p.present and p.in_scope and p.job_status != "running" %}
         {% if not cur %}
-        <form method="post" action="/players/{{ p.unique_id }}/generate" class="inline">
+        <form method="post" action="/players/{{ p.unique_id }}/generate" class="inline"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <label>as group <select name="group">{% for g in groups %}<option value="{{ g }}" {{ "selected" if g == (p.group_name or "b") }}>{{ g|upper }}</option>{% endfor %}</select></label>
           <button class="primary">Generate</button>
         </form>
         {% endif %}
         {% if p.pin != "never" and (group_for_redraw or p.latest_job == "failed") %}
-        <form method="post" action="/players/{{ p.unique_id }}/new-face"><button title="Re-roll the character sheet and draw from the new one">New face</button></form>
+        <form method="post" action="/players/{{ p.unique_id }}/new-face"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button title="Re-roll the character sheet and draw from the new one">New face</button></form>
         {% endif %}
         {% if cur and p.pin != "never" %}
-        <form method="post" action="/players/{{ p.unique_id }}/new-picture"><button title="Same character sheet, new picture{{ ', with the current one as a reference' if redraw_reference }}">New picture</button></form>
+        <form method="post" action="/players/{{ p.unique_id }}/new-picture"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button title="Same character sheet, new picture{{ ', with the current one as a reference' if redraw_reference }}">New picture</button></form>
         {% endif %}
         {% if p.latest_job == "failed" %}
-        <form method="post" action="/players/{{ p.unique_id }}/retry"><button>Retry</button></form>
+        <form method="post" action="/players/{{ p.unique_id }}/retry"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button>Retry</button></form>
         {% endif %}
       {% endif %}
       {% if p.job_status == "queued" and p.job_manual %}
-        <form method="post" action="/players/{{ p.unique_id }}/cancel"><button>Cancel request</button></form>
+        <form method="post" action="/players/{{ p.unique_id }}/cancel"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button>Cancel request</button></form>
       {% endif %}
       {% if cur %}
-        <form method="post" action="/players/{{ p.unique_id }}/remove" data-confirm="Remove {{ p.name }}'s picture from FM27 and pin to never? The game's own photo comes back after Reload Skin."><button class="danger">Remove picture</button></form>
+        <form method="post" action="/players/{{ p.unique_id }}/remove" data-confirm="Remove {{ p.name }}'s picture from FM27 and pin to never? The game's own photo comes back after Reload Skin."><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="danger">Remove picture</button></form>
       {% endif %}
     </div>
     {% if redraw_reference and cur %}<p class="muted small">New picture keeps the character sheet and uses the current picture as a reference (settings: reference), so the face stays close.</p>{% endif %}
 
-    <form method="post" action="/players/{{ p.unique_id }}/pin" class="inline pin">
+    <form method="post" action="/players/{{ p.unique_id }}/pin" class="inline pin"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label>Pin
         <select name="pin">
           <option value="" {{ "selected" if not p.pin }}>no pin (rules decide)</option>
@@ -141,7 +141,7 @@ negative: {{ cur.negative_prompt }}</pre></details>
         <td>{% if im.is_current %}<span class="st ok">current{{ " (restored)" if im.restored_at }}</span>{% elif im.rejected %}<span class="st bad">failed the check</span>{% else %}<span class="muted">replaced or removed</span>{% endif %}</td>
         <td>{{ im.created_at[:16]|replace("T", " ") }}</td>
         <td>{% if im.restorable and p.job_status != "running" %}
-          <form method="post" action="/players/{{ p.unique_id }}/restore" data-confirm="Show v{{ im.version }} in FM27 again instead of the current picture?"><input type="hidden" name="image_id" value="{{ im.id }}"><button>Restore</button></form>
+          <form method="post" action="/players/{{ p.unique_id }}/restore" data-confirm="Show v{{ im.version }} in FM27 again instead of the current picture?"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="image_id" value="{{ im.id }}"><button>Restore</button></form>
         {% endif %}</td>
       </tr>
     {% endfor %}

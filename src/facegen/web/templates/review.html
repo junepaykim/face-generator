@@ -9,10 +9,10 @@
     <h2><a href="/players/{{ it.unique_id }}">{{ it.name }}</a> <span class="muted small">{{ it.club or "free agent" }} · age {{ it.age }} · {{ kind_name(it.kind) }}, group {{ it.group_name|upper }} · {{ it.updated_at[:16]|replace("T", " ") }}</span></h2>
     <div class="buttons">
       {% if it.present and it.in_scope %}
-      <form method="post" action="/players/{{ it.unique_id }}/retry"><input type="hidden" name="next" value="/review"><button class="primary">Retry</button></form>
-      <form method="post" action="/players/{{ it.unique_id }}/new-face"><input type="hidden" name="next" value="/review"><button>New face</button></form>
+      <form method="post" action="/players/{{ it.unique_id }}/retry"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="/review"><button class="primary">Retry</button></form>
+      <form method="post" action="/players/{{ it.unique_id }}/new-face"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="/review"><button>New face</button></form>
       {% endif %}
-      <form method="post" action="/players/{{ it.unique_id }}/pin"><input type="hidden" name="next" value="/review"><input type="hidden" name="pin" value="never"><button title="Give up on this player">Pin to never</button></form>
+      <form method="post" action="/players/{{ it.unique_id }}/pin"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="/review"><input type="hidden" name="pin" value="never"><button title="Give up on this player">Pin to never</button></form>
     </div>
   </div>
   <p class="bad small">{{ it.error }}</p>

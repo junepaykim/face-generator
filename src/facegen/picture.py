@@ -1,7 +1,7 @@
 """Picture geometry: the 3:4 portrait shape, published sizes and the face crop. Pure.
 
 Every picture is a 3:4 portrait, width to height (user, 2026-11-11; pictures were square
-before). The model renders at its own portrait size near 3:4 (worker.WIDTH x worker.HEIGHT)
+before). The model renders at its own portrait size near 3:4 (renderer.WIDTH x renderer.HEIGHT)
 and the master is cropped to exactly 3:4. FM27 gets the master scaled down so that its
 height is the group's published size (`groups.<g>.published_long_edge`).
 

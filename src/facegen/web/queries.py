@@ -259,8 +259,10 @@ def player_detail(
         )
     sheet_row = conn.execute(
         "SELECT version, base_seed, sheet, created_at FROM traits"
-        " WHERE career_id = ? AND unique_id = ? ORDER BY version DESC LIMIT 1",
-        (career_id, uid),
+        " WHERE career_id = ? AND unique_id = ? AND version = COALESCE("
+        " (SELECT active_traits_version FROM players WHERE career_id = ? AND unique_id = ?),"
+        " (SELECT MAX(version) FROM traits WHERE career_id = ? AND unique_id = ?))",
+        (career_id, uid, career_id, uid, career_id, uid),
     ).fetchone()
     sheet = None
     if sheet_row is not None:

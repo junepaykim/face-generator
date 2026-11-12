@@ -203,9 +203,33 @@ def test_queued_job_is_cancelled_when_no_longer_needed() -> None:
     assert action == Cancel(99, 1, "no longer needed")
 
 
-def test_manual_job_is_never_cancelled_or_changed() -> None:
-    assert plan_player(state(NONE, active_job=job(manual=True))) is None
-    assert plan_player(state(A, active_job=job(manual=True, group=Group.C))) is None
+def test_manual_job_keeps_intent_despite_automatic_group_change() -> None:
+    assert plan_player(state(NONE, manual_band="W04", active_job=job(manual=True))) is None
+    assert (
+        plan_player(state(A, manual_band="W04", active_job=job(manual=True, group=Group.C))) is None
+    )
+
+
+def test_manual_targets_refresh_without_losing_priority_or_reason() -> None:
+    active = job("reroll", manual=True, tier=0, rank=-123, reason="requested: new face")
+    action = plan_player(state(club_id=11, manual_band="W09", active_job=active))
+    assert isinstance(action, Update)
+    assert (action.job.kind, action.job.group, action.job.tier, action.job.rank) == (
+        "reroll",
+        Group.B,
+        0,
+        -123,
+    )
+    assert (action.job.target_club_id, action.job.target_band, action.job.reason) == (
+        11,
+        "W09",
+        "requested: new face",
+    )
+
+
+def test_manual_request_is_cancelled_when_player_is_out_of_scope() -> None:
+    action = plan_player(state(manual_allowed=False, active_job=job(manual=True)))
+    assert action == Cancel(99, 1, "player no longer eligible")
 
 
 def test_queued_job_follows_a_group_change() -> None:

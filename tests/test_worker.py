@@ -97,6 +97,142 @@ def env(conn: sqlite3.Connection, settings: Settings, tmp_path: Path) -> Env:
     return Env(conn, s, tmp_path / "fm", tmp_path / "data")
 
 
+def test_changed_selection_is_rejected_then_fresh_job_runs(env: Env) -> None:
+    from facegen import manual
+    from facegen.worker import JobGone
+
+    w, renderer, _ = env.worker()
+    selected = next(j for j in w.runnable(MINE) if j.unique_id == OLD_HAND)
+    manual.new_face(env.conn, w.career.id, OLD_HAND, env.settings)
+    with pytest.raises(JobGone):
+        w.run_job(selected)
+    assert renderer.calls == []
+    fresh = next(j for j in w.runnable(MINE) if j.unique_id == OLD_HAND)
+    assert fresh.kind == "reroll" and fresh.revision > selected.revision
+    assert w.run_job(fresh).job.kind == "reroll"
+
+
+def test_same_request_replaced_in_same_second_invalidates_selection(env: Env) -> None:
+    from facegen import manual
+    from facegen.worker import JobGone
+
+    w, renderer, _ = env.worker()
+    manual.new_face(env.conn, w.career.id, OLD_HAND, env.settings, now=123)
+    selected = next(j for j in w.runnable(MINE) if j.unique_id == OLD_HAND)
+    manual.new_face(env.conn, w.career.id, OLD_HAND, env.settings, now=123)
+    with pytest.raises(JobGone):
+        w.run_job(selected)
+    assert renderer.calls == []
+
+
+@pytest.mark.parametrize("column,value", [("present", 0), ("in_scope", 0), ("pin", "never")])
+def test_claim_rechecks_player_eligibility(env: Env, column: str, value: object) -> None:
+    from facegen.worker import JobGone
+
+    w, renderer, _ = env.worker()
+    selected = w.runnable(MINE)[0]
+    env.conn.execute(
+        f"UPDATE players SET {column} = ? WHERE unique_id = ?", (value, selected.unique_id)
+    )
+    with pytest.raises(JobGone):
+        w.run_job(selected)
+    assert env.jobs()[selected.unique_id] == "cancelled"
+    assert renderer.calls == []
+
+
+def test_interrupted_reroll_reuses_allocated_sheet_seed_and_preview(env: Env) -> None:
+    from facegen import manual
+    from facegen.traits import load_sheet, picture_seed
+
+    w, _, _ = env.worker()
+    initial = next(j for j in w.runnable(MINE) if j.unique_id == OLD_HAND)
+    w.run_job(initial)
+    original_sheet = load_sheet(env.conn, w.career.id, OLD_HAND)
+    manual.new_face(env.conn, w.career.id, OLD_HAND, env.settings)
+    seeds = []
+    for _ in range(2):
+        renderer = FakeRenderer(fail_on_call=1, exc=RuntimeError("interrupted"))
+        w, _, _ = env.worker(renderer)
+        job = next(j for j in w.runnable(MINE) if j.unique_id == OLD_HAND)
+        with pytest.raises(RuntimeError, match="interrupted"):
+            w.run_job(job)
+        seeds.append(renderer.calls[0][1])
+        assert env.jobs()[OLD_HAND] == "queued"
+        assert load_sheet(env.conn, w.career.id, OLD_HAND) == original_sheet
+    assert seeds[0] == seeds[1]
+    preview = next(p for p in w.preview(MINE) if p.job.unique_id == OLD_HAND)
+    assert preview.job.traits_version == 2
+    assert picture_seed(preview.sheet.base_seed, 2, 0, 0) == seeds[0]
+    assert (
+        env.conn.execute("SELECT COUNT(*) FROM traits WHERE unique_id = ?", (OLD_HAND,)).fetchone()[
+            0
+        ]
+        == 2
+    )
+    # Restart recovery uses the same allocation even when the last process died running.
+    env.conn.execute("UPDATE jobs SET status = 'running' WHERE id = ?", (preview.job.id,))
+    w, renderer, _ = env.worker()
+    assert w.requeue_stale() == 1
+    w.run_job(next(j for j in w.runnable(MINE) if j.unique_id == OLD_HAND))
+    assert renderer.calls[0][1] == seeds[0]
+    assert env.current(OLD_HAND)["traits_version"] == 2
+
+
+def test_restore_sheet_controls_next_redraw_and_reroll_versions(env: Env) -> None:
+    from facegen import manual
+    from facegen.traits import load_sheet
+    from facegen.web.queries import player_detail
+
+    w, _, _ = env.worker()
+
+    def draw() -> None:
+        w.run_job(next(j for j in w.runnable(JobFilter()) if j.unique_id == STAR))
+
+    draw()
+    original = env.current(STAR)
+    manual.new_face(env.conn, w.career.id, STAR, env.settings)
+    draw()
+    assert env.current(STAR)["traits_version"] == 2
+    manual.restore_picture(env.conn, w.career.id, w.career.key, STAR, original["id"], env.settings)
+    assert load_sheet(env.conn, w.career.id, STAR)[0] == 1
+    detail = player_detail(env.conn, w.career.id, STAR, env.data)
+    assert detail["sheet"]["version"] == 1
+    manual.new_picture(env.conn, w.career.id, STAR, env.settings)
+    draw()
+    assert env.current(STAR)["traits_version"] == 1
+    manual.new_face(env.conn, w.career.id, STAR, env.settings)
+    draw()
+    assert env.current(STAR)["traits_version"] == 3
+
+
+@pytest.mark.parametrize(
+    "returncode,stdout,expected",
+    [
+        (1, b"", None),
+        (1, b'"fm.exe"', None),
+        (0, b'"FM.exe","12"', True),
+        (0, b"INFO: No tasks are running", False),
+    ],
+)
+def test_fm_process_check_respects_command_result(
+    monkeypatch: pytest.MonkeyPatch, returncode: int, stdout: bytes, expected: bool | None
+) -> None:
+    import subprocess
+
+    from facegen.worker import fm_running
+
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(
+            args=[],
+            returncode=returncode,
+            stdout=stdout,
+        ),
+    )
+    assert fm_running() is expected
+
+
 def test_my_club_run_generates_publishes_and_a_rerun_changes_nothing(env: Env) -> None:
     w, r, _t = env.worker()
     summary = w.run(MINE)
@@ -151,7 +287,8 @@ def test_same_job_gives_the_same_seeds_and_prompt(env: Env, tmp_path: Path) -> N
     # Forget the picture and the sheet, then redo: same career key, same player.
     env.conn.execute("DELETE FROM images")
     env.conn.execute("DELETE FROM traits")
-    env.conn.execute("UPDATE jobs SET status = 'queued'")
+    env.conn.execute("UPDATE players SET active_traits_version = NULL")
+    env.conn.execute("UPDATE jobs SET status = 'queued', traits_version = NULL")
     w2, r2, _ = env.worker()
     w2.run(MINE, limit=1, publish=False)
     assert (r2.calls, r2.prompts[0]) == first

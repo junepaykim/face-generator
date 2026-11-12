@@ -38,8 +38,8 @@ def env(tmp_path: Path) -> dict[str, Path]:
     os.utime(save, (1_700_000_000, 1_700_000_000))
     text = DEFAULTS_PATH.read_text(encoding="utf-8")
     assert FM_USER_LINE in text
-    text = text.replace(FM_USER_LINE, f'fm_user_dir = "{fm}"')
-    text = text.replace('data_dir = "data"', f'data_dir = "{tmp_path / "data"}"')
+    text = text.replace(FM_USER_LINE, f'fm_user_dir = "{fm.as_posix()}"')
+    text = text.replace('data_dir = "data"', f'data_dir = "{(tmp_path / "data").as_posix()}"')
     config = tmp_path / "test.toml"
     config.write_text(text, encoding="utf-8")
     return {"config": config, "games": games, "save": save, "data": tmp_path / "data"}

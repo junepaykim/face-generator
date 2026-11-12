@@ -11,9 +11,9 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-JOB_KINDS = ("initial", "kit", "age", "upgrade", "reroll", "redraw")
-JOB_STATUSES = ("queued", "running", "done", "failed", "cancelled")
-ACTIVE_JOB_STATUSES = ("queued", "running")
+from facegen.domain import ACTIVE_JOB_STATUSES as ACTIVE_JOB_STATUSES
+from facegen.domain import JOB_KINDS as JOB_KINDS
+from facegen.domain import JOB_STATUSES as JOB_STATUSES
 
 
 def _in(values: tuple[str, ...]) -> str:
@@ -196,7 +196,91 @@ ALTER TABLE images ADD COLUMN restored_band TEXT;
 UPDATE images SET published_path = NULL;
 """
 
-MIGRATIONS: tuple[str, ...] = (_V1, _V2, _V3, _V4, _V5)
+# State coordination: explicit sheet selection, resumable jobs, and TEXT wording keys.
+_V6 = """
+CREATE TABLE images_new (
+    id              INTEGER PRIMARY KEY,
+    career_id       INTEGER NOT NULL REFERENCES careers(id),
+    unique_id       INTEGER NOT NULL,
+    version         INTEGER NOT NULL,
+    reason          TEXT NOT NULL CHECK (reason IN ('initial', 'kit', 'age', 'upgrade', 'reroll', 'redraw')),
+    group_name      TEXT NOT NULL CHECK (group_name IN ('a', 'b', 'c')),
+    club_id         INTEGER,
+    age_band        TEXT,
+    traits_version  INTEGER,
+    model           TEXT NOT NULL,
+    prompt          TEXT NOT NULL,
+    negative_prompt TEXT NOT NULL,
+    seed            INTEGER NOT NULL,
+    master_path     TEXT,
+    published_path  TEXT,
+    check_result    TEXT,                  -- JSON
+    is_current      INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL,
+    render          TEXT,
+    restored_at     TEXT,
+    restored_group  TEXT CHECK (restored_group IN ('a', 'b', 'c')),
+    restored_club_id INTEGER,
+    restored_band   TEXT,
+    UNIQUE (career_id, unique_id, version)
+);
+INSERT INTO images_new (
+    id, career_id, unique_id, version, reason, group_name, club_id, age_band,
+    traits_version, model, prompt, negative_prompt, seed, master_path, published_path,
+    check_result, is_current, created_at, render, restored_at, restored_group,
+    restored_club_id, restored_band
+) SELECT
+    id, career_id, unique_id, version, reason, group_name, club_id, age_band,
+    traits_version, model, prompt, negative_prompt, seed, master_path, published_path,
+    check_result, is_current, created_at, render, restored_at, restored_group,
+    restored_club_id, restored_band
+FROM images;
+DROP TABLE images;
+ALTER TABLE images_new RENAME TO images;
+CREATE UNIQUE INDEX images_one_current ON images (career_id, unique_id) WHERE is_current = 1;
+CREATE TABLE jobs_new (
+    id             INTEGER PRIMARY KEY,
+    career_id      INTEGER NOT NULL REFERENCES careers(id),
+    unique_id      INTEGER NOT NULL,
+    kind           TEXT NOT NULL CHECK (kind IN ('initial', 'kit', 'age', 'upgrade', 'reroll', 'redraw')),
+    group_name     TEXT NOT NULL CHECK (group_name IN ('a', 'b', 'c')),
+    manual         INTEGER NOT NULL DEFAULT 0,
+    tier           INTEGER NOT NULL,       -- queue order: lower first
+    rank           REAL NOT NULL,          -- order within a tier: lower first
+    status         TEXT NOT NULL CHECK (status IN ('queued', 'running', 'done', 'failed', 'cancelled')),
+    target_club_id INTEGER,
+    target_band    TEXT,
+    reason         TEXT NOT NULL,
+    attempts       INTEGER NOT NULL DEFAULT 0,
+    error          TEXT,
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL
+);
+INSERT INTO jobs_new (
+    id, career_id, unique_id, kind, group_name, manual, tier, rank, status,
+    target_club_id, target_band, reason, attempts, error, created_at, updated_at
+) SELECT
+    id, career_id, unique_id, kind, group_name, manual, tier, rank, status,
+    target_club_id, target_band, reason, attempts, error, created_at, updated_at
+FROM jobs;
+DROP TABLE jobs;
+ALTER TABLE jobs_new RENAME TO jobs;
+CREATE UNIQUE INDEX jobs_one_active ON jobs (career_id, unique_id)
+    WHERE status IN ('queued', 'running');
+CREATE INDEX jobs_queue ON jobs (status, tier, rank, id);
+CREATE INDEX jobs_by_player ON jobs (career_id, unique_id, id);
+ALTER TABLE jobs ADD COLUMN traits_version INTEGER;
+ALTER TABLE jobs ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE players ADD COLUMN active_traits_version INTEGER;
+UPDATE players SET active_traits_version = COALESCE(
+    (SELECT traits_version FROM images WHERE images.career_id = players.career_id
+     AND images.unique_id = players.unique_id AND is_current = 1),
+    (SELECT MAX(version) FROM traits WHERE traits.career_id = players.career_id
+     AND traits.unique_id = players.unique_id)
+);
+"""
+
+MIGRATIONS: tuple[str, ...] = (_V1, _V2, _V3, _V4, _V5, _V6)
 
 # The active career: the one whose save was written last (spec section 8). A career synced
 # without a save time (tests, old rows) falls back to when it was synced.

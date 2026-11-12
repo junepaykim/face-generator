@@ -86,6 +86,59 @@ def add_image(
 # --- first sync --------------------------------------------------------------------------------
 
 
+def test_academy_membership_survives_managed_club_changes(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    uid = NEWGEN + 80
+    origin = player(uid, club_id=RIVAL, home_grown=(MY_CLUB,))
+    sync(conn, snapshot([origin]), settings)
+    assert player_row(conn, uid)["academy"] == 1
+    # Even if home-grown facts disappear, established academy tracking is permanent.
+    moved = replace(origin, home_grown_club_ids=())
+    sync(conn, replace(snapshot([moved]), managed_club_id=ABROAD), settings)
+    row = player_row(conn, uid)
+    assert (row["academy"], row["tracked"], row["group_name"]) == (1, 1, "b")
+    reclassify(conn, 1, settings)
+    assert player_row(conn, uid)["tracked"] == 1
+
+
+def test_manual_jobs_refresh_current_targets_and_cancel_when_absent(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    from facegen import manual
+    from facegen.age import age_wording
+
+    uid = 1001
+    sync(conn, snapshot([player(uid, age=19)]), settings)
+    manual.generate(conn, 1, [uid], settings, "c", now=123)
+    before = conn.execute("SELECT * FROM jobs WHERE status = 'queued'").fetchone()
+    changed = player(uid, age=34, club_id=RIVAL)
+    sync(conn, snapshot([changed]), settings)
+    after = conn.execute("SELECT * FROM jobs WHERE status = 'queued'").fetchone()
+    for field in ("id", "kind", "group_name", "manual", "tier", "rank", "reason"):
+        assert before[field] == after[field]
+    assert after["target_club_id"] == RIVAL
+    assert after["target_band"] == age_wording(34, "c", False, settings.age)
+    # Existing, low-ability pre-existing player stays hand-picked after transfer.
+    assert after["manual"] == 1
+    sync(conn, snapshot([]), settings)
+    assert (
+        conn.execute("SELECT status FROM jobs WHERE id = ?", (after["id"],)).fetchone()[0]
+        == "cancelled"
+    )
+
+
+def test_manual_job_is_cancelled_on_transfer_out_of_mens_football(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    from facegen import manual
+
+    sync(conn, snapshot([player(1001)]), settings)
+    manual.new_face(conn, 1, 1001, settings)
+    sync(conn, snapshot([player(1001, club_id=WOMENS)]), settings)
+    assert not queued(conn)
+
+
 def test_first_sync_classifies_and_queues(conn: sqlite3.Connection, settings: Settings) -> None:
     report = sync(conn, snapshot(world()), settings)
 

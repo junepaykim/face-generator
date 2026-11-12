@@ -90,6 +90,9 @@ def make_env(config: Path, *, synced: bool) -> Env:
     syncer = SyncService(settings.paths.db_path, FakeSource, defaults_path=config)
     app = create_app(AppContext(settings.paths.db_path, config, worker, syncer))
     client = TestClient(app, base_url=BASE, follow_redirects=False)
+    token = re.search(r'name="csrf_token" value="([^"]+)"', client.get("/").text)
+    assert token is not None
+    client.headers["X-CSRF-Token"] = token[1]
     return Env(client, worker, syncer, settings, config)
 
 
@@ -374,6 +377,63 @@ def test_only_local_requests_are_answered(env: Env) -> None:
     assert bad.status_code == 403 and not env.worker.status().paused
     ok = env.client.post("/worker/pause", headers={"origin": BASE})
     assert ok.status_code == 303 and env.worker.status().paused
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "null",
+        "http://127.0.0.1:9999",
+        "http://localhost:8765",
+        "https://127.0.0.1:8765",
+        "http://[",
+        "http://127.0.0.1:bad",
+        "http://user@127.0.0.1:8765",
+        BASE + "/path",
+        "http://evil.example",
+    ],
+)
+def test_foreign_and_malformed_origins_cannot_mutate(env: Env, origin: str) -> None:
+    r = env.client.post("/worker/pause", headers={"Origin": origin})
+    assert r.status_code == 403
+    assert not env.worker.status().paused
+
+
+@pytest.mark.parametrize("host", ["", "[", "127.0.0.1:bad", "user@localhost:8765"])
+def test_malformed_host_fails_closed(env: Env, host: str) -> None:
+    assert env.client.get("/", headers={"Host": host}).status_code == 403
+
+
+def test_csrf_is_required_even_with_no_origin_or_same_origin(env: Env) -> None:
+    del env.client.headers["X-CSRF-Token"]
+    for headers in ({}, {"Origin": BASE}, {"Origin": BASE, "X-CSRF-Token": "wrong"}):
+        assert env.client.post("/worker/pause", headers=headers).status_code == 403
+    assert not env.worker.status().paused
+    page = env.client.get("/")
+    token = re.search(r'name="csrf_token" value="([^"]+)"', page.text)[1]
+    assert page.headers["X-Frame-Options"] == "DENY"
+    assert page.headers["Cache-Control"] == "no-store"
+    # Real browser form submission, including downstream body parsing, without a header.
+    r = env.client.post(
+        "/players/action",
+        data={
+            "csrf_token": token,
+            "uid": str(STAR),
+            "action": "generate",
+            "group": "b",
+        },
+        headers={"Origin": BASE},
+    )
+    assert r.status_code == 303
+    assert env.one("SELECT pin FROM players WHERE unique_id = ?", STAR) == "b"
+
+
+def test_every_post_form_carries_the_token(env: Env) -> None:
+    for url in ("/", "/status", "/players", f"/players/{MINE}", "/settings", "/review"):
+        for form in re.findall(
+            r'<form\b[^>]*method="post"[^>]*>.*?</form>', env.client.get(url).text, re.S
+        ):
+            assert 'name="csrf_token"' in form, url
 
 
 def test_pictures_come_only_from_the_masters_folder(env: Env) -> None:

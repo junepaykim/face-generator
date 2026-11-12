@@ -214,11 +214,22 @@ def test_deactivate_packs_unmaps_every_other_pack(tmp_path: Path) -> None:
     assert not (fm / "graphics" / "facegen" / "no-config" / "config.xml").exists()
     assert deactivate_packs(fm, keep="k2") == ()  # nothing left to change
     assert deactivate_packs(tmp_path / "nowhere", keep=None) == ()
+
+
+def test_deactivate_packs_does_not_follow_symlinks(tmp_path: Path) -> None:
     # Nothing outside graphics/facegen/ is touched, even through a link.
+    fm = tmp_path / "fm"
+    folder = fm / "graphics" / "facegen"
+    folder.mkdir(parents=True)
     outside = tmp_path / "other-pack"  # stands in for someone else's pack
     outside.mkdir()
     (outside / "config.xml").write_text(config_xml([5]))
-    (fm / "graphics" / "facegen" / "link").symlink_to(outside)
+    try:
+        (folder / "link").symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        if getattr(exc, "winerror", None) == 1314:
+            pytest.skip("Windows does not grant this process symlink creation privileges")
+        raise
     deactivate_packs(fm, keep=None)
     assert 'from="5"' in (outside / "config.xml").read_text()
 

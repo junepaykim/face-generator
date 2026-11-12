@@ -11,7 +11,8 @@ Rules:
   age wording (age.py). A free agent has no kit to draw, so their re-draw waits until
   they join a club.
 - Queued automatic jobs for players who no longer need them are cancelled. Running jobs
-  and manual requests are left alone. Pictures are never deleted here.
+  are left alone; manual requests retain their intent but refresh their targets.
+  Pictures are never deleted here.
 - A job that failed its checks and went to review is not re-queued for the same target.
 - A re-draw that keeps the character sheet may use the existing picture as a reference
   (`reference_scale`); by default only for players at my club.
@@ -24,6 +25,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from facegen.classify import Classification, Group
+from facegen.domain import JobKind, JobStatus
 from facegen.settings import ReferenceSettings
 
 # Queue order (spec section 2): manual requests; group A at my club, newest arrivals first;
@@ -48,14 +50,15 @@ class ImageState:
 @dataclass(frozen=True, slots=True)
 class JobState:
     job_id: int
-    kind: str
+    kind: JobKind
     group: Group
-    status: str
+    status: JobStatus
     manual: bool
     tier: int
     rank: float
     target_club_id: int | None
     target_band: str | None
+    reason: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,11 +74,13 @@ class PlayerPlanState:
     active_job: JobState | None = None
     """The player's queued or running job."""
     last_failed_job: JobState | None = None
+    manual_allowed: bool = True
+    manual_band: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class DesiredJob:
-    kind: str
+    kind: JobKind
     group: Group
     tier: int
     rank: float
@@ -163,7 +168,7 @@ def desired_job(s: PlayerPlanState) -> DesiredJob | None:
         return None
     tier, rank = queue_position(group, s.at_my_club, s.club_since, s.pa)
 
-    def job(kind: str, reason: str) -> DesiredJob:
+    def job(kind: JobKind, reason: str) -> DesiredJob:
         return DesiredJob(kind, group, tier, rank, s.club_id, s.age_band, reason)
 
     img = s.image
@@ -186,8 +191,26 @@ def plan_player(s: PlayerPlanState) -> Action | None:
     want = desired_job(s)
     active = s.active_job
     if active is not None:
-        if active.status != "queued" or active.manual:
+        if active.status != "queued":
             return None
+        if active.manual:
+            if not s.manual_allowed:
+                return Cancel(active.job_id, s.unique_id, "player no longer eligible")
+            # Keep the user's kind, group and priority; refresh only snapshot targets.
+            refreshed = DesiredJob(
+                active.kind,
+                active.group,
+                active.tier,
+                active.rank,
+                s.club_id,
+                s.manual_band,
+                active.reason,
+            )
+            return (
+                Update(active.job_id, s.unique_id, refreshed)
+                if not refreshed.same_as(active)
+                else None
+            )
         if want is None:
             why = "no longer qualifies" if s.classification.group is None else "no longer needed"
             return Cancel(active.job_id, s.unique_id, why)

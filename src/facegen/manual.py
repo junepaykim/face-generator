@@ -40,10 +40,11 @@ from pathlib import Path
 from facegen.age import age_wording
 from facegen.classify import GROUP_RANK, Group
 from facegen.db import active_career_id, transaction
-from facegen.planner import TIER_MANUAL
+from facegen.jobs import queue_manual as _queue
 from facegen.publish import PublishReport, publish_lock, publish_pack, unpublish
 from facegen.settings import Settings
 from facegen.sync import classify_and_plan
+from facegen.traits import select_sheet
 
 PINS = ("a", "b", "c", "never")
 DEFAULT_GROUP = "b"
@@ -113,35 +114,6 @@ def _refusal(p: sqlite3.Row) -> str | None:
     if p["job_status"] == "running":
         return "being drawn right now"
     return None
-
-
-def _queue(
-    conn: sqlite3.Connection,
-    career_id: int,
-    p: sqlite3.Row,
-    kind: str,
-    group: str,
-    rank: float,
-    reason: str,
-    settings: Settings,
-) -> None:
-    """Queue a manual job for the player, taking over their queued automatic job if any."""
-    band = age_wording(p["age"], group, bool(p["at_my_club"]), settings.age)
-    now = _now()
-    values = (kind, group, TIER_MANUAL, rank, p["club_id"], band, reason)
-    cur = conn.execute(
-        "UPDATE jobs SET kind = ?, group_name = ?, manual = 1, tier = ?, rank = ?,"
-        " target_club_id = ?, target_band = ?, reason = ?, error = NULL, updated_at = ?"
-        " WHERE career_id = ? AND unique_id = ? AND status = 'queued'",
-        (*values, now, career_id, p["unique_id"]),
-    )
-    if cur.rowcount == 0:
-        conn.execute(
-            "INSERT INTO jobs (career_id, unique_id, kind, group_name, manual, tier, rank,"
-            " status, target_club_id, target_band, reason, created_at, updated_at)"
-            " VALUES (?, ?, ?, ?, 1, ?, ?, 'queued', ?, ?, ?, ?, ?)",
-            (career_id, p["unique_id"], kind, group, TIER_MANUAL, rank, *values[4:], now, now),
-        )
 
 
 def _set_pin(conn: sqlite3.Connection, career_id: int, uid: int, pin: str | None) -> None:
@@ -468,6 +440,15 @@ def restore_picture(
             "UPDATE images SET is_current = 1, published_path = NULL, restored_at = ?,"
             " restored_group = ?, restored_club_id = ?, restored_band = ? WHERE id = ?",
             (_now(), group, p["club_id"], band, image_id),
+        )
+        if img["traits_version"] is not None:
+            select_sheet(conn, career_id, uid, img["traits_version"])
+        # A queued keep-face redraw must follow the restored selection. A pending
+        # new-face request retains its separately allocated sheet.
+        conn.execute(
+            "UPDATE jobs SET traits_version = NULL, revision = revision + 1"
+            " WHERE career_id = ? AND unique_id = ? AND status = 'queued' AND kind != 'reroll'",
+            (career_id, uid),
         )
         classify_and_plan(conn, career_id, settings)
     report = publish_pack(conn, settings, career_id, career_key)

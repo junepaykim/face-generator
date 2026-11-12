@@ -28,6 +28,7 @@ from facegen.identity import (
     is_newgen,
     person_hash,
 )
+from facegen.jobs import apply_plan as apply_plan
 from facegen.leagues import clubs_in_competitions, my_league_competitions
 from facegen.planner import ImageState, JobState, Plan, PlayerPlanState, plan
 from facegen.settings import Settings
@@ -231,7 +232,7 @@ def ingest(
         r["unique_id"]: r
         for r in conn.execute(
             "SELECT unique_id, is_newgen, in_scope, first_club_id, club_id, club_since,"
-            " at_my_club, present FROM players WHERE career_id = ?",
+            " at_my_club, present, academy FROM players WHERE career_id = ?",
             (cid,),
         )
     }
@@ -271,7 +272,7 @@ def ingest(
         # "First seen at my club" only counts for players who appear after the first sync;
         # before that, the home-grown data alone decides (decisions.md, open question 2).
         first_club = old["first_club_id"] if old else (None if first_sync else p.club_id)
-        academy = (
+        academy = bool(old and old["academy"]) or (
             newgen
             and my_club is not None
             and (first_club == my_club or my_club in p.home_grown_club_ids)
@@ -359,6 +360,7 @@ def _job_state(r: sqlite3.Row) -> JobState:
         rank=r["rank"],
         target_club_id=r["target_club_id"],
         target_band=r["target_band"],
+        reason=r["reason"],
     )
 
 
@@ -447,6 +449,12 @@ def _classify(
                 image=images.get(uid),
                 active_job=active.get(uid),
                 last_failed_job=failed.get(uid),
+                manual_allowed=bool(r["present"] and r["in_scope"] and r["pin"] != "never"),
+                manual_band=(
+                    age_wording(r["age"], active[uid].group, bool(r["at_my_club"]), settings.age)
+                    if uid in active
+                    else None
+                ),
             )
         )
     return PlanResult(plan(states), classifications), changed
@@ -465,54 +473,6 @@ def classify_and_plan(conn: sqlite3.Connection, career_id: int, settings: Settin
     )
     apply_plan(conn, career_id, result.plan)
     return result
-
-
-def apply_plan(conn: sqlite3.Connection, career_id: int, p: Plan) -> None:
-    now = _now()
-    conn.executemany(
-        "INSERT INTO jobs (career_id, unique_id, kind, group_name, manual, tier, rank, status,"
-        " target_club_id, target_band, reason, created_at, updated_at)"
-        " VALUES (?, ?, ?, ?, 0, ?, ?, 'queued', ?, ?, ?, ?, ?)",
-        [
-            (
-                career_id,
-                a.unique_id,
-                a.job.kind,
-                a.job.group.value,
-                a.job.tier,
-                a.job.rank,
-                a.job.target_club_id,
-                a.job.target_band,
-                a.job.reason,
-                now,
-                now,
-            )
-            for a in p.enqueue
-        ],
-    )
-    conn.executemany(
-        "UPDATE jobs SET kind = ?, group_name = ?, tier = ?, rank = ?, target_club_id = ?,"
-        " target_band = ?, reason = ?, updated_at = ? WHERE id = ? AND status = 'queued'",
-        [
-            (
-                a.job.kind,
-                a.job.group.value,
-                a.job.tier,
-                a.job.rank,
-                a.job.target_club_id,
-                a.job.target_band,
-                a.job.reason,
-                now,
-                a.job_id,
-            )
-            for a in p.update
-        ],
-    )
-    conn.executemany(
-        "UPDATE jobs SET status = 'cancelled', error = ?, updated_at = ?"
-        " WHERE id = ? AND status = 'queued'",
-        [(a.reason, now, a.job_id) for a in p.cancel],
-    )
 
 
 # --- reports -----------------------------------------------------------------------------
@@ -568,9 +528,11 @@ def player_table(conn: sqlite3.Connection, career_id: int) -> list[dict[str, Any
 
 def _counts(conn: sqlite3.Connection, career_id: int, snapshot: Snapshot) -> dict[str, int]:
     genders = Counter(
-        snapshot.clubs[p.club_id].gender.value
-        if p.club_id is not None and p.club_id in snapshot.clubs
-        else "no club"
+        (
+            snapshot.clubs[p.club_id].gender.value
+            if p.club_id is not None and p.club_id in snapshot.clubs
+            else "no club"
+        )
         for p in snapshot.players
     )
     row = conn.execute(

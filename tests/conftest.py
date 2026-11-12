@@ -17,8 +17,8 @@ def write_config(tmp_path: Path) -> Path:
     """A defaults file whose FM27 and data folders are under tmp_path."""
     text = DEFAULTS_PATH.read_text(encoding="utf-8")
     assert FM_USER_LINE in text
-    text = text.replace(FM_USER_LINE, f'fm_user_dir = "{tmp_path / "fm"}"')
-    text = text.replace('data_dir = "data"', f'data_dir = "{tmp_path / "data"}"')
+    text = text.replace(FM_USER_LINE, f'fm_user_dir = "{(tmp_path / "fm").as_posix()}"')
+    text = text.replace('data_dir = "data"', f'data_dir = "{(tmp_path / "data").as_posix()}"')
     config = tmp_path / "test.toml"
     config.write_text(text, encoding="utf-8")
     return config

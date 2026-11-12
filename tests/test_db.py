@@ -33,6 +33,54 @@ def test_connect_creates_every_table(conn: sqlite3.Connection) -> None:
     assert db.schema_version(conn) == len(db.MIGRATIONS)
 
 
+def test_state_migration_preserves_history_constraints_and_restored_sheet() -> None:
+    conn = sqlite3.connect(":memory:", isolation_level=None)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    for script in db.MIGRATIONS[:5]:
+        conn.executescript(script)
+    conn.execute("PRAGMA user_version = 5")
+    conn.execute(
+        "INSERT INTO careers (id, key, display_name, fingerprint, created_at, updated_at)"
+        " VALUES (1, 'c1', 'Career', '[]', 'now', 'now')"
+    )
+    conn.execute(
+        "INSERT INTO players (career_id, unique_id, name, ca, is_newgen, in_scope, at_my_club,"
+        " in_my_league, in_continental, academy) VALUES (1, 7, 'Player', 100, 1, 1, 0, 1, 0, 1)"
+    )
+    conn.executemany(
+        "INSERT INTO traits VALUES (1, 7, ?, 42, '{}', 'now')",
+        [(1,), (2,)],
+    )
+    conn.executemany(
+        "INSERT INTO images (career_id, unique_id, version, reason, group_name, model, prompt,"
+        " negative_prompt, seed, age_band, traits_version, is_current, created_at, render,"
+        " check_result, published_path, restored_at, restored_band, restored_group)"
+        " VALUES (1, 7, ?, 'initial', 'b', 'm', 'p', 'n', 42, 'W04', ?, ?, 'now', '{}',"
+        " '{\"passed\":true}', '/published.png', 'restored', 'W07', 'a')",
+        [(1, 1, 1), (2, 2, 0)],
+    )
+    _job(conn, "queued")
+    conn.execute("UPDATE jobs SET target_band = 'W07'")
+    images_before = [tuple(r) for r in conn.execute("SELECT * FROM images ORDER BY id")]
+    jobs_before = [tuple(r) for r in conn.execute("SELECT * FROM jobs")]
+    db.migrate(conn)
+    assert [tuple(r) for r in conn.execute("SELECT * FROM images ORDER BY id")] == images_before
+    assert [tuple(r)[:-2] for r in conn.execute("SELECT * FROM jobs")] == jobs_before
+    assert conn.execute("SELECT active_traits_version FROM players").fetchone()[0] == 1
+    for table, column in (("images", "age_band"), ("jobs", "target_band")):
+        assert {r[1]: r[2] for r in conn.execute(f"PRAGMA table_info({table})")}[column] == "TEXT"
+    assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+    assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+    with pytest.raises(sqlite3.IntegrityError):
+        _job(conn, "running")
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("UPDATE images SET is_current = 1 WHERE version = 2")
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("UPDATE jobs SET kind = 'anything'")
+    assert db.migrate(conn) == len(db.MIGRATIONS)
+
+
 def test_migrate_is_idempotent(conn: sqlite3.Connection) -> None:
     assert db.migrate(conn) == len(db.MIGRATIONS)
     assert db.migrate(conn) == len(db.MIGRATIONS)

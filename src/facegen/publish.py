@@ -22,7 +22,6 @@ already in place, so publishing twice changes nothing.
 
 from __future__ import annotations
 
-import fcntl
 import os
 import sqlite3
 from collections.abc import Iterable, Iterator
@@ -32,6 +31,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from facegen.db import active_career_id, transaction
+from facegen.locking import file_lock
 from facegen.picture import crop_to_aspect, published_size
 
 if TYPE_CHECKING:
@@ -220,13 +220,8 @@ def publish_lock(data_dir: Path) -> Iterator[None]:
 
     Take it before any database transaction that publishing runs in, never inside one.
     """
-    data_dir.mkdir(parents=True, exist_ok=True)
-    with (data_dir / "publish.lock").open("w") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
+    with file_lock(data_dir / "publish.lock"):
+        yield
 
 
 def publish_pack(
