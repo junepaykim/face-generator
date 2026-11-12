@@ -1,0 +1,208 @@
+"""SQLite state database: schema, migrations and transactions.
+
+The connection runs in autocommit mode; group writes with `transaction`. Migrations are
+numbered by position in MIGRATIONS and recorded in PRAGMA user_version.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
+
+JOB_KINDS = ("initial", "kit", "age", "upgrade", "reroll", "redraw")
+JOB_STATUSES = ("queued", "running", "done", "failed", "cancelled")
+ACTIVE_JOB_STATUSES = ("queued", "running")
+
+
+def _in(values: tuple[str, ...]) -> str:
+    return "(" + ", ".join(f"'{v}'" for v in values) + ")"
+
+
+_V1 = f"""
+CREATE TABLE careers (
+    id               INTEGER PRIMARY KEY,
+    key              TEXT NOT NULL UNIQUE,     -- folder name for this career's picture pack
+    display_name     TEXT NOT NULL,
+    fingerprint      TEXT NOT NULL,            -- JSON list of hashes of created people
+    newgen_min_id    INTEGER,                  -- unique IDs at or above this are newgens
+    newgen_id_source TEXT,                     -- 'detected' or 'fallback'
+    managed_club_id  INTEGER,
+    last_game_date   TEXT,
+    last_save_file   TEXT,
+    created_at       TEXT NOT NULL,
+    updated_at       TEXT NOT NULL
+);
+
+CREATE TABLE clubs (
+    career_id    INTEGER NOT NULL REFERENCES careers(id),
+    club_id      INTEGER NOT NULL,             -- the game's unique ID for the club
+    name         TEXT NOT NULL,
+    gender       TEXT NOT NULL,                -- 'men', 'women' or 'unknown'
+    nation_id    INTEGER,
+    in_my_league INTEGER NOT NULL DEFAULT 0,
+    continental  INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (career_id, club_id)
+);
+
+CREATE TABLE players (
+    career_id           INTEGER NOT NULL REFERENCES careers(id),
+    unique_id           INTEGER NOT NULL,
+    name                TEXT NOT NULL,
+    birth_date          TEXT,
+    age                 INTEGER,
+    height_cm           INTEGER,
+    ca                  INTEGER NOT NULL,
+    pa                  INTEGER,
+    is_goalkeeper       INTEGER NOT NULL DEFAULT 0,
+    strength            INTEGER,
+    club_id             INTEGER,
+    loan_parent_club_id INTEGER,
+    home_grown_club_ids TEXT NOT NULL DEFAULT '[]',
+    club_since          TEXT,      -- club join date, else the in-game date first seen there
+    is_newgen           INTEGER NOT NULL,
+    in_scope            INTEGER NOT NULL,  -- men's football, or a free agent last seen there
+    at_my_club          INTEGER NOT NULL,
+    in_my_league        INTEGER NOT NULL,
+    in_continental      INTEGER NOT NULL,
+    first_club_id       INTEGER,   -- club when first seen; NULL if seen in the first sync
+    academy             INTEGER NOT NULL,
+    present             INTEGER NOT NULL DEFAULT 1,
+    first_seen_sync     INTEGER,
+    last_seen_sync      INTEGER,
+    group_name          TEXT CHECK (group_name IN ('a', 'b', 'c')),
+    tracked             INTEGER NOT NULL DEFAULT 0,
+    reasons             TEXT NOT NULL DEFAULT '[]',
+    pin                 TEXT CHECK (pin IN ('a', 'b', 'c', 'never')),
+    PRIMARY KEY (career_id, unique_id)
+);
+CREATE INDEX players_by_group ON players (career_id, group_name);
+
+CREATE TABLE traits (
+    career_id  INTEGER NOT NULL REFERENCES careers(id),
+    unique_id  INTEGER NOT NULL,
+    version    INTEGER NOT NULL,
+    base_seed  INTEGER NOT NULL,
+    sheet      TEXT NOT NULL,              -- JSON character sheet
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (career_id, unique_id, version)
+);
+
+CREATE TABLE images (
+    id              INTEGER PRIMARY KEY,
+    career_id       INTEGER NOT NULL REFERENCES careers(id),
+    unique_id       INTEGER NOT NULL,
+    version         INTEGER NOT NULL,
+    reason          TEXT NOT NULL CHECK (reason IN {_in(JOB_KINDS)}),
+    group_name      TEXT NOT NULL CHECK (group_name IN ('a', 'b', 'c')),
+    club_id         INTEGER,
+    age_band        INTEGER,
+    traits_version  INTEGER,
+    model           TEXT NOT NULL,
+    prompt          TEXT NOT NULL,
+    negative_prompt TEXT NOT NULL,
+    seed            INTEGER NOT NULL,
+    master_path     TEXT,
+    published_path  TEXT,
+    check_result    TEXT,                  -- JSON
+    is_current      INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL,
+    UNIQUE (career_id, unique_id, version)
+);
+CREATE UNIQUE INDEX images_one_current ON images (career_id, unique_id) WHERE is_current = 1;
+
+CREATE TABLE jobs (
+    id             INTEGER PRIMARY KEY,
+    career_id      INTEGER NOT NULL REFERENCES careers(id),
+    unique_id      INTEGER NOT NULL,
+    kind           TEXT NOT NULL CHECK (kind IN {_in(JOB_KINDS)}),
+    group_name     TEXT NOT NULL CHECK (group_name IN ('a', 'b', 'c')),
+    manual         INTEGER NOT NULL DEFAULT 0,
+    tier           INTEGER NOT NULL,       -- queue order: lower first
+    rank           REAL NOT NULL,          -- order within a tier: lower first
+    status         TEXT NOT NULL CHECK (status IN {_in(JOB_STATUSES)}),
+    target_club_id INTEGER,
+    target_band    INTEGER,
+    reason         TEXT NOT NULL,
+    attempts       INTEGER NOT NULL DEFAULT 0,
+    error          TEXT,
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL
+);
+-- At most one queued or running job per player: re-running a sync cannot duplicate work.
+CREATE UNIQUE INDEX jobs_one_active ON jobs (career_id, unique_id)
+    WHERE status IN {_in(ACTIVE_JOB_STATUSES)};
+CREATE INDEX jobs_queue ON jobs (status, tier, rank, id);
+
+CREATE TABLE settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,              -- JSON
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE sync_runs (
+    id          INTEGER PRIMARY KEY,
+    career_id   INTEGER REFERENCES careers(id),
+    started_at  TEXT NOT NULL,
+    finished_at TEXT,
+    save_file   TEXT NOT NULL,
+    save_mtime  REAL,
+    build       TEXT,
+    game_date   TEXT,
+    counts      TEXT,                      -- JSON
+    error       TEXT
+);
+"""
+
+# Phase 2: the render settings of each picture (steps, CFG, sampler, size, detail pass), so
+# any picture can be reproduced from its row. Paths in images are relative to the data dir.
+_V2 = """
+ALTER TABLE images ADD COLUMN render TEXT;     -- JSON
+"""
+
+MIGRATIONS: tuple[str, ...] = (_V1, _V2)
+
+
+def schema_version(conn: sqlite3.Connection) -> int:
+    return conn.execute("PRAGMA user_version").fetchone()[0]
+
+
+def migrate(conn: sqlite3.Connection) -> int:
+    """Apply pending migrations, each in its own transaction. Returns the new version."""
+    version = schema_version(conn)
+    if version > len(MIGRATIONS):
+        raise RuntimeError(
+            f"database schema {version} is newer than this code knows ({len(MIGRATIONS)})"
+        )
+    for number, script in enumerate(MIGRATIONS[version:], start=version + 1):
+        conn.executescript(f"BEGIN;\n{script}\nPRAGMA user_version = {number};\nCOMMIT;")
+    return schema_version(conn)
+
+
+def connect(path: Path | str) -> sqlite3.Connection:
+    """Open (creating if needed) and migrate the state database."""
+    if str(path) != ":memory:":
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 5000")
+    if str(path) != ":memory:":
+        conn.execute("PRAGMA journal_mode = WAL")
+    migrate(conn)
+    return conn
+
+
+@contextmanager
+def transaction(
+    conn: sqlite3.Connection, *, rollback: bool = False
+) -> Iterator[sqlite3.Connection]:
+    """Run a block in one write transaction. With rollback=True nothing is kept (dry runs)."""
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        yield conn
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    conn.execute("ROLLBACK" if rollback else "COMMIT")

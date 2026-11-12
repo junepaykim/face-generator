@@ -1,0 +1,136 @@
+# Default settings.
+#
+# The web UI stores its changes in the state database. This file is the starting
+# point and the "reset to defaults" target. Rules are described in docs/spec.md.
+
+[paths]
+fm_user_dir = "/mnt/c/Users/<Windows user>/Documents/Sports Interactive/Football Manager 27"
+data_dir = "data"
+
+[eligibility]
+mens_football_only = true
+# Competition editor-database IDs (fmsave's Competition.database_id, stable across saves) of
+# the men's Champions League, Europa League and Conference League. Not yet known: the save
+# examined in Phase 0.1 loads no European league (docs/research.md).
+continental_competition_ids = []
+# A player I have loaned out counts as "at my club" while I hold the contract.
+# Proposed answer to open question 3 in docs/decisions.md.
+loaned_out_at_my_club = true
+
+[newgen]
+# Newgens are told apart by unique ID: the game gives everyone it creates an ID above the
+# last one in its database. The boundary is detected per career at its first sync (the
+# largest gap in IDs above 2,000,000,000) and stored. This value is used only when no clear
+# gap is found. Phase 0.1 save: database IDs end near 2,001,040,995, created people start
+# at 2,002,064,399.
+fallback_min_unique_id = 2002000000
+
+# Fixed rules, not settings (docs/spec.md section 2):
+#   - every player at my club gets a picture, newgen or pre-existing;
+#   - elsewhere only newgens are picked automatically;
+#   - pre-existing players elsewhere are generated only when picked in the UI;
+#   - group A players are tracked (their picture is re-drawn when they change club or
+#     age band). Groups set picture quality; tracking is separate (spec section 2).
+
+# "above" is strict: ca_above = 155 means CA of 156 or more.
+# Pictures are square (decisions.md); published_long_edge is the side in pixels.
+# CA and PA conditions are joined with OR.
+
+[groups.a]
+ca_above = 155
+pa_above = 170
+published_long_edge = 1024
+candidates = 3
+detail_pass = true
+
+[groups.b]
+# Newgens who came through my academy are in group A while at my club. After they
+# leave they fall back to group B and stay tracked for good. Set to false to treat
+# them like any other newgen.
+my_academy = true
+league_ca_above = 130               # my league or a listed continental competition
+league_pa_above = 150
+any_ca_above = 140                  # any club
+any_pa_above = 155
+published_long_edge = 768
+candidates = 1
+detail_pass = false
+
+[groups.c]
+league_ca_above = 115               # my league only
+league_pa_above = 140
+published_long_edge = 512
+candidates = 1
+detail_pass = false
+
+[age]
+# Real age (whole years) picks an age wording, W01 (youngest look) to W10 (oldest); the
+# wording text is fixed in src/facegen/age.py. Each table lists, per wording it uses, the
+# first real age that gets it; it applies until the next wording's first age. Ages below a
+# table's first row use that row. First ages must rise from W01 to W10. A tracked player
+# is re-drawn when their wording changes. Chosen by the user, 2026-11-11 (docs/spec.md).
+
+[age.a_my_club]                     # group A at my club, the most visible players
+W01 = 15                            # 15-16
+W02 = 17                            # 17-18
+W03 = 19                            # 19-21
+W04 = 22                            # 22-24
+W05 = 25                            # 25-26
+W07 = 27                            # 27-28
+W08 = 29                            # 29-30
+W09 = 31                            # 31-33
+W10 = 34                            # 34 and older
+
+[age.a_other_club]                  # group A elsewhere
+W02 = 15                            # 15-18
+W03 = 19                            # 19-21
+W04 = 22                            # 22-24
+W07 = 25                            # 25-28
+W09 = 29                            # 29-33
+W10 = 34                            # 34 and older
+
+[age.b]                             # group B
+W02 = 15                            # 15-18
+W04 = 19                            # 19-24
+W07 = 25                            # 25-28
+W09 = 29                            # 29 and older
+
+[age.c]                             # group C
+W03 = 15                            # 15-21
+W06 = 22                            # 22-27
+W08 = 28                            # 28 and older
+
+[reference]
+# A re-draw of a player who already has a picture (new kit, new age wording, promotion to
+# A, "new picture") can use that picture as a reference: IP-Adapter plus-face on a crop of
+# its face, so the face stays closer. An initial picture and a "new face" re-roll never use
+# one. Bake-off run r4 (docs/research.md section 5); chosen by the user, 2026-11-11.
+enabled = true                      # false: every picture is drawn without a reference
+scale = 0.1                         # adapter strength; 0.1-0.2 kept kit accuracy in r4
+other_clubs = false                 # true: also for re-draws of players outside my club
+
+[my_club]
+# Prompt adjustments for players at my club, applied when the prompt is built. The stored
+# character sheet is unchanged. Chosen by the user, 2026-11-11 (docs/spec.md section 3).
+banned_traits = ["freckles", "muscular"] # left out of the prompt and added to its negative
+soften_skin = 2                     # tan and dark skin drawn this many steps lighter (0-2)
+
+[body]
+# Height and build words (user, 2026-11-11): only the tallest and shortest tenth of men's
+# players, and the strongest and weakest tenth by Strength, get a word. fmsave reads no
+# weight, so Strength (1-20) stands in for build. Set from the Colchester save's 21,834
+# men's players (height p10 173 cm, p90 191 cm; Strength p10 4, p90 14); the exact cut does
+# not matter. The class is stored in each player's sheet when it is first sampled.
+short_below_cm = 174                # under this: "petite" (12% of men's players)
+tall_from_cm = 191                  # this or taller: "tall female" (10%)
+slim_strength_at_most = 4           # Strength this or lower: "skinny"
+muscular_strength_from = 14         # Strength this or higher: "muscular female" (10%); the
+                                    # trait "muscular" is banned at my club by default
+
+[schedule]
+poll_seconds = 60
+generate_while_fm_running = false
+
+[ui]
+host = "127.0.0.1"
+port = 8765

@@ -1,0 +1,86 @@
+"""Plain records a DataSource returns. Nothing here depends on fmsave."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from datetime import date
+from enum import StrEnum
+
+
+class Gender(StrEnum):
+    MEN = "men"
+    WOMEN = "women"
+    UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True, slots=True)
+class ClubRecord:
+    club_id: int
+    """The game's unique ID for the club: stable across saves."""
+    name: str
+    gender: Gender
+    nation_id: int | None
+    """Save-local ID of the nation whose league the club plays in."""
+
+
+@dataclass(frozen=True, slots=True)
+class PlayerRecord:
+    unique_id: int
+    """The game's unique ID for the person; what FM27's config.xml maps."""
+    name: str
+    birth_date: date | None
+    age: int | None
+    height_cm: int | None
+    ca: int
+    pa: int | None
+    club_id: int | None
+    """The club the player plays for (the loan club while on loan); None for a free agent."""
+    loan_parent_club_id: int | None
+    """The club holding the contract while on loan, else None."""
+    home_grown_club_ids: tuple[int, ...]
+    club_join_date: date | None
+    """When the player arrived at the club they play for: the loan start while on loan.
+
+    The save can hold a date after the in-game date; callers clamp it.
+    """
+    is_goalkeeper: bool
+    strength: int | None
+    """Strength on the 1 to 20 display scale."""
+
+
+@dataclass(frozen=True, slots=True)
+class LeagueTableRecord:
+    competition_id: int | None
+    club_ids: tuple[int, ...]
+    """First-team rows only."""
+
+
+@dataclass(frozen=True, slots=True)
+class SaveMeta:
+    game: str
+    build: str
+    known_build: bool
+    game_date: date | None
+    save_name: str
+    file_name: str
+    warnings: tuple[str, ...] = ()
+    skipped_players: int = 0
+    """Player records dropped because they had no unique ID or repeated one."""
+
+
+@dataclass(frozen=True, slots=True)
+class Snapshot:
+    """Everything the tool reads from one save."""
+
+    meta: SaveMeta
+    managed_club_id: int | None
+    clubs: Mapping[int, ClubRecord]
+    players: tuple[PlayerRecord, ...]
+    league_tables: tuple[LeagueTableRecord, ...] = ()
+    fixture_counts: Mapping[int, Mapping[int, int]] = field(default_factory=dict)
+    """Competition ID to club ID to first-team fixtures in the competition's latest season.
+
+    Competition IDs are the game's editor database IDs where the save links one (stable
+    across saves, what the continental settings list), else minus one minus the save-local ID.
+    """
