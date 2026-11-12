@@ -99,6 +99,14 @@ class Groups:
     b: GroupB
     c: GroupC
 
+    def published_sizes(self) -> dict[str, int]:
+        """Group name to the height of its published 3:4 picture, in pixels."""
+        return {
+            "a": self.a.published_long_edge,
+            "b": self.b.published_long_edge,
+            "c": self.c.published_long_edge,
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class AgeSettings:
@@ -133,6 +141,7 @@ class MyClubSettings:
 @dataclass(frozen=True, slots=True)
 class Schedule:
     poll_seconds: int
+    """How often `facegen serve` looks at FM27's saves folder."""
     generate_while_fm_running: bool
     auto_groups: frozenset[str]
     """Groups whose automatic jobs `facegen serve` draws; manual requests always run."""

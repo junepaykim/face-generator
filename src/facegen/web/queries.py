@@ -10,9 +10,11 @@ import json
 import sqlite3
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, fields, replace
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
+from facegen.manual import restorable
 from facegen.traits import CharacterSheet
 
 PER_PAGE = 100
@@ -222,7 +224,11 @@ def players_page(
     return [_player_row(r) for r in rows], total
 
 
-def player_detail(conn: sqlite3.Connection, career_id: int, uid: int) -> dict[str, Any] | None:
+def player_detail(
+    conn: sqlite3.Connection, career_id: int, uid: int, data_dir: Path | None = None
+) -> dict[str, Any] | None:
+    """Everything the player page shows. With `data_dir`, each earlier picture says whether
+    it can be restored (it passed its check and its file is still there)."""
     r = conn.execute(
         "SELECT p.*, c.name AS club, lp.name AS loan_parent_club, i.id AS image_id,"
         f" j.status AS job_status, j.kind AS job_kind, j.manual AS job_manual,"
@@ -244,6 +250,13 @@ def player_detail(conn: sqlite3.Connection, career_id: int, uid: int) -> dict[st
             (career_id, uid),
         )
     ]
+    for image in images:
+        image["restorable"] = (
+            data_dir is not None
+            and not image["is_current"]
+            and restorable(image["master_path"], image["check"])
+            and (data_dir / image["master_path"]).is_file()
+        )
     sheet_row = conn.execute(
         "SELECT version, base_seed, sheet, created_at FROM traits"
         " WHERE career_id = ? AND unique_id = ? ORDER BY version DESC LIMIT 1",
@@ -326,6 +339,19 @@ def queue(conn: sqlite3.Connection, career_id: int, limit: int = 15) -> list[dic
             " WHERE j.career_id = ? AND j.status IN ('queued', 'running')"
             " ORDER BY j.status = 'queued', j.tier, j.rank, j.id LIMIT ?",
             (career_id, limit),
+        )
+    ]
+
+
+def careers(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """Every career, the active one (newest save) first."""
+    from facegen.db import ACTIVE_CAREER_ORDER
+
+    return [
+        dict(r)
+        for r in conn.execute(
+            "SELECT id, key, display_name, last_save_file, last_game_date FROM careers"
+            f" ORDER BY {ACTIVE_CAREER_ORDER}"
         )
     ]
 

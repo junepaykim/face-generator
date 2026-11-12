@@ -29,7 +29,7 @@ h1 { margin:0 0 4px; font-size:22px; }
 .player { display:flex; gap:16px; padding:14px 0; border-bottom:1px solid var(--line);
           flex-wrap:wrap; }
 .main { width:320px; }
-.main img { width:320px; height:320px; display:block; border-radius:6px; }
+.main img { width:320px; aspect-ratio:3/4; object-fit:cover; display:block; border-radius:6px; }
 .info { width:280px; font-size:13px; }
 .info h2 { margin:0 0 4px; font-size:16px; }
 .info .muted { color:var(--muted); }
@@ -37,7 +37,7 @@ h1 { margin:0 0 4px; font-size:22px; }
 .pic { margin:0; width:180px; background:var(--card); border:1px solid var(--line);
        border-radius:6px; overflow:hidden; }
 .pic.chosen { border:2px solid var(--pick); }
-.pic img { display:block; width:180px; height:180px; }
+.pic img { display:block; width:180px; aspect-ratio:3/4; object-fit:cover; }
 figcaption { display:flex; flex-wrap:wrap; gap:3px; padding:4px; }
 .b { font-size:11px; padding:1px 5px; border-radius:3px; color:var(--muted);
      background:var(--line); }
@@ -132,6 +132,13 @@ def render_page(title: str, career_key: str, entries: list[dict[str, Any]]) -> s
             lines.append(
                 f"<div>detail pass: {'used' if detail.get('used') else 'rejected by the check'}"
                 f", {detail.get('seconds', '?')} s</div>"
+            )
+        reference = render.get("reference")
+        if reference:
+            lines.append(
+                f"<div>reference: v{reference['version']} at {reference['scale']}</div>"
+                if reference.get("used")
+                else f"<div>reference: none ({html.escape(str(reference.get('why')))})</div>"
             )
         if not check.get("passed", True):
             lines.append(f"<div>{_badge(str(check.get('failures', 'failed')), 'bad')}</div>")

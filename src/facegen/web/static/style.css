@@ -107,15 +107,18 @@ td.up { color: var(--ok); font-weight: 600; } td.down { color: var(--bad); font-
 .ticked { font-weight: 600; min-width: 70px; }
 .players td { white-space: nowrap; }
 .players td.why { white-space: normal; }
-img.face, .face.none { width: 40px; height: 40px; border-radius: 50%; display: block; object-fit: cover; }
+/* Pictures are 3:4 portraits; a square one from before the change shows cropped, as published. */
+img.face, .face.none { width: 40px; height: 40px; border-radius: 50%; display: block; object-fit: cover;
+                       object-position: 50% 12%; }
+img.thumb { width: 48px; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 4px; display: block; }
 .face.none { background: var(--line); }
 .pager { display: flex; gap: 12px; justify-content: center; margin: 12px 0; }
 
 .player-head { display: grid; grid-template-columns: 340px minmax(300px, 1fr) minmax(260px, 340px);
                gap: 20px; margin-bottom: 14px; align-items: start; }
 @media (max-width: 1100px) { .player-head { grid-template-columns: 1fr; } }
-.portrait img { width: 340px; height: 340px; border-radius: 8px; display: block; }
-.portrait-none { width: 340px; height: 340px; border-radius: 8px; background: var(--line);
+.portrait img { width: 340px; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 8px; display: block; }
+.portrait-none { width: 340px; aspect-ratio: 3 / 4; border-radius: 8px; background: var(--line);
                  display: grid; place-items: center; color: var(--muted); }
 .sheet { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
 
@@ -123,7 +126,10 @@ img.face, .face.none { width: 40px; height: 40px; border-radius: 50%; display: b
 .cand { margin: 0; width: 180px; background: var(--card); border: 1px solid var(--line);
         border-radius: 6px; overflow: hidden; }
 .cand.chosen { border: 2px solid var(--accent); }
-.cand img { width: 100%; display: block; aspect-ratio: 1; }
+.cand img { width: 100%; display: block; aspect-ratio: 3 / 4; object-fit: cover; }
+.ref { display: flex; gap: 10px; align-items: center; margin: 6px 0; }
+.ref img { width: 72px; height: 72px; border-radius: 4px; display: block; }
+.ref p { margin: 0; }
 figcaption { display: flex; flex-wrap: wrap; gap: 3px; padding: 4px; }
 .b { font-size: 11px; padding: 1px 5px; border-radius: 3px; color: var(--muted); background: var(--line); }
 .b.ok { color: var(--ok); background: var(--okbg); } .b.bad { color: var(--bad); background: var(--badbg); }
@@ -145,3 +151,5 @@ form.settings legend { font-weight: 600; padding: 0 6px; }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
        vertical-align: middle; }
 .preview { border-color: var(--accent); }
+.card.alert { border-color: var(--bad); background: var(--badbg); }
+.card.alert h2 { color: var(--bad); }

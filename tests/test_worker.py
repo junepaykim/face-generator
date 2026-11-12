@@ -115,10 +115,11 @@ def test_my_club_run_generates_publishes_and_a_rerun_changes_nothing(env: Env) -
         assert master.is_file() and master.parent.name == str(uid)
         assert master.parent.parent.name == env.pack.name  # data/masters/<career>/<uid>/
         with Image.open(master) as im:
-            assert im.size == (96, 96)  # the detailed picture is the master
+            # The detailed picture (x1.5) cropped to 3:4 is the master.
+            assert im.size == (81, 108)
             assert "1girl" in im.info["facegen"]
         with Image.open(env.pack / f"{uid}.png") as im:
-            assert im.size == (1024, 1024)  # group A's published size
+            assert im.size == (768, 1024)  # group A's published size: 3:4, 1024 high
         render = json.loads(img["render"])
         assert render["detail"]["used"] and render["my_club"]
         check = json.loads(img["check_result"])
@@ -207,7 +208,7 @@ def test_a_detail_pass_that_fails_the_check_keeps_the_original(env: Env) -> None
     render = json.loads(img["render"])
     assert r.details == 1 and render["detail"]["used"] is False
     with Image.open(env.data / img["master_path"]) as im:
-        assert im.size == (64, 64)  # the undetailed winner
+        assert im.size == (54, 72)  # the undetailed winner, cropped to 3:4
 
 
 def test_group_b_draws_one_candidate_without_detail(env: Env) -> None:
@@ -216,7 +217,7 @@ def test_group_b_draws_one_candidate_without_detail(env: Env) -> None:
     assert [o.job.unique_id for o in summary.done] == [LEAGUE_B]
     assert (r.renders, r.details) == (1, 0)
     with Image.open(env.pack / f"{LEAGUE_B}.png") as im:
-        assert im.size == (768, 768)
+        assert im.size == (576, 768)
     assert json.loads(env.current(LEAGUE_B)["render"])["my_club"] is False
 
 
@@ -271,19 +272,78 @@ def test_only_one_worker_at_a_time(env: Env) -> None:
         w.run(MINE)
 
 
-def test_redraws_that_need_a_reference_wait_for_phase_5(env: Env) -> None:
-    w, _, _ = env.worker()
-    w.run(MINE)
+def _queue_job(env: Env, uid: int, kind: str, club: int | None, band: str) -> None:
     env.conn.execute(
         "INSERT INTO jobs (career_id, unique_id, kind, group_name, tier, rank, status,"
         " target_club_id, target_band, reason, created_at, updated_at)"
-        " SELECT career_id, unique_id, 'kit', 'a', 1, 0, 'queued', ?, 'W08', 'test', '', ''"
+        " SELECT career_id, unique_id, ?, 'a', 1, 0, 'queued', ?, ?, 'test', '', ''"
         " FROM players WHERE unique_id = ?",
-        (MY_CLUB, OLD_HAND),
+        (kind, club, band, uid),
     )
+
+
+def test_a_redraw_at_my_club_uses_the_current_picture_as_a_reference(env: Env) -> None:
+    w, r, _ = env.worker()
+    w.run(MINE)
+    assert set(r.references) == {None}  # first pictures never use one
+    first = env.current(OLD_HAND)
+    _queue_job(env, OLD_HAND, "kit", RIVAL, "W08")
     w2, r2, _ = env.worker()
     summary = w2.run(MINE)
-    assert summary.done == [] and summary.waiting_for_reference == 1 and r2.renders == 0
+    assert [o.job.unique_id for o in summary.done] == [OLD_HAND]
+    assert "reference v1 at 0.1" in summary.done[0].message
+
+    # Every candidate and the detail pass got the face of v1, at the setting's strength.
+    refs = r2.references
+    assert len(refs) == 4 and all(ref is refs[0] for ref in refs)
+    assert refs[0].scale == env.settings.reference.scale == 0.1
+    crop = refs[0].image
+    assert crop.width == crop.height == round(0.36 * 108)  # a square around the head of v1
+
+    new = env.current(OLD_HAND)
+    info = json.loads(new["render"])["reference"]
+    assert info["used"] and info["image_id"] == first["id"] and info["version"] == 1
+    assert info["scale"] == 0.1 and info["adapter"] == "fake/ip-adapter"
+    assert info["master"] == first["master_path"]
+    assert (env.data / info["crop"]).name == "v002-reference.webp"
+    assert (env.data / info["crop"]).is_file()
+
+
+def test_a_redraw_elsewhere_or_with_the_reference_off_uses_none(env: Env) -> None:
+    group_a = JobFilter(groups=frozenset({"a"}))
+    w, _, _ = env.worker()
+    w.run(group_a)  # STAR, group A at another club, too
+    _queue_job(env, STAR, "kit", MY_CLUB + 50, "W03")
+    w2, r2, _ = env.worker()
+    assert [o.job.unique_id for o in w2.run(group_a).done] == [STAR]
+    assert set(r2.references) == {None}  # other_clubs is off by default
+
+    _queue_job(env, OLD_HAND, "age", MY_CLUB, "W09")
+    off = replace(env.settings, reference=replace(env.settings.reference, enabled=False))
+    w3, r3, _ = env.worker(settings=off)
+    assert [o.job.unique_id for o in w3.run(group_a).done] == [OLD_HAND]
+    assert set(r3.references) == {None}
+    assert json.loads(env.current(OLD_HAND)["render"])["reference"] is None
+
+    on_everywhere = replace(
+        env.settings, reference=replace(env.settings.reference, other_clubs=True)
+    )
+    _queue_job(env, STAR, "age", MY_CLUB + 50, "W04")
+    w4, r4, _ = env.worker(settings=on_everywhere)
+    assert [o.job.unique_id for o in w4.run(group_a).done] == [STAR]
+    assert r4.references[0] is not None and r4.references[0].scale == 0.1
+
+
+def test_a_missing_reference_file_draws_without_one(env: Env) -> None:
+    w, _, _ = env.worker()
+    w.run(MINE)
+    (env.data / env.current(OLD_HAND)["master_path"]).unlink()
+    _queue_job(env, OLD_HAND, "kit", RIVAL, "W08")
+    w2, r2, _ = env.worker()
+    summary = w2.run(MINE)
+    assert len(summary.done) == 1 and set(r2.references) == {None}
+    info = json.loads(env.current(OLD_HAND)["render"])["reference"]
+    assert info["used"] is False and info["why"].startswith("picture file missing")
 
 
 def test_preview_draws_and_stores_nothing(env: Env) -> None:

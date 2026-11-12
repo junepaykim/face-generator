@@ -5,7 +5,7 @@ facegen run [--group a|b|c ...] [--my-club] [--limit N] [--no-publish] [--now] [
 facegen publish
 facegen gallery
 facegen status
-facegen serve [--port N] [--paused] [--no-worker]
+facegen serve [--port N] [--paused] [--no-worker] [--no-watch]
 """
 
 from __future__ import annotations
@@ -23,8 +23,8 @@ from facegen import db
 from facegen.datasource.base import DataSource
 from facegen.gallery import write_gallery
 from facegen.kits import KitError, load_kits
-from facegen.poller import NoSaveError, SaveUnreadableError, sync_save
-from facegen.publish import RELOAD_HINT, PublishError, PublishReport
+from facegen.poller import UNSUPPORTED_ADVICE, NoSaveError, SaveUnreadableError, sync_save
+from facegen.publish import RELOAD_HINT, PublishError, PublishReport, publish_active
 from facegen.settings import Settings, load_settings
 from facegen.sync import SyncReport
 from facegen.worker import (
@@ -90,6 +90,10 @@ def format_report(r: SyncReport) -> str:
         f"Groups      A {c['a']:,} ({c['a_my_club']:,} at my club)   B {c['b']:,}   C {c['c']:,}",
         f"Tracked     {c['tracked']:,}  (academy newgens {c['academy']:,})",
     ]
+    if r.new_at_my_club:
+        lines.append(
+            f"New         {r.new_at_my_club:,} at my club since the last sync: drawn first"
+        )
     if r.enqueued:
         parts = ", ".join(
             f"{kind} {group.upper()} {n:,}" for (kind, group), n in sorted(r.enqueued.items())
@@ -139,18 +143,35 @@ def cmd_sync(
             dry_run=args.dry_run,
             preview=args.show,
             with_table=args.csv is not None,
+            trigger="command",
         )
     except NoSaveError as exc:
         print(str(exc), file=out)
         return 2
     except SaveUnreadableError as exc:
         print(str(exc), file=out)
-        print("Existing pictures and the queue are unchanged.", file=out)
+        print(
+            UNSUPPORTED_ADVICE
+            if exc.unsupported
+            else "Existing pictures and the queue are unchanged.",
+            file=out,
+        )
         return 3
     print(format_report(report), file=out)
     if args.csv is not None:
         write_csv(report.table, args.csv)
         print(f"\nWrote {len(report.table):,} players to {args.csv}", file=out)
+    if not args.dry_run:
+        # The newest save decides which career's pack FM27 is shown (spec section 8).
+        try:
+            activation = publish_active(conn, settings)
+        except PublishError as exc:
+            print(f"Publishing failed: {exc}", file=out)
+            return 3
+        if activation is not None and activation.changed:
+            print(file=out)
+            for line in format_publish(activation):
+                print(line, file=out)
     return 0
 
 
@@ -160,11 +181,12 @@ def cmd_status(settings: Settings, conn: sqlite3.Connection, out: TextIO) -> int
     ).fetchall()
     if not careers:
         print("No careers yet. Run `facegen sync`.", file=out)
-        return 0
+    active = db.active_career_id(conn)
     for c in careers:
         print(
             f"{c['key']}  {c['display_name']}  in-game {c['last_game_date']}  "
-            f"last sync {c['updated_at']}",
+            f"last sync {c['updated_at']}"
+            + ("  (active: FM27 is shown this pack)" if c["id"] == active else ""),
             file=out,
         )
         groups = dict(
@@ -197,10 +219,12 @@ def cmd_status(settings: Settings, conn: sqlite3.Connection, out: TextIO) -> int
         ).fetchone()
         print(f"  pictures {pics['current']:,} current, {pics['published']:,} published", file=out)
     last = conn.execute(
-        "SELECT save_file, finished_at, error FROM sync_runs ORDER BY id DESC LIMIT 1"
+        "SELECT save_file, finished_at, error, unsupported FROM sync_runs ORDER BY id DESC LIMIT 1"
     ).fetchone()
     if last is not None and last["error"]:
         print(f"Last sync failed ({last['save_file']}): {last['error']}", file=out)
+        if last["unsupported"]:
+            print(UNSUPPORTED_ADVICE, file=out)
     return 0
 
 
@@ -213,11 +237,22 @@ def _career(conn: sqlite3.Connection, key: str | None, out: TextIO) -> Career | 
 
 def format_publish(report: PublishReport) -> list[str]:
     lines = []
-    if report.changed:
+    if not report.active:
         lines.append(
-            f"Published   {report.written:,} pictures ({report.unchanged:,} already in place) to"
-            f" {report.folder}; config.xml maps {report.mapped:,} players."
+            f"Published   {report.written:,} pictures to {report.folder}, not mapped: another"
+            " career's save is newer, so FM27 is shown that career's pack."
         )
+    elif report.changed:
+        if report.written or report.config_changed:
+            lines.append(
+                f"Published   {report.written:,} pictures ({report.unchanged:,} already in place)"
+                f" to {report.folder}; config.xml maps {report.mapped:,} players."
+            )
+        if report.deactivated:
+            lines.append(
+                f"Packs       {report.folder.name} is the newest save's career; other careers'"
+                f" packs now map nothing: {', '.join(report.deactivated)}."
+            )
         lines.append(RELOAD_HINT)
     else:
         lines.append(f"Published   nothing changed in {report.folder} ({report.mapped:,} mapped).")
@@ -260,7 +295,8 @@ def cmd_run(
             print(
                 f"{i:>4}. {j.name} ({j.unique_id}) {j.kind} {j.group.upper()}"
                 f"{' GK' if j.goalkeeper else ''}: {p.wording}, {p.kit}"
-                f"{'' if p.kit_known else ' (fallback kit)'}, {p.pose}",
+                f"{'' if p.kit_known else ' (fallback kit)'}, {p.pose}"
+                f"{'' if p.reference_scale is None else f', reference {p.reference_scale}'}",
                 file=out,
             )
             print(f"      sheet: {p.sheet.describe()}", file=out)
@@ -283,12 +319,6 @@ def cmd_run(
         f"Done        {len(summary.done):,} pictures, {len(summary.failed):,} sent to review",
         file=out,
     )
-    if summary.waiting_for_reference:
-        print(
-            f"Waiting     {summary.waiting_for_reference:,} re-draws need a reference picture"
-            " (Phase 5)",
-            file=out,
-        )
     if summary.stopped:
         print(f"Stopped     {summary.stopped}", file=out)
     if summary.publish is not None:
@@ -348,8 +378,8 @@ def cmd_serve(
     *,
     run_server: Callable[..., None] | None = None,
 ) -> int:
-    """The web UI with the worker in the background, until Ctrl+C."""
-    from facegen.service import SyncService, WorkerService
+    """The web UI with the worker and the save watcher in the background, until Ctrl+C."""
+    from facegen.service import PollerService, SyncService, WorkerService
     from facegen.web.app import AppContext, create_app
 
     host = settings.ui.host
@@ -379,10 +409,15 @@ def cmd_serve(
         source_factory,
         defaults_path=args.config,
         on_done=worker.wake if worker else (lambda: None),
+        log=worker.log if worker else (lambda line: None),
     )
-    app = create_app(AppContext(db_path, args.config, worker, syncer))
+    poller = None if args.no_watch else PollerService(db_path, syncer, defaults_path=args.config)
+    app = create_app(AppContext(db_path, args.config, worker, syncer, poller))
     url = f"http://{'[::1]' if host == '::1' else host}:{port}/"
     print(f"facegen UI at {url}  (Ctrl+C to stop)", file=out, flush=True)
+    if poller is not None:
+        print(f"Watching {settings.paths.games_dir} for new saves.", file=out, flush=True)
+        poller.start()
     if worker is not None:
         worker.start()
     try:
@@ -393,6 +428,8 @@ def cmd_serve(
         else:
             run_server(app, host=host, port=port)
     finally:
+        if poller is not None:
+            poller.stop(timeout=None)
         if worker is not None:
             print("Stopping the worker after the current job...", file=out, flush=True)
             worker.stop(timeout=None)
@@ -425,7 +462,8 @@ def build_parser() -> argparse.ArgumentParser:
     v = sub.add_parser("serve", help="the web UI on 127.0.0.1, with the worker in the background")
     v.add_argument("--port", type=int, help="port (default: ui.port in the settings)")
     v.add_argument("--paused", action="store_true", help="start with the worker paused")
-    v.add_argument("--no-worker", action="store_true", help="the UI only; no GPU work")
+    v.add_argument("--no-worker", action="store_true", help="no GPU work")
+    v.add_argument("--no-watch", action="store_true", help="do not watch the saves folder")
     return parser
 
 

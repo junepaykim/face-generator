@@ -47,12 +47,17 @@ VERDICTS: dict[str, TagResult] = {
 }
 
 
-def figure(size: int = 64, top: float = 0.04) -> Image.Image:
-    img = Image.new("RGB", (size, size), (200, 200, 205))
+def figure(width: int = 56, height: int = 72, top: float = 0.04) -> Image.Image:
+    """A head and shoulders on the grey backdrop. The default is the model's 7:9 portrait
+    render (896x1152) at a small size; the worker crops it to 3:4."""
+    img = Image.new("RGB", (width, height), (200, 200, 205))
     draw = ImageDraw.Draw(img)
-    y = int(top * size)
-    draw.ellipse((size * 0.38, y, size * 0.62, y + size * 0.24), fill=(240, 205, 180))
-    draw.rectangle((size * 0.2, y + size * 0.25, size * 0.8, size), fill=(30, 60, 160))
+    y = int(top * height)
+    head = 0.24 * width
+    draw.ellipse(
+        (width / 2 - head / 2, y, width / 2 + head / 2, y + 0.19 * height), fill=(240, 205, 180)
+    )
+    draw.rectangle((width * 0.2, y + 0.2 * height, width * 0.8, height), fill=(30, 60, 160))
     return img
 
 
@@ -62,26 +67,32 @@ class FakeRenderer:
     def __init__(self, fail_on_call: int | None = None, exc: BaseException | None = None) -> None:
         self.calls: list[tuple[str, int]] = []
         self.prompts: list[Prompt] = []
+        self.references: list[Any] = []
+        """The reference given to each render and detail call, None for none."""
         self.fail_on_call = fail_on_call
         self.exc = exc or KeyboardInterrupt()
 
-    def render(self, prompt: Prompt, seed: int) -> Image.Image:
+    def render(self, prompt: Prompt, seed: int, reference: Any = None) -> Image.Image:
         self.calls.append(("render", seed))
         self.prompts.append(prompt)
+        self.references.append(reference)
         if self.fail_on_call is not None and len(self.calls) == self.fail_on_call:
             raise self.exc
         img = figure()
         img.info["seed"] = seed
         return img
 
-    def detail(self, image: Image.Image, prompt: Prompt, seed: int) -> Image.Image:
+    def detail(
+        self, image: Image.Image, prompt: Prompt, seed: int, reference: Any = None
+    ) -> Image.Image:
         self.calls.append(("detail", seed))
-        out = image.resize((96, 96))
+        self.references.append(reference)
+        out = image.resize((image.width * 3 // 2, image.height * 3 // 2))
         out.info["seed"] = seed
         return out
 
     def settings(self) -> dict[str, Any]:
-        return {"size": 64, "steps": 1, "cfg": 5.5, "sampler": "fake"}
+        return {"width": 56, "height": 72, "steps": 1, "cfg": 5.5, "sampler": "fake"}
 
     closed = 0
 
@@ -90,6 +101,9 @@ class FakeRenderer:
 
     def detail_settings(self) -> dict[str, Any]:
         return {"scale": 1.5, "strength": 0.35}
+
+    def reference_settings(self) -> dict[str, Any]:
+        return {"adapter": "fake/ip-adapter"}
 
     @property
     def renders(self) -> int:

@@ -10,9 +10,10 @@ portrait for each on the local GPU, and publishes the pictures into FM27's graph
 folder. It has a small web UI for thresholds and manual requests.
 
 Status: Phases 0.2, 0.3, 1, 2 and 3 have passed: the Colchester squad's pictures show in
-FM27, and the web UI (`facegen serve`) works with the GPU worker. Phase 4 (automation) is
-next. Still open from Phase 0.1: the continental competition IDs. Build the rest phase by
-phase from `docs/implementation-plan.md`.
+FM27, and the web UI (`facegen serve`) works with the GPU worker. Phases 4 (automation) and
+5 (updates for tracked players) are built and wait for the user's exit tests. Pictures are
+3:4 portraits since 2026-11-11. Still open from Phase 0.1: the continental competition IDs.
+Build the rest phase by phase from `docs/implementation-plan.md`.
 
 ## Read first
 
@@ -102,6 +103,7 @@ src/facegen/
   leagues.py              my league and continental membership
   classify.py             group rules
   age.py                  real age to age wording (the age band)
+  picture.py              the 3:4 shape, published sizes, the reference face crop
   traits.py               character sheet sampling
   prompt.py               prompt assembly
   planner.py              snapshot diff to jobs

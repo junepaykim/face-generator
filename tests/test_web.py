@@ -129,7 +129,8 @@ def test_dashboard(env: Env) -> None:
     assert "<html" not in status and "Worker" in status
     env.drain()
     text = env.client.get("/status").text
-    assert "1 drawn" in text and "Mine Player" in text
+    # Group A, then group B: both drawn without a request since Phase 4.
+    assert "2 drawn" in text and "Mine Player" in text
 
 
 def test_players_list_filters(env: Env) -> None:
@@ -228,6 +229,37 @@ def test_player_page_actions(env: Env) -> None:
     assert "Picture removed" in text and "Reload Skin" in text
     assert env.one("SELECT pin FROM players WHERE unique_id = ?", MINE) == "never"
     assert env.client.post(f"/players/{MINE}/bogus").status_code == 303
+
+
+def test_restore_an_earlier_picture_from_the_history(env: Env) -> None:
+    env.drain()
+    follow(env, env.client.post(f"/players/{MINE}/new-picture"))
+    env.drain()
+    v1 = env.one("SELECT id FROM images WHERE unique_id = ? AND version = 1", MINE)
+    page = env.client.get(f"/players/{MINE}").text
+    assert "History" in page and f'name="image_id" value="{v1}"' in page
+    assert "Drawn with v1's face as a reference" in page  # at my club: v1 was the reference
+
+    text = follow(env, env.client.post(f"/players/{MINE}/restore", data={"image_id": str(v1)}))
+    assert "v1 is the current picture again" in text and "Reload Skin" in text
+    assert env.one("SELECT version FROM images WHERE unique_id = ? AND is_current = 1", MINE) == 1
+    assert "current (restored)" in env.client.get(f"/players/{MINE}").text
+    text = follow(env, env.client.post(f"/players/{MINE}/restore", data={"image_id": str(v1)}))
+    assert "already the current picture" in text
+    text = follow(env, env.client.post(f"/players/{MINE}/restore", data={"image_id": "x"}))
+    assert "Bad picture ID" in text
+
+
+def test_new_picture_for_ticked_players(env: Env) -> None:
+    env.drain()
+    r = env.client.post(
+        "/players/action",
+        data={"action": "new-picture", "uid": [str(MINE), str(STAR)], "next": "/players"},
+    )
+    text = follow(env, r)
+    assert "1 queued, 1 skipped (no picture to draw again; use Generate)" in text
+    dashboard = env.client.get("/").text
+    assert "reference picture" in dashboard  # MINE's re-draw uses the current picture
 
 
 def test_review_page_and_retry(env: Env) -> None:
@@ -362,3 +394,39 @@ def test_redirects_stay_on_this_site(env: Env) -> None:
             data={"uid": [str(STAR)], "action": "pin", "pin": "b", "next": target},
         )
         assert r.headers["location"].startswith("/players?msg=")
+
+
+def test_dashboard_reports_an_unsupported_build(env: Env) -> None:
+    from facegen.sync import record_failed_sync
+
+    assert "cannot be read" not in env.client.get("/").text
+    c = env.conn()
+    record_failed_sync(
+        c,
+        "career.fm",
+        "FM27 build 27.2.0+999 cannot be read by fmsave 0.11.0: players: schema differs",
+        "27.2.0+999",
+        save_mtime=1.0,
+        unsupported=True,
+        trigger="poller",
+    )
+    c.close()
+    text = env.client.get("/status").text
+    assert "The newest save cannot be read" in text
+    assert "FM27 build <strong>27.2.0+999</strong>" in text
+    assert "bump the pin" in text and "the save watcher" in text
+
+
+def test_dashboard_names_the_career_fm27_is_shown(env: Env) -> None:
+    c = env.conn()
+    run_sync(
+        c,
+        snapshot([player(5001)], career="two", file_name="two.fm"),
+        env.settings,
+        save_file="two.fm",
+        save_mtime=1_800_000_000.0,
+    )
+    c.close()
+    text = env.client.get("/").text
+    assert "FM27 is shown the pack of <strong>two</strong>" in text
+    assert "Other careers: career" in text

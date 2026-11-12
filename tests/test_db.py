@@ -99,3 +99,67 @@ def test_transaction_rolls_back_on_error(with_career: sqlite3.Connection) -> Non
         _job(with_career, "done")
         raise ValueError
     assert with_career.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 0
+
+
+def test_phase_4_migration_backfills_each_careers_newest_save() -> None:
+    """A database from Phase 3 learns which career's save is newest from its sync history."""
+    conn = sqlite3.connect(":memory:", isolation_level=None)
+    conn.row_factory = sqlite3.Row
+    for script in db.MIGRATIONS[:3]:
+        conn.executescript(script)
+    conn.execute("PRAGMA user_version = 3")
+    for cid, key in ((1, "old"), (2, "new")):
+        conn.execute(
+            "INSERT INTO careers (id, key, display_name, fingerprint, created_at, updated_at)"
+            " VALUES (?, ?, ?, '[]', 'now', ?)",
+            (cid, key, key, f"2026-11-1{cid}"),
+        )
+    conn.executemany(
+        "INSERT INTO sync_runs (career_id, started_at, save_file, save_mtime, error)"
+        " VALUES (?, 'now', 'x.fm', ?, ?)",
+        [(1, 300.0, None), (1, 100.0, None), (2, 200.0, None), (2, 900.0, "unreadable")],
+    )
+    assert db.migrate(conn) == len(db.MIGRATIONS)
+    newest = dict(conn.execute("SELECT key, last_save_mtime FROM careers").fetchall())
+    assert newest == {"old": 300.0, "new": 200.0}  # failed syncs do not count
+    # Career 1 synced earlier but its save is newer: it is the active one.
+    assert db.active_career_id(conn) == 1
+    assert conn.execute("SELECT unsupported, trigger FROM sync_runs").fetchone()[:] == (0, None)
+
+
+def test_active_career_falls_back_to_the_last_synced(with_career: sqlite3.Connection) -> None:
+    conn = with_career
+    assert db.active_career_id(conn) == 1
+    conn.execute(
+        "INSERT INTO careers (id, key, display_name, fingerprint, created_at, updated_at)"
+        " VALUES (2, 'c2', 'Two', '[]', 'now', 'now, and later')"
+    )
+    assert db.active_career_id(conn) == 2  # neither has a save time: the last synced
+    conn.execute("UPDATE careers SET last_save_mtime = 5 WHERE id = 1")
+    assert db.active_career_id(conn) == 1  # a known save time beats none
+
+
+def test_phase_5_migration_republishes_square_pictures_and_can_record_a_restore() -> None:
+    """Every picture before Phase 5 is square: they are marked unpublished, so the next
+    publish writes them again as 3:4 crops."""
+    conn = sqlite3.connect(":memory:", isolation_level=None)
+    conn.row_factory = sqlite3.Row
+    for script in db.MIGRATIONS[:4]:
+        conn.executescript(script)
+    conn.execute("PRAGMA user_version = 4")
+    conn.execute(
+        "INSERT INTO careers (id, key, display_name, fingerprint, created_at, updated_at)"
+        " VALUES (1, 'c1', 'Career', '[]', 'now', 'now')"
+    )
+    conn.execute(
+        "INSERT INTO images (career_id, unique_id, version, reason, group_name, model, prompt,"
+        " negative_prompt, seed, master_path, published_path, is_current, created_at)"
+        " VALUES (1, 7, 1, 'initial', 'a', 'm', 'p', 'n', 1, 'masters/c1/7/v001.png',"
+        " '/fm/graphics/facegen/c1/7.png', 1, 'now')"
+    )
+    assert db.migrate(conn) == len(db.MIGRATIONS)
+    row = conn.execute("SELECT * FROM images").fetchone()
+    assert row["published_path"] is None and row["is_current"] == 1
+    assert row["restored_at"] is None and row["restored_group"] is None
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("UPDATE images SET restored_group = 'x'")

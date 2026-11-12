@@ -167,7 +167,45 @@ _V3 = """
 CREATE INDEX jobs_by_player ON jobs (career_id, unique_id, id);
 """
 
-MIGRATIONS: tuple[str, ...] = (_V1, _V2, _V3)
+# Phase 4: automation.
+# - careers.last_save_mtime: the newest save of the career a sync has read. The career with
+#   the newest is the active one, whose picture pack FM27 is shown (spec section 8).
+# - sync_runs.trigger: who started the sync ('poller', 'sync now', 'command').
+# - sync_runs.unsupported: the save's game or build cannot be read by the save reader.
+_V4 = """
+ALTER TABLE careers ADD COLUMN last_save_mtime REAL;
+ALTER TABLE sync_runs ADD COLUMN trigger TEXT;
+ALTER TABLE sync_runs ADD COLUMN unsupported INTEGER NOT NULL DEFAULT 0;
+UPDATE careers SET last_save_mtime = (
+    SELECT MAX(s.save_mtime) FROM sync_runs s WHERE s.career_id = careers.id AND s.error IS NULL
+);
+CREATE INDEX sync_runs_by_save ON sync_runs (save_file, save_mtime);
+"""
+
+# Phase 5: updates for tracked players.
+# - images.restored_*: "restore previous" on the player page makes an older picture current
+#   again. It then stands for the player's group, club and age band at the time it was
+#   restored, so the planner does not re-draw it straight away; the next change does.
+# - Pictures are 3:4 portraits from now on (user, 2026-11-11). Every picture so far is square:
+#   forget where they were published, so the next publish writes them again, cropped to 3:4.
+_V5 = """
+ALTER TABLE images ADD COLUMN restored_at TEXT;
+ALTER TABLE images ADD COLUMN restored_group TEXT CHECK (restored_group IN ('a', 'b', 'c'));
+ALTER TABLE images ADD COLUMN restored_club_id INTEGER;
+ALTER TABLE images ADD COLUMN restored_band TEXT;
+UPDATE images SET published_path = NULL;
+"""
+
+MIGRATIONS: tuple[str, ...] = (_V1, _V2, _V3, _V4, _V5)
+
+# The active career: the one whose save was written last (spec section 8). A career synced
+# without a save time (tests, old rows) falls back to when it was synced.
+ACTIVE_CAREER_ORDER = "last_save_mtime IS NULL, last_save_mtime DESC, updated_at DESC, id DESC"
+
+
+def active_career_id(conn: sqlite3.Connection) -> int | None:
+    row = conn.execute(f"SELECT id FROM careers ORDER BY {ACTIVE_CAREER_ORDER} LIMIT 1").fetchone()
+    return row[0] if row else None
 
 
 def schema_version(conn: sqlite3.Connection) -> int:

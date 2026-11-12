@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -167,25 +168,35 @@ def test_new_face_draws_from_a_new_character_sheet(env: Env) -> None:
     assert sorted(versions) == [1, 2]
 
 
-def test_new_picture_keeps_the_sheet_and_waits_for_a_reference_at_my_club(env: Env) -> None:
+def test_new_picture_keeps_the_sheet_and_uses_a_reference_at_my_club(env: Env) -> None:
     with pytest.raises(ManualError, match="no picture"):
         manual.new_picture(env.conn, env.cid, A_NEWGEN, env.settings)
     env.draw(JobFilter(groups=frozenset({"a"})))
     manual.new_picture(env.conn, env.cid, A_NEWGEN, env.settings)
     manual.new_picture(env.conn, env.cid, MINE, env.settings)
-    career = load_career(env.conn)
-    assert career is not None
-    w = Worker(
-        env.conn,
-        env.settings,
-        load_kits(),
-        career,
-        renderer_factory=FakeRenderer,
-        tagger_factory=FakeTagger,
-    )
-    ready, waiting = w.runnable(ONLY_MANUAL)
-    # Elsewhere the re-draw runs; at my club it uses the picture as a reference (Phase 5).
-    assert [j.unique_id for j in ready] == [A_NEWGEN] and waiting == 1
+    env.draw(ONLY_MANUAL)
+    pictures = {
+        r["unique_id"]: (r["version"], r["reason"], r["traits_version"], json.loads(r["render"]))
+        for r in env.conn.execute("SELECT * FROM images WHERE is_current = 1")
+    }
+    # Same sheet both times; at my club the first picture is the reference, elsewhere none.
+    mine, elsewhere = pictures[MINE], pictures[A_NEWGEN]
+    assert mine[:3] == (2, "redraw", 1) and elsewhere[:3] == (2, "redraw", 1)
+    assert mine[3]["reference"]["used"] and mine[3]["reference"]["version"] == 1
+    assert elsewhere[3]["reference"] is None
+
+
+def test_new_picture_for_many_skips_who_cannot_have_one(env: Env) -> None:
+    env.draw(JobFilter(groups=frozenset({"a"})))
+    r = manual.new_pictures(env.conn, env.cid, [MINE, OTHER, A_NEWGEN, WOMAN], env.settings)
+    assert r.queued == [MINE, A_NEWGEN]
+    assert dict(r.skipped) == {
+        OTHER: "no picture to draw again; use Generate",
+        WOMAN: "not in men's football",
+    }
+    # Ticked together, they run in the order given, before every automatic job.
+    assert [q[:2] for q in env.queue() if q[3]] == [(MINE, "redraw"), (A_NEWGEN, "redraw")]
+    assert env.queue()[:2] == [(MINE, "redraw", "a", 1, 0), (A_NEWGEN, "redraw", "a", 1, 0)]
 
 
 def test_new_face_needs_a_group_or_a_picture(env: Env) -> None:
@@ -307,3 +318,72 @@ def test_clearing_a_pin_undoes_a_generate_request_but_not_a_new_face(env: Env) -
     manual.new_face(env.conn, env.cid, B_NEWGEN, env.settings)
     manual.set_pin(env.conn, env.cid, [B_NEWGEN], None, env.settings)
     assert [(j["kind"], j["manual"]) for j in env.active(B_NEWGEN)] == [("reroll", 1)]
+
+
+def _image(env: Env, uid: int, version: int) -> sqlite3.Row:
+    return env.conn.execute(
+        "SELECT * FROM images WHERE unique_id = ? AND version = ?", (uid, version)
+    ).fetchone()
+
+
+def test_restore_brings_back_an_earlier_picture_until_the_next_change(env: Env) -> None:
+    env.draw(JobFilter(groups=frozenset({"a"})))
+    manual.new_picture(env.conn, env.cid, A_NEWGEN, env.settings)
+    env.draw(ONLY_MANUAL)
+    v1, v2 = _image(env, A_NEWGEN, 1), _image(env, A_NEWGEN, 2)
+    assert v2["is_current"] and not v1["is_current"]
+
+    r = manual.restore_picture(env.conn, env.cid, env.key, A_NEWGEN, v1["id"], env.settings)
+    assert r.version == 1 and not r.pinned_never
+    assert r.publish.written == 1 and r.publish.active  # rewritten in FM27's pack
+    v1, v2 = _image(env, A_NEWGEN, 1), _image(env, A_NEWGEN, 2)
+    assert v1["is_current"] and v1["restored_at"] and v1["published_path"]
+    assert not v2["is_current"] and v2["published_path"] is None
+    assert (v1["restored_group"], v1["restored_club_id"], v1["restored_band"]) == (
+        "a",
+        ABROAD,
+        "W03",
+    )
+
+    # The same save again: the restored picture counts as up to date.
+    report = run_sync(env.conn, snapshot(world()), env.settings, save_file="career.fm")
+    assert not report.enqueued and env.active(A_NEWGEN) == []
+    # A transfer is a change: the tracked player is re-drawn in the new kit.
+    moved = [p for p in world() if p.unique_id != A_NEWGEN]
+    moved.append(player(A_NEWGEN, name="A Newgen", ca=160, pa=170, club_id=RIVAL))
+    run_sync(env.conn, snapshot(moved), env.settings, save_file="career.fm")
+    assert [(j["kind"], j["target_club_id"]) for j in env.active(A_NEWGEN)] == [("kit", RIVAL)]
+
+
+def test_restore_refuses_what_must_not_be_shown(env: Env) -> None:
+    env.draw(JobFilter(groups=frozenset({"a"})))
+    v1 = _image(env, MINE, 1)
+    with pytest.raises(ManualError, match="already the current"):
+        manual.restore_picture(env.conn, env.cid, env.key, MINE, v1["id"], env.settings)
+    with pytest.raises(ManualError, match="no picture"):
+        manual.restore_picture(env.conn, env.cid, env.key, OTHER, v1["id"], env.settings)
+
+    # A re-draw that failed the check three times is kept for review, never shown.
+    manual.new_picture(env.conn, env.cid, MINE, env.settings)
+    env.draw(ONLY_MANUAL, FakeTagger(["sensitive"] * 9))
+    rejected = _image(env, MINE, 2)
+    assert rejected["master_path"].endswith("-rejected.png")
+    with pytest.raises(ManualError, match="failed the quality check"):
+        manual.restore_picture(env.conn, env.cid, env.key, MINE, rejected["id"], env.settings)
+
+    # A picture whose file is gone from data/ cannot come back either.
+    manual.new_picture(env.conn, env.cid, MINE, env.settings)
+    env.draw(ONLY_MANUAL)
+    (env.settings.paths.data_dir / v1["master_path"]).unlink()
+    with pytest.raises(ManualError, match="missing"):
+        manual.restore_picture(env.conn, env.cid, env.key, MINE, v1["id"], env.settings)
+    assert _image(env, MINE, 3)["is_current"]
+
+
+def test_restore_after_remove_keeps_the_never_pin(env: Env) -> None:
+    env.draw(JobFilter(groups=frozenset({"a"})))
+    manual.remove_picture(env.conn, env.cid, env.key, MINE, env.settings)
+    v1 = _image(env, MINE, 1)
+    r = manual.restore_picture(env.conn, env.cid, env.key, MINE, v1["id"], env.settings)
+    assert r.pinned_never and _image(env, MINE, 1)["is_current"]
+    assert env.player(MINE)["pin"] == "never" and env.active(MINE) == []

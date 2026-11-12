@@ -36,8 +36,9 @@ from facegen.classify import Group
 from facegen.db import transaction
 from facegen.manual import ManualError
 from facegen.planner import REFERENCE_KINDS, reference_scale
-from facegen.publish import RELOAD_HINT
-from facegen.service import BUSY_TIMEOUT_MS, SyncService, WorkerService
+from facegen.poller import UNSUPPORTED_ADVICE
+from facegen.publish import RELOAD_HINT, PublishError
+from facegen.service import BUSY_TIMEOUT_MS, PollerService, SyncService, WorkerService
 from facegen.settings import (
     Settings,
     SettingsError,
@@ -75,6 +76,7 @@ class AppContext:
     defaults_path: Path | None = None
     worker: WorkerService | None = None
     syncer: SyncService | None = None
+    poller: PollerService | None = None
 
 
 # --- settings form ---------------------------------------------------------------------------
@@ -87,10 +89,10 @@ SECTION_NOTES = {
     "newgen": "Used only when a new career is first synced.",
     "age": "Re-classifies at once. Tracked players whose age wording changes are queued for a "
     "re-draw.",
-    "reference": "Applies to re-draws from now on (Phase 5 draws them).",
+    "reference": "Applies to re-draws from now on.",
     "my_club": "Applies to pictures drawn from now on.",
     "body": "Applies to character sheets sampled from now on; stored sheets keep their class.",
-    "schedule": "The worker uses it at once.",
+    "schedule": "The worker and the save watcher use it at once.",
 }
 # The thresholds first: they are what the page is mostly for (spec section 7).
 SECTION_ORDER = (
@@ -114,7 +116,7 @@ SECTION_TITLES = {
 LABELS = {
     "ca_above": "CA above",
     "pa_above": "PA above",
-    "published_long_edge": "Published size (px)",
+    "published_long_edge": "Published height (px; pictures are 3:4)",
     "candidates": "Candidates per picture",
     "detail_pass": "Detail pass",
     "my_academy": "Academy newgens stay in B and tracked after they leave",
@@ -291,7 +293,8 @@ def _within(path: Path, folder: Path) -> bool:
 
 
 def make_thumb(source: Path, size: int, cache_dir: Path) -> Path:
-    """A cached square WebP thumbnail of a picture. Masters never change once written."""
+    """A cached WebP thumbnail of a picture, `size` pixels on its long edge (3:4 pictures are
+    `size` high). Masters never change once written."""
     st = source.stat()
     key = hashlib.sha1(f"{source.resolve()}|{st.st_mtime_ns}|{size}".encode()).hexdigest()[:20]
     dest = cache_dir / f"{key}-{size}.webp"
@@ -313,7 +316,8 @@ def describe_job(kind: str) -> str:
     return KIND_NAMES.get(kind, kind)
 
 
-def waits_for_reference(kind: str, at_my_club: bool, settings: Settings) -> bool:
+def uses_reference(kind: str, at_my_club: bool, settings: Settings) -> bool:
+    """Whether a job would draw with the player's current picture as a reference."""
     return reference_scale(kind, at_my_club, settings.reference) is not None
 
 
@@ -334,7 +338,7 @@ def create_app(ctx: AppContext) -> FastAPI:
         kind_name=describe_job,
         reload_hint=RELOAD_HINT,
         trait_tables=TRAIT_TABLES,
-        waits=waits_for_reference,
+        uses_reference=uses_reference,
     )
     env.filters["upper_group"] = lambda g: (g or "-").upper()
 
@@ -408,8 +412,11 @@ def create_app(ctx: AppContext) -> FastAPI:
             "counts": queries.counts(conn, career.id) if career else None,
             "queue": queries.queue(conn, career.id) if career else [],
             "last_sync": queries.last_sync(conn),
+            "careers": queries.careers(conn),
+            "unsupported_advice": UNSUPPORTED_ADVICE,
             "worker": ctx.worker.status() if ctx.worker else None,
             "sync": ctx.syncer.status() if ctx.syncer else None,
+            "poller": ctx.poller.status() if ctx.poller else None,
             "settings": settings,
             "auto_groups": sorted(settings.schedule.auto_groups),
         }
@@ -501,6 +508,9 @@ def create_app(ctx: AppContext) -> FastAPI:
                     group = str(form.get("group") or manual.DEFAULT_GROUP)
                     r = manual.generate(conn, career.id, uids, settings, group)
                     return f"Generate as group {group.upper()}: {r.summary()}."
+                if action == "new-picture":
+                    r = manual.new_pictures(conn, career.id, uids, settings)
+                    return f"New picture, same character sheet: {r.summary()}."
                 if action == "pin":
                     pin = str(form.get("pin") or "")
                     r = manual.set_pin(conn, career.id, uids, pin or None, settings)
@@ -522,7 +532,7 @@ def create_app(ctx: AppContext) -> FastAPI:
     @app.get("/players/{uid}", response_class=HTMLResponse)
     def player(uid: int, request: Request, conn: sqlite3.Connection = Conn) -> Response:
         career = need_career(conn)
-        detail = queries.player_detail(conn, career.id, uid)
+        detail = queries.player_detail(conn, career.id, uid, data_dir)
         if detail is None:
             raise HTTPException(404, f"No player {uid} in this career.")
         settings = settings_now(conn)
@@ -538,7 +548,7 @@ def create_app(ctx: AppContext) -> FastAPI:
             p=p,
             settings=settings,
             age_table=table_name(p["group_name"], bool(p["at_my_club"])),
-            redraw_waits=waits_for_reference("redraw", bool(p["at_my_club"]), settings),
+            redraw_reference=uses_reference("redraw", bool(p["at_my_club"]), settings),
             group_for_redraw=group_for_redraw,
             reference_kinds=REFERENCE_KINDS,
             groups=[g.value for g in Group],
@@ -591,6 +601,23 @@ def create_app(ctx: AppContext) -> FastAPI:
                     case "retry":
                         manual.retry(conn, career.id, uid, settings)
                         return "Queued again with new seeds."
+                    case "restore":
+                        try:
+                            image_id = int(str(form.get("image_id") or ""))
+                        except ValueError:
+                            raise ManualError("Bad picture ID.") from None
+                        r = manual.restore_picture(
+                            conn, career.id, career.key, uid, image_id, settings
+                        )
+                        where = (
+                            RELOAD_HINT
+                            if r.publish.active
+                            else "Not shown in FM27: another career's save is newer."
+                        )
+                        note = (
+                            " Still pinned to never: it is not updated." if r.pinned_never else ""
+                        )
+                        return f"v{r.version} is the current picture again.{note} {where}"
                     case "cancel":
                         done = manual.cancel(conn, career.id, uid, settings)
                         return "Request cancelled." if done else "Nothing to cancel."
@@ -603,6 +630,8 @@ def create_app(ctx: AppContext) -> FastAPI:
         except (ManualError, HTTPException) as exc:
             target = _safe_next(str(form.get("next") or ""), back)
             return _redirect(target, err=getattr(exc, "detail", None) or str(exc))
+        except PublishError as exc:
+            return _redirect(back, err=f"Publishing failed: {exc}")
         wake()
         return _redirect(_safe_next(str(form.get("next") or ""), back), msg=message)
 

@@ -11,6 +11,7 @@ from PIL import Image
 from facegen.publish import (
     PublishError,
     config_xml,
+    deactivate_packs,
     pack_dir,
     publish_career,
     publish_picture,
@@ -54,23 +55,27 @@ def test_publish_picture_refuses_paths_outside(tmp_path: Path) -> None:
         write_config(fm / "graphics", [1], fm)
 
 
-def test_publish_picture_downscales_to_a_square(tmp_path: Path) -> None:
+def test_publish_picture_downscales_to_3_4(tmp_path: Path) -> None:
     fm = tmp_path / "fm"
     master = tmp_path / "m.png"
-    Image.new("RGB", (1536, 1536), (10, 20, 30)).save(master)
+    Image.new("RGB", (1296, 1728), (10, 20, 30)).save(master)
     dest = publish_picture(master, pack_dir(fm, "k"), 42, 768, fm)
     assert dest == fm / "graphics" / "facegen" / "k" / "42.png"
     with Image.open(dest) as im:
-        assert im.size == (768, 768) and im.format == "PNG"
+        assert im.size == (576, 768) and im.format == "PNG"
     assert not list(dest.parent.glob(".*part"))  # no temporary files left
 
 
-def test_non_square_master_is_refused(tmp_path: Path) -> None:
+def test_a_square_master_from_before_3_4_is_cropped_around_its_centre(tmp_path: Path) -> None:
     fm = tmp_path / "fm"
     master = tmp_path / "m.png"
-    Image.new("RGB", (100, 80)).save(master)
-    with pytest.raises(PublishError):
-        publish_picture(master, pack_dir(fm, "k"), 1, 64, fm)
+    img = Image.new("RGB", (1024, 1024), (255, 0, 0))  # red sides
+    img.paste((0, 0, 255), (128, 0, 896, 1024))  # a blue 3:4 middle
+    img.save(master)
+    dest = publish_picture(master, pack_dir(fm, "k"), 1, 1024, fm)
+    with Image.open(dest) as im:
+        assert im.size == (768, 1024)
+        assert im.getpixel((0, 0)) == im.getpixel((767, 1023)) == (0, 0, 255)
 
 
 def test_write_config_only_when_changed(tmp_path: Path) -> None:
@@ -117,7 +122,7 @@ def test_publish_career_is_idempotent(conn: sqlite3.Connection, tmp_path: Path) 
     assert first.config_changed and first.changed
     assert sorted(p.name for p in folder.iterdir()) == ["10.png", "20.png", "config.xml"]
     with Image.open(folder / "20.png") as im:
-        assert im.size == (768, 768)
+        assert im.size == (576, 768)
     assert 'from="40"' not in (folder / "config.xml").read_text()
 
     before = {p.name: p.stat().st_mtime_ns for p in folder.iterdir()}
@@ -152,3 +157,136 @@ def test_unpublish_removes_file_and_mapping(conn: sqlite3.Connection, tmp_path: 
     assert 'from="10"' not in text and 'from="20"' in text
     # Publishing again does not bring it back: the picture is no longer current.
     assert publish_career(conn, 1, "k", fm, SIZES, data_dir=data).written == 0
+
+
+# --- per-career packs: only the active career's pack maps anything (spec section 8) ---------
+
+
+def _mapped(fm: Path, key: str) -> set[int]:
+    import re
+
+    text = (fm / "graphics" / "facegen" / key / "config.xml").read_text()
+    return {int(x) for x in re.findall(r'from="(\d+)"', text)}
+
+
+def _two_careers(conn: sqlite3.Connection, data: Path) -> None:
+    """Careers 1 ('k') and 2 ('k2'), each with a current picture of player 10 (newgen IDs
+    repeat between careers)."""
+    (data / "masters").mkdir(parents=True)
+    Image.new("RGB", (64, 64), (1, 2, 3)).save(data / "masters" / "a.png")
+    _career(conn)
+    conn.execute(
+        "INSERT INTO careers (id, key, display_name, fingerprint, created_at, updated_at)"
+        " VALUES (2, 'k2', 'K2', '[]', '', '')"
+    )
+    _image(conn, 10, "a", "masters/a.png")
+    _image(conn, 11, "b", "masters/a.png")
+    conn.execute(
+        "INSERT INTO images (career_id, unique_id, version, reason, group_name, model, prompt,"
+        " negative_prompt, seed, master_path, is_current, created_at)"
+        " VALUES (2, 10, 1, 'initial', 'a', 'm', 'p', 'n', 1, 'masters/a.png', 1, '')"
+    )
+
+
+def test_an_inactive_pack_has_its_pictures_but_maps_nothing(
+    conn: sqlite3.Connection, tmp_path: Path
+) -> None:
+    fm, data = tmp_path / "fm", tmp_path / "data"
+    _two_careers(conn, data)
+    report = publish_career(conn, 1, "k", fm, SIZES, data_dir=data, active=False)
+    assert (report.written, report.mapped, report.active) == (2, 0, False)
+    folder = fm / "graphics" / "facegen" / "k"
+    assert (folder / "10.png").is_file() and _mapped(fm, "k") == set()
+    # Activating it later only rewrites config.xml.
+    again = publish_career(conn, 1, "k", fm, SIZES, data_dir=data)
+    assert (again.written, again.unchanged, again.mapped) == (0, 2, 2)
+    assert _mapped(fm, "k") == {10, 11}
+
+
+def test_deactivate_packs_unmaps_every_other_pack(tmp_path: Path) -> None:
+    fm = tmp_path / "fm"
+    for key in ("k", "k2", "k3"):
+        write_config(pack_dir(fm, key), [1, 2], fm)
+    (fm / "graphics" / "facegen" / "no-config").mkdir()
+    (fm / "graphics" / "facegen" / "stray.txt").write_text("x")
+    assert deactivate_packs(fm, keep="k2") == ("k", "k3")
+    assert _mapped(fm, "k") == set() and _mapped(fm, "k2") == {1, 2}
+    assert not (fm / "graphics" / "facegen" / "no-config" / "config.xml").exists()
+    assert deactivate_packs(fm, keep="k2") == ()  # nothing left to change
+    assert deactivate_packs(tmp_path / "nowhere", keep=None) == ()
+    # Nothing outside graphics/facegen/ is touched, even through a link.
+    outside = tmp_path / "other-pack"  # stands in for someone else's pack
+    outside.mkdir()
+    (outside / "config.xml").write_text(config_xml([5]))
+    (fm / "graphics" / "facegen" / "link").symlink_to(outside)
+    deactivate_packs(fm, keep=None)
+    assert 'from="5"' in (outside / "config.xml").read_text()
+
+
+def test_publish_pack_follows_the_newest_save(conn: sqlite3.Connection, tmp_path: Path) -> None:
+    from conftest import write_config as write_test_config
+
+    from facegen.publish import publish_active, publish_pack
+    from facegen.settings import load_settings
+
+    settings = load_settings(defaults_path=write_test_config(tmp_path))
+    fm, data = settings.paths.fm_user_dir, settings.paths.data_dir
+    _two_careers(conn, data)
+    conn.execute("UPDATE careers SET last_save_mtime = 100 WHERE id = 1")
+    conn.execute("UPDATE careers SET last_save_mtime = 200 WHERE id = 2")
+
+    # Career 1's worker publishes, but career 2's save is newer: pictures only, no mapping.
+    one = publish_pack(conn, settings, 1, "k")
+    assert not one.active and one.written == 2 and _mapped(fm, "k") == set()
+    two = publish_active(conn, settings)
+    assert two is not None and two.active and two.folder.name == "k2"
+    assert _mapped(fm, "k2") == {10}
+
+    # Career 1 is saved again: it becomes the active one and career 2's pack is unmapped.
+    conn.execute("UPDATE careers SET last_save_mtime = 300 WHERE id = 1")
+    switched = publish_active(conn, settings)
+    assert switched is not None and switched.folder.name == "k"
+    assert switched.deactivated == ("k2",) and switched.written == 0 and switched.changed
+    assert _mapped(fm, "k") == {10, 11} and _mapped(fm, "k2") == set()
+    assert (fm / "graphics" / "facegen" / "k2" / "10.png").is_file()  # kept for later
+    assert not publish_active(conn, settings).changed  # type: ignore[union-attr]
+
+
+def test_publish_active_without_a_career(conn: sqlite3.Connection, tmp_path: Path) -> None:
+    from conftest import write_config as write_test_config
+
+    from facegen.publish import publish_active
+    from facegen.settings import load_settings
+
+    settings = load_settings(defaults_path=write_test_config(tmp_path))
+    assert publish_active(conn, settings) is None
+
+
+def test_unpublish_from_an_inactive_pack_keeps_it_unmapped(
+    conn: sqlite3.Connection, tmp_path: Path
+) -> None:
+    fm, data = tmp_path / "fm", tmp_path / "data"
+    _two_careers(conn, data)
+    publish_career(conn, 1, "k", fm, SIZES, data_dir=data, active=False)
+    assert unpublish(conn, 1, "k", 10, fm, active=False)
+    assert not (fm / "graphics" / "facegen" / "k" / "10.png").exists()
+    assert _mapped(fm, "k") == set()
+
+
+def test_publish_lock_lets_one_writer_in_at_a_time(tmp_path: Path) -> None:
+    import threading
+
+    from facegen.publish import publish_lock
+
+    entered = threading.Event()
+
+    def other() -> None:
+        with publish_lock(tmp_path):
+            entered.set()
+
+    with publish_lock(tmp_path):
+        t = threading.Thread(target=other)
+        t.start()
+        assert not entered.wait(0.2)  # blocked while this thread holds it
+    t.join(5)
+    assert entered.is_set()

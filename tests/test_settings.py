@@ -210,12 +210,14 @@ def test_where_the_ui_listens_is_not_a_ui_setting(conn: sqlite3.Connection) -> N
             set_override(conn, key, value)
 
 
+def test_published_sizes() -> None:
+    assert load_settings().groups.published_sizes() == {"a": 1024, "b": 768, "c": 512}
+
+
 def test_auto_groups(conn: sqlite3.Connection) -> None:
-    assert load_settings().schedule.auto_groups == frozenset({"a"})
-    assert set_override(conn, "schedule.auto_groups", ["a", "b", "c"]).schedule.auto_groups == {
-        "a",
-        "b",
-        "c",
-    }
+    # Phase 4 switched groups B and C on.
+    assert load_settings().schedule.auto_groups == frozenset({"a", "b", "c"})
+    assert set_override(conn, "schedule.auto_groups", ["a"]).schedule.auto_groups == {"a"}
+    assert set_override(conn, "schedule.auto_groups", []).schedule.auto_groups == frozenset()
     with pytest.raises(SettingsError):
         set_override(conn, "schedule.auto_groups", ["d"])

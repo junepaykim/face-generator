@@ -29,6 +29,7 @@
       <select name="group">{% for g in ("a", "b", "c") %}<option value="{{ g }}" {{ "selected" if g == "b" }}>{{ g|upper }}</option>{% endfor %}</select>
     </label>
     <button class="primary" name="action" value="generate" data-needs-tick title="Pin to the group and queue a picture, drawn before every automatic job">Generate</button>
+    <button name="action" value="new-picture" data-needs-tick title="Draw a new picture from the same character sheet; at my club with the current picture as a reference">New picture</button>
     <span class="sep"></span>
     <select name="pin" aria-label="Pin">
       <option value="never">pin to never</option><option value="">clear pin</option>

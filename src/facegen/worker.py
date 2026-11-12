@@ -6,6 +6,9 @@ save the master under data/masters/<career key>/<unique_id>/, and record the pic
 whose candidates all fail the check three times goes to review (status "failed") and
 nothing of it is published.
 
+Pictures are 3:4 portraits (picture.py): the model renders at its portrait size near 3:4
+and the master is cropped to exactly 3:4.
+
 The model and the tagger sit behind the small `Renderer` and `Tagger` interfaces; the
 runner itself needs neither a GPU nor a save, so the tests drive it with fakes.
 
@@ -13,7 +16,9 @@ Rules carried from the spec:
 - the GPU works only while FM27 (fm.exe) is not running, unless told to generate now;
 - jobs are idempotent: an interrupted job goes back to the queue and is redone from the
   same seeds;
-- re-draws that should use a reference picture (planner.reference_scale) wait for Phase 5.
+- a re-draw that keeps the character sheet uses the player's current picture as a reference
+  where `planner.reference_scale` says so (spec section 5): IP-Adapter's face model on a
+  crop of that picture's face. Without a picture file to use, it is drawn without one.
 """
 
 from __future__ import annotations
@@ -34,11 +39,12 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from facegen import qc
 from facegen.age import age_wording
-from facegen.db import transaction
+from facegen.db import ACTIVE_CAREER_ORDER, transaction
 from facegen.kits import KitTable
+from facegen.picture import crop_to_aspect, face_box
 from facegen.planner import reference_scale
 from facegen.prompt import Prompt, build_prompt
-from facegen.publish import PublishReport, publish_career
+from facegen.publish import PublishReport, publish_pack
 from facegen.settings import Settings
 from facegen.traits import (
     CharacterSheet,
@@ -53,7 +59,9 @@ if TYPE_CHECKING:
     from PIL.Image import Image
 
 MODEL_REPO = "cagliostrolab/animagine-xl-4.0"
-SIZE = 1024  # SDXL's native square size
+WIDTH, HEIGHT = 896, 1152
+"""The render size: Animagine's portrait size nearest 3:4 (its model card lists 896x1152),
+about SDXL's native million pixels. The master is cropped to exactly 3:4 (864x1152)."""
 STEPS = 28
 CFG = 5.5
 SAMPLER = "euler_a"
@@ -65,13 +73,34 @@ MAX_ATTEMPTS = 3
 DETAIL_SCALE = 1.5
 DETAIL_STRENGTH = 0.35
 
+# The reference picture (spec section 5; bake-off run r4): IP-Adapter plus-face for SDXL with
+# its ViT-H image encoder, from the Hugging Face cache.
+IPA_REPO = "h94/IP-Adapter"
+IPA_SUBFOLDER = "sdxl_models"
+IPA_WEIGHT = "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+IPA_ENCODER = "models/image_encoder"
+
+
+@dataclass(frozen=True, slots=True)
+class Reference:
+    """The player's existing picture, as a reference for a re-draw that keeps the sheet."""
+
+    key: str
+    """Names the picture and crop, so the renderer embeds it once per job."""
+    image: Image
+    """The crop of the existing picture's face."""
+    scale: float
+    """The adapter's strength (`reference.scale`)."""
+
 
 class Renderer(Protocol):
     model: str
 
-    def render(self, prompt: Prompt, seed: int) -> Image: ...
+    def render(self, prompt: Prompt, seed: int, reference: Reference | None = None) -> Image: ...
 
-    def detail(self, image: Image, prompt: Prompt, seed: int) -> Image: ...
+    def detail(
+        self, image: Image, prompt: Prompt, seed: int, reference: Reference | None = None
+    ) -> Image: ...
 
     def settings(self) -> dict[str, Any]: ...
 
@@ -171,6 +200,12 @@ class AnimagineRenderer:
         self.detail_scale = detail_scale
         self.detail_strength = detail_strength
         self._embeds: dict[tuple[str, str], tuple[Any, ...]] = {}
+        # The IP-Adapter, loaded at the first reference: (its attention processors, its image
+        # projection), the UNet's own processors, and whether the adapter is switched in.
+        self._adapter: tuple[dict[str, Any], Any] | None = None
+        self._plain_processors: dict[str, Any] = {}
+        self._adapter_on = False
+        self._reference_embeds: dict[str, Any] = {}
 
     def _embeddings(self, prompt: Prompt) -> tuple[Any, ...]:
         key = (prompt.positive, prompt.negative)
@@ -185,8 +220,77 @@ class AnimagineRenderer:
     def prompt_chunks(self, prompt: Prompt) -> int:
         return self._embeddings(prompt)[4]
 
-    def render(self, prompt: Prompt, seed: int) -> Image:
+    # -- the reference picture --
+
+    def _load_adapter(self) -> None:
+        """Load IP-Adapter into the shared UNet; the detail pipeline shares it too.
+
+        The image encoder (ViT-H, 1.3 GB) is needed once per job, to embed the reference, so
+        it waits in system memory in between: with it on the card, a detail pass reached
+        12.9 GiB of the 16 GB that Windows also uses (docs/research.md section 5).
+        """
+        unet = self.pipe.unet
+        self._plain_processors = dict(unet.attn_processors)
+        self.pipe.load_ip_adapter(
+            IPA_REPO,
+            subfolder=IPA_SUBFOLDER,
+            weight_name=IPA_WEIGHT,
+            image_encoder_folder=IPA_ENCODER,
+        )
+        self.pipe.image_encoder.to("cpu")
+        self._adapter = (dict(unet.attn_processors), unet.encoder_hid_proj)
+        self._adapter_on = True
+
+    def _switch_adapter(self, on: bool) -> None:
+        """Switch the loaded adapter in or out of the UNet without reloading it.
+
+        Out, the UNet is exactly the plain model again, so pictures drawn without a
+        reference are the same as before the adapter was loaded. This is what diffusers'
+        `unload_ip_adapter` does, minus dropping the weights.
+        """
+        if self._adapter is None or on == self._adapter_on:
+            return
+        unet = self.pipe.unet
+        processors, projection = self._adapter
+        # The plus adapter's image projection has attention layers of its own, counted among
+        # the UNet's: attach or detach it before the processors are swapped. And
+        # set_attn_processor takes the processors out of the dict it is given: pass a copy.
+        unet.encoder_hid_proj = projection if on else None
+        unet.config.encoder_hid_dim_type = "ip_image_proj" if on else None
+        unet.set_attn_processor(dict(processors if on else self._plain_processors))
+        self._adapter_on = on
+
+    def _conditioning(self, reference: Reference | None) -> dict[str, Any]:
+        """Extra pipeline arguments for a reference picture; switches the adapter in or out."""
+        if reference is None:
+            self._switch_adapter(False)
+            return {}
+        if self._adapter is None:
+            self._load_adapter()
+        self._switch_adapter(True)
+        self.pipe.set_ip_adapter_scale(reference.scale)
+        if reference.key not in self._reference_embeds:
+            encoder = self.pipe.image_encoder
+            encoder.to("cuda")
+            try:
+                with self._torch.no_grad():
+                    embeds = self.pipe.prepare_ip_adapter_image_embeds(
+                        ip_adapter_image=reference.image.convert("RGB"),
+                        ip_adapter_image_embeds=None,
+                        device=self._torch.device("cuda"),
+                        num_images_per_prompt=1,
+                        do_classifier_free_guidance=True,
+                    )
+            finally:
+                encoder.to("cpu")
+            self._reference_embeds = {reference.key: embeds}  # one reference per job
+        return {"ip_adapter_image_embeds": self._reference_embeds[reference.key]}
+
+    # -- drawing --
+
+    def render(self, prompt: Prompt, seed: int, reference: Reference | None = None) -> Image:
         pe, pp, ne, npool, _ = self._embeddings(prompt)
+        extra = self._conditioning(reference)
         generator = self._torch.Generator("cuda").manual_seed(seed)
         with self._torch.no_grad():
             return self.pipe(
@@ -194,19 +298,24 @@ class AnimagineRenderer:
                 pooled_prompt_embeds=pp,
                 negative_prompt_embeds=ne,
                 negative_pooled_prompt_embeds=npool,
-                width=SIZE,
-                height=SIZE,
+                width=WIDTH,
+                height=HEIGHT,
                 num_inference_steps=STEPS,
                 guidance_scale=CFG,
                 generator=generator,
+                **extra,
             ).images[0]
 
-    def detail(self, image: Image, prompt: Prompt, seed: int) -> Image:
+    def detail(
+        self, image: Image, prompt: Prompt, seed: int, reference: Reference | None = None
+    ) -> Image:
+        """Upscale and re-draw lightly, with the same prompt, seed and reference."""
         from PIL import Image as PILImage
 
-        side = round(image.width * self.detail_scale / 64) * 64
-        big = image.resize((side, side), PILImage.Resampling.LANCZOS)
+        size = tuple(round(side * self.detail_scale / 64) * 64 for side in image.size)
+        big = image.resize(size, PILImage.Resampling.LANCZOS)
         pe, pp, ne, npool, _ = self._embeddings(prompt)
+        extra = self._conditioning(reference)
         generator = self._torch.Generator("cuda").manual_seed(seed)
         with self._torch.no_grad():
             return self.img2img(
@@ -219,11 +328,13 @@ class AnimagineRenderer:
                 num_inference_steps=STEPS,
                 guidance_scale=CFG,
                 generator=generator,
+                **extra,
             ).images[0]
 
     def settings(self) -> dict[str, Any]:
         return {
-            "size": SIZE,
+            "width": WIDTH,
+            "height": HEIGHT,
             "steps": STEPS,
             "cfg": CFG,
             "sampler": SAMPLER,
@@ -235,10 +346,19 @@ class AnimagineRenderer:
     def detail_settings(self) -> dict[str, Any]:
         return {"scale": self.detail_scale, "strength": self.detail_strength, "steps": STEPS}
 
+    def reference_settings(self) -> dict[str, Any]:
+        return {
+            "adapter": f"{IPA_REPO}/{IPA_SUBFOLDER}/{IPA_WEIGHT}",
+            "image_encoder": f"{IPA_REPO}/{IPA_ENCODER}",
+        }
+
     def close(self) -> None:
         """Free the GPU memory the model holds."""
         self.pipe = self.img2img = None
         self._embeds = {}
+        self._adapter = None
+        self._plain_processors = {}
+        self._reference_embeds = {}
         gc.collect()
         self._torch.cuda.empty_cache()
 
@@ -361,26 +481,27 @@ class Preview:
     kit_known: bool
     pose: str
     prompt: Prompt | None
+    reference_scale: float | None = None
+    """The strength of the reference picture this job would use, None for none."""
 
 
 @dataclass
 class RunSummary:
     done: list[JobOutcome] = field(default_factory=list)
     failed: list[JobOutcome] = field(default_factory=list)
-    waiting_for_reference: int = 0
     stopped: str | None = None
     publish: PublishReport | None = None
 
 
 def load_career(conn: sqlite3.Connection, key: str | None = None) -> Career | None:
-    """The named career, or the one synced last."""
+    """The named career, or the active one: the career whose save was written last."""
     if key is not None:
         row = conn.execute(
             "SELECT id, key, display_name FROM careers WHERE key = ?", (key,)
         ).fetchone()
     else:
         row = conn.execute(
-            "SELECT id, key, display_name FROM careers ORDER BY updated_at DESC, id DESC LIMIT 1"
+            f"SELECT id, key, display_name FROM careers ORDER BY {ACTIVE_CAREER_ORDER} LIMIT 1"
         ).fetchone()
     return Career(row["id"], row["key"], row["display_name"]) if row else None
 
@@ -482,15 +603,13 @@ class Worker:
 
     # -- queue --
 
-    def runnable(self, f: JobFilter) -> tuple[list[Job], int]:
-        """Jobs this phase can run, and how many wait for reference pictures (Phase 5)."""
-        ready, waiting = [], 0
-        for job in queued_jobs(self.conn, self.career.id, f):
-            if reference_scale(job.kind, job.at_my_club, self.settings.reference) is not None:
-                waiting += 1
-            else:
-                ready.append(job)
-        return ready, waiting
+    def runnable(self, f: JobFilter) -> list[Job]:
+        """Queued jobs that match the filter, in queue order."""
+        return queued_jobs(self.conn, self.career.id, f)
+
+    def reference_scale(self, job: Job) -> float | None:
+        """The reference strength for a job, judged where the player is now (spec section 5)."""
+        return reference_scale(job.kind, job.at_my_club, self.settings.reference)
 
     def preview(self, f: JobFilter, limit: int | None = None) -> list[Preview]:
         """What the next jobs would draw, without a GPU and without storing anything.
@@ -498,7 +617,7 @@ class Worker:
         A player with no sheet yet is shown with the sheet they would get.
         """
         out = []
-        for job in self.runnable(f)[0][:limit]:
+        for job in self.runnable(f)[:limit]:
             found = load_sheet(self.conn, self.career.id, job.unique_id)
             if found is None or job.kind == "reroll":
                 sheet_version = 1 if found is None else found[0] + 1
@@ -520,16 +639,29 @@ class Worker:
             pose = pick_pose(sheet.base_seed, version)
             my_club = self.settings.my_club if job.at_my_club else None
             prompt = build_prompt(sheet, wording, kit, pose, my_club) if wording else None
-            out.append(Preview(job, sheet, wording, kit.describe(), kit_known, pose, prompt))
+            out.append(
+                Preview(
+                    job,
+                    sheet,
+                    wording,
+                    kit.describe(),
+                    kit_known,
+                    pose,
+                    prompt,
+                    self.reference_scale(job),
+                )
+            )
         return out
 
     def requeue_stale(self) -> int:
-        """Jobs left 'running' by a worker that died go back to the queue."""
+        """Jobs left 'running' by a worker that died go back to the queue, in any career.
+
+        Called while holding the worker lock, so no other worker can be running them.
+        """
         with transaction(self.conn):
             cur = self.conn.execute(
-                "UPDATE jobs SET status = 'queued', updated_at = ?"
-                " WHERE career_id = ? AND status = 'running'",
-                (_now(), self.career.id),
+                "UPDATE jobs SET status = 'queued', updated_at = ? WHERE status = 'running'",
+                (_now(),),
             )
         return cur.rowcount
 
@@ -547,13 +679,12 @@ class Worker:
             if stale:
                 self.log(f"Put {stale} interrupted job(s) back in the queue.")
             tried: set[int] = set()
-            total = len(self.runnable(f)[0])
+            total = len(self.runnable(f))
             if limit is not None:
                 total = min(total, limit)
             try:
                 while limit is None or len(summary.done) + len(summary.failed) < limit:
-                    ready, summary.waiting_for_reference = self.runnable(f)
-                    ready = [j for j in ready if j.id not in tried]
+                    ready = [j for j in self.runnable(f) if j.id not in tried]
                     if not ready:
                         break
                     if not generate_now and not self.settings.schedule.generate_while_fm_running:
@@ -581,20 +712,8 @@ class Worker:
         return summary
 
     def publish(self) -> PublishReport:
-        sizes = {
-            "a": self.settings.groups.a.published_long_edge,
-            "b": self.settings.groups.b.published_long_edge,
-            "c": self.settings.groups.c.published_long_edge,
-        }
-        with transaction(self.conn):
-            return publish_career(
-                self.conn,
-                self.career.id,
-                self.career.key,
-                self.settings.paths.fm_user_dir,
-                sizes,
-                data_dir=self.data_dir,
-            )
+        """Publish this career's pictures; FM27 is shown them only if it is the active career."""
+        return publish_pack(self.conn, self.settings, self.career.id, self.career.key)
 
     # -- one job --
 
@@ -654,6 +773,10 @@ class Worker:
         expect = qc.expectation(sheet, kit, my_club)
 
         folder = master_dir(self.data_dir, self.career.key, job.unique_id)
+        reference, reference_info = None, None
+        scale = self.reference_scale(job)
+        if scale is not None:
+            reference, reference_info = self._reference(job, scale, folder, version)
         cand_dir = folder / f"v{version:03d}-candidates"
         candidates: list[Candidate] = []
         winner: Candidate | None = None
@@ -661,7 +784,7 @@ class Worker:
             batch = []
             for k in range(group.candidates):
                 seed = picture_seed(sheet.base_seed, version, attempt, k)
-                image = self.renderer.render(prompt, seed)
+                image = self.renderer.render(prompt, seed, reference)
                 batch.append((k, seed, image))
             tag_results = self.tagger([img for _, _, img in batch])
             for (k, seed, image), tags in zip(batch, tag_results, strict=True):
@@ -685,6 +808,7 @@ class Worker:
             "goalkeeper": job.goalkeeper,
             "my_club": job.at_my_club,
             "sheet_version": sheet_version,
+            "reference": reference_info,
             "prompt": prompt,
         }
         if winner is None:
@@ -692,9 +816,9 @@ class Worker:
 
         final, detail_info = winner.image, None
         if group.detail_pass:
-            final, detail_info = self._detail(winner, prompt, expect)
+            final, detail_info = self._detail(winner, prompt, expect, reference)
         master = folder / f"v{version:03d}.png"
-        self._save_master(master, final, prompt, winner.seed)
+        self._save_master(master, crop_to_aspect(final), prompt, winner.seed)
         render = {**self.renderer.settings(), **_model_extras(self.renderer, prompt)}
         render["detail"] = detail_info
         render.update({k: v for k, v in context.items() if k != "prompt"})
@@ -733,25 +857,37 @@ class Worker:
         detail_note = ""
         if detail_info is not None:
             detail_note = ", detail pass" if detail_info["used"] else ", detail pass rejected"
+        reference_note = ""
+        if reference_info is not None:
+            reference_note = (
+                f", reference v{reference_info['version']} at {reference_info['scale']}"
+                if reference_info["used"]
+                else f", no reference ({reference_info['why']})"
+            )
         message = (
             f"v{version} {wording}, {kit.describe()}, {pose}: {passed}/{len(candidates)} passed, "
             f"chose seed {winner.seed} (score {winner.result.score:.2f}){detail_note}"
+            f"{reference_note}"
         )
         return JobOutcome(job, "done", image_id, version, self.clock() - t0, message)
 
     def _detail(
-        self, winner: Candidate, prompt: Prompt, expect: qc.Expectation
+        self,
+        winner: Candidate,
+        prompt: Prompt,
+        expect: qc.Expectation,
+        reference: Reference | None,
     ) -> tuple[Image, dict[str, Any]]:
         """Group A's detail pass. Its result is checked again; a failure keeps the original."""
         t0 = self.clock()
-        detailed = self.renderer.detail(winner.image, prompt, winner.seed)
+        detailed = self.renderer.detail(winner.image, prompt, winner.seed, reference)
         tags = self.tagger([detailed])[0]
         result = qc.check(tags, expect, qc.head_top(detailed))
         info: dict[str, Any] = {
             **_detail_settings(self.renderer),
             "used": result.passed,
             "seconds": round(self.clock() - t0, 2),
-            "size": detailed.width,
+            "size": list(detailed.size),
             "check": result.to_json(tags),
         }
         return (detailed if result.passed else winner.image), info
@@ -776,7 +912,7 @@ class Worker:
                 folder = master_dir(self.data_dir, self.career.key, job.unique_id)
                 master = folder / f"v{version:03d}-rejected.png"
                 prompt: Prompt = context["prompt"]
-                self._save_master(master, best.image, prompt, best.seed)
+                self._save_master(master, crop_to_aspect(best.image), prompt, best.seed)
                 render = {**self.renderer.settings(), **_model_extras(self.renderer, prompt)}
                 render.update({k: v for k, v in context.items() if k != "prompt"})
                 image_id = self._insert_image(
@@ -860,12 +996,56 @@ class Worker:
         return cur.lastrowid
 
     def _save_candidate(self, folder: Path, cand: Candidate) -> str:
-        folder.mkdir(parents=True, exist_ok=True)
+        """The candidate as it would be published: cropped to 3:4, as WebP."""
         path = folder / f"a{cand.attempt}c{cand.index}-{cand.seed}.webp"
-        tmp = path.with_name(f".{path.name}.part")
-        cand.image.convert("RGB").save(tmp, format="WEBP", quality=90)
-        os.replace(tmp, path)
+        self._save_webp(path, crop_to_aspect(cand.image))
         return self._rel(path)
+
+    def _save_webp(self, path: Path, image: Image) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f".{path.name}.part")
+        image.convert("RGB").save(tmp, format="WEBP", quality=90)
+        os.replace(tmp, path)
+
+    def _reference(
+        self, job: Job, scale: float, folder: Path, version: int
+    ) -> tuple[Reference | None, dict[str, Any]]:
+        """The player's current picture as a reference, and what to record about it.
+
+        The face is cropped from the current master (`picture.face_box`) and kept next to the
+        new picture as vNNN-reference.webp. With no current picture or its file gone, the job
+        is drawn without a reference and the record says why.
+        """
+        info: dict[str, Any] = {"scale": scale, **_reference_settings(self.renderer)}
+        row = self.conn.execute(
+            "SELECT id, version, master_path FROM images"
+            " WHERE career_id = ? AND unique_id = ? AND is_current = 1",
+            (self.career.id, job.unique_id),
+        ).fetchone()
+        if row is None or not row["master_path"]:
+            return None, {"used": False, "why": "no current picture", **info}
+        master = self.data_dir / row["master_path"]
+        if not master.is_file():
+            why = f"picture file missing: {row['master_path']}"
+            self.log(f"  drawn without a reference: {why}")
+            return None, {"used": False, "why": why, **info}
+        from PIL import Image as PILImage
+
+        with PILImage.open(master) as im:
+            picture = im.convert("RGB")
+        box = face_box(picture)
+        crop = picture.crop(box)
+        path = folder / f"v{version:03d}-reference.webp"
+        self._save_webp(path, crop)
+        info.update(
+            used=True,
+            image_id=row["id"],
+            version=row["version"],
+            master=row["master_path"],
+            box=list(box),
+            crop=self._rel(path),
+        )
+        return Reference(f"{row['master_path']}|{box}", crop, scale), info
 
     def _save_master(self, path: Path, image: Image, prompt: Prompt, seed: int) -> None:
         from PIL.PngImagePlugin import PngInfo
@@ -896,4 +1076,9 @@ def _model_extras(renderer: Renderer, prompt: Prompt) -> dict[str, Any]:
 
 def _detail_settings(renderer: Renderer) -> dict[str, Any]:
     fn = getattr(renderer, "detail_settings", None)
+    return fn() if fn else {}
+
+
+def _reference_settings(renderer: Renderer) -> dict[str, Any]:
+    fn = getattr(renderer, "reference_settings", None)
     return fn() if fn else {}

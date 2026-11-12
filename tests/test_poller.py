@@ -86,3 +86,73 @@ def test_copy_snapshot_refuses_to_overwrite_its_source(tmp_path: Path) -> None:
     src = make(tmp_path / "snap" / "c.fm")
     with pytest.raises(ValueError):
         poller.copy_snapshot(src, tmp_path / "snap")
+
+
+# --- the watcher -----------------------------------------------------------------------------
+
+
+def version(path: Path, size: int = 10, mtime: int = 1_000) -> poller.SaveVersion:
+    return poller.SaveVersion(path, size, mtime * 10**9, float(mtime))
+
+
+def test_watcher_waits_for_a_changed_save_to_settle(tmp_path: Path) -> None:
+    w = poller.SaveWatcher(settle_seconds=10)
+    save = tmp_path / "c.fm"
+    d = w.look(version(save), already_synced=False, now=0, interval=60)
+    assert (d.due, d.state, d.wait) == (None, "settling", 10)
+    # Still being written: size changed, so the wait starts again.
+    d = w.look(version(save, size=20), already_synced=False, now=10, interval=60)
+    assert (d.due, d.wait) == (None, 10)
+    d = w.look(version(save, size=20), already_synced=False, now=15, interval=60)
+    assert (d.due, d.wait) == (None, 5)
+    d = w.look(version(save, size=20), already_synced=False, now=20, interval=60)
+    assert d.due == version(save, size=20) and d.state == "due" and d.wait == 0
+    w.done()
+    d = w.look(version(save, size=20), already_synced=True, now=21, interval=60)
+    assert (d.due, d.state, d.wait) == (None, "synced", 60)
+    assert "c.fm" in d.detail and "synced" in d.detail
+
+
+def test_watcher_ignores_a_save_already_synced(tmp_path: Path) -> None:
+    w = poller.SaveWatcher(settle_seconds=10)
+    for now in (0, 60, 120):
+        d = w.look(version(tmp_path / "c.fm"), already_synced=True, now=now, interval=60)
+        assert d.due is None and d.state == "synced"
+
+
+def test_watcher_with_no_save(tmp_path: Path) -> None:
+    d = poller.SaveWatcher().look(None, already_synced=False, now=0, interval=60)
+    assert (d.due, d.state, d.wait) == (None, "no save", 60)
+
+
+def test_watcher_follows_a_newer_save_of_another_name(tmp_path: Path) -> None:
+    w = poller.SaveWatcher(settle_seconds=10)
+    w.look(version(tmp_path / "a.fm"), already_synced=False, now=0, interval=60)
+    # Another save became the newest before the first settled: start over with it.
+    d = w.look(version(tmp_path / "b.fm", mtime=2_000), already_synced=False, now=10, interval=60)
+    assert d.due is None and d.state == "settling"
+    d = w.look(version(tmp_path / "b.fm", mtime=2_000), already_synced=False, now=20, interval=60)
+    assert d.due is not None and d.due.path.name == "b.fm"
+
+
+def test_save_version_reads_the_file(tmp_path: Path) -> None:
+    path = make(tmp_path / "c.fm", b"12345", mtime=1_700_000_000)
+    v = poller.SaveVersion.of(path)
+    assert (v.size, v.mtime, v.mtime_ns) == (5, 1_700_000_000.0, 1_700_000_000 * 10**9)
+
+
+def test_copy_snapshot_reports_a_busy_save(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A save that keeps changing is a busy save: the watcher tries it again later."""
+    from facegen.datasource.base import SaveBusyError
+
+    src = make(tmp_path / "games" / "c.fm")
+    real_copy = shutil.copyfile
+
+    def copy_and_grow(a: Path, b: Path) -> None:
+        real_copy(a, b)
+        with open(src, "ab") as f:
+            f.write(b"!")
+
+    monkeypatch.setattr(poller.shutil, "copyfile", copy_and_grow)
+    with pytest.raises(SaveBusyError):
+        poller.copy_snapshot(src, tmp_path / "snap", attempts=1)

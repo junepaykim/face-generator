@@ -1,8 +1,17 @@
 """Publishing pictures into FM27 (docs/research.md section 4, the recipe from Phase 0.2).
 
-Each career has its own pack, `<FM27 user dir>/graphics/facegen/<career key>/`: one square
-PNG per player named `<unique_id>.png`, plus a classic facepack `config.xml` that maps each
-ID to its picture. FM27 loads changes on Settings -> Reload Skin.
+Each career has its own pack, `<FM27 user dir>/graphics/facegen/<career key>/`: one 3:4
+portrait PNG per player named `<unique_id>.png`, its height the group's published size, plus
+a classic facepack `config.xml` that maps each ID to its picture. FM27 loads changes on
+Settings -> Reload Skin, or at its next start. A master that is not 3:4 (a square picture
+drawn before the change to 3:4) is cropped to 3:4 around its centre.
+
+**Active pack** (spec section 8). FM27 loads every folder under `graphics/`, and newgen IDs
+repeat between careers, so only one career's pack may map anything: the active career's,
+the one whose save was written last (`db.active_career_id`). Every other pack keeps its
+pictures but gets a `config.xml` that maps nothing, so switching back is only a rewrite of
+`config.xml`. `publish_pack` and `publish_active` keep this true; they hold `publish_lock`,
+so the worker and a sync never write the packs at the same time.
 
 AGENTS.md hard rule 2: under the FM27 user folder this module writes only inside
 `graphics/facegen/`. Every path is checked before anything is written or deleted.
@@ -13,11 +22,20 @@ already in place, so publishing twice changes nothing.
 
 from __future__ import annotations
 
+import fcntl
 import os
 import sqlite3
-from collections.abc import Iterable
-from dataclasses import dataclass
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+from facegen.db import active_career_id, transaction
+from facegen.picture import crop_to_aspect, published_size
+
+if TYPE_CHECKING:
+    from facegen.settings import Settings
 
 RELOAD_HINT = "In FM27: Settings -> Reload Skin (스킨 다시 불러오기) to load the pictures."
 
@@ -81,18 +99,17 @@ def write_config(folder: Path, ids: Iterable[int], fm_user_dir: Path) -> bool:
     return True
 
 
-def published_bytes(master: Path, size: int) -> bytes:
-    """The master downscaled to a square of `size` pixels, as PNG bytes."""
+def published_bytes(master: Path, long_edge: int) -> bytes:
+    """The master as a 3:4 portrait `long_edge` pixels high, as PNG bytes."""
     import io
 
     from PIL import Image
 
     with Image.open(master) as im:
-        img = im.convert("RGB")
-    if img.width != img.height:
-        raise PublishError(f"{master} is not square ({img.width}x{img.height})")
-    if img.width != size:
-        img = img.resize((size, size), Image.Resampling.LANCZOS)
+        img = crop_to_aspect(im.convert("RGB"))
+    size = published_size(long_edge)
+    if img.size != size:
+        img = img.resize(size, Image.Resampling.LANCZOS)
     buf = io.BytesIO()
     img.save(buf, format="PNG", optimize=True)
     return buf.getvalue()
@@ -119,10 +136,15 @@ class PublishReport:
     """Players whose master picture is missing; left unmapped."""
     config_changed: bool
     mapped: int
+    """Players config.xml maps; 0 for a pack that is not active."""
+    active: bool = True
+    """Whether this is the active career's pack, the one FM27 is shown."""
+    deactivated: tuple[str, ...] = ()
+    """Other careers' packs whose mappings were just removed."""
 
     @property
     def changed(self) -> bool:
-        return bool(self.written or self.config_changed)
+        return bool(self.written or self.config_changed or self.deactivated)
 
 
 def publish_career(
@@ -133,11 +155,13 @@ def publish_career(
     sizes: dict[str, int],
     *,
     data_dir: Path,
+    active: bool = True,
 ) -> PublishReport:
     """Bring the career's pack in line with its current pictures.
 
-    `sizes` maps group to published size in pixels. A picture already published to its
-    place is left alone; config.xml is rewritten only if the mapping changes.
+    `sizes` maps group to published size (the picture's height) in pixels. A picture already
+    published to its place is left alone; config.xml is rewritten only if the mapping changes.
+    A pack that is not `active` gets its pictures but a config.xml that maps nothing.
     """
     folder = pack_dir(fm_user_dir, career_key)
     rows = conn.execute(
@@ -164,10 +188,80 @@ def publish_career(
         conn.execute("UPDATE images SET published_path = ? WHERE id = ?", (str(dest), r["id"]))
         written += 1
         mapped.append(r["unique_id"])
+    shown = mapped if active else []
     config_changed = (
-        write_config(folder, mapped, fm_user_dir) if mapped or folder.exists() else False
+        write_config(folder, shown, fm_user_dir) if mapped or folder.exists() else False
     )
-    return PublishReport(folder, written, unchanged, tuple(missing), config_changed, len(mapped))
+    return PublishReport(
+        folder, written, unchanged, tuple(missing), config_changed, len(shown), active
+    )
+
+
+def deactivate_packs(fm_user_dir: Path, keep: str | None) -> tuple[str, ...]:
+    """Make every pack but `keep` map nothing; their pictures stay. Returns those changed.
+
+    Only folders under graphics/facegen/ that have a config.xml are touched.
+    """
+    root = packs_root(fm_user_dir)
+    if not root.is_dir():
+        return ()
+    changed = []
+    for folder in sorted(root.iterdir()):
+        if folder.name == keep or folder.is_symlink() or not folder.is_dir():
+            continue
+        if (folder / "config.xml").is_file() and write_config(folder, (), fm_user_dir):
+            changed.append(folder.name)
+    return tuple(changed)
+
+
+@contextmanager
+def publish_lock(data_dir: Path) -> Iterator[None]:
+    """One writer of FM27's packs at a time, across threads and processes.
+
+    Take it before any database transaction that publishing runs in, never inside one.
+    """
+    data_dir.mkdir(parents=True, exist_ok=True)
+    with (data_dir / "publish.lock").open("w") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+
+
+def publish_pack(
+    conn: sqlite3.Connection, settings: Settings, career_id: int, career_key: str
+) -> PublishReport:
+    """Publish one career's pictures. If it is the active career, its config.xml maps them
+    and every other pack is unmapped; otherwise its config.xml maps nothing."""
+    fm_user_dir = settings.paths.fm_user_dir
+    with publish_lock(settings.paths.data_dir), transaction(conn):
+        active = active_career_id(conn) == career_id
+        report = publish_career(
+            conn,
+            career_id,
+            career_key,
+            fm_user_dir,
+            settings.groups.published_sizes(),
+            data_dir=settings.paths.data_dir,
+            active=active,
+        )
+        if active:
+            report = replace(report, deactivated=deactivate_packs(fm_user_dir, career_key))
+    return report
+
+
+def publish_active(conn: sqlite3.Connection, settings: Settings) -> PublishReport | None:
+    """Show FM27 the active career's pack and no other; None if there is no career yet.
+
+    Run after every sync: a save from another career switches the pack.
+    """
+    row = conn.execute(
+        "SELECT id, key FROM careers WHERE id = ?", (active_career_id(conn),)
+    ).fetchone()
+    if row is None:
+        return None
+    return publish_pack(conn, settings, row["id"], row["key"])
 
 
 def unpublish(
@@ -176,12 +270,15 @@ def unpublish(
     career_key: str,
     unique_id: int,
     fm_user_dir: Path,
+    *,
+    active: bool = True,
 ) -> bool:
     """Remove a player's published picture and mapping; FM27 then shows its own photo again.
 
     The picture stops being current; the master and the database history are kept. The
     planner would queue an eligible player again, so the UI's "remove picture" (Phase 3)
-    pairs this with a "never" pin. Returns whether anything was removed.
+    pairs this with a "never" pin. A pack that is not `active` keeps mapping nothing.
+    Returns whether anything was removed. Callers hold `publish_lock`.
     """
     folder = pack_dir(fm_user_dir, career_key)
     dest = folder / f"{unique_id}.png"
@@ -201,5 +298,5 @@ def unpublish(
             (career_id,),
         )
     ]
-    changed = write_config(folder, ids, fm_user_dir) if folder.exists() else False
+    changed = write_config(folder, ids if active else (), fm_user_dir) if folder.exists() else False
     return existed or changed

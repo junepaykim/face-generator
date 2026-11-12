@@ -117,12 +117,28 @@ def test_snapshot_already_in_the_snapshots_folder_is_read_in_place(env: dict[str
 
 
 def test_unsupported_save_is_reported_and_recorded(env: dict[str, Path]) -> None:
-    source = FakeSource(UnsupportedSaveError("FM28 is not supported"))
+    source = FakeSource(UnsupportedSaveError("FM28 is not supported", build="28.0.0"))
     code, text = run(env, "sync", source=source)
     assert code == 3
     assert "FM28 is not supported" in text and "unchanged" in text
+    assert "bump the pin" in text  # says what would fix it
     code, status = run(env, "status")
     assert "No careers yet" in status
+    assert "Last sync failed (Career.fm): FM28 is not supported" in status
+    assert "bump the pin" in status
+
+
+def test_a_save_that_cannot_be_read_is_not_called_unsupported(env: dict[str, Path]) -> None:
+    from facegen.datasource.base import SaveReadError
+
+    code, text = run(env, "sync", source=FakeSource(SaveReadError("damaged")))
+    assert code == 3 and "damaged" in text and "bump the pin" not in text
+
+
+def test_status_marks_the_active_career(env: dict[str, Path]) -> None:
+    run(env, "sync")
+    _, status = run(env, "status")
+    assert "(active: FM27 is shown this pack)" in status
 
 
 def test_missing_saves(env: dict[str, Path]) -> None:
@@ -230,8 +246,60 @@ def test_serve_starts_the_ui_and_the_worker_and_stops_cleanly(env: dict[str, Pat
     assert code == 0
     assert (seen["host"], seen["port"]) == ("127.0.0.1", 8799)
     assert "Old Hand" in str(seen["page"])
+    assert "watching saves" in str(seen["page"])
     assert "http://127.0.0.1:8799/" in out.getvalue()
+    assert f"Watching {env['games']}" in out.getvalue()
     assert "Stopping the worker" in out.getvalue()
+
+
+def test_serve_without_the_save_watcher(env: dict[str, Path]) -> None:
+    from fastapi.testclient import TestClient
+
+    seen: dict[str, str] = {}
+
+    def fake_server(app, host: str, port: int) -> None:  # type: ignore[no-untyped-def]
+        with TestClient(app, base_url=f"http://{host}:{port}") as client:
+            seen["page"] = client.get("/").text
+
+    out = io.StringIO()
+    code = main(
+        ["--config", str(env["config"]), "serve", "--no-worker", "--no-watch"],
+        source_factory=lambda: FakeSource(world()),
+        out=out,
+        run_server=fake_server,
+    )
+    assert code == 0 and "Watching" not in out.getvalue()
+    assert "Not watching the saves folder" in seen["page"]
+
+
+def test_sync_records_that_the_command_started_it(env: dict[str, Path]) -> None:
+    import sqlite3
+
+    run(env, "sync")
+    conn = sqlite3.connect(env["data"] / "facegen.db")
+    try:
+        assert conn.execute("SELECT trigger FROM sync_runs").fetchone()[0] == "command"
+    finally:
+        conn.close()
+
+
+def test_sync_of_another_careers_newer_save_switches_the_pack(env: dict[str, Path]) -> None:
+    run(env, "sync")
+    code, text = run_gpu(env, "run", "--group", "a", "--my-club")
+    assert code == 0, text
+    first = next((env["games"].parent / "graphics" / "facegen").iterdir())
+    assert 'from="1001"' in (first / "config.xml").read_text()
+
+    other = env["games"] / "Other.fm"
+    other.write_bytes(b"another career")
+    os.utime(other, (1_800_000_000, 1_800_000_000))
+    code, text = run(
+        env, "sync", source=FakeSource(snapshot([player(5001)], career="two", file_name="Other.fm"))
+    )
+    assert code == 0, text
+    assert f"packs now map nothing: {first.name}" in text and "Published" not in text
+    assert 'from="1001"' not in (first / "config.xml").read_text()
+    assert (first / "1001.png").is_file()
 
 
 def test_serve_refuses_to_listen_beyond_this_pc(env: dict[str, Path]) -> None:

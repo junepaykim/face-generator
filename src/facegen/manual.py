@@ -7,8 +7,8 @@ queue from the stored snapshot, as a settings change does. The worker picks the 
   chosen) and queues a manual job: a first picture, or an upgrade when the chosen group is
   above the current picture's. Hand-picking is a pin (decisions.md).
 - **New face** re-rolls the character sheet and draws from it ("reroll").
-- **New picture** keeps the sheet and draws again ("redraw"). At my club it uses the
-  current picture as a reference, so it waits for Phase 5 like every reference re-draw.
+- **New picture** keeps the sheet and draws again ("redraw"), for one player or many. At my
+  club it uses the current picture as a reference (spec section 5).
 - **Pin** to a group is a hand-pick, exactly as Generate. Pin to "never" cancels every
   queued job of the player, requests included; clearing a pin cancels a queued Generate
   request (the hand-pick is undone) and lets the rules decide.
@@ -16,6 +16,9 @@ queue from the stored snapshot, as a settings change does. The worker picks the 
   cancels the player's queued jobs and pins them to "never", so nothing re-queues them.
 - **Retry** queues a review-list job again, with new seeds.
 - **Cancel** withdraws a queued request; for a Generate request it also clears the pin.
+- **Restore** makes an earlier picture from the player's history current again and
+  publishes it. It then stands for the player as they are now, so it is not re-drawn until
+  their club, age band or group changes again (sync.image_state).
 
 Manual jobs run before everything else (spec section 2). Among them the newest request runs
 first, so one "new face" click is drawn next even behind a large selection; within one
@@ -26,6 +29,7 @@ Players outside men's football are refused: the rules ignore them even when pinn
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import time
 from collections.abc import Iterable
@@ -35,9 +39,9 @@ from pathlib import Path
 
 from facegen.age import age_wording
 from facegen.classify import GROUP_RANK, Group
-from facegen.db import transaction
+from facegen.db import active_career_id, transaction
 from facegen.planner import TIER_MANUAL
-from facegen.publish import unpublish
+from facegen.publish import PublishReport, publish_lock, publish_pack, unpublish
 from facegen.settings import Settings
 from facegen.sync import classify_and_plan
 
@@ -187,6 +191,30 @@ def generate(
     return result
 
 
+def _redraw_group(conn: sqlite3.Connection, career_id: int, p: sqlite3.Row, kind: str) -> str:
+    """The group a re-draw is drawn at. Raises ManualError(reason) if there can be none; the
+    reason leaves out the player's name, so many players' reasons can be summed up."""
+    if why := _refusal(p):
+        raise ManualError(why)
+    if p["pin"] == "never":
+        raise ManualError("pinned to never; unpin first")
+    if kind == "redraw" and p["image_group"] is None:
+        raise ManualError("no picture to draw again; use Generate")
+    last_failed = conn.execute(
+        "SELECT group_name FROM jobs WHERE career_id = ? AND unique_id = ?"
+        " AND status = 'failed' ORDER BY id DESC LIMIT 1",
+        (career_id, p["unique_id"]),
+    ).fetchone()
+    group = p["group_name"] or p["image_group"] or (last_failed[0] if last_failed else None)
+    if group is None:
+        raise ManualError("in no group; use Generate and choose one")
+    return group
+
+
+def _redraw_reason(kind: str) -> str:
+    return f"requested: {'new face' if kind == 'reroll' else 'new picture'}"
+
+
 def _redraw(
     conn: sqlite3.Connection,
     career_id: int,
@@ -197,22 +225,11 @@ def _redraw(
 ) -> ActionResult:
     with transaction(conn):
         p = _player(conn, career_id, uid)
-        if why := _refusal(p):
-            raise ManualError(f"{p['name']}: {why}")
-        if p["pin"] == "never":
-            raise ManualError(f"{p['name']} is pinned to never; unpin first")
-        if kind == "redraw" and p["image_group"] is None:
-            raise ManualError(f"{p['name']} has no picture to draw again; use Generate")
-        last_failed = conn.execute(
-            "SELECT group_name FROM jobs WHERE career_id = ? AND unique_id = ?"
-            " AND status = 'failed' ORDER BY id DESC LIMIT 1",
-            (career_id, uid),
-        ).fetchone()
-        group = p["group_name"] or p["image_group"] or (last_failed[0] if last_failed else None)
-        if group is None:
-            raise ManualError(f"{p['name']} is in no group; use Generate and choose one")
-        label = "new face" if kind == "reroll" else "new picture"
-        _queue(conn, career_id, p, kind, group, request_rank(now), f"requested: {label}", settings)
+        try:
+            group = _redraw_group(conn, career_id, p, kind)
+        except ManualError as exc:
+            raise ManualError(f"{p['name']}: {exc}") from None
+        _queue(conn, career_id, p, kind, group, request_rank(now), _redraw_reason(kind), settings)
         classify_and_plan(conn, career_id, settings)
     return ActionResult(queued=[uid])
 
@@ -239,6 +256,34 @@ def new_picture(
 ) -> ActionResult:
     """Keep the character sheet and draw a new picture."""
     return _redraw(conn, career_id, uid, settings, "redraw", now)
+
+
+def new_pictures(
+    conn: sqlite3.Connection,
+    career_id: int,
+    uids: Iterable[int],
+    settings: Settings,
+    *,
+    now: float | None = None,
+) -> ActionResult:
+    """New picture for many players at once (the players page); those who cannot have one
+    are skipped with the reason. Players run in the order given."""
+    result = ActionResult()
+    if now is None:
+        now = time.time()
+    with transaction(conn):
+        for uid in dict.fromkeys(uids):
+            p = _player(conn, career_id, uid)
+            try:
+                group = _redraw_group(conn, career_id, p, "redraw")
+            except ManualError as exc:
+                result.skipped.append((uid, str(exc)))
+                continue
+            rank = request_rank(now, len(result.queued))
+            _queue(conn, career_id, p, "redraw", group, rank, _redraw_reason("redraw"), settings)
+            result.queued.append(uid)
+        classify_and_plan(conn, career_id, settings)
+    return result
 
 
 def set_pin(
@@ -292,7 +337,8 @@ def remove_picture(
     picture or mapping was removed.
     """
     fm_user_dir: Path = settings.paths.fm_user_dir
-    with transaction(conn):
+    # The publish lock before the transaction, as publish_pack takes them.
+    with publish_lock(settings.paths.data_dir), transaction(conn):
         p = _player(conn, career_id, uid)
         if p["job_status"] == "running":
             raise ManualError(f"{p['name']} is being drawn right now; try again in a moment")
@@ -302,7 +348,8 @@ def remove_picture(
             (_now(), career_id, uid),
         )
         _set_pin(conn, career_id, uid, "never")
-        removed = unpublish(conn, career_id, career_key, uid, fm_user_dir)
+        active = active_career_id(conn) == career_id
+        removed = unpublish(conn, career_id, career_key, uid, fm_user_dir, active=active)
         classify_and_plan(conn, career_id, settings)
     return removed
 
@@ -367,3 +414,68 @@ def cancel(conn: sqlite3.Connection, career_id: int, uid: int, settings: Setting
             )
         classify_and_plan(conn, career_id, settings)
     return True
+
+
+@dataclass(frozen=True, slots=True)
+class Restored:
+    version: int
+    pinned_never: bool
+    """The player stays pinned to never: the picture is shown but never updated."""
+    publish: PublishReport
+
+
+def restore_picture(
+    conn: sqlite3.Connection,
+    career_id: int,
+    career_key: str,
+    uid: int,
+    image_id: int,
+    settings: Settings,
+) -> Restored:
+    """Make an earlier picture from the player's history current again, and publish it.
+
+    Only a picture that passed the quality check and whose file is still in data/ can come
+    back (spec section 3: a picture that failed the check is never published). It stands for
+    the player's group, club and age band now, so the rules do not re-draw it until one of
+    them changes; queued automatic jobs it makes unnecessary are cancelled. Pins and manual
+    requests are left alone.
+    """
+    data_dir: Path = settings.paths.data_dir
+    with transaction(conn):
+        p = _player(conn, career_id, uid)
+        if p["job_status"] == "running":
+            raise ManualError(f"{p['name']} is being drawn right now; try again in a moment")
+        img = conn.execute(
+            "SELECT * FROM images WHERE id = ? AND career_id = ? AND unique_id = ?",
+            (image_id, career_id, uid),
+        ).fetchone()
+        if img is None:
+            raise ManualError(f"{p['name']} has no picture {image_id}")
+        if img["is_current"]:
+            raise ManualError(f"v{img['version']} is already the current picture")
+        if not restorable(img["master_path"], json.loads(img["check_result"] or "{}")):
+            raise ManualError(f"v{img['version']} failed the quality check; it is never published")
+        if not (data_dir / img["master_path"]).is_file():
+            raise ManualError(f"v{img['version']}'s picture file is missing from data/")
+        group = p["group_name"] or img["group_name"]
+        band = age_wording(p["age"], group, bool(p["at_my_club"]), settings.age)
+        conn.execute(
+            "UPDATE images SET is_current = 0, published_path = NULL"
+            " WHERE career_id = ? AND unique_id = ? AND is_current = 1",
+            (career_id, uid),
+        )
+        conn.execute(
+            "UPDATE images SET is_current = 1, published_path = NULL, restored_at = ?,"
+            " restored_group = ?, restored_club_id = ?, restored_band = ? WHERE id = ?",
+            (_now(), group, p["club_id"], band, image_id),
+        )
+        classify_and_plan(conn, career_id, settings)
+    report = publish_pack(conn, settings, career_id, career_key)
+    return Restored(img["version"], p["pin"] == "never", report)
+
+
+def restorable(master_path: str | None, check: dict) -> bool:
+    """Whether a picture passed its check and so may be shown in FM27 again."""
+    if not master_path or master_path.endswith("-rejected.png"):
+        return False
+    return bool(check.get("passed"))

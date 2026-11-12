@@ -21,8 +21,9 @@ from factories import (
 )
 
 from facegen.datasource.records import Gender, PlayerRecord, Snapshot
+from facegen.planner import TIER_B, TIER_C
 from facegen.settings import Settings, load_settings, set_override
-from facegen.sync import SyncReport, reclassify, record_failed_sync, run_sync
+from facegen.sync import SyncReport, reclassify, record_failed_sync, run_sync, sync_of_save
 
 # A small world: pre-existing players have low IDs, newgens start at NEWGEN.
 MINE_OLD = 1001  # pre-existing, at my club
@@ -441,6 +442,83 @@ def test_record_failed_sync(conn: sqlite3.Connection) -> None:
     record_failed_sync(conn, "x.fm", "unsupported build", build="99.0.0")
     row = conn.execute("SELECT * FROM sync_runs").fetchone()
     assert (row["save_file"], row["error"], row["career_id"]) == ("x.fm", "unsupported build", None)
+    assert (row["save_mtime"], row["unsupported"]) == (None, 0)
+    # Without a save time the failure is not "dealt with": the watcher tries again.
+    assert sync_of_save(conn, "x.fm", 100.0) is None
+
+    record_failed_sync(
+        conn,
+        "x.fm",
+        "FM27 build 27.9",
+        "27.9",
+        save_mtime=100.0,
+        unsupported=True,
+        trigger="poller",
+    )
+    done = sync_of_save(conn, "x.fm", 100.0)
+    assert done is not None and done["unsupported"] == 1 and done["error"] == "FM27 build 27.9"
+    assert sync_of_save(conn, "x.fm", 100.5) is None  # a newer version of the save
+    assert sync_of_save(conn, "y.fm", 100.0) is None
+
+
+def test_sync_records_the_save_time_and_who_started_it(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    sync(conn, snapshot(world()), settings, save_mtime=1_000.5, trigger="poller")
+    run = conn.execute("SELECT save_mtime, trigger, error FROM sync_runs").fetchone()
+    assert tuple(run) == (1_000.5, "poller", None)
+    assert sync_of_save(conn, "career.fm", 1_000.5) is not None
+    # An older copy of the same career does not make its newest save look older.
+    sync(conn, snapshot(world()), settings, save_mtime=500.0)
+    assert conn.execute("SELECT last_save_mtime FROM careers").fetchone()[0] == 1_000.5
+
+
+def test_the_active_career_is_the_one_with_the_newest_save(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    from facegen.db import active_career_id
+    from facegen.worker import load_career
+
+    one = sync(conn, snapshot(world(), career="one"), settings, save_mtime=2_000.0).career
+    # Career two is synced later, from an older save (say `facegen sync --save`).
+    two = sync(
+        conn, snapshot(world(), career="two", file_name="two.fm"), settings, save_mtime=1_000.0
+    )
+    assert two.career.id != one.id
+    assert active_career_id(conn) == one.id
+    assert load_career(conn).key == one.key  # type: ignore[union-attr]
+    # Then career two is saved again: now it is the newest.
+    sync(conn, snapshot(world(), career="two", file_name="two.fm"), settings, save_mtime=3_000.0)
+    assert active_career_id(conn) == two.career.id
+
+
+def test_youth_intake_goes_to_the_front_of_the_queue(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    """Spec section 6: new players at my club are drawn first at the first save after
+    youth intake day, ahead of every job already waiting, groups B and C included."""
+    signing = 1003  # pre-existing, abroad at first, signed on intake day
+    before = [*world(), player(signing, ca=100, pa=110, age=27, club_id=ABROAD)]
+    first = sync(conn, snapshot(before), settings)
+    assert first.new_at_my_club == 0  # on a first sync everyone is new; nothing to report
+
+    intake_day = date(2026, 3, 15)
+    youth = [NEWGEN + 100 + i for i in range(3)]  # no join date, like created players
+    after = [
+        *world(),
+        player(signing, ca=100, pa=110, age=27, join=intake_day),
+        *(player(uid, ca=45, pa=120, age=15) for uid in youth),
+    ]
+    report = sync(conn, snapshot(after, game_date=intake_day), settings)
+
+    assert report.new_at_my_club == 4
+    rows = conn.execute(
+        "SELECT unique_id, tier FROM jobs WHERE status = 'queued' ORDER BY tier, rank, id"
+    ).fetchall()
+    order = [r["unique_id"] for r in rows]
+    assert set(order[:4]) == {*youth, signing}
+    assert order[4:6] == [MINE_NEW, MINE_OLD]  # waiting since the first sync
+    assert {r["tier"] for r in rows[6:]} >= {TIER_B, TIER_C}  # B and C come after
 
 
 @pytest.mark.parametrize("managed", [None, 999])

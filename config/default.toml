@@ -33,7 +33,8 @@ fallback_min_unique_id = 2002000000
 #     age band). Groups set picture quality; tracking is separate (spec section 2).
 
 # "above" is strict: ca_above = 155 means CA of 156 or more.
-# Pictures are square (decisions.md); published_long_edge is the side in pixels.
+# Pictures are 3:4 portraits (user, 2026-11-11; decisions.md); published_long_edge is the
+# height in pixels: 1024 gives 768x1024.
 # CA and PA conditions are joined with OR.
 
 [groups.a]
@@ -128,11 +129,14 @@ muscular_strength_from = 14         # Strength this or higher: "muscular female"
                                     # trait "muscular" is banned at my club by default
 
 [schedule]
+# `facegen serve` looks at FM27's saves folder this often. When the newest save has changed
+# and then stays unchanged for a few seconds, it is copied and synced (spec section 6).
 poll_seconds = 60
+# false: the GPU works only while FM27 is closed; "Generate now" in the UI overrides it.
 generate_while_fm_running = false
 # Groups whose automatic jobs `facegen serve` draws. Manual requests from the UI always run,
-# whatever their group. Groups B and C are switched on in Phase 4 (implementation plan).
-auto_groups = ["a"]
+# whatever their group. All three since Phase 4.
+auto_groups = ["a", "b", "c"]
 
 [ui]
 # Local only: there is no login, so `facegen serve` refuses any address but loopback. These

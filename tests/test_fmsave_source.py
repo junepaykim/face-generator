@@ -217,3 +217,113 @@ def test_reads_a_real_save_copy() -> None:
     assert snap.managed_club_id in snap.clubs
     assert {c.gender for c in snap.clubs.values()} >= {Gender.MEN}
     assert len({p.unique_id for p in snap.players}) == len(snap.players)
+
+
+# --- load(): how fmsave's errors and warnings reach the report ---------------------------------
+
+
+class FakeSave:
+    """Stands in for fmsave.Save: one club, one player, and readers that can fail."""
+
+    def __init__(self, *, known_build: bool = True, fail: Exception | None = None) -> None:
+        self.info = NS(
+            game="FM27",
+            build="27.0.0+2486695" if known_build else "27.1.0+2600000",
+            known_build=known_build,
+            game_date=date(2026, 7, 13),
+            save_name="Career",
+            file_name="Career.fm",
+        )
+        self._fail = fail
+        self.closed = False
+
+    def clubs(self) -> list[NS]:
+        return [fm_club(10, 1010)]
+
+    def players(self) -> list[NS]:
+        if self._fail is not None:
+            raise self._fail
+        return [fm_player(2_002_100_000)]
+
+    def managed_clubs(self) -> list[NS]:
+        return [NS(club_uid=10)]
+
+    def competitions(self) -> list[NS]:
+        return []
+
+    def league_tables(self) -> list[NS]:
+        return []
+
+    def fixtures(self) -> list[NS]:
+        return []
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _patch_open(monkeypatch: pytest.MonkeyPatch, result: FakeSave | Exception) -> None:
+    import fmsave
+
+    def fake_open(path: Path) -> FakeSave:
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    monkeypatch.setattr(fmsave, "open", fake_open)
+
+
+def test_load_reads_and_closes_the_save(monkeypatch: pytest.MonkeyPatch) -> None:
+    save = FakeSave()
+    _patch_open(monkeypatch, save)
+    snap = FmsaveDataSource().load(Path("Career.fm"))
+    assert [p.unique_id for p in snap.players] == [2_002_100_000]
+    assert snap.meta.known_build and save.closed
+    assert not any("not one fmsave" in w for w in snap.meta.warnings)
+
+
+def test_an_unknown_build_is_read_with_a_clear_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    import fmsave
+
+    _patch_open(monkeypatch, FakeSave(known_build=False))
+    snap = FmsaveDataSource().load(Path("Career.fm"))
+    assert snap.meta.warnings[0].startswith(
+        f"FM27 build 27.1.0+2600000 is not one fmsave {fmsave.__version__} was made for"
+    )
+
+
+def test_a_reader_refusing_the_build_makes_the_save_unsupported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import fmsave
+
+    from facegen.datasource.base import UnsupportedSaveError
+
+    save = FakeSave(
+        known_build=False, fail=fmsave.UnsupportedGameError("players: section schema differs")
+    )
+    _patch_open(monkeypatch, save)
+    with pytest.raises(UnsupportedSaveError) as info:
+        FmsaveDataSource().load(Path("Career.fm"))
+    assert info.value.build == "27.1.0+2600000"
+    assert info.value.reader == f"fmsave {fmsave.__version__}"
+    assert "FM27 build 27.1.0+2600000 cannot be read" in str(info.value)
+    assert "section schema differs" in str(info.value)
+    assert save.closed
+
+
+def test_a_save_from_another_game_is_unsupported(monkeypatch: pytest.MonkeyPatch) -> None:
+    import fmsave
+
+    from facegen.datasource.base import SaveReadError, UnsupportedSaveError
+
+    _patch_open(monkeypatch, fmsave.UnsupportedGameError("Career.fm is an FM25 save"))
+    with pytest.raises(UnsupportedSaveError, match="FM25"):
+        FmsaveDataSource().load(Path("Career.fm"))
+    _patch_open(monkeypatch, fmsave.CorruptSaveError("truncated"))
+    with pytest.raises(SaveReadError, match="truncated"):
+        FmsaveDataSource().load(Path("Career.fm"))
+    damaged = FakeSave(fail=fmsave.ReaderCheckError("players: checks failed"))
+    _patch_open(monkeypatch, damaged)
+    with pytest.raises(SaveReadError, match="checks failed"):
+        FmsaveDataSource().load(Path("Career.fm"))
+    assert damaged.closed

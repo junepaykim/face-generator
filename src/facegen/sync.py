@@ -88,6 +88,9 @@ class SyncReport:
     queue: list[QueueEntry]
     warnings: list[str] = field(default_factory=list)
     table: list[dict[str, Any]] = field(default_factory=list)
+    new_at_my_club: int = 0
+    """Players at my club who were not there at the career's previous sync (youth intake,
+    signings, loans in). Their jobs go to the front of the automatic queue. 0 on a first sync."""
 
 
 # --- career ------------------------------------------------------------------------------
@@ -212,6 +215,7 @@ class IngestStats:
     first_sync: bool
     my_league_clubs: int
     continental_clubs: int
+    arrivals_at_my_club: int = 0
 
 
 def ingest(
@@ -226,8 +230,8 @@ def ingest(
     prev = {
         r["unique_id"]: r
         for r in conn.execute(
-            "SELECT unique_id, is_newgen, in_scope, first_club_id, club_id, club_since"
-            " FROM players WHERE career_id = ?",
+            "SELECT unique_id, is_newgen, in_scope, first_club_id, club_id, club_since,"
+            " at_my_club, present FROM players WHERE career_id = ?",
             (cid,),
         )
     }
@@ -246,6 +250,7 @@ def ingest(
     game_date = snapshot.meta.game_date
 
     rows = []
+    arrivals = 0
     for p in snapshot.players:
         old = prev.get(p.unique_id)
         club = snapshot.clubs.get(p.club_id) if p.club_id is not None else None
@@ -271,6 +276,8 @@ def ingest(
             and my_club is not None
             and (first_club == my_club or my_club in p.home_grown_club_ids)
         )
+        if at_my_club and not first_sync and not (old and old["present"] and old["at_my_club"]):
+            arrivals += 1
         if old is not None and old["club_id"] == p.club_id and old["club_since"]:
             club_since = old["club_since"]
         else:
@@ -329,7 +336,7 @@ def ingest(
             for c in snapshot.clubs.values()
         ],
     )
-    return IngestStats(first_sync, len(league_clubs), len(continental_clubs))
+    return IngestStats(first_sync, len(league_clubs), len(continental_clubs), arrivals)
 
 
 # --- classify and plan -------------------------------------------------------------------
@@ -355,6 +362,20 @@ def _job_state(r: sqlite3.Row) -> JobState:
     )
 
 
+def image_state(r: sqlite3.Row) -> ImageState:
+    """What a current picture stands for, to the planner.
+
+    A drawn picture shows the group, club and age band it was drawn for. A picture restored
+    from the history stands for the player as they were when it was restored (manual.py), so
+    it is re-drawn only after a later change.
+    """
+    if r["restored_at"]:
+        return ImageState(
+            Group(r["restored_group"] or r["group_name"]), r["restored_club_id"], r["restored_band"]
+        )
+    return ImageState(Group(r["group_name"]), r["club_id"], r["age_band"])
+
+
 def _classify(
     conn: sqlite3.Connection, career_id: int, settings: Settings
 ) -> tuple[PlanResult, list[tuple[Any, ...]]]:
@@ -363,10 +384,10 @@ def _classify(
     Returns the plan and the player rows whose group, tracking or reasons would change.
     """
     images = {
-        r["unique_id"]: ImageState(Group(r["group_name"]), r["club_id"], r["age_band"])
+        r["unique_id"]: image_state(r)
         for r in conn.execute(
-            "SELECT unique_id, group_name, club_id, age_band FROM images"
-            " WHERE career_id = ? AND is_current = 1",
+            "SELECT unique_id, group_name, club_id, age_band, restored_at, restored_group,"
+            " restored_club_id, restored_band FROM images WHERE career_id = ? AND is_current = 1",
             (career_id,),
         )
     }
@@ -588,13 +609,19 @@ def run_sync(
     dry_run: bool = False,
     preview: int = 20,
     with_table: bool = False,
+    trigger: str | None = None,
 ) -> SyncReport:
-    """Run one sync in a transaction; a dry run rolls everything back."""
+    """Run one sync in a transaction; a dry run rolls everything back.
+
+    `save_mtime` is the save's modification time as read. The career keeps the newest it has
+    seen; the career with the newest save is the active one (spec section 8). `trigger` says
+    who started the sync: 'poller', 'sync now' or 'command'.
+    """
     with transaction(conn, rollback=dry_run):
         career, warnings = resolve_career(conn, snapshot, settings)
         cur = conn.execute(
-            "INSERT INTO sync_runs (career_id, started_at, save_file, save_mtime, build, game_date)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO sync_runs (career_id, started_at, save_file, save_mtime, build,"
+            " game_date, trigger) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 career.id,
                 _now(),
@@ -602,10 +629,17 @@ def run_sync(
                 save_mtime,
                 snapshot.meta.build,
                 _iso(snapshot.meta.game_date),
+                trigger,
             ),
         )
         sync_id = cur.lastrowid
         assert sync_id is not None
+        if save_mtime is not None:
+            conn.execute(
+                "UPDATE careers SET last_save_mtime = MAX(COALESCE(last_save_mtime, ?), ?)"
+                " WHERE id = ?",
+                (save_mtime, save_mtime, career.id),
+            )
         stats = ingest(conn, career, snapshot, settings, sync_id)
         result = classify_and_plan(conn, career.id, settings)
         counts = _counts(conn, career.id, snapshot)
@@ -646,6 +680,7 @@ def run_sync(
             queue=queue_preview(conn, career.id, preview),
             warnings=warnings,
             table=player_table(conn, career.id) if with_table else [],
+            new_at_my_club=stats.arrivals_at_my_club,
         )
 
 
@@ -770,13 +805,36 @@ def preview_settings(
 
 
 def record_failed_sync(
-    conn: sqlite3.Connection, save_file: str, error: str, build: str | None = None
+    conn: sqlite3.Connection,
+    save_file: str,
+    error: str,
+    build: str | None = None,
+    *,
+    save_mtime: float | None = None,
+    unsupported: bool = False,
+    trigger: str | None = None,
 ) -> None:
-    """Note a sync that could not read its save. Existing pictures and jobs are untouched."""
+    """Note a sync that could not read its save. Existing pictures and jobs are untouched.
+
+    With `save_mtime`, the save watcher counts that version of the save as dealt with and
+    does not try it again until it changes; leave it out for a failure worth retrying.
+    """
     now = _now()
     with transaction(conn):
         conn.execute(
-            "INSERT INTO sync_runs (started_at, finished_at, save_file, build, error)"
-            " VALUES (?, ?, ?, ?, ?)",
-            (now, now, save_file, build, error),
+            "INSERT INTO sync_runs (started_at, finished_at, save_file, save_mtime, build, error,"
+            " unsupported, trigger) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (now, now, save_file, save_mtime, build, error, int(unsupported), trigger),
         )
+
+
+def sync_of_save(conn: sqlite3.Connection, save_file: str, save_mtime: float) -> sqlite3.Row | None:
+    """The latest sync, successful or not, that dealt with this version of a save, if any.
+
+    A failure recorded without a save time (the save was still being written) does not count.
+    """
+    return conn.execute(
+        "SELECT id, error, unsupported FROM sync_runs WHERE save_file = ?"
+        " AND save_mtime BETWEEN ? AND ? ORDER BY id DESC LIMIT 1",
+        (save_file, save_mtime - 0.001, save_mtime + 0.001),
+    ).fetchone()

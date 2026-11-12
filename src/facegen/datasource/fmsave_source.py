@@ -141,26 +141,52 @@ def convert_fixtures(
     return {cid: dict(seasons[max(seasons)]) for cid, seasons in by_season.items()}
 
 
+def unknown_build_note(build: str, reader: str) -> str:
+    """The sync warning for a build the reader has no layouts of its own for."""
+    return (
+        f"FM27 build {build} is not one {reader} was made for: it was read with the layouts "
+        "of a build it knows. Check that the players and clubs look right; a newer fmsave "
+        "may support this build (AGENTS.md rule 5)."
+    )
+
+
 class FmsaveDataSource:
     """Reads a save copy with fmsave. Never point it at the game's own saves folder."""
 
     def load(self, path: Path) -> Snapshot:
         import fmsave
 
+        reader = f"fmsave {fmsave.__version__}"
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             try:
                 save = fmsave.open(path)
             except fmsave.UnsupportedGameError as exc:
-                raise UnsupportedSaveError(str(exc)) from exc
+                raise UnsupportedSaveError(str(exc), reader=reader) from exc
             except fmsave.FmsaveError as exc:
                 raise SaveReadError(str(exc)) from exc
+            # fmsave reads an FM27 build it has no layouts for with a known build's layouts
+            # where the sections match, and raises UnsupportedGameError from any reader whose
+            # section does not. Either way the build is unsupported; say which one.
             try:
-                snapshot = self._read(save, fmsave)
-            except fmsave.FmsaveError as exc:
-                raise SaveReadError(str(exc)) from exc
+                info = save.info
+                try:
+                    snapshot = self._read(save, fmsave)
+                except fmsave.UnsupportedGameError as exc:
+                    raise UnsupportedSaveError(
+                        f"{info.game} build {info.build} cannot be read by {reader}: {exc}",
+                        build=info.build,
+                        reader=reader,
+                    ) from exc
+                except fmsave.FmsaveError as exc:
+                    raise SaveReadError(str(exc)) from exc
+            finally:
+                save.close()
+        notes: tuple[str, ...] = ()
+        if not snapshot.meta.known_build:
+            notes = (unknown_build_note(snapshot.meta.build, reader),)
         messages = tuple(dict.fromkeys(str(w.message) for w in caught))
-        meta = replace(snapshot.meta, warnings=snapshot.meta.warnings + messages)
+        meta = replace(snapshot.meta, warnings=notes + snapshot.meta.warnings + messages)
         return replace(snapshot, meta=meta)
 
     def _read(self, save: Any, fmsave: Any) -> Snapshot:

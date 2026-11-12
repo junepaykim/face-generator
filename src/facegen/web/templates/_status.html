@@ -1,3 +1,11 @@
+{% if last_sync and last_sync.unsupported %}
+<section class="card alert">
+  <h2>The newest save cannot be read</h2>
+  <p><strong>{{ last_sync.save_file }}</strong>{% if last_sync.build %} was saved by FM27 build <strong>{{ last_sync.build }}</strong>, which{% else %}: its game or build{% endif %} the save reader does not support.</p>
+  <p class="small">{{ last_sync.error }}</p>
+  <p class="small">{{ unsupported_advice }}</p>
+</section>
+{% endif %}
 <section class="cards">
   <div class="card">
     <h2>Worker</h2>
@@ -29,10 +37,19 @@
         <tr><th>When</th><td>{{ (last_sync.finished_at or last_sync.started_at)[:19]|replace("T", " ") }} UTC</td></tr>
         <tr><th>In-game</th><td>{{ last_sync.game_date or "unknown" }}</td></tr>
         <tr><th>Build</th><td>{{ last_sync.build or "unknown" }}</td></tr>
+        {% if last_sync.trigger %}<tr><th>Started by</th><td>{{ {"poller": "the save watcher", "sync now": "Sync now", "command": "facegen sync"}.get(last_sync.trigger, last_sync.trigger) }}</td></tr>{% endif %}
       </table>
       {% if last_sync.error %}<p class="bad small">Failed: {{ last_sync.error }}</p>{% endif %}
     {% else %}
       <p class="muted">Never synced.</p>
+    {% endif %}
+    {% if poller %}
+      <p class="small"><span class="state state-{{ {'syncing': 'running', 'settling': 'waiting', 'error': 'error', 'stopped': 'stopped'}.get(poller.state, 'idle') }}">watching saves</span> {{ poller.detail }}{% if poller.checked %} <span class="muted">· checked {{ poller.checked }}</span>{% endif %}</p>
+    {% else %}
+      <p class="muted small">Not watching the saves folder (<code>--no-watch</code>): use Sync now after saving.</p>
+    {% endif %}
+    {% if careers|length > 1 %}
+      <p class="muted small">FM27 is shown the pack of <strong>{{ careers[0].display_name }}</strong>, whose save is the newest. Other careers: {% for c in careers[1:] %}{{ c.display_name }}{{ ", " if not loop.last }}{% endfor %}.</p>
     {% endif %}
     {% if sync %}
       {% if sync.running %}<p><span class="state state-running">syncing</span> started {{ sync.started }}; this takes about half a minute.</p>
@@ -65,7 +82,7 @@
 
 <section class="card">
   <h2>Queue
-    <span class="muted small">{{ counts.queued if counts else 0 }} queued{% if counts and counts.manual %}, {{ counts.manual }} requested by hand{% endif %}{% if worker and worker.waiting_for_reference %}, {{ worker.waiting_for_reference }} wait for a reference picture (Phase 5){% endif %}</span>
+    <span class="muted small">{{ counts.queued if counts else 0 }} queued{% if counts and counts.manual %}, {{ counts.manual }} requested by hand{% endif %}</span>
   </h2>
   <p class="muted small">The worker draws manual requests first, then the automatic jobs of group {{ auto_groups|join(", ")|upper }}{% if not settings.schedule.generate_while_fm_running %}, only while FM27 is closed{% endif %}. Generate now draws the whole queue, every group{% if not settings.schedule.generate_while_fm_running %}, even while FM27 runs{% endif %}.</p>
   {% if queue %}
@@ -80,8 +97,8 @@
         <td><span class="grp grp-{{ j.group_name }}">{{ j.group_name|upper }}</span></td>
         <td>{{ tier_name(j.tier) }}</td>
         <td class="why">{{ j.reason }}
-          {% if waits(j.kind, j.at_my_club, settings) %}<span class="tag warn">waits for Phase 5 (reference picture)</span>
-          {% elif not j.manual and j.group_name not in auto_groups %}<span class="tag warn">not drawn automatically yet: Generate now draws it</span>{% endif %}</td>
+          {% if uses_reference(j.kind, j.at_my_club, settings) %}<span class="tag">reference picture</span>{% endif %}
+          {% if not j.manual and j.group_name not in auto_groups %}<span class="tag warn">not drawn automatically (Settings, Worker): Generate now draws it</span>{% endif %}</td>
         <td>{% if j.manual and j.status == "queued" %}<form method="post" action="/players/{{ j.unique_id }}/cancel"><input type="hidden" name="next" value="/"><button class="link">cancel</button></form>{% endif %}</td>
       </tr>
     {% endfor %}
