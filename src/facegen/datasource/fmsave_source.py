@@ -11,7 +11,7 @@ from __future__ import annotations
 import warnings
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
-from dataclasses import replace
+from dataclasses import fields, replace
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -21,6 +21,7 @@ from facegen.datasource.records import (
     ClubRecord,
     Gender,
     LeagueTableRecord,
+    Personality,
     PlayerRecord,
     SaveMeta,
     Snapshot,
@@ -66,6 +67,12 @@ def _age_on(birth: date, today: date) -> int:
     return today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day))
 
 
+def convert_personality(personality: Any) -> Personality | None:
+    if personality is None:
+        return None
+    return Personality(**{f.name: getattr(personality, f.name) for f in fields(Personality)})
+
+
 def convert_player(p: Any, uid_map: Mapping[int, int], game_date: date | None) -> PlayerRecord:
     def club(uid: int | None) -> int | None:
         return None if uid is None else uid_map.get(uid)
@@ -91,6 +98,7 @@ def convert_player(p: Any, uid_map: Mapping[int, int], game_date: date | None) -
         club_join_date=p.loan_start if p.on_loan and p.loan_start else p.club_join_date,
         is_goalkeeper=bool(p.natural_positions) and p.natural_positions[0] == "GK",
         strength=attributes.strength if attributes is not None else None,
+        personality=convert_personality(getattr(p, "personality", None)),
     )
 
 

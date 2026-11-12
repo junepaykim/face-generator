@@ -32,6 +32,7 @@ from facegen.jobs import apply_plan as apply_plan
 from facegen.leagues import clubs_in_competitions, my_league_competitions
 from facegen.planner import ImageState, JobState, Plan, PlayerPlanState, plan
 from facegen.settings import Settings
+from facegen.traits import personality_to_json
 
 
 def _now() -> str:
@@ -187,6 +188,7 @@ _PLAYER_COLUMNS = (
     "pa",
     "is_goalkeeper",
     "strength",
+    "personality",
     "club_id",
     "loan_parent_club_id",
     "home_grown_club_ids",
@@ -298,6 +300,7 @@ def ingest(
                 p.pa,
                 int(p.is_goalkeeper),
                 p.strength,
+                personality_to_json(p.personality),
                 p.club_id,
                 p.loan_parent_club_id,
                 json.dumps(list(p.home_grown_club_ids)),

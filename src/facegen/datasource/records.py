@@ -25,6 +25,20 @@ class ClubRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class Personality:
+    """A player's eight personality attributes, each on the 1 to 20 scale."""
+
+    adaptability: int
+    ambition: int
+    loyalty: int
+    pressure: int
+    professionalism: int
+    sportsmanship: int
+    temperament: int
+    controversy: int
+
+
+@dataclass(frozen=True, slots=True)
 class PlayerRecord:
     unique_id: int
     """The game's unique ID for the person; what FM27's config.xml maps."""
@@ -47,6 +61,8 @@ class PlayerRecord:
     is_goalkeeper: bool
     strength: int | None
     """Strength on the 1 to 20 display scale."""
+    personality: Personality | None = None
+    """None when the save holds none for the player."""
 
 
 @dataclass(frozen=True, slots=True)

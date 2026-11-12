@@ -30,6 +30,8 @@ def test_defaults_load_into_typed_settings() -> None:
     assert (s.body.short_below_cm, s.body.tall_from_cm) == (174, 191)
     assert (s.body.slim_strength_at_most, s.body.muscular_strength_from) == (4, 14)
     assert s.my_club.soften_skin == 2
+    assert s.personality.weight == 2
+    assert s.my_club.round_eyes == 0.2
     assert s.age.a_my_club[0] == (15, "W01") and s.age.a_my_club[-1] == (34, "W10")
     assert s.eligibility.mens_football_only is True
     assert s.eligibility.continental_competition_ids == frozenset()
@@ -176,6 +178,21 @@ def test_body_thresholds_are_checked(conn: sqlite3.Connection) -> None:
         set_override(conn, "body.slim_strength_at_most", 14)  # not below muscular
     s = set_override(conn, "body.tall_from_cm", 193)
     assert s.body.tall_from_cm == 193
+
+
+def test_round_eyes_share_is_checked(conn: sqlite3.Connection) -> None:
+    for bad in (-0.1, 1.5):
+        with pytest.raises(SettingsError):
+            set_override(conn, "my_club.round_eyes", bad)
+    assert set_override(conn, "my_club.round_eyes", 0).my_club.round_eyes == 0.0
+    assert set_override(conn, "my_club.round_eyes", 0.35).my_club.round_eyes == 0.35
+
+
+def test_personality_weight_is_checked(conn: sqlite3.Connection) -> None:
+    for bad in (-1, 11):
+        with pytest.raises(SettingsError):
+            set_override(conn, "personality.weight", bad)
+    assert set_override(conn, "personality.weight", 0).personality.weight == 0
 
 
 def test_several_overrides_are_checked_together(conn: sqlite3.Connection) -> None:

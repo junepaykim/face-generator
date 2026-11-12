@@ -7,11 +7,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from facegen.age import age_wording
+from facegen.datasource.records import Personality
 from facegen.db import ACTIVE_CAREER_ORDER, transaction
 from facegen.domain import FinishedStatus, GroupName, JobKind
 from facegen.planner import TIER_MANUAL, Plan
 from facegen.settings import BodyThresholds, Settings
-from facegen.traits import CharacterSheet, load_sheet, sheet_for
+from facegen.traits import CharacterSheet, load_sheet, personality_from_json, sheet_for
 
 
 def now() -> str:
@@ -46,6 +47,7 @@ class Job:
     manual: bool = False
     traits_version: int | None = None
     revision: int = 0
+    personality: Personality | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,7 +86,7 @@ def queued_jobs(
     rows = conn.execute(
         "SELECT j.id, j.unique_id, j.kind, j.group_name, j.target_club_id, j.target_band,"
         " j.manual, j.traits_version, j.revision, p.name, p.at_my_club, p.is_goalkeeper,"
-        " p.height_cm, p.strength, p.age"
+        " p.height_cm, p.strength, p.age, p.personality"
         " FROM jobs j JOIN players p ON p.career_id = j.career_id AND p.unique_id = j.unique_id"
         " WHERE j.career_id = ? AND j.status = 'queued'"
         + (" AND j.id = ?" if job_id is not None else "")
@@ -108,6 +110,7 @@ def queued_jobs(
             manual=bool(r["manual"]),
             traits_version=r["traits_version"],
             revision=r["revision"],
+            personality=personality_from_json(r["personality"]),
         )
         for r in rows
     ]
@@ -177,7 +180,11 @@ def finish(
 
 
 def allocate_sheet(
-    conn: sqlite3.Connection, career: Career, job: Job, body: BodyThresholds
+    conn: sqlite3.Connection,
+    career: Career,
+    job: Job,
+    body: BodyThresholds,
+    personality_weight: int,
 ) -> tuple[int, CharacterSheet]:
     """Assign a sheet once per job, atomically with sampling, before GPU work starts."""
     with transaction(conn):
@@ -199,6 +206,8 @@ def allocate_sheet(
             height_cm=job.height_cm,
             strength=job.strength,
             body=body,
+            personality=job.personality,
+            personality_weight=personality_weight,
             new_face=job.kind == "reroll",
             activate=False,
         )

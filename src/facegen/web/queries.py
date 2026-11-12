@@ -15,7 +15,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 from facegen.manual import restorable
-from facegen.traits import CharacterSheet
+from facegen.traits import CharacterSheet, personality_from_json, personality_leans
 
 PER_PAGE = 100
 
@@ -241,6 +241,8 @@ def player_detail(
         return None
     player = _player_row(r)
     player["home_grown_club_ids"] = json.loads(player["home_grown_club_ids"] or "[]")
+    personality = personality_from_json(player.pop("personality", None))
+    player["personality"] = None if personality is None else asdict(personality)
     images = [
         _image(row)
         for row in conn.execute(
@@ -285,6 +287,10 @@ def player_detail(
         "images": images,
         "current": next((i for i in images if i["is_current"]), None),
         "sheet": sheet,
+        "leans": [
+            {"reason": lean.describe(), "expression": lean.expression}
+            for lean in personality_leans(personality)
+        ],
         "jobs": jobs,
     }
 

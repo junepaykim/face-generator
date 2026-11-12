@@ -136,6 +136,16 @@ class MyClubSettings:
 
     banned_traits: frozenset[str]
     soften_skin: int
+    round_eyes: float = 0.0
+    """Share of sharp-eyed players drawn with round eyes (0 to 1)."""
+
+
+@dataclass(frozen=True, slots=True)
+class PersonalitySettings:
+    """How much personality weights a newly sampled character sheet (spec section 4)."""
+
+    weight: int
+    """Each lean multiplies its option's weight by (1 + weight); 0 turns weighting off."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,6 +173,7 @@ class Settings:
     reference: ReferenceSettings
     my_club: MyClubSettings
     body: BodyThresholds
+    personality: PersonalitySettings
     schedule: Schedule
     ui: UI
     values: Mapping[str, Any]
@@ -272,6 +283,11 @@ def build_settings(values: Mapping[str, Any], overridden: frozenset[str] = froze
     scale = v["reference.scale"]
     if not 0 < scale <= 1:
         raise SettingsError(f"setting 'reference.scale' must be above 0 and at most 1, got {scale}")
+    round_eyes = v["my_club.round_eyes"]
+    if not 0 <= round_eyes <= 1:
+        raise SettingsError(
+            f"setting 'my_club.round_eyes' must be between 0 and 1, got {round_eyes}"
+        )
     banned = v["my_club.banned_traits"]
     if any(not isinstance(x, str) or not x.strip() or x != x.strip().lower() for x in banned):
         raise SettingsError("my_club.banned_traits holds lower-case trait names, e.g. 'freckles'")
@@ -345,8 +361,12 @@ def build_settings(values: Mapping[str, Any], overridden: frozenset[str] = froze
         my_club=MyClubSettings(
             banned_traits=frozenset(banned),
             soften_skin=_range("my_club.soften_skin", v["my_club.soften_skin"], 0, 2),
+            round_eyes=float(round_eyes),
         ),
         body=body,
+        personality=PersonalitySettings(
+            weight=_range("personality.weight", v["personality.weight"], 0, 10)
+        ),
         schedule=Schedule(
             poll_seconds=_range("schedule.poll_seconds", v["schedule.poll_seconds"], 5, 86400),
             generate_while_fm_running=v["schedule.generate_while_fm_running"],

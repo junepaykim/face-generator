@@ -276,6 +276,8 @@ class Worker:
                     height_cm=job.height_cm,
                     strength=job.strength,
                     body=self.settings.body,
+                    personality=job.personality,
+                    personality_weight=self.settings.personality.weight,
                 )
             else:
                 sheet_version, sheet = found
@@ -380,7 +382,9 @@ class Worker:
         t0 = self.clock()
         s = self.settings
         group = self._group(job.group)
-        sheet_version, sheet = jobs.allocate_sheet(self.conn, self.career, job, s.body)
+        sheet_version, sheet = jobs.allocate_sheet(
+            self.conn, self.career, job, s.body, s.personality.weight
+        )
         version = self.images.next_version(job.unique_id)
         wording = job.target_band or age_wording(job.age, job.group, job.at_my_club, s.age)
         kit, kit_known = self.kits.kit_for(job.target_club_id, job.goalkeeper)

@@ -5,10 +5,10 @@ every prompt carries the rating `safe` and the sportswear terms; every negative 
 carries CONTENT_NEGATIVE; a wording flagged as under 18 adds YOUNG_NEGATIVE. Nothing in the
 settings can remove or weaken these terms.
 
-Players at my club get two adjustments (spec section 3), applied here so the stored
+Players at my club get three adjustments (spec section 3), applied here so the stored
 character sheet is unchanged: banned traits (by default freckles and the muscular build) are
-left out of the prompt and added to its negative, and tan and dark skin are drawn
-`soften_skin` steps lighter.
+left out of the prompt and added to its negative, tan and dark skin are drawn `soften_skin`
+steps lighter, and a seeded share (`round_eyes`) of sharp eyes are drawn round.
 
 Height and build words (petite, tall female, skinny, muscular female) follow the skin, for
 the tenth of players at each end only (traits.py, settings `body`).
@@ -37,6 +37,7 @@ from facegen.traits import (
     MARK,
     POSE,
     CharacterSheet,
+    eyes_drawn_round,
     skin_words,
 )
 
@@ -74,6 +75,13 @@ def _join(*parts: str) -> str:
     return ", ".join(p for p in parts if p)
 
 
+def drawn_eye_shape(sheet: CharacterSheet, my_club: MyClubSettings | None = None) -> str:
+    """The sheet's eye shape, or "round" where my club's `round_eyes` share picks it."""
+    if my_club and eyes_drawn_round(sheet.eye_shape, sheet.base_seed, my_club.round_eyes):
+        return "round"
+    return sheet.eye_shape
+
+
 def build_prompt(
     sheet: CharacterSheet,
     wording: str,
@@ -95,7 +103,7 @@ def build_prompt(
         HAIR_STYLE[sheet.hair_style].words,
         FRINGE[sheet.fringe].words,
         EYE_COLOUR[sheet.eye_colour].words,
-        EYE_SHAPE[sheet.eye_shape].words,
+        EYE_SHAPE[drawn_eye_shape(sheet, my_club)].words,
         skin_words(sheet.skin, soften),
         "" if sheet.height in banned else HEIGHT[sheet.height].words,
         "" if sheet.build in banned else BUILD[sheet.build].words,
@@ -125,14 +133,14 @@ def build_prompt(
 
 
 def drawn_traits(sheet: CharacterSheet, my_club: MyClubSettings | None = None) -> dict[str, str]:
-    """The sheet fields the prompt actually asks for, after my-club bans. Used by qc.py."""
+    """The sheet fields the prompt actually asks for, after my-club rules. Used by qc.py."""
     banned = frozenset(my_club.banned_traits) if my_club else frozenset()
     drawn = {
         "hair_colour": sheet.hair_colour,
         "hair_style": sheet.hair_style,
         "fringe": sheet.fringe,
         "eye_colour": sheet.eye_colour,
-        "eye_shape": sheet.eye_shape,
+        "eye_shape": drawn_eye_shape(sheet, my_club),
         "expression": sheet.expression,
     }
     for name in ("height", "build"):

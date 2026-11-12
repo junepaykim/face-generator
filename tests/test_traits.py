@@ -2,24 +2,33 @@ from __future__ import annotations
 
 import sqlite3
 from collections import Counter
+from dataclasses import fields, replace
 
 import pytest
+from factories import PLAIN_PERSONALITY
 
 from facegen import traits
+from facegen.datasource.records import Personality
 from facegen.traits import (
     BANNABLE,
     FIELDS,
+    LEANS,
     POSE,
     BodyThresholds,
     CharacterSheet,
     build_class,
+    eyes_drawn_round,
     height_class,
     load_sheet,
+    personality_from_json,
+    personality_leans,
+    personality_to_json,
     pick_pose,
     picture_seed,
     sample_sheet,
     sheet_for,
     skin_words,
+    weighted,
 )
 
 
@@ -180,3 +189,109 @@ def test_sheet_for_samples_once_and_stores(conn: sqlite3.Connection) -> None:
     assert v3 == 2 and s3.base_seed != s1.base_seed
     assert load_sheet(conn, 1, 42) == (2, s3)
     assert conn.execute("SELECT COUNT(*) FROM traits").fetchone()[0] == 2
+
+
+# --- personality ---------------------------------------------------------------------------
+
+
+def test_a_middling_personality_or_weight_0_leaves_the_sheet_as_it_was() -> None:
+    """Players without a notable attribute get exactly the sheet they would without one."""
+    loud = replace(PLAIN_PERSONALITY, pressure=20, temperament=1)
+    for uid in range(300):
+        plain = sample_sheet("k", uid, 1)
+        assert sample_sheet("k", uid, 1, personality=PLAIN_PERSONALITY) == plain
+        assert sample_sheet("k", uid, 1, personality=loud, personality_weight=0) == plain
+
+
+def test_leans_mark_the_ends_of_each_attribute() -> None:
+    assert personality_leans(None) == ()
+    assert personality_leans(PLAIN_PERSONALITY) == ()
+    leans = personality_leans(replace(PLAIN_PERSONALITY, pressure=14, professionalism=9))
+    assert [lean.describe() for lean in leans] == ["high pressure", "low professionalism"]
+    assert [lean.expression for lean in leans] == ["confident", "cheerful"]
+    assert personality_leans(replace(PLAIN_PERSONALITY, pressure=13, professionalism=10)) == ()
+    # Low temperament and low sportsmanship once pointed at sharp eyes; now at nothing.
+    assert personality_leans(replace(PLAIN_PERSONALITY, temperament=1, sportsmanship=1)) == ()
+
+
+def test_leans_name_real_attributes_and_options() -> None:
+    attributes = {f.name for f in fields(Personality)}
+    for lean in LEANS:
+        assert lean.attribute in attributes and 1 <= lean.cut <= 20
+        assert lean.expression in traits.EXPRESSION
+    ends = [(lean.attribute, lean.high) for lean in LEANS]
+    assert len(ends) == len(set(ends))
+    assert {lean.expression for lean in LEANS} == set(traits.EXPRESSION)
+
+
+def test_each_lean_multiplies_its_option_weight() -> None:
+    # Two leans toward confident (pressure, ambition), one toward shy (adaptability).
+    leans = personality_leans(replace(PLAIN_PERSONALITY, pressure=16, ambition=17, adaptability=5))
+    favoured = [lean.expression for lean in leans]
+    table = weighted(traits.EXPRESSION, favoured, 2)
+    assert {k: o.weight for k, o in table.items()} == {
+        "cheerful": 1,
+        "serious": 1,
+        "shy": 3,
+        "confident": 5,
+    }
+    assert table["confident"].words == traits.EXPRESSION["confident"].words
+    assert weighted(traits.EXPRESSION, [], 2) is traits.EXPRESSION
+    assert weighted(traits.EXPRESSION, favoured, 0) is traits.EXPRESSION
+
+
+def test_personality_shifts_the_draw_without_deciding_it() -> None:
+    n = 4000
+    confident = replace(PLAIN_PERSONALITY, pressure=17)
+    expressions = Counter(
+        sample_sheet("k", uid, 1, personality=confident).expression for uid in range(n)
+    )
+    assert 0.45 < expressions["confident"] / n < 0.55  # 3 in 6, against 1 in 4 without
+    assert set(expressions) == set(traits.EXPRESSION)
+
+
+def test_personality_changes_only_the_expression() -> None:
+    p = replace(PLAIN_PERSONALITY, pressure=20, temperament=1, sportsmanship=20)
+    changed: set[str] = set()
+    for uid in range(500):
+        a = sample_sheet("k", uid, 1)
+        b = sample_sheet("k", uid, 1, personality=p)
+        changed |= {
+            f.name for f in fields(CharacterSheet) if getattr(a, f.name) != getattr(b, f.name)
+        }
+    assert changed == {"expression"}
+
+
+def test_personality_json_round_trip() -> None:
+    assert personality_from_json(personality_to_json(PLAIN_PERSONALITY)) == PLAIN_PERSONALITY
+    assert personality_to_json(None) is None
+    assert personality_from_json(None) is None
+
+
+def test_sheet_for_weights_a_new_sheet_by_personality(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        "INSERT INTO careers (id, key, display_name, fingerprint, created_at, updated_at)"
+        " VALUES (1, 'k', 'K', '[]', '', '')"
+    )
+    p = replace(PLAIN_PERSONALITY, pressure=20, ambition=20, controversy=20)
+    _, sheet = sheet_for(conn, 1, "k", 42, height_cm=180, strength=10, personality=p)
+    assert sheet == sample_sheet("k", 42, 1, height_cm=180, strength=10, personality=p)
+
+
+# --- round eyes at my club -----------------------------------------------------------------
+
+
+def test_only_sharp_eyes_are_drawn_round_and_about_the_share_of_them() -> None:
+    seeds = range(5000)
+    for shape in ("gentle", "round"):
+        assert not any(eyes_drawn_round(shape, s, 1.0) for s in seeds)
+    assert not any(eyes_drawn_round("sharp", s, 0.0) for s in seeds)
+    assert all(eyes_drawn_round("sharp", s, 1.0) for s in seeds)
+    share = sum(eyes_drawn_round("sharp", s, 0.2) for s in seeds) / len(seeds)
+    assert 0.18 < share < 0.22
+
+
+def test_raising_the_round_eye_share_only_adds_players() -> None:
+    low = {s for s in range(3000) if eyes_drawn_round("sharp", s, 0.2)}
+    high = {s for s in range(3000) if eyes_drawn_round("sharp", s, 0.3)}
+    assert low < high

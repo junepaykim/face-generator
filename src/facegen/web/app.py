@@ -47,7 +47,7 @@ from facegen.settings import (
     set_overrides,
 )
 from facegen.sync import SettingsPreview, classify_and_plan, preview_settings
-from facegen.traits import TRAIT_TABLES
+from facegen.traits import TRAIT_TABLES, eyes_drawn_round
 from facegen.web import queries
 from facegen.web.forms import editable_keys, parse_settings_form, settings_sections
 from facegen.web.queries import PlayerFilter
@@ -357,6 +357,12 @@ def create_app(ctx: AppContext) -> FastAPI:
             settings=settings,
             age_table=table_name(p["group_name"], bool(p["at_my_club"])),
             redraw_reference=uses_reference("redraw", bool(p["at_my_club"]), settings),
+            eyes_round=bool(detail["sheet"])
+            and eyes_drawn_round(
+                detail["sheet"]["fields"]["eye_shape"],
+                detail["sheet"]["fields"]["base_seed"],
+                settings.my_club.round_eyes,
+            ),
             group_for_redraw=group_for_redraw,
             reference_kinds=REFERENCE_KINDS,
             groups=[g.value for g in Group],

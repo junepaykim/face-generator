@@ -23,6 +23,7 @@
       <tr><th>Age</th><td>{{ p.age if p.age is not none else "?" }}{% if p.birth_date %} <span class="muted">(born {{ p.birth_date }})</span>{% endif %}</td></tr>
       <tr><th>Height</th><td>{{ p.height_cm or "?" }} cm · Strength {{ p.strength if p.strength is not none else "?" }}</td></tr>
       <tr><th>CA / PA</th><td>{{ p.ca }} / {{ p.pa if p.pa is not none else "?" }}</td></tr>
+      <tr><th>Personality</th><td>{% if p.personality %}{% for k, v in p.personality.items() %}{{ k|capitalize }} {{ v }}{{ " · " if not loop.last }}{% endfor %}{% else %}<span class="muted">unknown (read at the next sync)</span>{% endif %}</td></tr>
       <tr><th>Group</th><td>{% if p.group_name %}<span class="grp grp-{{ p.group_name }}">{{ p.group_name|upper }}</span>{% else %}none{% endif %}
         {% if p.tracked %}<span class="tag">tracked</span>{% endif %}{% if p.pin %}<span class="tag">pinned to {{ p.pin }}</span>{% endif %}</td></tr>
       <tr><th>Why</th><td>{{ p.reasons|join("; ") or "no rule applies" }}</td></tr>
@@ -84,10 +85,11 @@
         <tr><th>base seed</th><td>{{ d.sheet.fields.base_seed }}</td></tr>
         <tr><th>version</th><td>{{ d.sheet.version }} <span class="muted small">({{ d.sheet.created_at[:10] }})</span></td></tr>
       </table>
-      {% if p.at_my_club %}<p class="muted small">At my club, banned traits ({{ settings.my_club.banned_traits|sort|join(", ") or "none" }}) are left out and tan or dark skin is drawn {{ settings.my_club.soften_skin }} step(s) lighter.</p>{% endif %}
+      {% if p.at_my_club %}<p class="muted small">At my club, banned traits ({{ settings.my_club.banned_traits|sort|join(", ") or "none" }}) are left out, tan or dark skin is drawn {{ settings.my_club.soften_skin }} step(s) lighter, and {{ (settings.my_club.round_eyes * 100)|round|int }}% of sharp eyes are drawn round{% if eyes_round %}: this player's are{% endif %}.</p>{% endif %}
     {% else %}
       <p class="muted">Sampled when the first picture is drawn.</p>
     {% endif %}
+    {% if d.leans %}<p class="muted small">Personality weights the expression of a newly sampled sheet{% if settings.personality.weight == 0 %} (off in settings){% endif %}: {% for l in d.leans %}{{ l.reason }} favours {{ l.expression }}{{ "; " if not loop.last }}{% endfor %}.</p>{% endif %}
   </div>
 </div>
 

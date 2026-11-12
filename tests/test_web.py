@@ -5,12 +5,12 @@ from __future__ import annotations
 import re
 import sqlite3
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 import pytest
-from factories import ABROAD, NEWGEN, RIVAL, WOMENS, player, snapshot
+from factories import ABROAD, NEWGEN, PLAIN_PERSONALITY, RIVAL, WOMENS, player, snapshot
 from fakes import FakeRenderer, FakeTagger
 from fastapi.testclient import TestClient
 
@@ -35,7 +35,14 @@ BASE = "http://127.0.0.1:8765"
 def world() -> list:
     return [
         player(MINE, name="Mine Player", age=29),
-        player(STAR, name="Famous Striker", ca=185, pa=190, club_id=ABROAD),
+        player(
+            STAR,
+            name="Famous Striker",
+            ca=185,
+            pa=190,
+            club_id=ABROAD,
+            personality=replace(PLAIN_PERSONALITY, pressure=17, temperament=4),
+        ),
         player(B_NEWGEN, name="Rival Kid", ca=90, pa=152, club_id=RIVAL),
         player(WOMAN, name="Womens Player", ca=100, pa=190, club_id=WOMENS),
         player(ABROAD_KID, name="Abroad Kid", ca=120, pa=130, club_id=ABROAD),
@@ -232,6 +239,17 @@ def test_player_page_actions(env: Env) -> None:
     assert "Picture removed" in text and "Reload Skin" in text
     assert env.one("SELECT pin FROM players WHERE unique_id = ?", MINE) == "never"
     assert env.client.post(f"/players/{MINE}/bogus").status_code == 303
+
+
+def test_player_page_shows_personality_and_what_it_weights(env: Env) -> None:
+    text = env.client.get(f"/players/{STAR}").text
+    assert "Pressure 17" in text and "Temperament 4" in text
+    assert "high pressure favours confident." in text
+    assert "temperament favours" not in text  # low temperament weights nothing
+    mine = env.client.get(f"/players/{MINE}").text
+    assert "unknown (read at the next sync)" in mine and "Personality weights" not in mine
+    env.drain()  # MINE gets a sheet; at my club the page states the round-eye share
+    assert "20% of sharp eyes are drawn round" in env.client.get(f"/players/{MINE}").text
 
 
 def test_restore_an_earlier_picture_from_the_history(env: Env) -> None:

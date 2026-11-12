@@ -13,6 +13,7 @@ from factories import (
     DEFAULT_CLUBS,
     MY_CLUB,
     NEWGEN,
+    PLAIN_PERSONALITY,
     RIVAL,
     WOMENS,
     club,
@@ -24,6 +25,7 @@ from facegen.datasource.records import Gender, PlayerRecord, Snapshot
 from facegen.planner import TIER_B, TIER_C
 from facegen.settings import Settings, load_settings, set_override
 from facegen.sync import SyncReport, reclassify, record_failed_sync, run_sync, sync_of_save
+from facegen.traits import personality_from_json
 
 # A small world: pre-existing players have low IDs, newgens start at NEWGEN.
 MINE_OLD = 1001  # pre-existing, at my club
@@ -213,6 +215,21 @@ def test_player_table_has_the_phase_0_columns(conn: sqlite3.Connection, settings
     assert "in my league" in row["reasons"]
     expected = {"unique_id", "name", "age", "height_cm", "ca", "pa", "club", "club_gender"}
     assert expected <= set(row)
+
+
+def test_personality_is_stored_and_kept_up_to_date(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    people = [
+        replace(p, personality=PLAIN_PERSONALITY) if p.unique_id == MINE_OLD else p for p in world()
+    ]
+    sync(conn, snapshot(people), settings)
+    assert personality_from_json(player_row(conn, MINE_OLD)["personality"]) == PLAIN_PERSONALITY
+    assert player_row(conn, MINE_NEW)["personality"] is None
+    calmer = replace(PLAIN_PERSONALITY, temperament=20)
+    people = [replace(p, personality=calmer) if p.unique_id == MINE_OLD else p for p in world()]
+    sync(conn, snapshot(people), settings)
+    assert personality_from_json(player_row(conn, MINE_OLD)["personality"]) == calmer
 
 
 # --- careers -------------------------------------------------------------------------------------

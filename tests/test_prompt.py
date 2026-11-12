@@ -19,7 +19,7 @@ from facegen.prompt import (
     drawn_traits,
 )
 from facegen.settings import MyClubSettings
-from facegen.traits import POSE, CharacterSheet, sample_sheet
+from facegen.traits import POSE, CharacterSheet, eyes_drawn_round, sample_sheet
 
 SHEET = CharacterSheet(
     hair_colour="black",
@@ -138,6 +138,24 @@ def test_drawn_traits_drop_bans_and_empty_values() -> None:
     assert "mark" not in mine and mine["accessory"] == "hairband"
     plain = drawn_traits(replace(SHEET, accessory="none", mark="none"))
     assert "accessory" not in plain and "mark" not in plain
+
+
+def test_some_sharp_eyes_are_drawn_round_at_my_club_only() -> None:
+    mc = replace(MY_CLUB, round_eyes=0.2)
+    sharp = [replace(SHEET, eye_shape="sharp", base_seed=seed) for seed in range(400)]
+    rounded = [s for s in sharp if eyes_drawn_round("sharp", s.base_seed, 0.2)]
+    kept = [s for s in sharp if not eyes_drawn_round("sharp", s.base_seed, 0.2)]
+    assert rounded and kept
+    for s in rounded:
+        assert "tsurime" not in build_prompt(s, "W07", KIT, "v", mc).positive
+        assert "tsurime" in build_prompt(s, "W07", KIT, "v").positive  # elsewhere: as sheet
+        assert drawn_traits(s, mc)["eye_shape"] == "round"
+        assert drawn_traits(s)["eye_shape"] == "sharp"
+    for s in kept:
+        assert "tsurime" in build_prompt(s, "W07", KIT, "v", mc).positive
+    # Gentle eyes are never changed, whatever the share.
+    gentle = replace(SHEET, eye_shape="gentle")
+    assert "tareme" in build_prompt(gentle, "W07", KIT, "v", replace(mc, round_eyes=1.0)).positive
 
 
 def test_height_and_build_words_follow_the_skin() -> None:

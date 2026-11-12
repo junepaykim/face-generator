@@ -23,7 +23,7 @@ from facegen.datasource.fmsave_source import (
     convert_player,
     convert_players,
 )
-from facegen.datasource.records import Gender
+from facegen.datasource.records import Gender, Personality
 
 
 def coded(name: str) -> NS:
@@ -102,6 +102,23 @@ def test_player_conversion() -> None:
     assert p.loan_parent_club_id is None
     assert p.home_grown_club_ids == (1010,)  # None and unknown clubs dropped
     assert not p.is_goalkeeper
+
+
+def test_personality_is_read_when_the_save_has_one() -> None:
+    values = {
+        "adaptability": 14,
+        "ambition": 15,
+        "loyalty": 9,
+        "pressure": 7,
+        "professionalism": 18,
+        "sportsmanship": 12,
+        "temperament": 3,
+        "controversy": 11,
+    }
+    p = convert_player(fm_player(1, personality=NS(**values)), UID_MAP, None)
+    assert p.personality == Personality(**values)
+    assert convert_player(fm_player(1, personality=None), UID_MAP, None).personality is None
+    assert convert_player(fm_player(1), UID_MAP, None).personality is None  # no field at all
 
 
 def test_arrival_is_the_loan_start_while_on_loan() -> None:
@@ -217,6 +234,8 @@ def test_reads_a_real_save_copy() -> None:
     assert snap.managed_club_id in snap.clubs
     assert {c.gender for c in snap.clubs.values()} >= {Gender.MEN}
     assert len({p.unique_id for p in snap.players}) == len(snap.players)
+    with_personality = sum(p.personality is not None for p in snap.players)
+    assert with_personality > 0.9 * len(snap.players)
 
 
 # --- load(): how fmsave's errors and warnings reach the report ---------------------------------

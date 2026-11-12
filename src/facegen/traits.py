@@ -17,9 +17,12 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from collections.abc import Mapping
-from dataclasses import asdict, dataclass, fields
+from collections import Counter
+from collections.abc import Iterable, Mapping
+from dataclasses import asdict, dataclass, fields, replace
 from datetime import UTC, datetime
+
+from facegen.datasource.records import Personality
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,6 +187,92 @@ def build_class(strength: int | None, t: BodyThresholds = DEFAULT_BODY) -> str:
     return "muscular" if strength >= t.muscular_strength_from else "average"
 
 
+# --- personality -----------------------------------------------------------------------------
+# Personality weights one sampled field, the default expression (spec section 4; the user
+# chose expression only, 2026-11-12: eye shape is drawn as before). Each lean below is one end
+# of one attribute: a player at or past its cut-off makes its expression more likely. The
+# cut-offs mark roughly the top and bottom tenth of men's players (7 to 12% each) in the
+# Colchester save's 21,834 (docs/research.md). Loyalty, low Ambition, low Controversy, low
+# Temperament and low Sportsmanship name nothing: no expression fits them.
+
+
+@dataclass(frozen=True, slots=True)
+class Lean:
+    attribute: str
+    """A field of Personality."""
+    high: bool
+    """True: notable at `cut` or above; False: at `cut` or below."""
+    cut: int
+    expression: str
+    """The expression this end of the attribute makes more likely."""
+
+    def applies(self, personality: Personality) -> bool:
+        value = getattr(personality, self.attribute)
+        return value >= self.cut if self.high else value <= self.cut
+
+    def describe(self) -> str:
+        return f"{'high' if self.high else 'low'} {self.attribute}"
+
+
+LEANS = (
+    Lean("pressure", True, 14, "confident"),
+    Lean("pressure", False, 8, "shy"),
+    Lean("ambition", True, 15, "confident"),
+    Lean("controversy", True, 10, "confident"),
+    Lean("professionalism", True, 16, "serious"),
+    Lean("professionalism", False, 9, "cheerful"),
+    Lean("temperament", True, 19, "serious"),
+    Lean("adaptability", True, 19, "cheerful"),
+    Lean("adaptability", False, 7, "shy"),
+    Lean("sportsmanship", True, 14, "cheerful"),
+)
+
+DEFAULT_PERSONALITY_WEIGHT = 2
+"""Settings `personality.weight`."""
+
+
+def personality_leans(personality: Personality | None) -> tuple[Lean, ...]:
+    """The leans a player's personality reaches, in LEANS order; none without one."""
+    if personality is None:
+        return ()
+    return tuple(lean for lean in LEANS if lean.applies(personality))
+
+
+def weighted(
+    table: Mapping[str, Option], favoured: Iterable[str], weight: int
+) -> Mapping[str, Option]:
+    """`table` with each option's weight times (1 + weight x the times it is favoured).
+
+    With nothing favoured, or a weight of 0, the table itself comes back, so the draw is
+    exactly what it would be without a personality.
+    """
+    hits = Counter(favoured)
+    if not hits or weight == 0:
+        return table
+    return {
+        name: replace(option, weight=option.weight * (1 + weight * hits[name]))
+        for name, option in table.items()
+    }
+
+
+# --- round eyes at my club ---------------------------------------------------------------------
+# The user prefers round eyes at my club, and sports portraits already lean sharp (2026-11-12).
+# A seeded share of sharp-eyed players there are drawn with round eyes instead (settings
+# `my_club.round_eyes`). Applied when the prompt is built, like the other my-club rules; the
+# stored sheet keeps its eye shape.
+
+
+def eyes_drawn_round(eye_shape: str, base_seed: int, share: float) -> bool:
+    """Whether a sheet's sharp eyes are drawn round at my club.
+
+    Seeded by the sheet's base seed alone, so all of a player's pictures agree. Raising
+    `share` only adds players: whoever is drawn round at 0.2 is also drawn round at 0.3.
+    """
+    if eye_shape != "sharp" or share <= 0:
+        return False
+    return int.from_bytes(_digest("round eyes", base_seed)[:8], "big") < share * 2**64
+
+
 # Every stored trait, by sheet field: the sampled ones plus height and build.
 TRAIT_TABLES: dict[str, Mapping[str, Option]] = {**FIELDS, "height": HEIGHT, "build": BUILD}
 
@@ -264,11 +353,19 @@ def sample_sheet(
     height_cm: int | None = None,
     strength: int | None = None,
     body: BodyThresholds = DEFAULT_BODY,
+    personality: Personality | None = None,
+    personality_weight: int = DEFAULT_PERSONALITY_WEIGHT,
 ) -> CharacterSheet:
-    """The character sheet for a player. Same inputs, same sheet."""
+    """The character sheet for a player. Same inputs, same sheet.
+
+    Personality only re-weights the expression; each field still uses its own hash, so the
+    other fields are the same with or without one.
+    """
+    favoured = (lean.expression for lean in personality_leans(personality))
+    tables = {**FIELDS, "expression": weighted(EXPRESSION, favoured, personality_weight)}
     chosen = {
         name: pick(table, "sheet", career_key, unique_id, version, name)
-        for name, table in FIELDS.items()
+        for name, table in tables.items()
     }
     return CharacterSheet(
         **chosen,
@@ -301,6 +398,18 @@ def picture_seed(base_seed: int, image_version: int, attempt: int, candidate: in
 
 
 # --- storage -----------------------------------------------------------------------------
+
+
+def personality_to_json(personality: Personality | None) -> str | None:
+    """The players table's `personality` column."""
+    return None if personality is None else json.dumps(asdict(personality), sort_keys=True)
+
+
+def personality_from_json(text: str | None) -> Personality | None:
+    if not text:
+        return None
+    data = json.loads(text)
+    return Personality(**{f.name: int(data[f.name]) for f in fields(Personality)})
 
 
 def next_sheet_version(conn: sqlite3.Connection, career_id: int, unique_id: int) -> int:
@@ -363,6 +472,8 @@ def sheet_for(
     height_cm: int | None,
     strength: int | None,
     body: BodyThresholds = DEFAULT_BODY,
+    personality: Personality | None = None,
+    personality_weight: int = DEFAULT_PERSONALITY_WEIGHT,
     new_face: bool = False,
     activate: bool = True,
 ) -> tuple[int, CharacterSheet]:
@@ -377,7 +488,14 @@ def sheet_for(
         return found
     version = next_sheet_version(conn, career_id, unique_id)
     sheet = sample_sheet(
-        career_key, unique_id, version, height_cm=height_cm, strength=strength, body=body
+        career_key,
+        unique_id,
+        version,
+        height_cm=height_cm,
+        strength=strength,
+        body=body,
+        personality=personality,
+        personality_weight=personality_weight,
     )
     store_sheet(conn, career_id, unique_id, version, sheet)
     if activate:

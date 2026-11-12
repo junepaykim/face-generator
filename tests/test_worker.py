@@ -8,15 +8,16 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pytest
-from factories import MY_CLUB, NEWGEN, RIVAL, player, snapshot
+from factories import MY_CLUB, NEWGEN, PLAIN_PERSONALITY, RIVAL, player, snapshot
 from fakes import FakeRenderer, FakeTagger
 from PIL import Image
 
 from facegen.gallery import write_gallery
 from facegen.kits import load_kits
 from facegen.prompt import CONTENT_NEGATIVE, YOUNG_NEGATIVE
-from facegen.settings import Paths, Settings
+from facegen.settings import Paths, PersonalitySettings, Settings
 from facegen.sync import run_sync
+from facegen.traits import load_sheet, personality_to_json, sample_sheet
 from facegen.worker import (
     MAX_ATTEMPTS,
     JobFilter,
@@ -494,6 +495,30 @@ def test_preview_draws_and_stores_nothing(env: Env) -> None:
     w.run(MINE, publish=False)
     stored = {row[0]: row[1] for row in env.conn.execute("SELECT unique_id, base_seed FROM traits")}
     assert {p.job.unique_id: p.sheet.base_seed for p in previews} == stored
+
+
+def test_the_sheet_is_weighted_by_the_players_personality(env: Env) -> None:
+    quiet = replace(PLAIN_PERSONALITY, pressure=3, adaptability=3, sportsmanship=20, temperament=20)
+    env.conn.execute(
+        "UPDATE players SET personality = ? WHERE unique_id = ?",
+        (personality_to_json(quiet), OLD_HAND),
+    )
+    career = load_career(env.conn)
+    assert career is not None
+    plain = sample_sheet(career.key, OLD_HAND, 1, height_cm=180, strength=12)
+    weighted = sample_sheet(career.key, OLD_HAND, 1, height_cm=180, strength=12, personality=quiet)
+    assert weighted != plain  # this player's draw changes, so the test can tell them apart
+
+    off = replace(env.settings, personality=PersonalitySettings(weight=0))
+    w_off, _, _ = env.worker(settings=off)
+    preview = next(p for p in w_off.preview(MINE) if p.job.unique_id == OLD_HAND)
+    assert preview.sheet == plain
+
+    w, _, _ = env.worker()
+    preview = next(p for p in w.preview(MINE) if p.job.unique_id == OLD_HAND)
+    assert preview.job.personality == quiet and preview.sheet == weighted
+    w.run(MINE, publish=False)
+    assert load_sheet(env.conn, career.id, OLD_HAND) == (1, weighted)
 
 
 def test_no_publish_leaves_fm_untouched(env: Env) -> None:

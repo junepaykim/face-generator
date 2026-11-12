@@ -280,7 +280,13 @@ UPDATE players SET active_traits_version = COALESCE(
 );
 """
 
-MIGRATIONS: tuple[str, ...] = (_V1, _V2, _V3, _V4, _V5, _V6)
+# Phase 6: personality weights the character sheet (spec section 4). The player's eight
+# personality attributes (1 to 20) as JSON; NULL until the next sync, or when the save has none.
+_V7 = """
+ALTER TABLE players ADD COLUMN personality TEXT;
+"""
+
+MIGRATIONS: tuple[str, ...] = (_V1, _V2, _V3, _V4, _V5, _V6, _V7)
 
 # The active career: the one whose save was written last (spec section 8). A career synced
 # without a save time (tests, old rows) falls back to when it was synced.

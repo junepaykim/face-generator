@@ -22,11 +22,14 @@ SECTION_NOTES = {
     "reference": "Applies to re-draws from now on.",
     "my_club": "Applies to pictures drawn from now on.",
     "body": "Applies to character sheets sampled from now on; stored sheets keep their class.",
+    "personality": "Applies to character sheets sampled from now on (a first picture or New "
+    "face); stored sheets keep their expression.",
     "schedule": "The worker and the save watcher use it at once.",
 }
 # The thresholds first: they are what the page is mostly for (spec section 7).
 SECTION_ORDER = (
-    "groups", "age", "schedule", "eligibility", "my_club", "body", "reference", "newgen"
+    "groups", "age", "schedule", "eligibility", "my_club", "body", "personality", "reference",
+    "newgen",
 )  # fmt: skip
 SECTION_TITLES = {
     "groups.a": "Group A",
@@ -41,6 +44,7 @@ SECTION_TITLES = {
     "reference": "Reference picture",
     "my_club": "Players at my club",
     "body": "Height and build",
+    "personality": "Personality",
     "schedule": "Worker",
 }
 LABELS = {
@@ -63,10 +67,12 @@ LABELS = {
     "other_clubs": "Also for players outside my club",
     "banned_traits": "Banned traits (comma-separated)",
     "soften_skin": "Draw tan and dark skin lighter by (steps, 0 to 2)",
+    "round_eyes": "Share of sharp eyes drawn round (0 to 1)",
     "short_below_cm": "Petite below (cm)",
     "tall_from_cm": "Tall from (cm)",
     "slim_strength_at_most": "Skinny at Strength at most",
     "muscular_strength_from": "Muscular from Strength",
+    "weight": "Expression weight of each notable personality attribute (0 is off)",
     "poll_seconds": "Check the saves folder every (seconds)",
     "generate_while_fm_running": "Generate while FM27 is running",
     "auto_groups": "Groups drawn without a request (comma-separated)",

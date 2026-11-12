@@ -115,6 +115,10 @@ other_clubs = false                 # true: also for re-draws of players outside
 # character sheet is unchanged. Chosen by the user, 2026-11-11 (docs/spec.md section 3).
 banned_traits = ["freckles", "muscular"] # left out of the prompt and added to its negative
 soften_skin = 2                     # tan and dark skin drawn this many steps lighter (0-2)
+# Share of sharp-eyed players drawn with round eyes instead (0-1): the user prefers round eyes
+# at my club, and sports portraits already lean sharp (2026-11-12). Seeded per player, so a
+# player's pictures agree. At 0.2, round goes from 1 in 3 players to 2 in 5.
+round_eyes = 0.2
 
 [body]
 # Height and build words (user, 2026-11-11): only the tallest and shortest tenth of men's
@@ -127,6 +131,15 @@ tall_from_cm = 191                  # this or taller: "tall female" (10%)
 slim_strength_at_most = 4           # Strength this or lower: "skinny"
 muscular_strength_from = 14         # Strength this or higher: "muscular female" (10%); the
                                     # trait "muscular" is banned at my club by default
+
+[personality]
+# Personality weights the default expression of a newly sampled character sheet (docs/spec.md
+# section 4); nothing else. A player's attribute in about the top or bottom tenth of men's
+# players makes the expression it points to more likely, e.g. high Pressure confident, high
+# Professionalism serious; the table is in src/facegen/traits.py. Each such attribute
+# multiplies its expression's weight by (1 + weight): at 2, one high Pressure takes
+# "confident" from 1 in 4 to 1 in 2. 0 turns it off. Stored sheets are not re-sampled.
+weight = 2
 
 [schedule]
 # `facegen serve` looks at FM27's saves folder this often. When the newest save has changed

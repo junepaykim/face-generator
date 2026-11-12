@@ -9,12 +9,26 @@ from facegen.datasource.records import (
     ClubRecord,
     Gender,
     LeagueTableRecord,
+    Personality,
     PlayerRecord,
     SaveMeta,
     Snapshot,
 )
 
 # Nation 1 is "home"; nation 2 is abroad.
+
+# Middling values: no attribute is at either end, so personality weights nothing.
+PLAIN_PERSONALITY = Personality(
+    adaptability=12,
+    ambition=12,
+    loyalty=11,
+    pressure=11,
+    professionalism=12,
+    sportsmanship=11,
+    temperament=13,
+    controversy=5,
+)
+
 MY_CLUB = 100
 RIVAL = 101  # my league
 RIVAL_2 = 102  # my league
@@ -59,6 +73,7 @@ def player(
     home_grown: tuple[int, ...] = (),
     join: date | None = None,
     goalkeeper: bool = False,
+    personality: Personality | None = None,
 ) -> PlayerRecord:
     return PlayerRecord(
         unique_id=unique_id,
@@ -74,6 +89,7 @@ def player(
         club_join_date=join,
         is_goalkeeper=goalkeeper,
         strength=12,
+        personality=personality,
     )
 
 
