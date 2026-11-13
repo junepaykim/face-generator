@@ -2,8 +2,9 @@
 
 A kit is described with a fixed vocabulary of colours and patterns, never free text, so the
 table cannot put arbitrary words into a prompt: the wardrobe stays football kit (content
-rule, spec section 3). Goalkeepers wear their club's goalkeeper kit. A club missing from the
-table gets the neutral fallback kit.
+rule, spec section 3). Goalkeepers wear their club's goalkeeper kit. My club's staff wear a
+track jacket in the home shirt's colours, long-sleeved club sportswear rather than the playing
+kit (decisions.md, 2026-11-12). A club missing from the table gets the neutral fallback kit.
 
 Stripes and hoops are drawn as well as the model manages (decisions.md); the quality check
 does not look at the kit. Its shirt colours only help rank group A's candidates.
@@ -13,7 +14,7 @@ from __future__ import annotations
 
 import tomllib
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -72,10 +73,14 @@ class Kit:
     """Collar colour."""
     gloves: str | None = None
     goalkeeper: bool = False
+    staff: bool = False
+    """A staff member's track jacket in this kit's shirt colours, instead of the shirt."""
 
     def words(self) -> str:
         """Prompt words for this kit."""
         c = [COLOURS[x].words for x in self.shirt]
+        if self.staff:
+            return self._jacket_words(c)
         match self.pattern:
             case "plain":
                 parts = [f"{c[0]} shirt"]
@@ -101,13 +106,28 @@ class Kit:
                 parts.append(f"{COLOURS[self.shorts].words} shorts")
         return ", ".join(parts)
 
+    def _jacket_words(self, c: list[str]) -> str:
+        if self.pattern == "sleeves":
+            parts = [f"{c[0]} track jacket", f"{c[1]} sleeves"]
+        else:  # stripes and hoops are not asked of a jacket: its two colours are enough
+            parts = [f"{' and '.join(c)} track jacket"]
+        if self.trim:
+            parts.append(f"{COLOURS[self.trim].words} collar")
+        parts.append("long sleeves")
+        return ", ".join(parts)
+
     def shirt_tag_groups(self) -> tuple[frozenset[str], ...]:
         """One group per shirt colour; any tag in a group shows that colour was drawn."""
-        return tuple(COLOURS[x].shirt_tags for x in dict.fromkeys(self.shirt))
+        groups = tuple(COLOURS[x].shirt_tags for x in dict.fromkeys(self.shirt))
+        if self.staff:  # the tagger names a jacket's colour as "blue jacket"
+            return tuple(frozenset(t.replace(" shirt", " jacket") for t in g) for g in groups)
+        return groups
 
     def describe(self) -> str:
         shirt = " and ".join(self.shirt)
         text = f"{shirt} {self.pattern}" if self.pattern != "plain" else shirt
+        if self.staff:
+            return f"track jacket, {' and '.join(self.shirt)}"
         if self.goalkeeper:
             return f"goalkeeper {text}"
         return f"{text}, {self.shorts} shorts" if self.shorts else text
@@ -124,10 +144,17 @@ class KitTable:
     clubs: Mapping[int, ClubKits]
     fallback: ClubKits
 
-    def kit_for(self, club_id: int | None, goalkeeper: bool) -> tuple[Kit, bool]:
-        """The kit to draw and whether the club is in the table (False: the fallback)."""
+    def kit_for(
+        self, club_id: int | None, goalkeeper: bool, *, staff: bool = False
+    ) -> tuple[Kit, bool]:
+        """The kit to draw and whether the club is in the table (False: the fallback).
+
+        Staff get a track jacket in the home kit's colours, goalkeeping coaches included.
+        """
         kits = self.clubs.get(club_id) if club_id is not None else None
         chosen = kits or self.fallback
+        if staff:
+            return replace(chosen.home, staff=True), kits is not None
         return (chosen.goalkeeper if goalkeeper else chosen.home), kits is not None
 
 

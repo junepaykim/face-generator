@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, date, datetime
 from typing import Any
 
@@ -204,6 +204,8 @@ _PLAYER_COLUMNS = (
     "present",
     "first_seen_sync",
     "last_seen_sync",
+    "is_staff",
+    "staff_job",
 )
 _KEEP_ON_UPDATE = {"career_id", "unique_id", "first_seen_sync"}
 _UPSERT_PLAYER = (
@@ -229,13 +231,17 @@ def ingest(
     settings: Settings,
     sync_id: int,
 ) -> IngestStats:
-    """Write the snapshot's clubs and players, with the facts the rules need."""
+    """Write the snapshot's clubs, players and my club's staff, with the facts the rules need.
+
+    Staff are stored as rows beside the players (`is_staff`), keyed on the same unique ID. A
+    person who is also a player (a player-coach) is stored once, as the player.
+    """
     cid = career.id
     prev = {
         r["unique_id"]: r
         for r in conn.execute(
             "SELECT unique_id, is_newgen, in_scope, first_club_id, club_id, club_since,"
-            " at_my_club, present, academy FROM players WHERE career_id = ?",
+            " at_my_club, present, academy, is_staff FROM players WHERE career_id = ?",
             (cid,),
         )
     }
@@ -280,15 +286,13 @@ def ingest(
             and my_club is not None
             and (first_club == my_club or my_club in p.home_grown_club_ids)
         )
-        if at_my_club and not first_sync and not (old and old["present"] and old["at_my_club"]):
+        if (
+            at_my_club
+            and not first_sync
+            and not (old and old["present"] and old["at_my_club"] and not old["is_staff"])
+        ):
             arrivals += 1
-        if old is not None and old["club_id"] == p.club_id and old["club_since"]:
-            club_since = old["club_since"]
-        else:
-            arrived = p.club_join_date or game_date
-            if arrived and game_date and arrived > game_date:
-                arrived = game_date  # the save holds some join dates still to come
-            club_since = _iso(arrived)
+        club_since = _club_since(old, p.club_id, p.club_join_date, game_date)
         rows.append(
             (
                 cid,
@@ -316,11 +320,20 @@ def ingest(
                 1,
                 sync_id,
                 sync_id,
+                0,
+                None,
             )
         )
+    rows.extend(
+        _staff_rows(
+            career, snapshot, settings, sync_id, prev, first_sync, league_clubs, continental_clubs
+        )
+    )
     conn.executemany(_UPSERT_PLAYER, rows)
+    # Staff the reader could not read this time are left as they were, not counted as gone.
     conn.execute(
-        "UPDATE players SET present = 0 WHERE career_id = ? AND last_seen_sync != ?",
+        "UPDATE players SET present = 0 WHERE career_id = ? AND last_seen_sync != ?"
+        + ("" if snapshot.staff_read else " AND is_staff = 0"),
         (cid, sync_id),
     )
     conn.executemany(
@@ -344,13 +357,101 @@ def ingest(
     return IngestStats(first_sync, len(league_clubs), len(continental_clubs), arrivals)
 
 
+def _club_since(
+    old: sqlite3.Row | None, club_id: int | None, joined: date | None, game_date: date | None
+) -> str | None:
+    """When the person arrived at their club: kept while they stay, else the join date, never
+    after the in-game date (the save holds some join dates still to come)."""
+    if old is not None and old["club_id"] == club_id and old["club_since"]:
+        return old["club_since"]
+    arrived = joined or game_date
+    if arrived and game_date and arrived > game_date:
+        arrived = game_date
+    return _iso(arrived)
+
+
+def _staff_rows(
+    career: Career,
+    snapshot: Snapshot,
+    settings: Settings,
+    sync_id: int,
+    prev: dict[int, sqlite3.Row],
+    first_sync: bool,
+    league_clubs: set[int],
+    continental_clubs: set[int],
+) -> list[tuple[Any, ...]]:
+    """Player-table rows for my club's staff, in _PLAYER_COLUMNS order."""
+    my_club = snapshot.managed_club_id
+    players = {p.unique_id for p in snapshot.players}
+    rows = []
+    for s in snapshot.staff:
+        if s.unique_id in players:
+            continue  # a player-coach is drawn as a player
+        old = prev.get(s.unique_id)
+        club = snapshot.clubs.get(s.club_id)
+        if club is not None:
+            in_scope = club.gender is Gender.MEN or not settings.eligibility.mens_football_only
+        else:
+            in_scope = bool(old and old["in_scope"])
+        newgen = is_newgen(
+            s.unique_id,
+            career.newgen_min_id,
+            previously_newgen=bool(old and old["is_newgen"]),
+            first_seen_mid_career=old is None and not first_sync,
+        )
+        rows.append(
+            (
+                career.id,
+                s.unique_id,
+                s.name,
+                _iso(s.birth_date),
+                s.age,
+                None,  # height: the save reads none for staff
+                s.ca or 0,
+                s.pa,
+                0,
+                None,  # Strength: a player attribute
+                personality_to_json(s.personality),
+                s.club_id,
+                None,
+                "[]",
+                _club_since(old, s.club_id, s.club_join_date, snapshot.meta.game_date),
+                int(newgen),
+                int(in_scope),
+                int(my_club is not None and s.club_id == my_club),
+                int(s.club_id in league_clubs),
+                int(s.club_id in continental_clubs),
+                old["first_club_id"] if old else (None if first_sync else s.club_id),
+                0,  # academy: players only
+                1,
+                sync_id,
+                sync_id,
+                1,
+                "manager (you)" if s.is_human_manager else s.job,
+            )
+        )
+    return rows
+
+
 # --- classify and plan -------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class Move:
+    """A player whose group or tracking a classification changes, from the stored values."""
+
+    unique_id: int
+    group_before: str | None
+    tracked_before: bool
+    group_after: str | None
+    tracked_after: bool
 
 
 @dataclass(frozen=True, slots=True)
 class PlanResult:
     plan: Plan
     classifications: dict[int, Classification]
+    moved: tuple[Move, ...] = ()
 
 
 def _job_state(r: sqlite3.Row) -> JobState:
@@ -415,9 +516,11 @@ def _classify(
 
     classifications: dict[int, Classification] = {}
     changed: list[tuple[Any, ...]] = []
+    moved: list[Move] = []
     states: list[PlayerPlanState] = []
     for r in conn.execute("SELECT * FROM players WHERE career_id = ?", (career_id,)):
         uid = r["unique_id"]
+        staff = bool(r["is_staff"])
         if r["present"]:
             facts = PlayerFacts(
                 unique_id=uid,
@@ -430,15 +533,19 @@ def _classify(
                 in_continental=bool(r["in_continental"]),
                 academy=bool(r["academy"]),
                 pin=r["pin"],
+                is_staff=staff,
             )
-            c = classify(facts, settings.groups)
+            c = classify(facts, settings.groups, settings.staff.enabled)
         else:
-            c = Classification(None, False, ("not in the latest save",))
+            gone = "no longer on my club's staff" if staff else "not in the latest save"
+            c = Classification(None, False, (gone,))
         classifications[uid] = c
         group = c.group.value if c.group else None
         reasons = json.dumps(list(c.reasons))
         if (group, int(c.tracked), reasons) != (r["group_name"], r["tracked"], r["reasons"]):
             changed.append((group, int(c.tracked), reasons, career_id, uid))
+            if (group, c.tracked) != (r["group_name"], bool(r["tracked"])):
+                moved.append(Move(uid, r["group_name"], bool(r["tracked"]), group, c.tracked))
         if c.group is None and uid not in active:
             continue
         states.append(
@@ -446,7 +553,7 @@ def _classify(
                 unique_id=uid,
                 classification=c,
                 club_id=r["club_id"],
-                age_band=age_wording(r["age"], c.group, bool(r["at_my_club"]), settings.age),
+                age_band=age_wording(r["age"], c.group, bool(r["at_my_club"]), settings.age, staff),
                 at_my_club=bool(r["at_my_club"]),
                 club_since=_date(r["club_since"]),
                 pa=r["pa"],
@@ -455,13 +562,15 @@ def _classify(
                 last_failed_job=failed.get(uid),
                 manual_allowed=bool(r["present"] and r["in_scope"] and r["pin"] != "never"),
                 manual_band=(
-                    age_wording(r["age"], active[uid].group, bool(r["at_my_club"]), settings.age)
+                    age_wording(
+                        r["age"], active[uid].group, bool(r["at_my_club"]), settings.age, staff
+                    )
                     if uid in active
                     else None
                 ),
             )
         )
-    return PlanResult(plan(states), classifications), changed
+    return PlanResult(plan(states), classifications, tuple(moved)), changed
 
 
 def classify_and_plan(conn: sqlite3.Connection, career_id: int, settings: Settings) -> PlanResult:
@@ -672,9 +781,12 @@ class GroupChange:
     reasons: tuple[str, ...]
 
 
+GROUP_COUNT_KEYS = ("a", "b", "c", "tracked")
+
+
 @dataclass
-class SettingsPreview:
-    """How a settings change would move players between groups and change the queue."""
+class ChangeReport:
+    """What re-classifying after a settings change did to the groups and the queue."""
 
     before: dict[str, int]
     after: dict[str, int]
@@ -682,12 +794,58 @@ class SettingsPreview:
     updated: int
     cancelled: int
     changes: list[GroupChange]
-    """Players whose group or tracking would change, best first, at most `limit`."""
+    """Players whose group or tracking changed, highest PA first, at most `limit`."""
     changed_total: int
 
     @property
     def empty(self) -> bool:
         return not (self.changed_total or self.enqueue or self.updated or self.cancelled)
+
+    def summary(self) -> str:
+        """One line: the group counts that changed and what happened to the queue."""
+        parts = []
+        counts = ", ".join(
+            f"{'tracked' if k == 'tracked' else k.upper()} {self.before[k]} → {self.after[k]}"
+            for k in GROUP_COUNT_KEYS
+            if self.before[k] != self.after[k]
+        )
+        if counts:
+            parts.append(counts)
+        queue = [
+            f"{n} {what}"
+            for n, what in (
+                (sum(self.enqueue.values()), "queued"),
+                (self.updated, "updated"),
+                (self.cancelled, "cancelled"),
+            )
+            if n
+        ]
+        if queue:
+            parts.append("queue: " + ", ".join(queue))
+        return "; ".join(parts) or "no player moved; the queue is unchanged"
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "before": self.before,
+            "after": self.after,
+            "enqueue": [[kind, group, n] for (kind, group), n in sorted(self.enqueue.items())],
+            "updated": self.updated,
+            "cancelled": self.cancelled,
+            "changes": [{**asdict(c), "reasons": list(c.reasons)} for c in self.changes],
+            "changed_total": self.changed_total,
+        }
+
+    @classmethod
+    def from_json(cls, data: dict[str, Any]) -> ChangeReport:
+        return cls(
+            before=data["before"],
+            after=data["after"],
+            enqueue=Counter({(kind, group): n for kind, group, n in data["enqueue"]}),
+            updated=data["updated"],
+            cancelled=data["cancelled"],
+            changes=[GroupChange(**{**c, "reasons": tuple(c["reasons"])}) for c in data["changes"]],
+            changed_total=data["changed_total"],
+        )
 
 
 def _group_counts(classifications: dict[int, Classification]) -> dict[str, int]:
@@ -700,50 +858,46 @@ def _group_counts(classifications: dict[int, Classification]) -> dict[str, int]:
     }
 
 
-def preview_settings(
-    conn: sqlite3.Connection,
-    career_id: int,
-    current: Settings,
-    proposed: Settings,
-    *,
-    limit: int = 50,
-) -> SettingsPreview:
-    """What applying `proposed` would do, against the stored snapshot; writes nothing.
+def reclassify_with_report(
+    conn: sqlite3.Connection, career_id: int, settings: Settings, *, limit: int = 50
+) -> ChangeReport:
+    """Re-classify and re-plan inside the caller's transaction, and report what moved.
 
-    Both classifications run inside one read transaction, so a sync or the worker writing
-    meanwhile cannot make the two sides disagree.
+    "Before" is the groups as stored, so one classification is enough: the counts before are
+    the counts after with each move taken back.
     """
-    conn.execute("BEGIN")
-    try:
-        before, _ = _classify(conn, career_id, current)
-        after, _ = _classify(conn, career_id, proposed)
-        moved = [
-            uid
-            for uid, c in after.classifications.items()
-            if (c.group, c.tracked)
-            != (before.classifications[uid].group, before.classifications[uid].tracked)
-        ]
-        wanted = set(moved)
-        rows = {
-            r["unique_id"]: r
+    result = classify_and_plan(conn, career_id, settings)
+    after = _group_counts(result.classifications)
+    before = dict(after)
+    for m in result.moved:
+        if m.group_after:
+            before[m.group_after] -= 1
+        if m.group_before:
+            before[m.group_before] += 1
+        before["tracked"] += int(m.tracked_before) - int(m.tracked_after)
+
+    moves = {m.unique_id: m for m in result.moved}
+    rows: dict[int, sqlite3.Row] = {}
+    uids = list(moves)
+    for i in range(0, len(uids), 500):
+        chunk = uids[i : i + 500]
+        rows.update(
+            (r["unique_id"], r)
             for r in conn.execute(
                 "SELECT p.unique_id, p.name, p.ca, p.pa, c.name AS club FROM players p"
                 " LEFT JOIN clubs c ON c.career_id = p.career_id AND c.club_id = p.club_id"
-                " WHERE p.career_id = ?",
-                (career_id,),
+                f" WHERE p.career_id = ? AND p.unique_id IN ({', '.join('?' * len(chunk))})",
+                (career_id, *chunk),
             )
-            if r["unique_id"] in wanted
-        }
-    finally:
-        conn.execute("ROLLBACK")
+        )
 
-    def sort_key(uid: int) -> tuple[int, int]:
+    def sort_key(uid: int) -> tuple[int, int, int]:
         r = rows[uid]
-        return -(r["pa"] or 0), -r["ca"]
+        return -(r["pa"] or 0), -r["ca"], uid
 
     changes = []
-    for uid in sorted(moved, key=sort_key)[:limit]:
-        b, a, r = before.classifications[uid], after.classifications[uid], rows[uid]
+    for uid in sorted(moves, key=sort_key)[:limit]:
+        m, r = moves[uid], rows[uid]
         changes.append(
             GroupChange(
                 unique_id=uid,
@@ -751,22 +905,22 @@ def preview_settings(
                 club=r["club"],
                 ca=r["ca"],
                 pa=r["pa"],
-                before=b.group.value if b.group else None,
-                after=a.group.value if a.group else None,
-                tracked_before=b.tracked,
-                tracked_after=a.tracked,
-                reasons=a.reasons or b.reasons,
+                before=m.group_before,
+                after=m.group_after,
+                tracked_before=m.tracked_before,
+                tracked_after=m.tracked_after,
+                reasons=result.classifications[uid].reasons,
             )
         )
-    p = after.plan
-    return SettingsPreview(
-        before=_group_counts(before.classifications),
-        after=_group_counts(after.classifications),
+    p = result.plan
+    return ChangeReport(
+        before=before,
+        after=after,
         enqueue=Counter((e.job.kind, e.job.group.value) for e in p.enqueue),
         updated=len(p.update),
         cancelled=len(p.cancel),
         changes=changes,
-        changed_total=len(moved),
+        changed_total=len(moves),
     )
 
 

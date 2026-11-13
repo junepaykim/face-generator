@@ -599,38 +599,155 @@ def test_no_managed_club(conn: sqlite3.Connection, settings: Settings, managed: 
     assert groups(conn) == {ABROAD_A: "a"}
 
 
-def test_preview_settings_shows_the_change_and_writes_nothing(
+def test_reclassify_with_report_says_what_moved(
     conn: sqlite3.Connection, settings: Settings
 ) -> None:
-    from facegen.settings import merge_overrides
-    from facegen.sync import preview_settings
+    from facegen.db import transaction
+    from facegen.settings import set_overrides
+    from facegen.sync import ChangeReport, reclassify_with_report
 
     report = sync(conn, snapshot(world()), settings)
-    before_groups = groups(conn)
-    jobs_before = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
-    proposed = merge_overrides(conn, {"groups.c.league_ca_above": 125, "groups.a.ca_above": 150})
-    p = preview_settings(conn, report.career.id, settings, proposed)
+    with transaction(conn):
+        applied = set_overrides(conn, {"groups.c.league_ca_above": 125, "groups.a.ca_above": 150})
+        r = reclassify_with_report(conn, report.career.id, applied)
     # RIVAL_C (CA 120) drops out of C; nobody new reaches A at 150 in this world.
-    assert p.before["c"] == 1 and p.after["c"] == 0
-    assert p.before["a"] == p.after["a"]
-    assert p.cancelled == 1 and not p.enqueue and p.changed_total == 1
-    assert [(c.unique_id, c.before, c.after) for c in p.changes] == [(RIVAL_C, "c", None)]
-    assert not p.empty
-    # Nothing was written.
-    assert groups(conn) == before_groups
-    assert conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == jobs_before
-    assert conn.execute("SELECT COUNT(*) FROM settings").fetchone()[0] == 0
-    assert preview_settings(conn, report.career.id, settings, settings).empty
+    assert r.before["c"] == 1 and r.after["c"] == 0
+    assert r.before["a"] == r.after["a"]
+    assert r.cancelled == 1 and not r.enqueue and r.changed_total == 1
+    assert [(c.unique_id, c.before, c.after) for c in r.changes] == [(RIVAL_C, "c", None)]
+    assert not r.empty
+    assert r.summary() == "C 1 → 0; queue: 1 cancelled"
+    assert ChangeReport.from_json(r.to_json()) == r
+    # It was applied, so doing it again moves nobody.
+    with transaction(conn):
+        again = reclassify_with_report(conn, report.career.id, applied)
+    assert again.empty and again.summary() == "no player moved; the queue is unchanged"
 
 
-def test_preview_lists_newly_queued_players(conn: sqlite3.Connection, settings: Settings) -> None:
-    from facegen.settings import merge_overrides
-    from facegen.sync import preview_settings
+def test_reclassify_with_report_lists_newly_queued_players(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    from facegen.db import transaction
+    from facegen.settings import set_overrides
+    from facegen.sync import reclassify_with_report
 
     report = sync(conn, snapshot(world()), settings)
-    proposed = merge_overrides(conn, {"groups.b.any_ca_above": 59})
-    p = preview_settings(conn, report.career.id, settings, proposed)
+    with transaction(conn):
+        applied = set_overrides(conn, {"groups.b.any_ca_above": 59})
+        r = reclassify_with_report(conn, report.career.id, applied)
     # ABROAD_LOW (CA 60) and CONT_NEWGEN (CA 131) now reach B anywhere; RIVAL_C's queued C
     # job becomes a B job.
-    assert p.enqueue == {("initial", "b"): 2} and p.updated == 1
-    assert {ABROAD_LOW, CONT_NEWGEN, RIVAL_C} <= {c.unique_id for c in p.changes}
+    assert r.enqueue == {("initial", "b"): 2} and r.updated == 1
+    assert {ABROAD_LOW, CONT_NEWGEN, RIVAL_C} <= {c.unique_id for c in r.changes}
+    assert r.before["b"] + 3 == r.after["b"] and r.before["c"] - 1 == r.after["c"]
+
+
+# --- my club's staff (user, 2026-11-12) ----------------------------------------------------------
+
+COACH = NEWGEN + 100  # a created coach: the newgen rules must not apply to staff
+ME = NEWGEN + 101  # the save's human manager
+
+
+def staff_world() -> list:
+    from factories import staff_member
+
+    return [
+        staff_member(COACH, age=45, job="assistant manager", ca=180),
+        staff_member(ME, age=49, job="manager", ca=None, human=True),
+    ]
+
+
+def jobs_of(conn: sqlite3.Connection) -> dict[int, tuple[str, str, str | None]]:
+    rows = conn.execute(
+        "SELECT unique_id, kind, group_name, target_band FROM jobs WHERE status = 'queued'"
+    )
+    return {r["unique_id"]: (r["kind"], r["group_name"], r["target_band"]) for r in rows}
+
+
+def test_my_clubs_staff_are_group_a_tracked_and_aged_by_the_staff_table(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    sync(conn, snapshot(world(), staff=staff_world()), settings)
+    coach, me = player_row(conn, COACH), player_row(conn, ME)
+    assert (coach["is_staff"], coach["staff_job"], coach["group_name"]) == (
+        1,
+        "assistant manager",
+        "a",
+    )
+    assert coach["tracked"] and coach["at_my_club"] and coach["present"]
+    assert coach["reasons"] == '["on my club\'s staff"]'  # not "newgen, CA 180 > 155"
+    assert (me["staff_job"], me["ca"], me["height_cm"]) == ("manager (you)", 0, None)
+    # Wide staff bands: 45 is W05 and 49 is W06 (group A at my club would say W10).
+    assert jobs_of(conn)[COACH] == ("initial", "a", "W05")
+    assert jobs_of(conn)[ME] == ("initial", "a", "W06")
+
+
+def test_a_staff_age_band_change_is_redrawn(conn: sqlite3.Connection, settings: Settings) -> None:
+    from factories import staff_member
+
+    sync(conn, snapshot(world(), staff=[staff_member(COACH, age=52)]), settings)
+    conn.execute("DELETE FROM jobs")
+    add_image(conn, COACH, "a", MY_CLUB, "W06")
+    sync(conn, snapshot(world(), staff=[staff_member(COACH, age=52)]), settings)
+    assert COACH not in jobs_of(conn)
+    sync(conn, snapshot(world(), staff=[staff_member(COACH, age=53)]), settings)
+    assert jobs_of(conn)[COACH] == ("age", "a", "W07")
+
+
+def test_a_player_coach_is_stored_once_as_a_player(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    from factories import staff_member
+
+    sync(conn, snapshot(world(), staff=[staff_member(MINE_OLD, job="coach")]), settings)
+    row = player_row(conn, MINE_OLD)
+    assert (row["is_staff"], row["staff_job"], row["ca"]) == (0, None, 120)
+    assert (
+        conn.execute("SELECT COUNT(*) FROM players WHERE unique_id = ?", (MINE_OLD,)).fetchone()[0]
+        == 1
+    )
+
+
+def test_staff_who_leave_keep_their_picture_and_are_no_longer_drawn(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    sync(conn, snapshot(world(), staff=staff_world()), settings)
+    sync(conn, snapshot(world(), staff=staff_world()[1:]), settings)  # the coach left
+    coach = player_row(conn, COACH)
+    assert not coach["present"] and coach["group_name"] is None and not coach["tracked"]
+    assert coach["reasons"] == '["no longer on my club\'s staff"]'
+    assert COACH not in jobs_of(conn) and ME in jobs_of(conn)
+
+
+def test_staff_stay_as_they_were_when_the_staff_reader_failed(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    sync(conn, snapshot(world(), staff=staff_world()), settings)
+    sync(conn, snapshot(world(), staff=(), staff_read=False), settings)
+    assert player_row(conn, COACH)["present"] and player_row(conn, COACH)["group_name"] == "a"
+    assert COACH in jobs_of(conn)
+
+
+def test_staff_pictures_can_be_turned_off(conn: sqlite3.Connection, settings: Settings) -> None:
+    report = sync(conn, snapshot(world(), staff=staff_world()), settings)
+    s = set_override(conn, "staff.enabled", False)
+    reclassify(conn, report.career.id, s)
+    coach = player_row(conn, COACH)
+    assert coach["group_name"] is None and not coach["tracked"]
+    assert "staff pictures are off" in coach["reasons"]
+    assert COACH not in jobs_of(conn) and ME not in jobs_of(conn)
+    # The players are unchanged; a pin still hand-picks a member of staff.
+    assert groups(conn)[MINE_OLD] == "a"
+    conn.execute("UPDATE players SET pin = 'b' WHERE unique_id = ?", (COACH,))
+    reclassify(conn, report.career.id, s)
+    assert player_row(conn, COACH)["group_name"] == "b"
+    assert jobs_of(conn)[COACH] == ("initial", "b", "W05")  # still the staff table
+
+
+def test_new_staff_are_not_counted_as_arrivals(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    sync(conn, snapshot(world()), settings)
+    report = sync(conn, snapshot(world(), staff=staff_world()), settings)
+    assert report.new_at_my_club == 0
+    assert report.counts["a"] == 2 + 2 + 1  # my two players, the two staff, ABROAD_A

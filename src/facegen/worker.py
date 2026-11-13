@@ -285,9 +285,9 @@ class Worker:
             sheet_version, sheet = found
         version = self.images.next_version(job.unique_id)
         wording = job.target_band or age_wording(
-            job.age, job.group, job.at_my_club, self.settings.age
+            job.age, job.group, job.at_my_club, self.settings.age, job.staff
         )
-        kit, kit_known = self.kits.kit_for(job.target_club_id, job.goalkeeper)
+        kit, kit_known = self.kits.kit_for(job.target_club_id, job.goalkeeper, staff=job.staff)
         pose = pick_pose(sheet.base_seed, version)
         my_club = self.settings.my_club if job.at_my_club else None
         prompt = build_prompt(sheet, wording, kit, pose, my_club) if wording else None
@@ -390,8 +390,10 @@ class Worker:
             self.conn, self.career, job, s.body, s.personality.weight
         )
         version = self.images.next_version(job.unique_id)
-        wording = job.target_band or age_wording(job.age, job.group, job.at_my_club, s.age)
-        kit, kit_known = self.kits.kit_for(job.target_club_id, job.goalkeeper)
+        wording = job.target_band or age_wording(
+            job.age, job.group, job.at_my_club, s.age, job.staff
+        )
+        kit, kit_known = self.kits.kit_for(job.target_club_id, job.goalkeeper, staff=job.staff)
         pose = pick_pose(sheet.base_seed, version)
         my_club = s.my_club if job.at_my_club else None
         if wording is None:
@@ -434,6 +436,7 @@ class Worker:
             "kit": kit.describe(),
             "kit_known": kit_known,
             "goalkeeper": job.goalkeeper,
+            "staff": job.staff,
             "my_club": job.at_my_club,
             "sheet_version": sheet_version,
             "reference": reference_info,

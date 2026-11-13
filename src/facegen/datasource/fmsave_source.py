@@ -25,6 +25,7 @@ from facegen.datasource.records import (
     PlayerRecord,
     SaveMeta,
     Snapshot,
+    StaffRecord,
 )
 
 _GENDERS = {"MEN": Gender.MEN, "WOMEN": Gender.WOMEN}
@@ -116,6 +117,46 @@ def convert_players(
         seen.add(p.unique_id)
         out.append(convert_player(p, uid_map, game_date))
     return tuple(out), skipped
+
+
+def staff_job(coded: Any) -> str | None:
+    """A staff job in words ("director of football"), or None where the save does not name it."""
+    label = getattr(coded, "label", None) if coded is not None else None
+    if label is None or label.name == "UNKNOWN":
+        return None
+    return label.name.replace("_", " ").lower()
+
+
+def convert_staff(
+    staff: Iterable[Any], uid_map: Mapping[int, int], club_uid: int, game_date: date | None
+) -> tuple[StaffRecord, ...]:
+    """The staff of one club (by save-local uid), each person once, first record wins."""
+    seen: set[int] = set()
+    out: list[StaffRecord] = []
+    for s in staff:
+        if s.club_uid != club_uid or s.unique_id is None or s.unique_id in seen:
+            continue
+        seen.add(s.unique_id)
+        age = s.age
+        if age is None and s.birth_date is not None and game_date is not None:
+            age = _age_on(s.birth_date, game_date)
+        ability = s.ability
+        out.append(
+            StaffRecord(
+                unique_id=s.unique_id,
+                name=s.name or s.full_name or s.legal_name or f"Staff {s.unique_id}",
+                birth_date=s.birth_date,
+                age=age,
+                club_id=uid_map.get(club_uid, club_uid),
+                job=staff_job(s.job),
+                ca=ability.current if ability is not None else None,
+                pa=ability.potential if ability is not None else None,
+                club_join_date=s.contract_start,
+                is_human_manager=bool(s.is_human_manager),
+                personality=convert_personality(s.personality),
+            )
+        )
+    return tuple(out)
 
 
 def convert_league_tables(
@@ -217,6 +258,16 @@ class FmsaveDataSource:
             fixture_counts = convert_fixtures(save.fixtures(), uid_map, comp_keys)
         except fmsave.FmsaveError as exc:
             notes.append(f"competition data unavailable: {exc}")
+        # My club's staff get pictures too. The reader decodes every club's staff (about 8 s
+        # on a full save, docs/research.md); a failure there should not stop a sync either.
+        staff: tuple[StaffRecord, ...] = ()
+        staff_read = True
+        if managed:
+            try:
+                staff = convert_staff(save.staff(), uid_map, managed[0].club_uid, info.game_date)
+            except fmsave.FmsaveError as exc:
+                staff_read = False
+                notes.append(f"staff data unavailable, staff pictures left as they were: {exc}")
 
         return Snapshot(
             meta=SaveMeta(
@@ -234,4 +285,6 @@ class FmsaveDataSource:
             players=players,
             league_tables=tables,
             fixture_counts=fixture_counts,
+            staff=staff,
+            staff_read=staff_read,
         )

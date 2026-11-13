@@ -106,3 +106,25 @@ def test_the_shipped_table_loads_and_covers_my_league() -> None:
     for club in kits.clubs.values():
         assert club.goalkeeper.goalkeeper and not club.home.goalkeeper
         assert club.home.words() and club.goalkeeper.words()
+
+
+def test_staff_wear_a_track_jacket_in_the_home_colours() -> None:
+    kits = load_kits()
+    jacket, known = kits.kit_for(636, goalkeeper=False, staff=True)
+    assert known and jacket.staff and not jacket.goalkeeper
+    assert jacket.words() == "blue and white track jacket, long sleeves"
+    assert jacket.describe() == "track jacket, blue and white"
+    assert jacket.shirt_tag_groups() == (frozenset({"blue jacket"}), frozenset({"white jacket"}))
+    # A goalkeeping coach wears the same jacket, not the goalkeeper kit.
+    assert kits.kit_for(636, goalkeeper=True, staff=True)[0] == jacket
+    fallback, known = kits.kit_for(999, goalkeeper=False, staff=True)
+    assert not known and fallback.words() == "white track jacket, long sleeves"
+
+
+def test_jacket_words_per_pattern() -> None:
+    sleeves = Kit(
+        shirt=("red", "white"), pattern="sleeves", shorts="white", trim="black", staff=True
+    )
+    assert sleeves.words() == "red track jacket, white sleeves, black collar, long sleeves"
+    hoops = Kit(shirt=("navy", "sky"), pattern="hoops", shorts="navy", staff=True)
+    assert hoops.words() == "navy blue and light blue track jacket, long sleeves"

@@ -1,7 +1,7 @@
 """Read-only queries behind the web pages. Plain SQL over the state database; no web here.
 
 The players list covers every present player of the career (33,000 in the Colchester save),
-so it filters and pages in SQL.
+and my club's staff, so it filters and pages in SQL.
 """
 
 from __future__ import annotations
@@ -33,6 +33,7 @@ LEAGUES = {
     "other": "elsewhere",
 }
 ORIGINS = {"any": "newgen or pre-existing", "newgen": "newgens", "existing": "pre-existing"}
+ROLES = {"any": "players and staff", "players": "players", "staff": "my club's staff"}
 GROUP_FILTERS = {
     "any": "any group",
     "grouped": "in a group",
@@ -82,6 +83,7 @@ class PlayerFilter:
     pa_min: int | None = None
     pa_max: int | None = None
     origin: str = "any"
+    role: str = "any"
     group: str = "any"
     picture: str = "any"
     scope: str = "mens"
@@ -102,6 +104,7 @@ class PlayerFilter:
             pa_min=_int(get("pa_min"), 0, 200),
             pa_max=_int(get("pa_max"), 0, 200),
             origin=_choice(get("origin"), ORIGINS, "any"),
+            role=_choice(get("role"), ROLES, "any"),
             group=_choice(get("group"), GROUP_FILTERS, "any"),
             picture=_choice(get("picture"), PICTURE_FILTERS, "any"),
             scope=_choice(get("scope"), SCOPES, "mens"),
@@ -166,6 +169,10 @@ def _where(f: PlayerFilter) -> tuple[str, list[Any]]:
         clauses.append("p.is_newgen = 1")
     elif f.origin == "existing":
         clauses.append("p.is_newgen = 0")
+    if f.role == "players":
+        clauses.append("p.is_staff = 0")
+    elif f.role == "staff":
+        clauses.append("p.is_staff = 1")
     match f.group:
         case "grouped":
             clauses.append("p.group_name IS NOT NULL")
@@ -215,7 +222,8 @@ def players_page(
     rows = conn.execute(
         "SELECT p.unique_id, p.name, p.age, p.ca, p.pa, p.is_newgen, p.academy, p.at_my_club,"
         " p.in_my_league, p.in_continental, p.in_scope, p.group_name, p.tracked, p.reasons,"
-        " p.pin, p.club_id, p.is_goalkeeper, c.name AS club, i.id AS image_id,"
+        " p.pin, p.club_id, p.is_goalkeeper, p.is_staff, p.staff_job, c.name AS club,"
+        " i.id AS image_id,"
         " i.published_path, i.group_name AS image_group, j.status AS job_status,"
         f" j.kind AS job_kind, j.manual AS job_manual, {_LATEST_JOB} AS latest_job"
         f"{_FROM} WHERE {where} ORDER BY {SORTS[f.sort]}, p.unique_id LIMIT ? OFFSET ?",
@@ -309,7 +317,8 @@ def counts(conn: sqlite3.Connection, career_id: int) -> dict[str, int]:
     row = conn.execute(
         "SELECT SUM(group_name = 'a') AS a, SUM(group_name = 'a' AND at_my_club) AS a_my_club,"
         " SUM(group_name = 'b') AS b, SUM(group_name = 'c') AS c, SUM(tracked) AS tracked,"
-        " SUM(at_my_club) AS at_my_club, SUM(pin IS NOT NULL) AS pinned"
+        " SUM(at_my_club) AS at_my_club, SUM(pin IS NOT NULL) AS pinned,"
+        " SUM(is_staff AND at_my_club) AS staff, SUM(group_name = 'a' AND is_staff) AS a_staff"
         " FROM players WHERE career_id = ? AND present = 1",
         (career_id,),
     ).fetchone()

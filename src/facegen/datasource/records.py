@@ -66,6 +66,28 @@ class PlayerRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class StaffRecord:
+    """A person on my club's staff who is not a player: coach, physio, scout, analyst, a
+    board member, or the save's own human manager."""
+
+    unique_id: int
+    """The game's unique ID for the person; what FM27's config.xml maps, as for players."""
+    name: str
+    birth_date: date | None
+    age: int | None
+    club_id: int
+    job: str | None
+    """The job in lower-case words ("assistant manager"), or None where the save does not say."""
+    ca: int | None
+    pa: int | None
+    """Staff ability on the players' 1 to 200 scale; None for the human manager."""
+    club_join_date: date | None
+    """When the contract at the club started; None for a role with no contract."""
+    is_human_manager: bool = False
+    personality: Personality | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class LeagueTableRecord:
     competition_id: int | None
     club_ids: tuple[int, ...]
@@ -100,3 +122,8 @@ class Snapshot:
     Competition IDs are the game's editor database IDs where the save links one (stable
     across saves, what the continental settings list), else minus one minus the save-local ID.
     """
+    staff: tuple[StaffRecord, ...] = ()
+    """My club's staff only; staff elsewhere are not read into the tool."""
+    staff_read: bool = True
+    """False when the staff reader failed: the staff stored before are then left as they were,
+    rather than counted as gone from my club."""

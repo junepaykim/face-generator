@@ -23,33 +23,38 @@ from typing import Any
 from urllib.parse import quote, urlsplit
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import FormData
 
-from facegen import db, manual
+from facegen import db, manual, settings_history
 from facegen.age import table_name
 from facegen.classify import Group
-from facegen.db import transaction
 from facegen.manual import ManualError
 from facegen.planner import REFERENCE_KINDS, reference_scale
 from facegen.poller import UNSUPPORTED_ADVICE
 from facegen.publish import RELOAD_HINT, PublishError
 from facegen.service import BUSY_TIMEOUT_MS, PollerService, SyncService, WorkerService
-from facegen.settings import (
-    Settings,
-    SettingsError,
-    load_defaults,
-    load_settings,
-    merge_overrides,
-    set_overrides,
-)
-from facegen.sync import SettingsPreview, classify_and_plan, preview_settings
+from facegen.settings import Settings, SettingsError, load_defaults, load_settings
+from facegen.settings_history import Outcome
 from facegen.traits import TRAIT_TABLES, eyes_drawn_round
 from facegen.web import queries
-from facegen.web.forms import editable_keys, parse_settings_form, settings_sections
+from facegen.web.forms import (
+    blamed_keys,
+    change_lines,
+    input_text,
+    parse_settings_changes,
+    parse_settings_form,
+    settings_sections,
+)
 from facegen.web.queries import PlayerFilter
 from facegen.web.security import install_security
 from facegen.worker import Career, load_career
@@ -77,8 +82,6 @@ class AppContext:
     syncer: SyncService | None = None
     poller: PollerService | None = None
 
-
-# --- settings form ---------------------------------------------------------------------------
 
 # --- helpers ----------------------------------------------------------------------------------
 
@@ -134,6 +137,17 @@ def make_thumb(source: Path, size: int, cache_dir: Path) -> Path:
     return dest
 
 
+def static_version(folder: Path) -> str:
+    """A short hash of the static files. Pages link them with it, so a browser fetches the
+    script and styles again after an update instead of using the ones it cached."""
+    digest = hashlib.sha1()
+    for path in sorted(folder.iterdir()):
+        if path.is_file():
+            digest.update(path.name.encode())
+            digest.update(path.read_bytes())
+    return digest.hexdigest()[:10]
+
+
 def describe_job(kind: str) -> str:
     return KIND_NAMES.get(kind, kind)
 
@@ -161,6 +175,7 @@ def create_app(ctx: AppContext) -> FastAPI:
         reload_hint=RELOAD_HINT,
         trait_tables=TRAIT_TABLES,
         uses_reference=uses_reference,
+        static_version=static_version(HERE / "static"),
     )
     env.filters["upper_group"] = lambda g: (g or "-").upper()
 
@@ -288,6 +303,7 @@ def create_app(ctx: AppContext) -> FastAPI:
             club_name=club_name,
             leagues=queries.LEAGUES,
             origins=queries.ORIGINS,
+            roles=queries.ROLES,
             group_filters=queries.GROUP_FILTERS,
             picture_filters=queries.PICTURE_FILTERS,
             scopes=queries.SCOPES,
@@ -355,7 +371,7 @@ def create_app(ctx: AppContext) -> FastAPI:
             d=detail,
             p=p,
             settings=settings,
-            age_table=table_name(p["group_name"], bool(p["at_my_club"])),
+            age_table=table_name(p["group_name"], bool(p["at_my_club"]), bool(p["is_staff"])),
             redraw_reference=uses_reference("redraw", bool(p["at_my_club"]), settings),
             eyes_round=bool(detail["sheet"])
             and eyes_drawn_round(
@@ -458,6 +474,46 @@ def create_app(ctx: AppContext) -> FastAPI:
         return page(request, "review.html", conn, items=items)
 
     # -- settings --
+    # Each change is saved as it is made (the page's script posts to /settings/save) and can
+    # be undone; settings_history.py keeps the history. Without the script, the page's Save
+    # button posts the whole form.
+
+    def history_context(conn: sqlite3.Connection) -> dict[str, Any]:
+        defaults = load_defaults(ctx.defaults_path)
+        entries = settings_history.entries(conn)
+        return {
+            "history": [
+                {
+                    "entry": e,
+                    "lines": change_lines(e.before, e.after, defaults),
+                    "summary": e.report.summary() if e.report else "",
+                }
+                for e in entries
+            ],
+            "latest_done": next((e.id for e in entries if not e.undone), None),
+            "can_undo": settings_history.can_undo(conn),
+            "can_redo": settings_history.can_redo(conn),
+        }
+
+    def outcome_message(verb: str, outcome: Outcome) -> str:
+        """ "Saved: Group A · CA above 155 → 150. A 52 → 60; queue: 8 queued." and the like."""
+        defaults = load_defaults(ctx.defaults_path)
+        what = "; ".join(
+            f"{line.label} {line.before} → {line.after}"
+            if verb != "Undone"
+            else f"{line.label} {line.after} → {line.before}"
+            for e in outcome.entries
+            for line in change_lines(e.before, e.after, defaults)
+        )
+        if any(e.label == "defaults" for e in outcome.entries):
+            what = f"every setting back to its default ({what})"
+        note = f"{verb}: {what}."
+        if outcome.report is not None:
+            summary = outcome.report.summary()
+            note += f" {summary[:1].upper()}{summary[1:]}."
+        if any(k.startswith("eligibility.") for e in outcome.entries for k in e.after):
+            note += " Eligibility changes take effect at the next sync."
+        return note
 
     def settings_page(
         request: Request,
@@ -466,8 +522,6 @@ def create_app(ctx: AppContext) -> FastAPI:
         *,
         errors: dict[str, str] | None = None,
         error: str | None = None,
-        preview: SettingsPreview | None = None,
-        changes: dict[str, Any] | None = None,
     ) -> Response:
         defaults = load_defaults(ctx.defaults_path)
         current = settings_now(conn)
@@ -477,11 +531,9 @@ def create_app(ctx: AppContext) -> FastAPI:
             "settings.html",
             conn,
             sections=settings_sections(shown, defaults),
-            current=current.values,
             errors=errors or {},
             error=error,
-            preview=preview,
-            changes=changes or {},
+            **history_context(conn),
         )
 
     @app.get("/settings", response_class=HTMLResponse)
@@ -490,6 +542,7 @@ def create_app(ctx: AppContext) -> FastAPI:
 
     @app.post("/settings", response_class=HTMLResponse)
     async def settings_post(request: Request) -> Response:
+        """The whole form (Save, without the page's script), Reset, Undo and Redo."""
         form = await form_of(request)
         action = form.get("action")
 
@@ -497,43 +550,102 @@ def create_app(ctx: AppContext) -> FastAPI:
             conn = db.connect(ctx.db_path, busy_timeout_ms=BUSY_TIMEOUT_MS)
             try:
                 defaults = load_defaults(ctx.defaults_path)
-                if action == "defaults":
-                    values = {k: defaults[k] for k in editable_keys(defaults)}
-                    errors: dict[str, str] = {}
-                else:
-                    values, errors = parse_settings_form(form, defaults)
-                if errors:
-                    return settings_page(request, conn, values, errors=errors)
-                current = settings_now(conn)
-                changes = {k: v for k, v in values.items() if v != current.values[k]}
-                if not changes:
-                    return _redirect("/settings", msg="Nothing changed.")
+                values: dict[str, Any] = {}
                 try:
-                    proposed = merge_overrides(conn, changes, ctx.defaults_path)
+                    match action:
+                        case "apply":
+                            values, errors = parse_settings_form(form, defaults)
+                            if errors:
+                                return settings_page(request, conn, values, errors=errors)
+                            verb = "Saved"
+                            outcome = settings_history.save(
+                                conn, values, defaults_path=ctx.defaults_path
+                            )
+                        case "defaults":
+                            verb = "Saved"
+                            outcome = settings_history.save_defaults(
+                                conn, defaults_path=ctx.defaults_path
+                            )
+                        case "undo":
+                            through = str(form.get("through") or "")
+                            verb = "Undone"
+                            outcome = settings_history.undo(
+                                conn,
+                                through=int(through) if through.isdigit() else None,
+                                defaults_path=ctx.defaults_path,
+                            )
+                        case "redo":
+                            verb = "Redone"
+                            outcome = settings_history.redo(conn, defaults_path=ctx.defaults_path)
+                        case _:
+                            raise HTTPException(400, "unknown action")
                 except SettingsError as exc:
-                    return settings_page(request, conn, values, error=str(exc))
-                career = load_career(conn)
-                if action in ("preview", "defaults"):
-                    preview = (
-                        preview_settings(conn, career.id, current, proposed) if career else None
-                    )
-                    return settings_page(request, conn, values, preview=preview, changes=changes)
-                if action != "apply":
-                    raise HTTPException(400, "unknown action")
-                with transaction(conn):
-                    applied = set_overrides(conn, changes, ctx.defaults_path)
-                    result = classify_and_plan(conn, career.id, applied) if career else None
-                note = f"Applied {len(changes)} change(s)."
-                if result is not None:
-                    p = result.plan
-                    note += (
-                        f" Queue: {len(p.enqueue)} queued, {len(p.update)} updated,"
-                        f" {len(p.cancel)} cancelled."
-                    )
-                if any(k.startswith("eligibility.") for k in changes):
-                    note += " Eligibility changes take effect at the next sync."
+                    if action == "apply":
+                        return settings_page(request, conn, values, error=str(exc))
+                    return _redirect("/settings", err=f"Not done: {exc}")
+                if not outcome.changed:
+                    nothing = {"undo": "Nothing to undo.", "redo": "Nothing to redo."}
+                    return _redirect("/settings", msg=nothing.get(str(action), "Nothing changed."))
                 wake()
-                return _redirect("/settings", msg=note)
+                return _redirect("/settings", msg=outcome_message(verb, outcome))
+            finally:
+                conn.close()
+
+        return await run_in_threadpool(run)
+
+    @app.post("/settings/save")
+    async def settings_save(request: Request) -> Response:
+        """Autosave: the fields the page changed. Answers JSON for the page's script."""
+        form = await form_of(request)
+
+        def run() -> Response:
+            conn = db.connect(ctx.db_path, busy_timeout_ms=BUSY_TIMEOUT_MS)
+            try:
+                defaults = load_defaults(ctx.defaults_path)
+                values, errors = parse_settings_changes(form, defaults)
+                if errors:
+                    return JSONResponse(
+                        {"ok": False, "errors": errors, "error": "Not saved: check the field."}
+                    )
+                try:
+                    outcome = settings_history.save(conn, values, defaults_path=ctx.defaults_path)
+                except SettingsError as exc:
+                    message = str(exc)
+                    blamed = blamed_keys(message, list(values)) or list(values)
+                    return JSONResponse(
+                        {
+                            "ok": False,
+                            "errors": {k: message for k in blamed},
+                            "error": f"Not saved: {message}",
+                        }
+                    )
+                if outcome.changed:
+                    wake()
+                # The values as stored (lists lower-cased, numbers tidied), for the page to show.
+                current = outcome.settings.values
+                fields = {
+                    key: {
+                        "value": current[key],
+                        "text": input_text(current[key]),
+                        "changed": current[key] != defaults[key],
+                    }
+                    for key in values
+                }
+                history = history_context(conn)
+                history_html = templates.get_template("_settings_history.html").render(**history)
+                return JSONResponse(
+                    {
+                        "ok": True,
+                        "changed": outcome.changed,
+                        "message": outcome_message("Saved", outcome)
+                        if outcome.changed
+                        else "Nothing changed.",
+                        "fields": fields,
+                        "history_html": history_html,
+                        "can_undo": history["can_undo"],
+                        "can_redo": history["can_redo"],
+                    }
+                )
             finally:
                 conn.close()
 

@@ -22,6 +22,8 @@ from facegen.datasource.fmsave_source import (
     convert_league_tables,
     convert_player,
     convert_players,
+    convert_staff,
+    staff_job,
 )
 from facegen.datasource.records import Gender, Personality
 
@@ -59,6 +61,26 @@ def fm_player(unique_id: int | None, **kw: object) -> NS:
         "club_join_date": date(2025, 7, 1),
         "natural_positions": ("MC", "DM"),
         "attributes": NS(strength=11),
+    }
+    base.update(kw)
+    return NS(**base)
+
+
+def fm_staff(unique_id: int | None, **kw: object) -> NS:
+    base: dict[str, object] = {
+        "uid": 5,
+        "unique_id": unique_id,
+        "is_human_manager": False,
+        "name": "Rhys Morris",
+        "full_name": "Rhys Morris",
+        "legal_name": None,
+        "birth_date": date(1980, 2, 1),
+        "age": 46,
+        "club_uid": 10,
+        "job": NS(label=NS(name="ASSISTANT_MANAGER"), raw=20),
+        "contract_start": date(2025, 6, 1),
+        "ability": NS(current=55, potential=70),
+        "personality": None,
     }
     base.update(kw)
     return NS(**base)
@@ -238,13 +260,53 @@ def test_reads_a_real_save_copy() -> None:
     assert with_personality > 0.9 * len(snap.players)
 
 
+def test_staff_job_in_words() -> None:
+    assert staff_job(NS(label=NS(name="DIRECTOR_OF_FOOTBALL"), raw=10)) == "director of football"
+    assert staff_job(NS(label=NS(name="UNKNOWN"), raw=99)) is None
+    assert staff_job(None) is None
+
+
+def test_convert_staff_keeps_one_club_and_each_person_once() -> None:
+    staff = convert_staff(
+        [
+            fm_staff(3001),
+            fm_staff(3002, club_uid=11),  # another club: not read
+            fm_staff(3001, name="Repeat"),  # a second row for the same person
+            fm_staff(None),  # no unique ID
+            fm_staff(
+                3003,
+                is_human_manager=True,
+                ability=None,
+                age=None,
+                birth_date=date(1977, 8, 1),
+                job=NS(label=NS(name="MANAGER"), raw=16),
+            ),
+        ],
+        UID_MAP,
+        10,
+        date(2026, 7, 13),
+    )
+    assert [s.unique_id for s in staff] == [3001, 3003]
+    coach, me = staff
+    assert (coach.club_id, coach.job, coach.ca, coach.pa) == (1010, "assistant manager", 55, 70)
+    assert coach.club_join_date == date(2025, 6, 1) and coach.name == "Rhys Morris"
+    assert me.is_human_manager and me.ca is None and me.pa is None
+    assert me.age == 48  # from the birth date when the save has no age
+
+
 # --- load(): how fmsave's errors and warnings reach the report ---------------------------------
 
 
 class FakeSave:
     """Stands in for fmsave.Save: one club, one player, and readers that can fail."""
 
-    def __init__(self, *, known_build: bool = True, fail: Exception | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        known_build: bool = True,
+        fail: Exception | None = None,
+        staff_fail: Exception | None = None,
+    ) -> None:
         self.info = NS(
             game="FM27",
             build="27.0.0+2486695" if known_build else "27.1.0+2600000",
@@ -254,6 +316,7 @@ class FakeSave:
             file_name="Career.fm",
         )
         self._fail = fail
+        self._staff_fail = staff_fail
         self.closed = False
 
     def clubs(self) -> list[NS]:
@@ -276,6 +339,11 @@ class FakeSave:
     def fixtures(self) -> list[NS]:
         return []
 
+    def staff(self) -> list[NS]:
+        if self._staff_fail is not None:
+            raise self._staff_fail
+        return [fm_staff(3001), fm_staff(3002, club_uid=11)]
+
     def close(self) -> None:
         self.closed = True
 
@@ -296,8 +364,22 @@ def test_load_reads_and_closes_the_save(monkeypatch: pytest.MonkeyPatch) -> None
     _patch_open(monkeypatch, save)
     snap = FmsaveDataSource().load(Path("Career.fm"))
     assert [p.unique_id for p in snap.players] == [2_002_100_000]
+    assert [s.unique_id for s in snap.staff] == [3001]  # my club's staff only
+    assert snap.staff_read
     assert snap.meta.known_build and save.closed
     assert not any("not one fmsave" in w for w in snap.meta.warnings)
+
+
+def test_a_failing_staff_reader_leaves_the_staff_as_they_were(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import fmsave
+
+    save = FakeSave(staff_fail=fmsave.ReaderCheckError("staff: checks failed"))
+    _patch_open(monkeypatch, save)
+    snap = FmsaveDataSource().load(Path("Career.fm"))
+    assert snap.players and snap.staff == () and not snap.staff_read
+    assert any("staff data unavailable" in w for w in snap.meta.warnings)
 
 
 def test_an_unknown_build_is_read_with_a_clear_warning(monkeypatch: pytest.MonkeyPatch) -> None:

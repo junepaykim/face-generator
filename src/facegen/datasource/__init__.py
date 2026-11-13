@@ -14,6 +14,7 @@ from facegen.datasource.records import (
     PlayerRecord,
     SaveMeta,
     Snapshot,
+    StaffRecord,
 )
 
 __all__ = [
@@ -27,5 +28,6 @@ __all__ = [
     "SaveMeta",
     "SaveReadError",
     "Snapshot",
+    "StaffRecord",
     "UnsupportedSaveError",
 ]

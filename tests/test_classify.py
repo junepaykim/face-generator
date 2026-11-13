@@ -217,3 +217,30 @@ def test_pinned_academy_newgen_stays_tracked(groups: Groups) -> None:
 def test_rule_matches_lists_every_rule_met(groups: Groups) -> None:
     found = rule_matches(facts(ca=170, pa=180, in_my_league=True, academy=True), groups)
     assert {g for g, _ in found} == {Group.A, Group.B, Group.C}
+
+
+# --- my club's staff (user, 2026-11-12) ----------------------------------------------------------
+
+
+def test_my_clubs_staff_are_group_a_and_tracked(groups: Groups) -> None:
+    c = classify(facts(is_staff=True, at_my_club=True, is_newgen=False, ca=30), groups)
+    assert (c.group, c.tracked, c.reasons) == (Group.A, True, ("on my club's staff",))
+
+
+def test_the_newgen_rules_never_apply_to_staff(groups: Groups) -> None:
+    # A created coach with a high staff CA, in my league: none of A, B or C's newgen rules.
+    staff = {"is_staff": True, "is_newgen": True, "ca": 180, "pa": 190, "in_my_league": True}
+    assert rule_matches(facts(**staff), groups) == []
+    assert classify(facts(**staff, academy=True), groups).tracked is False
+    c = classify(facts(**staff, at_my_club=True), groups)
+    assert c.reasons == ("on my club's staff",)
+
+
+def test_staff_pictures_turned_off(groups: Groups) -> None:
+    mine = facts(is_staff=True, at_my_club=True)
+    c = classify(mine, groups, staff=False)
+    assert c.group is None and not c.tracked and "staff pictures are off" in c.reasons[0]
+    # A pin still hand-picks them; players at my club are unaffected.
+    assert classify(replace(mine, pin="b"), groups, staff=False).group is Group.B
+    assert classify(facts(at_my_club=True), groups, staff=False).group is Group.A
+    assert classify(replace(mine, pin="never"), groups).group is None

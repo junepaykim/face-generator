@@ -3,6 +3,8 @@
 A player's real age, in whole years, picks one of ten fixed prompt wordings: W01, the
 youngest look, to W10, the oldest. Which wording depends on the player's group and, in
 group A, on whether they are at my club, because the most visible players get finer steps.
+My club's staff have a table of their own, whatever their group: wide bands over working
+ages, W02 the youngest (user, 2026-11-12).
 
 The tables are settings (`age.<table>.<wording> = first real age`); the wordings' text is
 fixed here. A wording applies from its first age up to the next wording's first age; ages
@@ -43,24 +45,31 @@ WORDINGS: dict[str, Wording] = {
     "W10": Wording("mature female, adult woman, mature face", young=False),
 }
 
-# One table per audience. Group A is split by whether the player is at my club.
-TABLES = ("a_my_club", "a_other_club", "b", "c")
+# One table per audience. Group A is split by whether the player is at my club; staff have
+# their own.
+TABLES = ("a_my_club", "a_other_club", "b", "c", "staff")
 
 
-def table_name(group: str | None, at_my_club: bool) -> str | None:
+def table_name(group: str | None, at_my_club: bool, staff: bool = False) -> str | None:
     """Which age table applies. `group` is a Group or its value ("a", "b", "c")."""
     if group is None:
         return None
+    if staff:
+        return "staff"
     if group == "a":
         return "a_my_club" if at_my_club else "a_other_club"
     return str(group)
 
 
 def age_wording(
-    real_age: int | None, group: str | None, at_my_club: bool, s: AgeSettings
+    real_age: int | None,
+    group: str | None,
+    at_my_club: bool,
+    s: AgeSettings,
+    staff: bool = False,
 ) -> str | None:
     """The wording key, which is also the age band, or None if age or group is unknown."""
-    name = table_name(group, at_my_club)
+    name = table_name(group, at_my_club, staff)
     if real_age is None or name is None:
         return None
     rows = s.table(name)

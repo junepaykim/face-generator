@@ -68,6 +68,15 @@ published_long_edge = 512
 candidates = 1
 detail_pass = false
 
+[staff]
+# My club's staff (coaches, physios, scouts, analysts, the board, and the manager: you) get
+# pictures like the players at my club: group A quality, tracked while at my club, re-drawn
+# when their age wording changes. They wear a track jacket in the club's colours rather than
+# the playing kit, and their age wording comes from [age.staff]. Staff at other clubs are not
+# read. Pin a person to "never" on their page to leave them out. Requested by the user,
+# 2026-11-12 (docs/spec.md section 2).
+enabled = true
+
 [age]
 # Real age (whole years) picks an age wording, W01 (youngest look) to W10 (oldest); the
 # wording text is fixed in src/facegen/age.py. Each table lists, per wording it uses, the
@@ -104,6 +113,19 @@ W09 = 29                            # 29 and older
 W03 = 15                            # 15-21
 W06 = 22                            # 22-27
 W08 = 28                            # 28 and older
+
+[age.staff]                         # my club's staff, whatever their group (user, 2026-11-12)
+# Very wide bands, and never W01: most staff fall in W03-W07. Across the Telford save's
+# 71,000 staff, 90% are 25-60, about 4% under 25 and 6% over 60 (docs/research.md).
+W02 = 18                            # under 25
+W03 = 25                            # 25-31
+W04 = 32                            # 32-38
+W05 = 39                            # 39-45
+W06 = 46                            # 46-52
+W07 = 53                            # 53-60
+W08 = 61                            # 61-67
+W09 = 68                            # 68-74
+W10 = 75                            # 75 and older
 
 [reference]
 # A re-draw of a player who already has a picture (new kit, new age wording, promotion to

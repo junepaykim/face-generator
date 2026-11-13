@@ -618,3 +618,33 @@ def test_the_renderers_cache_holds_a_whole_window_of_prompts() -> None:
 
     # A positive and a negative text per job, and the empty text that pads them.
     assert 2 * PRE_ENCODE_JOBS + 1 <= TEXT_CACHE_SIZE
+
+
+def test_my_clubs_staff_are_drawn_at_a_quality_in_a_track_jacket(
+    conn: sqlite3.Connection, settings: Settings, tmp_path: Path
+) -> None:
+    from factories import staff_member
+
+    from facegen.age import WORDINGS
+
+    coach = NEWGEN + 100
+    s = replace(settings, paths=Paths(fm_user_dir=tmp_path / "fm", data_dir=tmp_path / "data"))
+    snap = snapshot(world(), staff=[staff_member(coach, age=30, job="coach")])
+    run_sync(conn, snap, s, save_file="career.fm")
+    env = Env(conn, s, tmp_path / "fm", tmp_path / "data")
+    w, renderer, _ = env.worker()
+    staff_job = next(j for j in w.runnable(MINE) if j.unique_id == coach)
+    assert staff_job.staff and staff_job.target_band == "W03"  # 25-31 in the staff table
+    w.run_job(staff_job)
+    image = env.current(coach)
+    assert image is not None and image["group_name"] == "a" and image["age_band"] == "W03"
+    # Group A: three candidates and the detail pass, as for the players at my club.
+    assert len([c for c in renderer.calls if c[0] == "render"]) == s.groups.a.candidates
+    prompt = image["prompt"]
+    assert "track jacket" in prompt and "shorts" not in prompt
+    assert WORDINGS["W03"].text in prompt
+    # The content rule is the same for staff: fixed terms, and the under-18 negatives for W03.
+    assert "safe" in prompt and "sportswear" in prompt
+    assert CONTENT_NEGATIVE in image["negative_prompt"]
+    assert YOUNG_NEGATIVE in image["negative_prompt"]
+    assert json.loads(image["render"])["staff"] is True

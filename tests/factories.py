@@ -13,6 +13,7 @@ from facegen.datasource.records import (
     PlayerRecord,
     SaveMeta,
     Snapshot,
+    StaffRecord,
 )
 
 # Nation 1 is "home"; nation 2 is abroad.
@@ -93,6 +94,31 @@ def player(
     )
 
 
+def staff_member(
+    unique_id: int,
+    *,
+    name: str | None = None,
+    age: int | None = 45,
+    job: str | None = "coach",
+    club_id: int = MY_CLUB,
+    ca: int | None = 50,
+    join: date | None = None,
+    human: bool = False,
+) -> StaffRecord:
+    return StaffRecord(
+        unique_id=unique_id,
+        name=name or f"Staff {unique_id}",
+        birth_date=date(1981, 1, 1),
+        age=age,
+        club_id=club_id,
+        job=job,
+        ca=ca,
+        pa=None if ca is None else ca + 10,
+        club_join_date=join,
+        is_human_manager=human,
+    )
+
+
 def filler(career: str = "one", count: int = 60) -> list[PlayerRecord]:
     """A database person above 2e9, then a block of created people at a women's club.
 
@@ -117,6 +143,8 @@ def snapshot(
     file_name: str = "career.fm",
     tables: tuple[LeagueTableRecord, ...] | None = None,
     fixture_counts: Mapping[int, Mapping[int, int]] | None = None,
+    staff: Iterable[StaffRecord] = (),
+    staff_read: bool = True,
 ) -> Snapshot:
     if tables is None:
         tables = (
@@ -139,4 +167,6 @@ def snapshot(
         players=tuple(filler(career)) + tuple(players),
         league_tables=tables,
         fixture_counts=fixture_counts,
+        staff=tuple(staff),
+        staff_read=staff_read,
     )

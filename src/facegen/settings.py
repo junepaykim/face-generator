@@ -119,9 +119,19 @@ class AgeSettings:
     a_other_club: tuple[tuple[int, str], ...]
     b: tuple[tuple[int, str], ...]
     c: tuple[tuple[int, str], ...]
+    staff: tuple[tuple[int, str], ...]
+    """My club's staff, whatever their group: wide bands, W02 the youngest (user, 2026-11-12)."""
 
     def table(self, name: str) -> tuple[tuple[int, str], ...]:
         return getattr(self, name)
+
+
+@dataclass(frozen=True, slots=True)
+class StaffSettings:
+    """My club's staff get pictures like its players (user, 2026-11-12)."""
+
+    enabled: bool
+    """False: staff are in no group unless pinned; their pictures are kept."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,6 +182,7 @@ class Settings:
     eligibility: Eligibility
     newgen: Newgen
     groups: Groups
+    staff: StaffSettings
     age: AgeSettings
     reference: ReferenceSettings
     my_club: MyClubSettings
@@ -297,7 +308,7 @@ def build_settings(values: Mapping[str, Any], overridden: frozenset[str] = froze
                 raise SettingsError(f"unknown age wording {prefix}{wording}")
             if not _is_int(first_age):
                 raise SettingsError(f"setting {prefix}{wording!r} needs an int")
-            _range(prefix + wording, first_age, 0, 60)
+            _range(prefix + wording, first_age, 0, 100)
         firsts = [first_age for _, first_age in rows]
         if firsts != sorted(set(firsts)):
             raise SettingsError(
@@ -379,6 +390,7 @@ def build_settings(values: Mapping[str, Any], overridden: frozenset[str] = froze
                 detail_pass=v["groups.c.detail_pass"],
             ),
         ),
+        staff=StaffSettings(enabled=v["staff.enabled"]),
         age=age,
         reference=ReferenceSettings(
             enabled=v["reference.enabled"],

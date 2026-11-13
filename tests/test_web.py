@@ -329,50 +329,127 @@ def _settings_form(env: Env, **changes: Any) -> dict[str, Any]:
     return form
 
 
-def test_settings_preview_then_apply(env: Env) -> None:
+def autosave(env: Env, **fields: str) -> dict[str, Any]:
+    """What the settings page's script posts when fields change, and the JSON answer."""
+    r = env.client.post("/settings/save", data=fields)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_settings_are_saved_as_they_change(env: Env) -> None:
     page = env.client.get("/settings").text
     assert 'name="groups.a.ca_above"' in page and 'name="ui.host"' not in page
     assert 'name="paths.fm_user_dir"' not in page
+    assert "data-autosave" in page and 'value="preview"' not in page
+    # The Save button is there only for a browser with JavaScript off.
+    assert re.search(r"<noscript>.*value=\"apply\".*</noscript>", page, re.DOTALL)
+    assert re.search(r"data-undo\s+disabled", page)  # nothing to undo yet
 
-    form = _settings_form(env, **{"groups.a.ca_above": 85})
-    r = env.client.post("/settings", data={**form, "action": "preview"})
-    assert r.status_code == 200
-    assert "Preview" in r.text and "Rival Kid" in r.text  # moves from B to A
-    assert env.one("SELECT COUNT(*) FROM settings") == 0  # nothing stored yet
-    assert env.one("SELECT group_name FROM players WHERE unique_id = ?", B_NEWGEN) == "b"
-
-    text = follow(env, env.client.post("/settings", data={**form, "action": "apply"}))
-    assert "Applied 1 change(s)" in text and "1 updated" in text
+    data = autosave(env, **{"groups.a.ca_above": "85"})
+    assert data["ok"] and data["changed"]
+    assert data["message"].startswith("Saved: Group A · CA above 155 → 85.")
+    # Rival Kid's queued B job becomes an A job, and Abroad Kid (CA 120) is queued at A.
+    assert data["message"].endswith("A 1 → 3, B 1 → 0, tracked 1 → 3; queue: 1 queued, 1 updated.")
+    assert data["fields"] == {"groups.a.ca_above": {"value": 85, "text": "85", "changed": True}}
+    assert data["can_undo"] and not data["can_redo"]
+    assert "Group A · CA above" in data["history_html"] and 'name="through"' in data["history_html"]
+    assert 'name="csrf_token"' in data["history_html"]
     assert env.one("SELECT group_name FROM players WHERE unique_id = ?", B_NEWGEN) == "a"
     assert env.one("SELECT group_name FROM jobs WHERE unique_id = ?", B_NEWGEN) == "a"
     assert load_settings(env.conn(), env.config).groups.a.ca_above == 85
-    assert "Nothing changed" in follow(env, env.client.post("/settings", data={**form}))
+
+    again = autosave(env, **{"groups.a.ca_above": "85"})
+    assert again["ok"] and not again["changed"] and again["message"] == "Nothing changed."
+    # The page lists the change and offers to undo it.
+    page = env.client.get("/settings").text
+    assert "Recent changes" in page and "155 → <strong>85</strong>" in page
+    assert not re.search(r"data-undo\s+disabled", page)
 
 
-def test_settings_preview_lists_what_would_be_queued(env: Env) -> None:
-    form = _settings_form(env, **{"groups.b.any_ca_above": 110})
-    r = env.client.post("/settings", data={**form, "action": "preview"})
-    assert "1 first picture B would be queued" in r.text
-    assert "Abroad Kid" in r.text
-
-
-def test_settings_errors_and_booleans(env: Env) -> None:
-    form = _settings_form(env, **{"groups.a.ca_above": 999})
-    r = env.client.post("/settings", data={**form, "action": "apply"})
-    assert r.status_code == 200 and "between 0 and 200" in r.text
-    form = _settings_form(env)
-    form["groups.b.candidates"] = "two"
-    r = env.client.post("/settings", data={**form, "action": "apply"})
-    assert r.status_code == 200 and "needs a number" in r.text
+def test_autosave_refuses_bad_values_and_names_the_field(env: Env) -> None:
+    data = autosave(env, **{"groups.a.ca_above": "999"})
+    assert not data["ok"] and "between 0 and 200" in data["errors"]["groups.a.ca_above"]
+    data = autosave(env, **{"groups.b.candidates": "two"})
+    assert data["errors"] == {"groups.b.candidates": "needs a number"}
+    # Values that only fail together blame the fields named; nothing is stored.
+    data = autosave(env, **{"body.short_below_cm": "200"})
+    assert list(data["errors"]) == ["body.short_below_cm"]
+    data = autosave(env, **{"age.staff.W03": "17"})  # below W02's 18
+    assert list(data["errors"]) == ["age.staff.W03"] and "rise strictly" in data["error"]
     assert env.one("SELECT COUNT(*) FROM settings") == 0
-    # An unticked checkbox is "off".
-    form = _settings_form(env)
+    # Fixing the field that blocked another saves both in one change.
+    data = autosave(env, **{"age.staff.W02": "16", "age.staff.W03": "17"})
+    assert data["ok"] and env.one("SELECT COUNT(*) FROM settings_history") == 1
+    # A checkbox is posted either way: empty is off.
+    autosave(env, **{"groups.a.detail_pass": ""})
+    assert load_settings(env.conn(), env.config).groups.a.detail_pass is False
+    autosave(env, **{"groups.a.detail_pass": "on"})
+    assert load_settings(env.conn(), env.config).groups.a.detail_pass is True
+    assert not autosave(env, **{"groups.a.detail_pass": "maybe"})["ok"]
+
+
+def test_undo_redo_and_undo_back_several_steps(env: Env) -> None:
+    autosave(env, **{"groups.a.ca_above": "150"})  # moves nobody in this world
+    autosave(env, **{"groups.b.any_ca_above": "110"})  # Abroad Kid (CA 120) joins B
+    assert env.one("SELECT group_name FROM players WHERE unique_id = ?", ABROAD_KID) == "b"
+
+    text = follow(env, env.client.post("/settings", data={"action": "undo"}))
+    assert "Undone: Group B · Anywhere: CA above 110 → 140." in text
+    assert env.one("SELECT group_name FROM players WHERE unique_id = ?", ABROAD_KID) is None
+    text = follow(env, env.client.post("/settings", data={"action": "redo"}))
+    assert "Redone: Group B · Anywhere: CA above 140 → 110." in text
+    assert env.one("SELECT group_name FROM players WHERE unique_id = ?", ABROAD_KID) == "b"
+
+    first = env.one("SELECT MIN(id) FROM settings_history")
+    text = follow(env, env.client.post("/settings", data={"action": "undo", "through": first}))
+    assert "Group A · CA above 150 → 155" in text
+    assert "Group B · Anywhere: CA above 110 → 140" in text
+    assert env.one("SELECT COUNT(*) FROM settings") == 0
+    assert env.one("SELECT group_name FROM players WHERE unique_id = ?", B_NEWGEN) == "b"
+    assert "Nothing to undo." in follow(env, env.client.post("/settings", data={"action": "undo"}))
+
+
+def test_reset_all_and_the_save_button_without_javascript(env: Env) -> None:
+    form = _settings_form(env, **{"groups.a.ca_above": 85})
+    text = follow(env, env.client.post("/settings", data={**form, "action": "apply"}))
+    assert "Saved: Group A · CA above 155 → 85." in text
+    assert "Nothing changed" in follow(
+        env, env.client.post("/settings", data={**form, "action": "apply"})
+    )
+    # An unticked checkbox is not posted with the whole form: it is "off".
     del form["groups.a.detail_pass"]
     follow(env, env.client.post("/settings", data={**form, "action": "apply"}))
     assert load_settings(env.conn(), env.config).groups.a.detail_pass is False
-    # Load defaults previews going back.
-    r = env.client.post("/settings", data={"action": "defaults"})
-    assert r.status_code == 200 and "groups.a.detail_pass" in r.text
+    form["groups.b.candidates"] = "two"
+    r = env.client.post("/settings", data={**form, "action": "apply"})
+    assert r.status_code == 200 and "needs a number" in r.text
+
+    text = follow(env, env.client.post("/settings", data={"action": "defaults"}))
+    assert "every setting back to its default" in text
+    assert env.one("SELECT COUNT(*) FROM settings") == 0
+    follow(env, env.client.post("/settings", data={"action": "undo"}))
+    s = load_settings(env.conn(), env.config)
+    assert s.groups.a.ca_above == 85 and s.groups.a.detail_pass is False
+
+
+def test_my_clubs_staff_on_the_players_pages(env: Env) -> None:
+    from factories import staff_member
+
+    conn = env.conn()
+    run_sync(
+        conn,
+        snapshot(world(), staff=[staff_member(NEWGEN + 100, name="Coach Rowe", job="coach")]),
+        env.settings,
+        save_file="career.fm",
+    )
+    conn.close()
+    page = env.client.get("/players?role=staff").text
+    assert "Coach Rowe" in page and "Mine Player" not in page
+    assert '<span class="tag">coach</span>' in page
+    assert "Coach Rowe" not in env.client.get("/players?role=players").text
+    detail = env.client.get(f"/players/{NEWGEN + 100}").text
+    assert "on my club&#39;s staff (coach), drawn in a track jacket" in detail
+    assert "1 staff" in env.client.get("/status").text
 
 
 def test_worker_and_sync_buttons(env: Env) -> None:
@@ -508,3 +585,12 @@ def test_dashboard_names_the_career_fm27_is_shown(env: Env) -> None:
     text = env.client.get("/").text
     assert "FM27 is shown the pack of <strong>two</strong>" in text
     assert "Other careers: career" in text
+
+
+def test_pages_link_the_script_and_styles_by_version(env: Env) -> None:
+    from facegen.web.app import HERE, static_version
+
+    version = static_version(HERE / "static")
+    page = env.client.get("/settings").text
+    assert f'/static/app.js?v={version}"' in page and f'/static/style.css?v={version}"' in page
+    assert env.client.get(f"/static/app.js?v={version}").status_code == 200

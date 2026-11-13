@@ -13,16 +13,16 @@
   </div>
 
   <div class="facts">
-    <h1>{{ p.name }}{% if p.is_goalkeeper %} <span class="tag">GK</span>{% endif %}</h1>
-    <p class="muted">unique ID {{ p.unique_id }} · {{ "newgen" if p.is_newgen else "pre-existing" }}{% if p.academy %} from my academy{% endif %}{% if not p.present %} · <strong>not in the latest save</strong>{% endif %}</p>
+    <h1>{{ p.name }}{% if p.is_goalkeeper %} <span class="tag">GK</span>{% endif %}{% if p.is_staff %} <span class="tag">{{ p.staff_job or "staff" }}</span>{% endif %}</h1>
+    <p class="muted">unique ID {{ p.unique_id }} · {% if p.is_staff %}{{ "on my club's staff" if p.present else "was on my club's staff" }}{% if p.staff_job %} ({{ p.staff_job }}){% endif %}, drawn in a track jacket{% else %}{{ "newgen" if p.is_newgen else "pre-existing" }}{% endif %}{% if p.academy %} from my academy{% endif %}{% if not p.present %} · <strong>{{ "no longer on my club's staff" if p.is_staff else "not in the latest save" }}</strong>{% endif %}</p>
     <table class="kv">
       <tr><th>Club</th><td>{% if p.club_id is not none %}<a href="/players?club_id={{ p.club_id }}">{{ p.club or p.club_id }}</a>{% else %}free agent{% endif %}
         {% if p.loan_parent_club %}<span class="muted">(on loan from {{ p.loan_parent_club }})</span>{% endif %}
         {% if p.at_my_club %}<span class="tag mine">my club</span>{% elif p.in_my_league %}<span class="tag">my league</span>{% endif %}{% if p.in_continental %}<span class="tag">continental</span>{% endif %}
         {% if not p.in_scope %}<span class="tag">not men's football</span>{% endif %}</td></tr>
       <tr><th>Age</th><td>{{ p.age if p.age is not none else "?" }}{% if p.birth_date %} <span class="muted">(born {{ p.birth_date }})</span>{% endif %}</td></tr>
-      <tr><th>Height</th><td>{{ p.height_cm or "?" }} cm · Strength {{ p.strength if p.strength is not none else "?" }}</td></tr>
-      <tr><th>CA / PA</th><td>{{ p.ca }} / {{ p.pa if p.pa is not none else "?" }}</td></tr>
+      {% if not p.is_staff %}<tr><th>Height</th><td>{{ p.height_cm or "?" }} cm · Strength {{ p.strength if p.strength is not none else "?" }}</td></tr>{% endif %}
+      <tr><th>CA / PA</th><td>{{ p.ca if p.ca or not p.is_staff else "?" }} / {{ p.pa if p.pa is not none else "?" }}</td></tr>
       <tr><th>Personality</th><td>{% if p.personality %}{% for k, v in p.personality.items() %}{{ k|capitalize }} {{ v }}{{ " · " if not loop.last }}{% endfor %}{% else %}<span class="muted">unknown (read at the next sync)</span>{% endif %}</td></tr>
       <tr><th>Group</th><td>{% if p.group_name %}<span class="grp grp-{{ p.group_name }}">{{ p.group_name|upper }}</span>{% else %}none{% endif %}
         {% if p.tracked %}<span class="tag">tracked</span>{% endif %}{% if p.pin %}<span class="tag">pinned to {{ p.pin }}</span>{% endif %}</td></tr>

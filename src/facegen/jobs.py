@@ -48,6 +48,8 @@ class Job:
     traits_version: int | None = None
     revision: int = 0
     personality: Personality | None = None
+    staff: bool = False
+    """On my club's staff: drawn in a track jacket, aged by the staff table."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,7 +88,7 @@ def queued_jobs(
     rows = conn.execute(
         "SELECT j.id, j.unique_id, j.kind, j.group_name, j.target_club_id, j.target_band,"
         " j.manual, j.traits_version, j.revision, p.name, p.at_my_club, p.is_goalkeeper,"
-        " p.height_cm, p.strength, p.age, p.personality"
+        " p.height_cm, p.strength, p.age, p.personality, p.is_staff"
         " FROM jobs j JOIN players p ON p.career_id = j.career_id AND p.unique_id = j.unique_id"
         " WHERE j.career_id = ? AND j.status = 'queued'"
         + (" AND j.id = ?" if job_id is not None else "")
@@ -111,6 +113,7 @@ def queued_jobs(
             traits_version=r["traits_version"],
             revision=r["revision"],
             personality=personality_from_json(r["personality"]),
+            staff=bool(r["is_staff"]),
         )
         for r in rows
     ]
@@ -275,7 +278,7 @@ def queue_manual(
     settings: Settings,
 ) -> None:
     """Queue a manual job for the player, taking over their queued automatic job if any."""
-    band = age_wording(p["age"], group, bool(p["at_my_club"]), settings.age)
+    band = age_wording(p["age"], group, bool(p["at_my_club"]), settings.age, bool(p["is_staff"]))
     timestamp = now()
     values = (kind, group, TIER_MANUAL, rank, p["club_id"], band, reason)
     cur = conn.execute(

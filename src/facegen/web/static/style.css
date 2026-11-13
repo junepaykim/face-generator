@@ -14,6 +14,7 @@
   }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { margin: 0; background: var(--bg); color: var(--fg);
        font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
 a { color: var(--accent); text-decoration: none; }
@@ -153,3 +154,17 @@ form.settings legend { font-weight: 600; padding: 0 6px; }
 .preview { border-color: var(--accent); }
 .card.alert { border-color: var(--bad); background: var(--badbg); }
 .card.alert h2 { color: var(--bad); }
+
+/* Settings: saved as you go, with undo. */
+.settings-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 380px); gap: 14px;
+                   align-items: start; }
+@media (max-width: 1100px) { .settings-layout { grid-template-columns: 1fr; } }
+.history-card { position: sticky; top: 56px; max-height: calc(100vh - 72px); overflow: auto; }
+.save-status { font-size: 13px; }
+.save-status.ok { color: var(--ok); } .save-status.bad { color: var(--bad); }
+ol.history { list-style: none; margin: 0; padding: 0; }
+ol.history > li { padding: 8px 0; border-bottom: 1px solid var(--line); }
+ol.history > li:last-child { border-bottom: 0; }
+ol.history > li.undone { opacity: .55; }
+ol.history > li.undone .what { text-decoration: line-through; }
+ul.what { margin: 2px 0; padding-left: 16px; }

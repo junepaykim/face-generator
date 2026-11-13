@@ -430,7 +430,9 @@ def restore_picture(
         if not (data_dir / img["master_path"]).is_file():
             raise ManualError(f"v{img['version']}'s picture file is missing from data/")
         group = p["group_name"] or img["group_name"]
-        band = age_wording(p["age"], group, bool(p["at_my_club"]), settings.age)
+        band = age_wording(
+            p["age"], group, bool(p["at_my_club"]), settings.age, bool(p["is_staff"])
+        )
         conn.execute(
             "UPDATE images SET is_current = 0, published_path = NULL"
             " WHERE career_id = ? AND unique_id = ? AND is_current = 1",

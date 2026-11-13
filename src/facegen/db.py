@@ -284,7 +284,27 @@ _V7 = """
 ALTER TABLE players ADD COLUMN personality TEXT;
 """
 
-MIGRATIONS: tuple[str, ...] = (_V1, _V2, _V3, _V4, _V5, _V6, _V7)
+# My club's staff and the settings page's undo (user, 2026-11-12).
+# - players.is_staff, players.staff_job: my club's staff are stored beside the players, keyed
+#   on the same unique ID (FM27's config.xml maps both alike), so they are queued, drawn and
+#   published by the same code. staff_job is the job in words, NULL where the save has none.
+# - settings_history: each change saved on the settings page, undoable. `before` and `after`
+#   map each key the change touched to its stored override, or null for none (the default).
+_V8 = """
+ALTER TABLE players ADD COLUMN is_staff INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE players ADD COLUMN staff_job TEXT;
+CREATE TABLE settings_history (
+    id      INTEGER PRIMARY KEY,
+    at      TEXT NOT NULL,
+    label   TEXT NOT NULL,                 -- 'edit' or 'defaults'
+    before  TEXT NOT NULL,                 -- JSON {key: override or null}
+    after   TEXT NOT NULL,                 -- JSON {key: override or null}
+    report  TEXT,                          -- JSON: what the change did to groups and queue
+    undone  INTEGER NOT NULL DEFAULT 0
+);
+"""
+
+MIGRATIONS: tuple[str, ...] = (_V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8)
 
 # The active career: the one whose save was written last (spec section 8). A career synced
 # without a save time (tests, old rows) falls back to when it was synced.

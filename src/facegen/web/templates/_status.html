@@ -66,7 +66,7 @@
     <h2>Players</h2>
     {% if counts %}
       <table class="kv">
-        <tr><th>Group A</th><td><a href="/players?group=a">{{ counts.a }}</a> <span class="muted">({{ counts.a_my_club }} at my club)</span></td></tr>
+        <tr><th>Group A</th><td><a href="/players?group=a">{{ counts.a }}</a> <span class="muted">({{ counts.a_my_club }} at my club{% if counts.a_staff %}, of them <a href="/players?role=staff">{{ counts.a_staff }} staff</a>{% endif %})</span></td></tr>
         <tr><th>Group B</th><td><a href="/players?group=b">{{ counts.b }}</a></td></tr>
         <tr><th>Group C</th><td><a href="/players?group=c">{{ counts.c }}</a></td></tr>
         <tr><th>Tracked</th><td>{{ counts.tracked }}</td></tr>

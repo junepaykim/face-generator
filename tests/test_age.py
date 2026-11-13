@@ -71,7 +71,36 @@ def test_table_names() -> None:
     assert table_name(Group.A, False) == "a_other_club"
     assert table_name(Group.B, True) == "b"
     assert table_name("c", False) == "c"
-    assert {table_name(g, m) for g in Group for m in (True, False)} == set(TABLES)
+    assert table_name(Group.B, True, staff=True) == "staff"
+    assert table_name(None, True, staff=True) is None
+    assert {
+        table_name(g, m, staff) for g in Group for m in (True, False) for staff in (True, False)
+    } == set(TABLES)
+
+
+# My club's staff (user, 2026-11-12): very wide bands, never W01, most staff in W03-W07.
+STAFF = {
+    "W02": range(16, 25), "W03": range(25, 32), "W04": range(32, 39), "W05": range(39, 46),
+    "W06": range(46, 53), "W07": range(53, 61), "W08": range(61, 68), "W09": range(68, 75),
+    "W10": range(75, 95),
+}  # fmt: skip
+
+
+def test_staff_have_their_own_wide_bands_whatever_their_group(settings: Settings) -> None:
+    for group in Group:
+        for wording, ages in STAFF.items():
+            for real in ages:
+                assert age_wording(real, group, True, settings.age, staff=True) == wording, real
+    assert age_wording(14, Group.A, True, settings.age, staff=True) == "W02"  # never W01
+    assert all(w != "W01" for _, w in settings.age.staff)
+
+
+def test_staff_ages_up_to_100_are_allowed_in_the_tables(settings: Settings) -> None:
+    from facegen.settings import build_settings
+
+    values = dict(settings.values)
+    values["age.staff.W10"] = 99
+    assert build_settings(values).age.staff[-1] == (99, "W10")
 
 
 def test_wordings_run_from_youngest_to_oldest() -> None:

@@ -12,7 +12,8 @@ folder. It has a small web UI for thresholds and manual requests.
 Status: Phases 0.2, 0.3, 1, 2 and 3 have passed: the Colchester squad's pictures show in
 FM27, and the web UI (`facegen serve`) works with the GPU worker. Phases 4 (automation) and
 5 (updates for tracked players) are built and wait for the user's exit tests. Pictures are
-3:4 portraits since 2026-11-11. Still open from Phase 0.1: the continental competition IDs.
+3:4 portraits since 2026-11-11. Since 2026-11-12 my club's staff get pictures too, and the
+settings page saves each change as it is made, with undo. Still open from Phase 0.1: the continental competition IDs.
 Build the rest phase by phase from `docs/implementation-plan.md`.
 
 ## Read first
@@ -113,6 +114,7 @@ the two agree, and the geometry (crop boxes, sizes, thresholds) stays in Python.
 config/default.toml       defaults, including group thresholds
 src/facegen/
   settings.py             defaults plus database overrides
+  settings_history.py     the UI's settings saves, with undo and redo
   db.py                   SQLite schema and migrations
   datasource/             DataSource protocol, plain records, fmsave adapter
   identity.py             newgen boundary, career fingerprint

@@ -54,6 +54,9 @@ def test_age_tables_match_spec():
         "a_other_club": {"W02": 15, "W03": 19, "W04": 22, "W07": 25, "W09": 29, "W10": 34},
         "b": {"W02": 15, "W04": 19, "W07": 25, "W09": 29},
         "c": {"W03": 15, "W06": 22, "W08": 28},
+        # My club's staff (user, 2026-11-12): wide bands, W02 the youngest.
+        "staff": {"W02": 18, "W03": 25, "W04": 32, "W05": 39, "W06": 46, "W07": 53,
+                  "W08": 61, "W09": 68, "W10": 75},
     }  # fmt: skip
 
 
@@ -61,3 +64,7 @@ def test_paths_name_no_windows_user():
     """This PC's real folder goes in config/local.toml, which is not in git (user, 2026-11-12)."""
     fm_user_dir = load()["paths"]["fm_user_dir"]
     assert fm_user_dir.startswith("/mnt/c/Users/<Windows user>/")
+
+
+def test_my_clubs_staff_are_drawn_by_default():
+    assert load()["staff"] == {"enabled": True}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -17,6 +18,8 @@ SECTION_NOTES = {
     "eligibility": "Applies at the next sync: these decide, when a save is read, who is in "
     "men's football, at my club and in a continental competition.",
     "newgen": "Used only when a new career is first synced.",
+    "staff": "Re-classifies at once. Staff are drawn at group A quality in a track jacket in the "
+    "club's colours; turning this off cancels their queued pictures and keeps the drawn ones.",
     "age": "Re-classifies at once. Tracked players whose age wording changes are queued for a "
     "re-draw.",
     "reference": "Applies to re-draws from now on.",
@@ -28,19 +31,21 @@ SECTION_NOTES = {
 }
 # The thresholds first: they are what the page is mostly for (spec section 7).
 SECTION_ORDER = (
-    "groups", "age", "schedule", "eligibility", "my_club", "body", "personality", "reference",
-    "newgen",
+    "groups", "staff", "age", "schedule", "eligibility", "my_club", "body", "personality",
+    "reference", "newgen",
 )  # fmt: skip
 SECTION_TITLES = {
     "groups.a": "Group A",
     "groups.b": "Group B",
     "groups.c": "Group C",
+    "staff": "Staff at my club",
     "eligibility": "Who counts",
     "newgen": "Newgens",
     "age.a_my_club": "Age wordings: group A at my club",
     "age.a_other_club": "Age wordings: group A elsewhere",
     "age.b": "Age wordings: group B",
     "age.c": "Age wordings: group C",
+    "age.staff": "Age wordings: staff at my club",
     "reference": "Reference picture",
     "my_club": "Players at my club",
     "body": "Height and build",
@@ -80,6 +85,7 @@ LABELS = {
 LABELS_IN = {
     "groups.c.league_ca_above": "In my league: CA above",
     "groups.c.league_pa_above": "In my league: PA above",
+    "staff.enabled": "Draw my club's staff (coaches, physios, scouts, the board and you)",
 }
 
 
@@ -95,17 +101,36 @@ class Field:
 
     @property
     def text(self) -> str:
-        if isinstance(self.value, list):
-            return ", ".join(str(v) for v in self.value)
-        return str(self.value)
+        return input_text(self.value)
 
     @property
     def default_text(self) -> str:
-        if isinstance(self.default, list):
-            return ", ".join(str(v) for v in self.default) or "none"
+        return value_text(self.default)
+
+    @property
+    def default_input(self) -> str:
+        """The default as the field holds it: what "use default" puts back."""
         if isinstance(self.default, bool):
-            return "on" if self.default else "off"
+            return "on" if self.default else ""
+        if isinstance(self.default, list):
+            return ", ".join(str(v) for v in self.default)
         return str(self.default)
+
+
+def input_text(value: Any) -> str:
+    """A setting's value as its text field holds it."""
+    if isinstance(value, list):
+        return ", ".join(str(v) for v in value)
+    return str(value)
+
+
+def value_text(value: Any) -> str:
+    """A setting's value for people to read."""
+    if isinstance(value, list):
+        return ", ".join(str(v) for v in value) or "none"
+    if isinstance(value, bool):
+        return "on" if value else "off"
+    return str(value)
 
 
 def _kind(default: Any) -> str:
@@ -125,6 +150,45 @@ def _label(key: str) -> str:
     if section.startswith("age."):
         return f"{name} from age ({WORDINGS[name].text})"
     return LABELS.get(name, name.replace("_", " "))
+
+
+def describe_key(key: str) -> str:
+    """A setting's section and label, short enough for one line: "Group A · CA above"."""
+    section, _, name = key.rpartition(".")
+    if section.startswith("age."):
+        return f"{SECTION_TITLES.get(section, section)} · {name} from age"
+    return f"{SECTION_TITLES.get(section, section)} · {_label(key)}"
+
+
+@dataclass(frozen=True, slots=True)
+class ChangeLine:
+    key: str
+    label: str
+    before: str
+    after: str
+
+
+def change_lines(
+    before: Mapping[str, Any], after: Mapping[str, Any], defaults: Mapping[str, Any]
+) -> list[ChangeLine]:
+    """Each key a history entry touched, with its value before and after.
+
+    `before` and `after` hold stored overrides, None for none: then the default applies.
+    """
+    lines = []
+    for key in sorted(after):
+        default = defaults.get(key)
+        old = before.get(key)
+        new = after[key]
+        lines.append(
+            ChangeLine(
+                key,
+                describe_key(key),
+                value_text(default if old is None else old),
+                value_text(default if new is None else new),
+            )
+        )
+    return lines
 
 
 def editable_keys(defaults: dict[str, Any]) -> list[str]:
@@ -164,31 +228,80 @@ def settings_sections(
     ]
 
 
+def _typed(default: Any, text: str) -> Any:
+    """Text from a field, typed as the default. ValueError if it does not fit."""
+    kind = _kind(default)
+    if kind == "int":
+        return int(text)
+    if kind == "float":
+        return float(text)
+    items = [x for x in re.split(r"[,\s]+", text) if x]
+    if default and isinstance(default[0], str):
+        return [x.lower() for x in items]
+    return [int(x) for x in items]
+
+
+def _error(default: Any) -> str:
+    return "needs whole numbers" if _kind(default) == "list" else "needs a number"
+
+
 def parse_settings_form(
     form: FormData, defaults: dict[str, Any]
 ) -> tuple[dict[str, Any], dict[str, str]]:
-    """Every editable key's posted value, typed as its default; and errors per key."""
+    """Every editable key's posted value, typed as its default; and errors per key.
+
+    The whole form, as a browser posts it: a checkbox left unticked is not sent at all.
+    """
     values: dict[str, Any] = {}
     errors: dict[str, str] = {}
     for key in editable_keys(defaults):
         default = defaults[key]
         raw = form.get(key)
+        if isinstance(default, bool):
+            values[key] = raw is not None
+            continue
         text = raw.strip() if isinstance(raw, str) else ""
-        kind = _kind(default)
         try:
-            if kind == "bool":
-                values[key] = raw is not None
-            elif kind == "int":
-                values[key] = int(text)
-            elif kind == "float":
-                values[key] = float(text)
-            else:
-                items = [x for x in re.split(r"[,\s]+", text) if x]
-                if default and isinstance(default[0], str):
-                    values[key] = [x.lower() for x in items]
-                else:
-                    values[key] = [int(x) for x in items]
+            values[key] = _typed(default, text)
         except ValueError:
-            errors[key] = "needs a number" if kind != "list" else "needs whole numbers"
+            errors[key] = _error(default)
             values[key] = text
     return values, errors
+
+
+_TRUE = frozenset({"on", "true", "1"})
+_FALSE = frozenset({"", "off", "false", "0"})
+
+
+def parse_settings_changes(
+    form: FormData, defaults: dict[str, Any]
+) -> tuple[dict[str, Any], dict[str, str]]:
+    """Only the editable keys posted (the page's autosave), typed; and errors per key.
+
+    A checkbox is sent either way, "on" when ticked and empty when not. Other posted names,
+    fixed or unknown keys among them, are ignored.
+    """
+    values: dict[str, Any] = {}
+    errors: dict[str, str] = {}
+    for key in editable_keys(defaults):
+        raw = form.get(key)
+        if not isinstance(raw, str):
+            continue
+        default = defaults[key]
+        text = raw.strip()
+        if isinstance(default, bool):
+            if text.lower() in _TRUE | _FALSE:
+                values[key] = text.lower() in _TRUE
+            else:
+                errors[key] = "needs on or off"
+            continue
+        try:
+            values[key] = _typed(default, text)
+        except ValueError:
+            errors[key] = _error(default)
+    return values, errors
+
+
+def blamed_keys(message: str, keys: list[str]) -> list[str]:
+    """The posted keys a settings error names, by key or by its age table or section."""
+    return [k for k in keys if k in message or f"{k.rpartition('.')[0]}:" in message]

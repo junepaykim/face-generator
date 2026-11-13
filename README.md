@@ -233,11 +233,10 @@ the ones you see most often get the best pictures, and everyone else is skipped.
 
 | Group | Who (default thresholds) | Tries | Detail pass | Published size |
 |---|---|---|---|---|
-| **A** | Everyone at your club; any newgen with CA > 155 or PA > 170 | best of 3 | yes | 768×1024 |
+| **A** | Everyone at your club, staff included; any newgen with CA > 155 or PA > 170 | best of 3 | yes | 768×1024 |
 | **B** | Your academy graduates after they leave; newgens with CA > 130 or PA > 150 who are in your league or a continental cup; any newgen with CA > 140 or PA > 155 | 1 | no | 576×768 |
 | **C** | Newgens in your league with CA > 115 or PA > 140 | 1 | no | 384×512 |
 | none | Everyone else | no picture, unless you pick them by hand in the web UI | | |
-
 - **Queue order:** your hand-picked requests come first, then group A (newest arrivals at
   your club first, so youth intake day goes to the front), then B, then C, each sorted by
   PA.
@@ -247,9 +246,12 @@ the ones you see most often get the best pictures, and everyone else is skipped.
   below their native size. So every group renders at full size. The groups differ in how
   many tries they get, whether they get the detail pass, and how big the published file
   is.
-- **Thresholds are live.** You can change them in the web UI and preview who moves before
-  you apply. Newly eligible players join the queue, and existing pictures are never
-  deleted.
+- **Your staff too.** Coaches, physios, scouts, the board and your own manager get group A
+  pictures in a track jacket in the club's colours. Their age wording has its own table of
+  very wide, seven-year bands, so most staff fall in the middle of the range.
+- **Thresholds are live.** Each setting is saved as you change it in the web UI, the page
+  says who moved and what was queued, and Undo puts it back, several steps at once if you
+  like. Newly eligible players join the queue, and existing pictures are never deleted.
 
 ### 5. Faces that grow up
 

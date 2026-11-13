@@ -2,75 +2,52 @@
 {% block title %}Settings{% endblock %}
 {% block content %}
 <h1>Settings</h1>
-<p class="muted">Changes apply without a restart. Preview shows how the groups and the queue would change; nothing is stored until you apply. Existing pictures are never deleted by a settings change. The content rule is not a setting.</p>
+<p class="muted">Each change is saved as soon as you leave the field, press Enter or tick a box, and applies without a restart. Undo puts back what the last change replaced; Recent changes can take you back several steps at once. Existing pictures are never deleted by a settings change. The content rule is not a setting.</p>
 
 {% if error %}<div class="flash bad">{{ error }}</div>{% endif %}
 
-{% if preview is not none or changes %}
-<section class="card preview">
-  <h2>Preview</h2>
-  <p class="small">{{ changes|length }} change(s):
-    {% for k, v in changes.items() %}<code>{{ k }}</code> {{ current[k] }} → <strong>{{ v }}</strong>{{ ", " if not loop.last }}{% endfor %}</p>
-  {% if preview %}
-    <table class="list compact">
-      <thead><tr><th></th><th class="num">A</th><th class="num">B</th><th class="num">C</th><th class="num">Tracked</th></tr></thead>
-      <tbody>
-        <tr><th>Now</th>{% for g in ("a", "b", "c", "tracked") %}<td class="num">{{ preview.before[g] }}</td>{% endfor %}</tr>
-        <tr><th>After</th>{% for g in ("a", "b", "c", "tracked") %}<td class="num {{ 'up' if preview.after[g] > preview.before[g] else ('down' if preview.after[g] < preview.before[g] else '') }}">{{ preview.after[g] }}</td>{% endfor %}</tr>
-      </tbody>
-    </table>
-    <p>Queue:
-      {% if preview.enqueue %}{% for (kind, group), n in preview.enqueue|dictsort %}{{ n }} {{ kind_name(kind) }} {{ group|upper }}{{ ", " if not loop.last }}{% endfor %} would be queued{% else %}nothing new queued{% endif %};
-      {{ preview.updated }} queued job(s) changed; {{ preview.cancelled }} cancelled.</p>
-    {% if preview.changed_total %}
-      <p class="small muted">{{ preview.changed_total }} player(s) change group or tracking{% if preview.changed_total > preview.changes|length %}; the {{ preview.changes|length }} with the highest PA:{% else %}:{% endif %}</p>
-      <table class="list compact">
-        <thead><tr><th>Player</th><th>Club</th><th class="num">CA</th><th class="num">PA</th><th>Group</th><th>Why</th></tr></thead>
-        <tbody>
-        {% for c in preview.changes %}
-          <tr><td><a href="/players/{{ c.unique_id }}">{{ c.name }}</a></td><td>{{ c.club or "free agent" }}</td>
-            <td class="num">{{ c.ca }}</td><td class="num">{{ c.pa if c.pa is not none else "?" }}</td>
-            <td>{{ (c.before or "-")|upper }}{{ "+t" if c.tracked_before }} → <strong>{{ (c.after or "-")|upper }}{{ "+t" if c.tracked_after }}</strong></td>
-            <td class="why">{{ c.reasons|join("; ") }}</td></tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    {% elif preview.empty %}
-      <p class="muted small">No player changes group, and the queue stays as it is.</p>
-    {% endif %}
-  {% else %}
-    <p class="muted small">No career yet, so there is nothing to preview against.</p>
-  {% endif %}
-</section>
-{% endif %}
+<div class="bulk sticky savebar">
+  <form method="post" action="/settings" class="inline" data-settings-action><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button name="action" value="undo" data-undo {{ "disabled" if not can_undo }} title="Put back what the last change replaced">↶ Undo</button>
+    <button name="action" value="redo" data-redo {{ "disabled" if not can_redo }} title="Make the change you undid last again">↷ Redo</button>
+  </form>
+  <span class="save-status" data-save-status role="status" aria-live="polite">All changes are saved.</span>
+  <span class="muted small grow">Changed from the default: <span class="dot"></span></span>
+  <form method="post" action="/settings" class="inline" data-settings-action><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button name="action" value="defaults" title="Every setting back to its default, as one change you can undo">Reset all to defaults</button>
+  </form>
+</div>
 
-<form method="post" action="/settings" class="settings"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  <div class="bulk sticky">
-    <button name="action" value="preview">Preview</button>
-    <button name="action" value="apply" class="primary">Apply</button>
-    <button name="action" value="defaults" title="Fill in every default and preview the result">Load defaults</button>
-    <span class="muted small grow">Changed from the default: <span class="dot"></span></span>
-  </div>
-  {% for section, title, note, fields in sections %}
-  <fieldset>
-    <legend>{{ title }}</legend>
-    {% if note and (loop.first or sections[loop.index0 - 1][0].split(".")[0] != section.split(".")[0]) %}<p class="muted small">{{ note }}</p>{% endif %}
-    {% for fd in fields %}
-      <label class="field {{ 'changed' if fd.changed }} {{ 'error' if fd.key in errors }}">
-        <span class="name">{{ fd.label }}{% if fd.changed %} <span class="dot" title="default: {{ fd.default_text }}"></span>{% endif %}</span>
-        {% if fd.kind == "bool" %}
-          <input type="checkbox" name="{{ fd.key }}" {{ "checked" if fd.value is sameas true }}>
-        {% elif fd.kind == "int" %}
-          <input type="number" name="{{ fd.key }}" value="{{ fd.text }}" step="1">
-        {% elif fd.kind == "float" %}
-          <input type="number" name="{{ fd.key }}" value="{{ fd.text }}" step="any">
-        {% else %}
-          <input type="text" name="{{ fd.key }}" value="{{ fd.text }}">
-        {% endif %}
-        <span class="muted small">default {{ fd.default_text }}{% if fd.key in errors %} · <span class="bad">{{ errors[fd.key] }}</span>{% endif %}</span>
-      </label>
+<div class="settings-layout">
+  <form method="post" action="/settings" class="settings" data-autosave><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <noscript><div class="bulk"><button name="action" value="apply" class="primary">Save</button><span class="muted small">With JavaScript off, changes are saved with this button.</span></div></noscript>
+    {% for section, title, note, fields in sections %}
+    <fieldset>
+      <legend>{{ title }}</legend>
+      {% if note and (loop.first or sections[loop.index0 - 1][0].split(".")[0] != section.split(".")[0]) %}<p class="muted small">{{ note }}</p>{% endif %}
+      {% for fd in fields %}
+        <label class="field {{ 'changed' if fd.changed }} {{ 'error' if fd.key in errors }}" data-field>
+          <span class="name">{{ fd.label }} <span class="dot" data-dot title="default: {{ fd.default_text }}" {{ "hidden" if not fd.changed }}></span></span>
+          {% if fd.kind == "bool" %}
+            <input type="checkbox" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" {{ "checked" if fd.value is sameas true }}>
+          {% elif fd.kind == "int" %}
+            <input type="number" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}" step="1">
+          {% elif fd.kind == "float" %}
+            <input type="number" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}" step="any">
+          {% else %}
+            <input type="text" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}">
+          {% endif %}
+          <span class="muted small">default {{ fd.default_text }}
+            <button type="button" class="link small" data-use-default {{ "hidden" if not fd.changed }}>use default</button>
+            <span class="bad" data-error>{% if fd.key in errors %} · {{ errors[fd.key] }}{% endif %}</span></span>
+        </label>
+      {% endfor %}
+    </fieldset>
     {% endfor %}
-  </fieldset>
-  {% endfor %}
-</form>
+  </form>
+
+  <aside class="card history-card" id="history">
+    {% include "_settings_history.html" %}
+  </aside>
+</div>
 {% endblock %}

@@ -2,6 +2,9 @@
 
 Pure: takes a PlayerFacts record and the group thresholds, returns a Classification.
 Thresholds are strict ("above"), and CA and PA conditions are joined with OR.
+
+My club's staff are people, not players: they are in group A while on my club's staff
+(user, 2026-11-12), and the newgen rules never apply to them, whatever their ID or ability.
 """
 
 from __future__ import annotations
@@ -45,6 +48,8 @@ class PlayerFacts:
     academy: bool
     """A newgen who came through my academy (spec section 2)."""
     pin: Pin | None = None
+    is_staff: bool = False
+    """On my club's staff rather than a player (coach, physio, scout, board, manager)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,9 +70,16 @@ def _either(ca: int, pa: int | None, ca_bar: int, pa_bar: int) -> str | None:
     return _above("CA", ca, ca_bar) or _above("PA", pa, pa_bar)
 
 
-def rule_matches(f: PlayerFacts, g: Groups) -> list[tuple[Group, str]]:
-    """Every group rule the player meets, with its reason, ignoring pins."""
+def rule_matches(f: PlayerFacts, g: Groups, staff: bool = True) -> list[tuple[Group, str]]:
+    """Every group rule the player meets, with its reason, ignoring pins.
+
+    `staff` is whether my club's staff get pictures (settings `staff.enabled`).
+    """
     matches: list[tuple[Group, str]] = []
+    if f.is_staff:
+        if f.at_my_club and staff:
+            matches.append((Group.A, "on my club's staff"))
+        return matches
     if f.at_my_club:
         matches.append((Group.A, "at my club"))
     if not f.is_newgen:
@@ -91,29 +103,32 @@ def rule_matches(f: PlayerFacts, g: Groups) -> list[tuple[Group, str]]:
     return matches
 
 
-def classify(f: PlayerFacts, g: Groups) -> Classification:
+def classify(f: PlayerFacts, g: Groups, staff: bool = True) -> Classification:
     """The player's group, whether they are tracked, and why.
 
     - Players outside the eligible football (women's clubs) are ignored, pins included.
     - A pin overrides the rules: "never" excludes the player, a group sets it exactly.
     - Otherwise the player takes the highest group any rule gives.
     - Group A players are tracked; so is an academy newgen, for good.
+    - My club's staff are in group A while `staff` (settings `staff.enabled`) is on.
     """
     if not f.in_scope:
         return Classification(None, False, ("not in men's football",))
 
-    academy_tracked = g.b.my_academy and f.academy and f.is_newgen
+    academy_tracked = g.b.my_academy and f.academy and f.is_newgen and not f.is_staff
 
     if f.pin == "never":
         return Classification(None, False, ("pinned to never",))
 
-    matches = rule_matches(f, g)
+    matches = rule_matches(f, g, staff)
     if f.pin is not None:
         group = Group(f.pin)
         reasons = [f"pinned to {group.label}"]
     elif matches:
         group = min((m[0] for m in matches), key=GROUP_RANK.__getitem__)
         reasons = [why for grp, why in matches if grp is group]
+    elif f.is_staff and f.at_my_club:
+        return Classification(None, False, ("staff pictures are off (settings: staff)",))
     else:
         return Classification(None, False, ())
 
