@@ -304,7 +304,32 @@ CREATE TABLE settings_history (
 );
 """
 
-MIGRATIONS: tuple[str, ...] = (_V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8)
+# Who already has a picture in FM27 other than ours (user, 2026-11-12; photos.py). Not per
+# career: FM27's photos and the user's facepacks are keyed on the unique ID in every save.
+# - photos: one row per unique ID that FM27 ships a photo for or a facepack maps.
+# - photo_scan: one row, the last look at FM27's folders: what was read (to skip it next time
+#   when unchanged), whether FM27's photo list could be read, and counts for the dashboard.
+_V9 = """
+CREATE TABLE photos (
+    unique_id INTEGER PRIMARY KEY,
+    game      INTEGER NOT NULL DEFAULT 0,  -- FM27 ships a photo (its Addressables catalog)
+    facepack  INTEGER NOT NULL DEFAULT 0   -- a config.xml outside graphics/facegen/ maps one
+) WITHOUT ROWID;
+CREATE TABLE photo_scan (
+    id             INTEGER PRIMARY KEY CHECK (id = 1),
+    state          TEXT NOT NULL,          -- JSON: catalog version, config.xml files, folders
+    game_known     INTEGER NOT NULL,       -- 0: the catalog was unreadable; nobody counts as
+                                           -- without a photo
+    game           INTEGER NOT NULL,       -- how many IDs FM27 ships a photo for
+    facepack       INTEGER NOT NULL,       -- how many IDs facepacks map
+    facepack_files INTEGER NOT NULL,       -- how many config.xml files were read
+    warnings       TEXT NOT NULL DEFAULT '[]',
+    scanned_at     TEXT NOT NULL,
+    changed_at     TEXT NOT NULL           -- when the IDs were last read again
+);
+"""
+
+MIGRATIONS: tuple[str, ...] = (_V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9)
 
 # The active career: the one whose save was written last (spec section 8). A career synced
 # without a save time (tests, old rows) falls back to when it was synced.

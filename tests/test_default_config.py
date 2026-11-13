@@ -68,3 +68,12 @@ def test_paths_name_no_windows_user():
 
 def test_my_clubs_staff_are_drawn_by_default():
     assert load()["staff"] == {"enabled": True}
+
+
+def test_pre_existing_players_without_a_photo_are_picked_by_default():
+    """User, 2026-11-12: include them, by default."""
+    assert load()["no_photo"] == {"enabled": True}
+
+
+def test_the_install_folder_names_no_windows_user():
+    assert "/Users/" not in load()["paths"]["fm_install_dir"]

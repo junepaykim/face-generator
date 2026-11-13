@@ -29,7 +29,7 @@ HISTORY_LIMIT = 20
 
 # Only these settings change who is in which group or the age band the planner works with;
 # the rest are read by the worker, the save watcher or the next sync.
-_RECLASSIFY_PREFIXES = ("groups.", "age.", "staff.")
+_RECLASSIFY_PREFIXES = ("groups.", "age.", "staff.", "no_photo.")
 
 
 @dataclass(frozen=True, slots=True)

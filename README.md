@@ -237,6 +237,12 @@ the ones you see most often get the best pictures, and everyone else is skipped.
 | **B** | Your academy graduates after they leave; newgens with CA > 130 or PA > 150 who are in your league or a continental cup; any newgen with CA > 140 or PA > 155 | 1 | no | 576×768 |
 | **C** | Newgens in your league with CA > 115 or PA > 140 | 1 | no | 384×512 |
 | none | Everyone else | no picture, unless you pick them by hand in the web UI | | |
+
+- **Real players without a photo count as newgens.** FM27 ships photos for some leagues
+  only; everyone else shows a silhouette. At each sync facegen reads the game's list of the
+  photos it ships and the `config.xml` of any facepack you installed, and a real player with
+  neither is picked by the same thresholds as a newgen (the academy rule aside). Settings
+  turns this off.
 - **Queue order:** your hand-picked requests come first, then group A (newest arrivals at
   your club first, so youth intake day goes to the front), then B, then C, each sorted by
   PA.

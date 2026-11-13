@@ -16,6 +16,9 @@ from facegen.settings import DEFAULTS_PATH
 FM_USER_LINE = (
     'fm_user_dir = "/mnt/c/Users/<Windows user>/Documents/Sports Interactive/Football Manager 27"'
 )
+FM_INSTALL_LINE = (
+    'fm_install_dir = "/mnt/c/Program Files (x86)/Steam/steamapps/common/Football Manager 27"'
+)
 
 
 class FakeSource:
@@ -39,12 +42,20 @@ def env(tmp_path: Path) -> dict[str, Path]:
     save.write_bytes(b"not really a save")
     os.utime(save, (1_700_000_000, 1_700_000_000))
     text = DEFAULTS_PATH.read_text(encoding="utf-8")
-    assert FM_USER_LINE in text
+    assert FM_USER_LINE in text and FM_INSTALL_LINE in text
     text = text.replace(FM_USER_LINE, f'fm_user_dir = "{fm.as_posix()}"')
+    install = tmp_path / "fm-install"
+    text = text.replace(FM_INSTALL_LINE, f'fm_install_dir = "{install.as_posix()}"')
     text = text.replace('data_dir = "data"', f'data_dir = "{(tmp_path / "data").as_posix()}"')
     config = tmp_path / "test.toml"
     config.write_text(text, encoding="utf-8")
-    return {"config": config, "games": games, "save": save, "data": tmp_path / "data"}
+    return {
+        "config": config,
+        "games": games,
+        "save": save,
+        "data": tmp_path / "data",
+        "install": install,
+    }
 
 
 def world() -> Snapshot:
@@ -76,6 +87,51 @@ def test_sync_dry_run_reads_a_copy_and_stores_nothing(env: dict[str, Path]) -> N
     assert source.paths == [(env["data"] / "snapshots" / "Career.fm").resolve()]
     _, status = run(env, "status")
     assert "No careers yet" in status
+
+
+def test_sync_reads_fm27s_photo_list_and_picks_pre_existing_players_without_one(
+    env: dict[str, Path],
+) -> None:
+    from test_photos import catalog, config_xml
+
+    from facegen.photos import CATALOG_DIR
+
+    snap = snapshot(
+        [
+            player(1001, name="Old Hand", ca=120, pa=125),
+            player(1002, name="Faceless Star", ca=170, pa=175, club_id=ABROAD),
+            player(1003, name="Famous Star", ca=170, pa=175, club_id=ABROAD),
+            player(1004, name="Facepack Star", ca=170, pa=175, club_id=ABROAD),
+        ],
+        file_name="Career.fm",
+    )
+    folder = env["install"] / CATALOG_DIR
+    folder.mkdir(parents=True)
+    (folder / "catalog_info.bin").write_bytes(catalog(1003))
+    (folder / "catalog_info.hash").write_text("v1")
+    pack = env["games"].parent / "graphics" / "some-facepack"
+    pack.mkdir(parents=True)
+    (pack / "config.xml").write_bytes(config_xml(1004))
+    # Our own packs never count as a facepack.
+    ours = env["games"].parent / "graphics" / "facegen" / "another-career"
+    ours.mkdir(parents=True)
+    (ours / "config.xml").write_bytes(config_xml(1002))
+
+    code, text = run(env, "sync", source=FakeSource(snap))
+    assert code == 0
+    assert "Queued      initial A 2" in text  # Old Hand (my club) and Faceless Star
+    assert "Faceless Star" in text and "no photo, CA 170 > 155" in text
+    assert "Famous Star" not in text and "Facepack Star" not in text
+    assert "No photo    2 pre-existing players (2 have one); 1 of them in a group" in text
+    code, text = run(env, "sync", source=FakeSource(snap))
+    assert "no new jobs" in text and "1 of them in a group" in text
+
+
+def test_sync_warns_when_fm27s_photo_list_is_missing(env: dict[str, Path]) -> None:
+    code, text = run(env, "sync")
+    assert code == 0
+    assert "FM27's photo list" in text and "could not be read" in text
+    assert "No photo" not in text
 
 
 def test_sync_then_status(env: dict[str, Path]) -> None:

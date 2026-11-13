@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from facegen import photos
 from facegen.datasource.base import (
     DataSource,
     SaveBusyError,
@@ -133,6 +134,8 @@ def sync_save(
     A save already inside data/snapshots/ is read in place. A save that cannot be read is
     recorded as a failed sync (except in a dry run) and raises SaveUnreadableError. The
     recorded save time is the copy's, which keeps the source's time from when it was copied.
+    Each sync also looks again at who FM27 shows a photo for (photos.py): its own photo list
+    and the user's facepacks, read again only if they changed.
     """
     snapshots = settings.paths.snapshots_dir
     if save is None:
@@ -173,6 +176,7 @@ def sync_save(
         preview=preview,
         with_table=with_table,
         trigger=trigger,
+        photos=photos.scan(settings.paths, photos.stored_state(conn)),
     )
 
 

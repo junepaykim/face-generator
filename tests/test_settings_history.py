@@ -139,3 +139,4 @@ def test_settings_the_rules_do_not_read_are_saved_without_reclassifying(
     out = history.save(conn, {"schedule.poll_seconds": 30})
     assert out.changed and out.report is None
     assert history.save(conn, {"staff.enabled": False}).report is not None
+    assert history.save(conn, {"no_photo.enabled": False}).report is not None

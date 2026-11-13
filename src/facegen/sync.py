@@ -15,6 +15,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, date, datetime
 from typing import Any
 
+from facegen import photos as photo_index
 from facegen.age import age_wording
 from facegen.classify import Classification, Group, PlayerFacts, classify
 from facegen.datasource.records import Gender, Snapshot
@@ -514,11 +515,19 @@ def _classify(
         )
     }
 
+    # Who FM27 shows a photo for is known only once a sync has read its photo list.
+    photo_status = photo_index.status(conn)
+    photos_known = photo_status is not None and photo_status.game_known
+
     classifications: dict[int, Classification] = {}
     changed: list[tuple[Any, ...]] = []
     moved: list[Move] = []
     states: list[PlayerPlanState] = []
-    for r in conn.execute("SELECT * FROM players WHERE career_id = ?", (career_id,)):
+    for r in conn.execute(
+        "SELECT p.*, ph.unique_id IS NOT NULL AS has_photo FROM players p"
+        " LEFT JOIN photos ph ON ph.unique_id = p.unique_id WHERE p.career_id = ?",
+        (career_id,),
+    ):
         uid = r["unique_id"]
         staff = bool(r["is_staff"])
         if r["present"]:
@@ -534,8 +543,9 @@ def _classify(
                 academy=bool(r["academy"]),
                 pin=r["pin"],
                 is_staff=staff,
+                photo=bool(r["has_photo"]) if photos_known else None,
             )
-            c = classify(facts, settings.groups, settings.staff.enabled)
+            c = classify(facts, settings.groups, settings.staff.enabled, settings.no_photo.enabled)
         else:
             gone = "no longer on my club's staff" if staff else "not in the latest save"
             c = Classification(None, False, (gone,))
@@ -663,6 +673,7 @@ def _counts(conn: sqlite3.Connection, career_id: int, snapshot: Snapshot) -> dic
         (career_id,),
     ).fetchone()
     counts = {k: v or 0 for k, v in dict(row).items()}
+    counts.update(photo_index.player_counts(conn, career_id))
     counts.update(
         players=len(snapshot.players),
         men=genders.get("men", 0),
@@ -685,14 +696,18 @@ def run_sync(
     preview: int = 20,
     with_table: bool = False,
     trigger: str | None = None,
+    photos: photo_index.PhotoScan | None = None,
 ) -> SyncReport:
     """Run one sync in a transaction; a dry run rolls everything back.
 
     `save_mtime` is the save's modification time as read. The career keeps the newest it has
     seen; the career with the newest save is the active one (spec section 8). `trigger` says
-    who started the sync: 'poller', 'sync now' or 'command'.
+    who started the sync: 'poller', 'sync now' or 'command'. `photos` is a fresh look at who
+    FM27 shows a photo for (photos.scan); without it the stored one stands.
     """
     with transaction(conn, rollback=dry_run):
+        if photos is not None:
+            photo_index.store(conn, photos)
         career, warnings = resolve_career(conn, snapshot, settings)
         cur = conn.execute(
             "INSERT INTO sync_runs (career_id, started_at, save_file, save_mtime, build,"
@@ -736,6 +751,9 @@ def run_sync(
             warnings.append("could not work out my club's league from the save")
         if not settings.eligibility.continental_competition_ids:
             warnings.append("no continental competition IDs are set (eligibility settings)")
+        photo_status = photo_index.status(conn)
+        if photo_status is not None:
+            warnings.extend(photo_status.warnings)
         warnings.extend(snapshot.meta.warnings)
 
         return SyncReport(

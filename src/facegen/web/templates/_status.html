@@ -72,6 +72,11 @@
         <tr><th>Tracked</th><td>{{ counts.tracked }}</td></tr>
         <tr><th>Pinned</th><td><a href="/players?group=pinned">{{ counts.pinned }}</a></td></tr>
         <tr><th>Pictures</th><td><a href="/players?picture=yes">{{ counts.pictures }}</a> current, {{ counts.published }} published</td></tr>
+        {% if photo_status %}
+        <tr><th>No photo</th><td>{% if photo_status.game_known %}<a href="/players?origin=existing&amp;role=players&amp;photo=none">{{ "{:,}".format(counts.without_photo) }}</a> pre-existing players, {{ "{:,}".format(counts.without_photo_picked) }} of them in a group{% if not settings.no_photo.enabled %} <span class="muted">(off in Settings)</span>{% endif %}
+          <span class="muted small">· FM27 ships {{ "{:,}".format(photo_status.game) }} photos{% if photo_status.facepack_files %}; {{ photo_status.facepack_files }} facepack{{ "s" if photo_status.facepack_files != 1 }} map {{ "{:,}".format(photo_status.facepack) }}{% endif %}</span>
+          {% else %}<span class="bad">unknown: FM27's photo list could not be read</span>{% endif %}</td></tr>
+        {% endif %}
         <tr><th>Review</th><td><a href="/review">{{ counts.review }}</a></td></tr>
       </table>
     {% else %}

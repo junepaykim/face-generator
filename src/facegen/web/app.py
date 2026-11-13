@@ -35,7 +35,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import FormData
 
-from facegen import db, manual, settings_history
+from facegen import db, manual, photos, settings_history
 from facegen.age import table_name
 from facegen.classify import Group
 from facegen.manual import ManualError
@@ -242,6 +242,7 @@ def create_app(ctx: AppContext) -> FastAPI:
             "poller": ctx.poller.status() if ctx.poller else None,
             "settings": settings,
             "auto_groups": sorted(settings.schedule.auto_groups),
+            "photo_status": photos.status(conn),
         }
 
     @app.get("/", response_class=HTMLResponse)
@@ -306,6 +307,8 @@ def create_app(ctx: AppContext) -> FastAPI:
             roles=queries.ROLES,
             group_filters=queries.GROUP_FILTERS,
             picture_filters=queries.PICTURE_FILTERS,
+            photo_filters=queries.PHOTO_FILTERS,
+            photo_status=photos.status(conn),
             scopes=queries.SCOPES,
             sorts=list(queries.SORTS),
             here=str(request.url.path) + ("?" + request.url.query if request.url.query else ""),
@@ -380,6 +383,7 @@ def create_app(ctx: AppContext) -> FastAPI:
                 settings.my_club.round_eyes,
             ),
             group_for_redraw=group_for_redraw,
+            photo_status=photos.status(conn),
             reference_kinds=REFERENCE_KINDS,
             groups=[g.value for g in Group],
         )

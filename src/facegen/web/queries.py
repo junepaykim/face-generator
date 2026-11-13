@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
+from facegen import photos
 from facegen.manual import restorable
 from facegen.traits import CharacterSheet, personality_from_json, personality_leans
 
@@ -49,6 +50,13 @@ PICTURE_FILTERS = {
     "no": "no picture",
     "queued": "queued or drawing",
     "review": "in review",
+}
+# Whether FM27 shows a photo other than ours: its own, or a facepack's (photos.py).
+PHOTO_FILTERS = {
+    "any": "any photo",
+    "game": "FM27 photo",
+    "facepack": "facepack picture",
+    "none": "no photo or facepack",
 }
 SCOPES = {"mens": "men's football", "all": "all players"}
 SORTS = {
@@ -86,6 +94,7 @@ class PlayerFilter:
     role: str = "any"
     group: str = "any"
     picture: str = "any"
+    photo: str = "any"
     scope: str = "mens"
     sort: str = "ca"
     page: int = 1
@@ -107,6 +116,7 @@ class PlayerFilter:
             role=_choice(get("role"), ROLES, "any"),
             group=_choice(get("group"), GROUP_FILTERS, "any"),
             picture=_choice(get("picture"), PICTURE_FILTERS, "any"),
+            photo=_choice(get("photo"), PHOTO_FILTERS, "any"),
             scope=_choice(get("scope"), SCOPES, "mens"),
             sort=_choice(get("sort"), SORTS, "ca"),
             page=_int(get("page"), 1, 100_000) or 1,
@@ -192,6 +202,13 @@ def _where(f: PlayerFilter) -> tuple[str, list[Any]]:
             clauses.append("j.id IS NOT NULL")
         case "review":
             clauses.append(f"{_LATEST_JOB} = 'failed'")
+    match f.photo:
+        case "game":
+            clauses.append("ph.game = 1")
+        case "facepack":
+            clauses.append("ph.facepack = 1")
+        case "none":
+            clauses.append("ph.unique_id IS NULL")
     if f.scope == "mens":
         clauses.append("p.in_scope = 1")
     return " AND ".join(clauses), args
@@ -204,6 +221,7 @@ _FROM = (
     "   AND i.is_current = 1"
     " LEFT JOIN jobs j ON j.career_id = p.career_id AND j.unique_id = p.unique_id"
     "   AND j.status IN ('queued', 'running')"
+    " LEFT JOIN photos ph ON ph.unique_id = p.unique_id"
 )
 
 
@@ -223,7 +241,7 @@ def players_page(
         "SELECT p.unique_id, p.name, p.age, p.ca, p.pa, p.is_newgen, p.academy, p.at_my_club,"
         " p.in_my_league, p.in_continental, p.in_scope, p.group_name, p.tracked, p.reasons,"
         " p.pin, p.club_id, p.is_goalkeeper, p.is_staff, p.staff_job, c.name AS club,"
-        " i.id AS image_id,"
+        " i.id AS image_id, ph.game AS photo_game, ph.facepack AS photo_facepack,"
         " i.published_path, i.group_name AS image_group, j.status AS job_status,"
         f" j.kind AS job_kind, j.manual AS job_manual, {_LATEST_JOB} AS latest_job"
         f"{_FROM} WHERE {where} ORDER BY {SORTS[f.sort]}, p.unique_id LIMIT ? OFFSET ?",
@@ -239,6 +257,7 @@ def player_detail(
     it can be restored (it passed its check and its file is still there)."""
     r = conn.execute(
         "SELECT p.*, c.name AS club, lp.name AS loan_parent_club, i.id AS image_id,"
+        " ph.game AS photo_game, ph.facepack AS photo_facepack,"
         f" j.status AS job_status, j.kind AS job_kind, j.manual AS job_manual,"
         f" {_LATEST_JOB} AS latest_job{_FROM}"
         " LEFT JOIN clubs lp ON lp.career_id = p.career_id AND lp.club_id = p.loan_parent_club_id"
@@ -330,6 +349,7 @@ def counts(conn: sqlite3.Connection, career_id: int) -> dict[str, int]:
     ).fetchone()
     out.update(pictures=pics["current"], published=pics["published"])
     out["review"] = review_count(conn, career_id)
+    out.update(photos.player_counts(conn, career_id))
     jobs = dict(
         conn.execute(
             "SELECT status, COUNT(*) FROM jobs WHERE career_id = ?"

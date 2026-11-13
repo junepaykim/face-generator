@@ -13,13 +13,19 @@ ROOT = Path(__file__).resolve().parents[1]
 FM_USER_LINE = (
     'fm_user_dir = "/mnt/c/Users/<Windows user>/Documents/Sports Interactive/Football Manager 27"'
 )
+FM_INSTALL_LINE = (
+    'fm_install_dir = "/mnt/c/Program Files (x86)/Steam/steamapps/common/Football Manager 27"'
+)
 
 
 def write_config(tmp_path: Path) -> Path:
-    """A defaults file whose FM27 and data folders are under tmp_path."""
+    """A defaults file whose FM27 user, FM27 install and data folders are under tmp_path."""
     text = DEFAULTS_PATH.read_text(encoding="utf-8")
-    assert FM_USER_LINE in text
+    assert FM_USER_LINE in text and FM_INSTALL_LINE in text
     text = text.replace(FM_USER_LINE, f'fm_user_dir = "{(tmp_path / "fm").as_posix()}"')
+    text = text.replace(
+        FM_INSTALL_LINE, f'fm_install_dir = "{(tmp_path / "fm-install").as_posix()}"'
+    )
     text = text.replace('data_dir = "data"', f'data_dir = "{(tmp_path / "data").as_posix()}"')
     config = tmp_path / "test.toml"
     config.write_text(text, encoding="utf-8")

@@ -5,15 +5,16 @@ Guidance for coding agents working in this repository.
 ## Project
 
 A local tool that reads a Football Manager 27 save, selects players (everyone at the
-managed club, qualifying newgens elsewhere, and manual picks), generates an anime-style
-portrait for each on the local GPU, and publishes the pictures into FM27's graphics
-folder. It has a small web UI for thresholds and manual requests.
+managed club, qualifying newgens and photo-less players elsewhere, and manual picks),
+generates an anime-style portrait for each on the local GPU, and publishes the pictures
+into FM27's graphics folder. It has a small web UI for thresholds and manual requests.
 
 Status: Phases 0.2, 0.3, 1, 2 and 3 have passed: the Colchester squad's pictures show in
 FM27, and the web UI (`facegen serve`) works with the GPU worker. Phases 4 (automation) and
 5 (updates for tracked players) are built and wait for the user's exit tests. Pictures are
-3:4 portraits since 2026-11-11. Since 2026-11-12 my club's staff get pictures too, and the
-settings page saves each change as it is made, with undo. Still open from Phase 0.1: the continental competition IDs.
+3:4 portraits since 2026-11-11. Since 2026-11-12 my club's staff get pictures too, the
+settings page saves each change as it is made, with undo, and pre-existing players with no photo
+in FM27 are picked like newgens (`no_photo.enabled`). Still open from Phase 0.1: the continental competition IDs.
 Build the rest phase by phase from `docs/implementation-plan.md`.
 
 ## Read first
@@ -120,6 +121,7 @@ src/facegen/
   identity.py             newgen boundary, career fingerprint
   leagues.py              my league and continental membership
   classify.py             group rules
+  photos.py               who FM27 shows a photo for: its catalog and facepacks, scanned per sync
   age.py                  real age to age wording (the age band)
   picture.py              the 3:4 shape, published sizes, the reference face crop
   traits.py               character sheet sampling

@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 from facegen import db
 from facegen.datasource.records import Snapshot
 from facegen.kits import load_kits
+from facegen.photos import PhotoIndex, PhotoScan
 from facegen.service import SyncService, WorkerService
 from facegen.settings import Settings, is_fixed, load_defaults, load_settings
 from facegen.sync import run_sync
@@ -450,6 +451,47 @@ def test_my_clubs_staff_on_the_players_pages(env: Env) -> None:
     detail = env.client.get(f"/players/{NEWGEN + 100}").text
     assert "on my club&#39;s staff (coach), drawn in a track jacket" in detail
     assert "1 staff" in env.client.get("/status").text
+
+
+def test_photos_on_the_players_pages_and_the_dashboard(env: Env) -> None:
+    def names(query: str) -> set[str]:
+        text = env.client.get(f"/players?{query}").text
+        return set(re.findall(r'<a href="/players/\d+">([^<]+)</a>', text))
+
+    assert "Who has a photo is not known yet" in env.client.get("/players?photo=none").text
+    assert "No photo</th>" not in env.client.get("/status").text
+    conn = env.conn()
+    scan = PhotoScan(
+        state={"catalog": "v1", "configs": [], "folders": {}},
+        index=PhotoIndex(frozenset({MINE}), frozenset({ABROAD_KID})),
+    )
+    run_sync(conn, snapshot(world()), env.settings, save_file="career.fm", photos=scan)
+    conn.close()
+
+    assert names("photo=game") == {"Mine Player"}
+    assert names("photo=facepack") == {"Abroad Kid"}
+    assert names("photo=none") == {"Famous Striker", "Rival Kid"}
+    assert names("origin=existing&photo=none") == {"Famous Striker"}
+    page = env.client.get("/players").text
+    assert "FM27 photo</span>" in page and "facepack</span>" in page
+    assert page.count("no photo</span>") == 1  # only pre-existing players are tagged
+    assert "not known yet" not in env.client.get("/players?photo=none").text
+
+    # Famous Striker (CA 185) has no photo, so the newgen thresholds now put them in A.
+    detail = env.client.get(f"/players/{STAR}").text
+    assert "none: FM27 shows a silhouette" in detail
+    assert "no photo, CA 185 &gt; 155" in detail
+    assert "FM27 ships one" in env.client.get(f"/players/{MINE}").text
+
+    status = env.client.get("/status").text
+    assert "FM27 ships 1 photos" in status
+    assert "1 of them in a group" in status
+
+
+def test_the_no_photo_setting_is_on_the_settings_page(env: Env) -> None:
+    text = env.client.get("/settings").text
+    assert "Pre-existing players without a photo" in text
+    assert 'name="no_photo.enabled"' in text
 
 
 def test_worker_and_sync_buttons(env: Env) -> None:

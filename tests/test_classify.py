@@ -45,9 +45,13 @@ def test_everyone_at_my_club_is_group_a_and_tracked(groups: Groups) -> None:
         assert "at my club" in c.reasons
 
 
-def test_pre_existing_players_elsewhere_are_never_picked_automatically(groups: Groups) -> None:
+@pytest.mark.parametrize("photo", [True, None])
+def test_pre_existing_players_with_a_photo_or_unknown_are_never_picked_automatically(
+    groups: Groups, photo: bool | None
+) -> None:
     c = classify(
-        facts(is_newgen=False, ca=190, pa=200, in_my_league=True, in_continental=True), groups
+        facts(is_newgen=False, ca=190, pa=200, in_my_league=True, in_continental=True, photo=photo),
+        groups,
     )
     assert c.group is None
     assert not c.tracked
@@ -244,3 +248,69 @@ def test_staff_pictures_turned_off(groups: Groups) -> None:
     assert classify(replace(mine, pin="b"), groups, staff=False).group is Group.B
     assert classify(facts(at_my_club=True), groups, staff=False).group is Group.A
     assert classify(replace(mine, pin="never"), groups).group is None
+
+
+# --- pre-existing players without a photo (user, 2026-11-12) ---------------------------------
+
+
+def no_photo(**kw: object) -> PlayerFacts:
+    return facts(is_newgen=False, photo=False, **kw)
+
+
+@pytest.mark.parametrize(
+    ("kw", "group", "reason"),
+    [
+        ({"ca": 160}, Group.A, "no photo, CA 160 > 155"),
+        ({"pa": 152, "in_my_league": True}, Group.B, "no photo, in my league, PA 152 > 150"),
+        (
+            {"ca": 131, "in_continental": True},
+            Group.B,
+            "no photo, in a continental competition, CA 131 > 130",
+        ),
+        ({"ca": 141}, Group.B, "no photo, CA 141 > 140"),
+        ({"ca": 120, "in_my_league": True}, Group.C, "no photo, in my league, CA 120 > 115"),
+        ({"ca": 120, "pa": 130}, None, None),
+    ],
+)
+def test_pre_existing_player_without_a_photo_follows_the_newgen_thresholds(
+    groups: Groups, kw: dict[str, object], group: Group | None, reason: str | None
+) -> None:
+    c = classify(no_photo(**kw), groups)
+    assert c.group is group
+    assert c.reasons == ((reason,) if reason else ())
+    assert c.tracked is (group is Group.A)
+
+
+def test_newgen_reasons_are_unchanged(groups: Groups) -> None:
+    c = classify(facts(pa=152, in_my_league=True), groups)
+    assert c.reasons == ("newgen in my league, PA 152 > 150",)
+
+
+def test_no_photo_setting_off_leaves_them_out(groups: Groups) -> None:
+    c = classify(no_photo(ca=190), groups, no_photo=False)
+    assert c.group is None
+    # Newgens and my club are unaffected.
+    assert classify(facts(ca=190), groups, no_photo=False).group is Group.A
+    assert classify(no_photo(at_my_club=True), groups, no_photo=False).group is Group.A
+
+
+def test_the_academy_rules_stay_newgens_own(groups: Groups) -> None:
+    c = classify(no_photo(academy=True), groups)
+    assert c.group is None
+    assert not c.tracked
+
+
+def test_staff_without_a_photo_are_not_picked(groups: Groups) -> None:
+    c = classify(no_photo(is_staff=True, ca=190), groups)
+    assert c.group is None
+
+
+def test_without_a_photo_at_my_club_is_group_a_as_everyone_there(groups: Groups) -> None:
+    c = classify(no_photo(at_my_club=True, ca=160), groups)
+    assert c.group is Group.A
+    assert c.reasons == ("at my club", "no photo, CA 160 > 155")
+
+
+def test_a_pin_still_overrides_a_player_without_a_photo(groups: Groups) -> None:
+    assert classify(no_photo(ca=190, pin="never"), groups).group is None
+    assert classify(no_photo(ca=60, pin="c"), groups).group is Group.C

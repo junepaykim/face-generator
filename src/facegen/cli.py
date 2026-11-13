@@ -90,6 +90,12 @@ def format_report(r: SyncReport) -> str:
         f"Groups      A {c['a']:,} ({c['a_my_club']:,} at my club)   B {c['b']:,}   C {c['c']:,}",
         f"Tracked     {c['tracked']:,}  (academy newgens {c['academy']:,})",
     ]
+    if c.get("with_photo") or c.get("without_photo"):
+        lines.append(
+            f"No photo    {c['without_photo']:,} pre-existing players"
+            f" ({c['with_photo']:,} have one); {c['without_photo_picked']:,} of them in a group"
+            " outside my club"
+        )
     if r.new_at_my_club:
         lines.append(
             f"New         {r.new_at_my_club:,} at my club since the last sync: drawn first"

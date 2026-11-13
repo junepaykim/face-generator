@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import replace
 from datetime import date
@@ -22,6 +23,7 @@ from factories import (
 )
 
 from facegen.datasource.records import Gender, PlayerRecord, Snapshot
+from facegen.photos import PhotoIndex, PhotoScan
 from facegen.planner import TIER_B, TIER_C
 from facegen.settings import Settings, load_settings, set_override
 from facegen.sync import SyncReport, reclassify, record_failed_sync, run_sync, sync_of_save
@@ -30,7 +32,7 @@ from facegen.traits import personality_from_json
 # A small world: pre-existing players have low IDs, newgens start at NEWGEN.
 MINE_OLD = 1001  # pre-existing, at my club
 MINE_NEW = NEWGEN + 1  # newgen at my club
-STAR_ELSEWHERE = 1002  # pre-existing star abroad: never picked automatically
+STAR_ELSEWHERE = 1002  # pre-existing star abroad: picked only if known to have no photo
 RIVAL_NEWGEN = NEWGEN + 2  # my league, PA 152 -> B
 RIVAL_C = NEWGEN + 3  # my league, CA 120 -> C
 ABROAD_A = NEWGEN + 4  # abroad, CA 160 -> A
@@ -751,3 +753,119 @@ def test_new_staff_are_not_counted_as_arrivals(
     report = sync(conn, snapshot(world(), staff=staff_world()), settings)
     assert report.new_at_my_club == 0
     assert report.counts["a"] == 2 + 2 + 1  # my two players, the two staff, ABROAD_A
+
+
+# --- pre-existing players without a photo (user, 2026-11-12) ---------------------------------
+
+WITH_PHOTO = 1003  # pre-existing, my league, CA 150: FM27 ships a photo
+WITH_FACEPACK = 1004  # the same, with a facepack picture
+NO_PHOTO_B = 1005  # the same, with neither: B like a newgen in my league
+
+
+def photo_scan(
+    game: set[int] | None,
+    facepack: set[int] | None = None,
+    *,
+    version: str = "v1",
+    warnings: tuple[str, ...] = (),
+) -> PhotoScan:
+    return PhotoScan(
+        state={"catalog": version, "configs": [], "folders": {}},
+        index=PhotoIndex(
+            None if game is None else frozenset(game), frozenset(facepack or ()), warnings
+        ),
+    )
+
+
+def photo_world() -> list[PlayerRecord]:
+    return world() + [
+        player(uid, ca=150, pa=150, club_id=RIVAL)
+        for uid in (WITH_PHOTO, WITH_FACEPACK, NO_PHOTO_B)
+    ]
+
+
+def test_pre_existing_players_without_a_photo_are_picked_like_newgens(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    scan = photo_scan({WITH_PHOTO}, {WITH_FACEPACK})
+    report = sync(conn, snapshot(photo_world()), settings, photos=scan)
+    g = groups(conn)
+    assert (g[STAR_ELSEWHERE], g[NO_PHOTO_B]) == ("a", "b")
+    assert WITH_PHOTO not in g and WITH_FACEPACK not in g
+    assert g[MINE_OLD] == "a"  # my club, as before
+    assert queued(conn)[STAR_ELSEWHERE] == ("initial", "a")
+    assert queued(conn)[NO_PHOTO_B] == ("initial", "b")
+    star = player_row(conn, STAR_ELSEWHERE)
+    assert json.loads(star["reasons"]) == ["no photo, CA 190 > 155"]
+    assert star["tracked"] == 1
+    assert json.loads(player_row(conn, NO_PHOTO_B)["reasons"]) == [
+        "no photo, in my league, CA 150 > 130",
+        "no photo, CA 150 > 140",
+    ]
+    c = report.counts
+    # Without a photo: MINE_OLD (at my club), STAR_ELSEWHERE and NO_PHOTO_B.
+    assert (c["with_photo"], c["without_photo"], c["without_photo_picked"]) == (2, 3, 2)
+
+
+def test_without_a_photo_list_no_pre_existing_player_is_picked(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    scan = photo_scan(None, warnings=("FM27's photo list (x) could not be read",))
+    report = sync(conn, snapshot(photo_world()), settings, photos=scan)
+    g = groups(conn)
+    assert STAR_ELSEWHERE not in g and NO_PHOTO_B not in g
+    assert any("could not be read" in w for w in report.warnings)
+    assert report.counts["without_photo"] == 0
+
+
+def test_before_any_photo_scan_no_pre_existing_player_is_picked(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    sync(conn, snapshot(photo_world()), settings)
+    assert STAR_ELSEWHERE not in groups(conn) and NO_PHOTO_B not in groups(conn)
+
+
+def test_the_no_photo_setting_reclassifies_without_a_new_save(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    report = sync(conn, snapshot(photo_world()), settings, photos=photo_scan(set()))
+    assert STAR_ELSEWHERE in queued(conn)
+    off = set_override(conn, "no_photo.enabled", False)
+    reclassify(conn, report.career.id, off)
+    assert STAR_ELSEWHERE not in groups(conn) and STAR_ELSEWHERE not in queued(conn)
+    assert groups(conn)[RIVAL_NEWGEN] == "b"  # newgens are unaffected
+    on = set_override(conn, "no_photo.enabled", True)
+    reclassify(conn, report.career.id, on)
+    assert queued(conn)[STAR_ELSEWHERE] == ("initial", "a")
+
+
+def test_a_player_who_gains_a_photo_keeps_the_drawn_picture(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    sync(conn, snapshot(photo_world()), settings, photos=photo_scan(set()))
+    add_image(conn, STAR_ELSEWHERE, "a", ABROAD, "W03")
+    conn.execute("UPDATE jobs SET status = 'cancelled' WHERE unique_id = ?", (NO_PHOTO_B,))
+    later = photo_scan(set(), {STAR_ELSEWHERE, NO_PHOTO_B}, version="v2")
+    sync(conn, snapshot(photo_world()), settings, photos=later)
+    assert STAR_ELSEWHERE not in groups(conn) and NO_PHOTO_B not in groups(conn)
+    assert NO_PHOTO_B not in queued(conn)
+    current = conn.execute(
+        "SELECT COUNT(*) FROM images WHERE unique_id = ? AND is_current = 1", (STAR_ELSEWHERE,)
+    ).fetchone()[0]
+    assert current == 1
+
+
+def test_an_unchanged_photo_scan_keeps_the_stored_ids(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    sync(conn, snapshot(photo_world()), settings, photos=photo_scan(set()))
+    unchanged = PhotoScan(state={"catalog": "v1", "configs": [], "folders": {}}, index=None)
+    sync(conn, snapshot(photo_world()), settings, photos=unchanged)
+    assert groups(conn)[STAR_ELSEWHERE] == "a"
+
+
+def test_a_dry_run_stores_no_photo_scan(conn: sqlite3.Connection, settings: Settings) -> None:
+    report = sync(conn, snapshot(photo_world()), settings, photos=photo_scan(set()), dry_run=True)
+    assert report.enqueued[("initial", "a")] == 4  # my two, ABROAD_A and STAR_ELSEWHERE
+    for table in ("photos", "photo_scan"):
+        assert conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0, table

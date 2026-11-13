@@ -93,7 +93,14 @@ class Env:
 
 @pytest.fixture
 def env(conn: sqlite3.Connection, settings: Settings, tmp_path: Path) -> Env:
-    s = replace(settings, paths=Paths(fm_user_dir=tmp_path / "fm", data_dir=tmp_path / "data"))
+    s = replace(
+        settings,
+        paths=Paths(
+            fm_user_dir=tmp_path / "fm",
+            data_dir=tmp_path / "data",
+            fm_install_dir=tmp_path / "fm-install",
+        ),
+    )
     run_sync(conn, snapshot(world()), s, save_file="career.fm")
     return Env(conn, s, tmp_path / "fm", tmp_path / "data")
 
@@ -628,7 +635,14 @@ def test_my_clubs_staff_are_drawn_at_a_quality_in_a_track_jacket(
     from facegen.age import WORDINGS
 
     coach = NEWGEN + 100
-    s = replace(settings, paths=Paths(fm_user_dir=tmp_path / "fm", data_dir=tmp_path / "data"))
+    s = replace(
+        settings,
+        paths=Paths(
+            fm_user_dir=tmp_path / "fm",
+            data_dir=tmp_path / "data",
+            fm_install_dir=tmp_path / "fm-install",
+        ),
+    )
     snap = snapshot(world(), staff=[staff_member(coach, age=30, job="coach")])
     run_sync(conn, snap, s, save_file="career.fm")
     env = Env(conn, s, tmp_path / "fm", tmp_path / "data")

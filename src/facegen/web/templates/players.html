@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Players{% endblock %}
 {% block content %}
+{% set photos_known = photo_status and photo_status.game_known %}
 <form class="filters" method="get" action="/players">
   <input type="search" name="q" value="{{ f.q }}" placeholder="Name or unique ID" aria-label="Name or unique ID">
   {% if f.club_id is not none %}
@@ -16,11 +17,15 @@
   <select name="role" aria-label="Players or staff">{% for k, v in roles.items() %}<option value="{{ k }}" {{ "selected" if f.role == k }}>{{ v }}</option>{% endfor %}</select>
   <select name="group" aria-label="Group">{% for k, v in group_filters.items() %}<option value="{{ k }}" {{ "selected" if f.group == k }}>{{ v }}</option>{% endfor %}</select>
   <select name="picture" aria-label="Picture">{% for k, v in picture_filters.items() %}<option value="{{ k }}" {{ "selected" if f.picture == k }}>{{ v }}</option>{% endfor %}</select>
+  <select name="photo" aria-label="Photo in FM27" title="The photo FM27 shows when facegen has no picture: its own, or a facepack's">{% for k, v in photo_filters.items() %}<option value="{{ k }}" {{ "selected" if f.photo == k }}>{{ v }}</option>{% endfor %}</select>
   <select name="scope" aria-label="Scope">{% for k, v in scopes.items() %}<option value="{{ k }}" {{ "selected" if f.scope == k }}>{{ v }}</option>{% endfor %}</select>
   <select name="sort" aria-label="Sort">{% for k in sorts %}<option value="{{ k }}" {{ "selected" if f.sort == k }}>sort by {{ k|upper if k in ("ca", "pa") else k }}</option>{% endfor %}</select>
   <button class="primary">Filter</button>
   {% if f.active %}<a href="/players">clear</a>{% endif %}
 </form>
+{% if f.photo != "any" and not photos_known %}
+<p class="muted small">Who has a photo is not known yet: {{ "the last sync could not read FM27's photo list (see the dashboard)" if photo_status else "it is read at the next sync" }}.</p>
+{% endif %}
 
 <form method="post" action="/players/action" id="bulk"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <input type="hidden" name="next" value="{{ here }}">
@@ -57,7 +62,9 @@
           {% if not r.in_scope %}<span class="tag">not men's</span>{% endif %}</td>
         <td class="num">{{ r.ca if r.ca or not r.is_staff else "?" }}</td>
         <td class="num">{{ r.pa if r.pa is not none else "?" }}</td>
-        <td>{% if r.is_staff %}staff{% else %}{{ "newgen" if r.is_newgen else "pre-existing" }}{% endif %}{% if r.academy %} <span class="tag">academy</span>{% endif %}</td>
+        <td>{% if r.is_staff %}staff{% else %}{{ "newgen" if r.is_newgen else "pre-existing" }}{% endif %}{% if r.academy %} <span class="tag">academy</span>{% endif %}
+          {% if r.photo_game %}<span class="tag" title="FM27 ships a photo">FM27 photo</span>{% endif %}{% if r.photo_facepack %}<span class="tag" title="A facepack in the graphics folder maps a picture">facepack</span>{% endif %}
+          {% if photos_known and not r.is_newgen and not r.is_staff and not r.photo_game and not r.photo_facepack %}<span class="tag" title="FM27 shows a silhouette">no photo</span>{% endif %}</td>
         <td>{% if r.group_name %}<span class="grp grp-{{ r.group_name }}">{{ r.group_name|upper }}</span>{% endif %}{% if r.pin %} <span class="tag">pin {{ r.pin }}</span>{% endif %}{% if r.tracked %} <span class="tag">tracked</span>{% endif %}</td>
         <td class="why">{{ r.reasons|join("; ") }}</td>
         <td>{% if r.job_status == "running" %}<span class="st run">drawing</span>

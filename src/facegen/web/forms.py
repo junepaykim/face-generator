@@ -20,6 +20,10 @@ SECTION_NOTES = {
     "newgen": "Used only when a new career is first synced.",
     "staff": "Re-classifies at once. Staff are drawn at group A quality in a track jacket in the "
     "club's colours; turning this off cancels their queued pictures and keeps the drawn ones.",
+    "no_photo": "Re-classifies at once. Without a photo means FM27 ships none for them and no "
+    "facepack in the graphics folder maps them; facegen's own pictures do not count. Both are "
+    "read again at each sync. The group thresholds apply as for newgens, the academy rules do "
+    "not. Turning this off cancels their queued pictures and keeps the drawn ones.",
     "age": "Re-classifies at once. Tracked players whose age wording changes are queued for a "
     "re-draw.",
     "reference": "Applies to re-draws from now on.",
@@ -31,14 +35,15 @@ SECTION_NOTES = {
 }
 # The thresholds first: they are what the page is mostly for (spec section 7).
 SECTION_ORDER = (
-    "groups", "staff", "age", "schedule", "eligibility", "my_club", "body", "personality",
-    "reference", "newgen",
+    "groups", "staff", "no_photo", "age", "schedule", "eligibility", "my_club", "body",
+    "personality", "reference", "newgen",
 )  # fmt: skip
 SECTION_TITLES = {
     "groups.a": "Group A",
     "groups.b": "Group B",
     "groups.c": "Group C",
     "staff": "Staff at my club",
+    "no_photo": "Pre-existing players without a photo",
     "eligibility": "Who counts",
     "newgen": "Newgens",
     "age.a_my_club": "Age wordings: group A at my club",
@@ -86,6 +91,7 @@ LABELS_IN = {
     "groups.c.league_ca_above": "In my league: CA above",
     "groups.c.league_pa_above": "In my league: PA above",
     "staff.enabled": "Draw my club's staff (coaches, physios, scouts, the board and you)",
+    "no_photo.enabled": "Pick them by the newgen thresholds for groups A, B and C",
 }
 
 

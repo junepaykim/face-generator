@@ -96,7 +96,14 @@ class Env:
 
 @pytest.fixture
 def env(conn: sqlite3.Connection, settings: Settings, tmp_path: Path) -> Env:
-    s = replace(settings, paths=Paths(fm_user_dir=tmp_path / "fm", data_dir=tmp_path / "data"))
+    s = replace(
+        settings,
+        paths=Paths(
+            fm_user_dir=tmp_path / "fm",
+            data_dir=tmp_path / "data",
+            fm_install_dir=tmp_path / "fm-install",
+        ),
+    )
     run_sync(conn, snapshot(world()), s, save_file="career.fm")
     return Env(conn, s, tmp_path)
 

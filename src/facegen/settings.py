@@ -40,10 +40,16 @@ class SettingsError(ValueError):
 class Paths:
     fm_user_dir: Path
     data_dir: Path
+    fm_install_dir: Path
+    """FM27's install folder: read only for the list of photos the game ships."""
 
     @property
     def games_dir(self) -> Path:
         return self.fm_user_dir / "games"
+
+    @property
+    def graphics_dir(self) -> Path:
+        return self.fm_user_dir / "graphics"
 
     @property
     def db_path(self) -> Path:
@@ -135,6 +141,14 @@ class StaffSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class NoPhotoSettings:
+    """Pre-existing players without a photo are picked like newgens (user, 2026-11-12)."""
+
+    enabled: bool
+    """False: only newgens are picked outside my club; drawn pictures are kept."""
+
+
+@dataclass(frozen=True, slots=True)
 class ReferenceSettings:
     """Re-draws may use the player's existing picture as a reference (spec section 5)."""
 
@@ -183,6 +197,7 @@ class Settings:
     newgen: Newgen
     groups: Groups
     staff: StaffSettings
+    no_photo: NoPhotoSettings
     age: AgeSettings
     reference: ReferenceSettings
     my_club: MyClubSettings
@@ -357,7 +372,11 @@ def build_settings(values: Mapping[str, Any], overridden: frozenset[str] = froze
         raise SettingsError("body.slim_strength_at_most must be below body.muscular_strength_from")
 
     return Settings(
-        paths=Paths(fm_user_dir=Path(v["paths.fm_user_dir"]), data_dir=data_dir),
+        paths=Paths(
+            fm_user_dir=Path(v["paths.fm_user_dir"]),
+            data_dir=data_dir,
+            fm_install_dir=Path(v["paths.fm_install_dir"]),
+        ),
         eligibility=Eligibility(
             mens_football_only=v["eligibility.mens_football_only"],
             continental_competition_ids=frozenset(v["eligibility.continental_competition_ids"]),
@@ -391,6 +410,7 @@ def build_settings(values: Mapping[str, Any], overridden: frozenset[str] = froze
             ),
         ),
         staff=StaffSettings(enabled=v["staff.enabled"]),
+        no_photo=NoPhotoSettings(enabled=v["no_photo.enabled"]),
         age=age,
         reference=ReferenceSettings(
             enabled=v["reference.enabled"],

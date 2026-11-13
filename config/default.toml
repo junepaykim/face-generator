@@ -9,6 +9,9 @@
 #   [paths]
 #   fm_user_dir = "/mnt/c/Users/<you>/Documents/Sports Interactive/Football Manager 27"
 fm_user_dir = "/mnt/c/Users/<Windows user>/Documents/Sports Interactive/Football Manager 27"
+# FM27's install folder, read only for its list of the photos it ships (docs/research.md
+# section 4). Steam's default; put another in config/local.toml.
+fm_install_dir = "/mnt/c/Program Files (x86)/Steam/steamapps/common/Football Manager 27"
 data_dir = "data"
 
 [eligibility]
@@ -31,8 +34,9 @@ fallback_min_unique_id = 2002000000
 
 # Fixed rules, not settings (docs/spec.md section 2):
 #   - every player at my club gets a picture, newgen or pre-existing;
-#   - elsewhere only newgens are picked automatically;
-#   - pre-existing players elsewhere are generated only when picked in the UI;
+#   - elsewhere only newgens, and pre-existing players without a photo ([no_photo]), are
+#     picked automatically;
+#   - other pre-existing players elsewhere are generated only when picked in the UI;
 #   - group A players are tracked (their picture is re-drawn when they change club or
 #     age band). Groups set picture quality; tracking is separate (spec section 2).
 
@@ -75,6 +79,14 @@ detail_pass = false
 # the playing kit, and their age wording comes from [age.staff]. Staff at other clubs are not
 # read. Pin a person to "never" on their page to leave them out. Requested by the user,
 # 2026-11-12 (docs/spec.md section 2).
+enabled = true
+
+[no_photo]
+# Pre-existing players with no photo in FM27 (a silhouette) are picked like newgens: the
+# group A, B and C thresholds apply to them, though the academy rules do not (user,
+# 2026-11-12). "No photo" means FM27 ships none for them and no facepack in the graphics
+# folder maps them; facegen's own pictures do not count. Both are re-read at each sync. If
+# FM27's photo list cannot be read, no one counts as without a photo.
 enabled = true
 
 [age]

@@ -22,6 +22,12 @@
         {% if not p.in_scope %}<span class="tag">not men's football</span>{% endif %}</td></tr>
       <tr><th>Age</th><td>{{ p.age if p.age is not none else "?" }}{% if p.birth_date %} <span class="muted">(born {{ p.birth_date }})</span>{% endif %}</td></tr>
       {% if not p.is_staff %}<tr><th>Height</th><td>{{ p.height_cm or "?" }} cm · Strength {{ p.strength if p.strength is not none else "?" }}</td></tr>{% endif %}
+      <tr><th>Photo</th><td>
+        {% if p.photo_game and p.photo_facepack %}FM27 ships one, and a facepack maps one
+        {% elif p.photo_game %}FM27 ships one
+        {% elif p.photo_facepack %}a facepack maps one
+        {% elif photo_status and photo_status.game_known %}none: FM27 shows a silhouette
+        {% else %}<span class="muted">unknown until a sync reads FM27's photo list</span>{% endif %}</td></tr>
       <tr><th>CA / PA</th><td>{{ p.ca if p.ca or not p.is_staff else "?" }} / {{ p.pa if p.pa is not none else "?" }}</td></tr>
       <tr><th>Personality</th><td>{% if p.personality %}{% for k, v in p.personality.items() %}{{ k|capitalize }} {{ v }}{{ " · " if not loop.last }}{% endfor %}{% else %}<span class="muted">unknown (read at the next sync)</span>{% endif %}</td></tr>
       <tr><th>Group</th><td>{% if p.group_name %}<span class="grp grp-{{ p.group_name }}">{{ p.group_name|upper }}</span>{% else %}none{% endif %}
