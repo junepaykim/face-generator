@@ -431,5 +431,7 @@ tests/           unit tests (no GPU or save needed)
 Built with Python 3.12, PyTorch, diffusers, FastAPI, SQLite and
 [`fmsave`](https://github.com/rhiever/fmsave).
 
+The code is under the [MIT License](LICENSE).
+
 <sub>Not affiliated with Sports Interactive or SEGA. Model weights are not included, and
 each model has its own licence.</sub>
