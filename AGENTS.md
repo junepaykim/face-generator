@@ -28,6 +28,9 @@ Build the rest phase by phase from `docs/implementation-plan.md`.
 If code and `docs/spec.md` disagree, the spec wins; raise the conflict rather than
 quietly changing either.
 
+These docs live on this PC only: `docs/*.md` is git-ignored and was removed from the
+public repository's history (user, 2026-11-12). Never add them back to git.
+
 ## Environment
 
 - WSL2 on the Windows PC that runs FM27. Python 3.12, `uv`.
@@ -78,7 +81,8 @@ the two agree, and the geometry (crop boxes, sizes, thresholds) stays in Python.
 6. **Nothing leaves this PC.** Do not upload saves, player data or pictures.
 7. **Keep generated data out of git:** `data/`, model files, pictures, save files. The
    one exception is `docs/images/`: a few small sample pictures of made-up test
-   characters for the README (user, 2026-11-12).
+   characters for the README (user, 2026-11-12). The docs' Markdown files stay out
+   of git too.
 
 ## Conventions
 

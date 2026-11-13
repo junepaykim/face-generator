@@ -411,18 +411,11 @@ Club kit colours are in `config/kits.toml`. A club that isn't listed gets a neut
 
 ## Learn more
 
-| Document | What's inside |
-|---|---|
-| [docs/spec.md](docs/spec.md) | The rules: groups, picture style, updates, UI |
-| [docs/architecture.md](docs/architecture.md) | Modules, database tables, files on disk |
-| [docs/research.md](docs/research.md) | Every measurement above, and how it was taken |
-| [docs/decisions.md](docs/decisions.md) | What was decided, when, and why |
-| [docs/implementation-plan.md](docs/implementation-plan.md) | Phases, tasks and exit tests |
-| [AGENTS.md](AGENTS.md) | House rules for coding agents in this repo |
+[AGENTS.md](AGENTS.md) has the house rules for coding agents in this repo.
 
 ```
 config/          default settings and the kit colour table
-docs/            spec, architecture, research, decisions, plan
+docs/images/     the sample pictures on this page
 scripts/spikes/  the throwaway experiments behind the numbers
 src/facegen/     the Python package
 tests/           unit tests (no GPU or save needed)
