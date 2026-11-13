@@ -11,9 +11,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from facegen.domain import ACTIVE_JOB_STATUSES as ACTIVE_JOB_STATUSES
-from facegen.domain import JOB_KINDS as JOB_KINDS
-from facegen.domain import JOB_STATUSES as JOB_STATUSES
+from facegen.domain import ACTIVE_JOB_STATUSES, JOB_KINDS, JOB_STATUSES
 
 
 def _in(values: tuple[str, ...]) -> str:

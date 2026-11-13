@@ -55,3 +55,9 @@ def test_age_tables_match_spec():
         "b": {"W02": 15, "W04": 19, "W07": 25, "W09": 29},
         "c": {"W03": 15, "W06": 22, "W08": 28},
     }  # fmt: skip
+
+
+def test_paths_name_no_windows_user():
+    """This PC's real folder goes in config/local.toml, which is not in git (user, 2026-11-12)."""
+    fm_user_dir = load()["paths"]["fm_user_dir"]
+    assert fm_user_dir.startswith("/mnt/c/Users/<Windows user>/")

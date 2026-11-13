@@ -13,6 +13,7 @@ from facegen.settings import (
     check_override,
     flatten,
     load_defaults,
+    load_local,
     load_settings,
     reset_overrides,
     set_override,
@@ -43,6 +44,30 @@ def test_relative_data_dir_resolves_against_the_project() -> None:
     assert s.paths.data_dir == PROJECT_ROOT / "data"
     assert s.paths.db_path == PROJECT_ROOT / "data" / "facegen.db"
     assert s.paths.games_dir.name == "games"
+
+
+def test_local_file_sets_this_pcs_paths(tmp_path: Path) -> None:
+    defaults = load_defaults(PROJECT_ROOT / "config" / "default.toml")
+    assert load_local(defaults, tmp_path / "missing.toml") == {}
+    local = tmp_path / "local.toml"
+    local.write_text('[paths]\nfm_user_dir = "/mnt/c/Users/me/FM27"\n', encoding="utf-8")
+    assert load_local(defaults, local) == {"paths.fm_user_dir": "/mnt/c/Users/me/FM27"}
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "[groups.a]\nca_above = 1\n",  # not a path
+        '[paths]\nsomewhere = "x"\n',  # not a key of the defaults
+        "[paths]\nfm_user_dir = 3\n",  # not text
+    ],
+)
+def test_local_file_refuses_anything_but_paths(tmp_path: Path, text: str) -> None:
+    defaults = load_defaults(PROJECT_ROOT / "config" / "default.toml")
+    local = tmp_path / "local.toml"
+    local.write_text(text, encoding="utf-8")
+    with pytest.raises(SettingsError):
+        load_local(defaults, local)
 
 
 def test_flatten() -> None:

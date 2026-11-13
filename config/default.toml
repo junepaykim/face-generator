@@ -4,6 +4,10 @@
 # point and the "reset to defaults" target. Rules are described in docs/spec.md.
 
 [paths]
+# FM27's user folder (saves and graphics) as WSL sees it. Put this PC's real folder in
+# config/local.toml, which is not in git, so the repository holds no Windows user name:
+#   [paths]
+#   fm_user_dir = "/mnt/c/Users/<you>/Documents/Sports Interactive/Football Manager 27"
 fm_user_dir = "/mnt/c/Users/<Windows user>/Documents/Sports Interactive/Football Manager 27"
 data_dir = "data"
 

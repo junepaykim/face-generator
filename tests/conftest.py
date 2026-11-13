@@ -10,7 +10,9 @@ from facegen import db
 from facegen.settings import DEFAULTS_PATH, Settings, load_settings
 
 ROOT = Path(__file__).resolve().parents[1]
-FM_USER_LINE = 'fm_user_dir = "/mnt/c/Users/<Windows user>/Documents/Sports Interactive/Football Manager 27"'
+FM_USER_LINE = (
+    'fm_user_dir = "/mnt/c/Users/<Windows user>/Documents/Sports Interactive/Football Manager 27"'
+)
 
 
 def write_config(tmp_path: Path) -> Path:

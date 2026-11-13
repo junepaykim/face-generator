@@ -32,7 +32,9 @@ quietly changing either.
 
 - WSL2 on the Windows PC that runs FM27. Python 3.12, `uv`.
 - GPU: RTX 4080, 16 GB VRAM, visible from WSL.
-- FM27 user folder: `/mnt/c/Users/<Windows user>/Documents/Sports Interactive/Football Manager 27`
+- FM27 user folder: `/mnt/c/Users/<Windows user>/Documents/Sports Interactive/Football Manager 27`.
+  This PC's real path is in `config/local.toml`, which is not in git. Never write the
+  Windows user name into a tracked file.
 - FM27 install: `/mnt/c/Program Files (x86)/Steam/steamapps/common/Football Manager 27`
 - File-change events do not work on `/mnt/c`. Poll instead.
 
@@ -66,7 +68,9 @@ reads a real save copy.
    changes often. Bump it on purpose, re-run the Phase 0.1 checks, and note the result
    in `docs/research.md`.
 6. **Nothing leaves this PC.** Do not upload saves, player data or pictures.
-7. **Keep generated data out of git:** `data/`, model files, pictures, save files.
+7. **Keep generated data out of git:** `data/`, model files, pictures, save files. The
+   one exception is `docs/images/`: a few small sample pictures of made-up test
+   characters for the README (user, 2026-11-12).
 
 ## Conventions
 

@@ -18,7 +18,8 @@ from typing import Any
 from facegen.age import age_wording
 from facegen.classify import Classification, Group, PlayerFacts, classify
 from facegen.datasource.records import Gender, Snapshot
-from facegen.db import ACTIVE_JOB_STATUSES, transaction
+from facegen.db import transaction
+from facegen.domain import ACTIVE_JOB_STATUSES
 from facegen.identity import (
     Person,
     best_career,
@@ -28,7 +29,7 @@ from facegen.identity import (
     is_newgen,
     person_hash,
 )
-from facegen.jobs import apply_plan as apply_plan
+from facegen.jobs import apply_plan
 from facegen.leagues import clubs_in_competitions, my_league_competitions
 from facegen.planner import ImageState, JobState, Plan, PlayerPlanState, plan
 from facegen.settings import Settings

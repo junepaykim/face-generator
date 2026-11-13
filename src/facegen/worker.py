@@ -36,28 +36,24 @@ from facegen import jobs, qc
 from facegen.age import age_wording
 from facegen.db import transaction
 from facegen.domain import FinishedStatus
-from facegen.image_store import ImageStore
-from facegen.image_store import master_dir as master_dir
-from facegen.jobs import Career as Career
-from facegen.jobs import Job as Job
-from facegen.jobs import JobFilter as JobFilter
-from facegen.jobs import JobGone as JobGone
-from facegen.jobs import load_career as load_career
-from facegen.jobs import queued_jobs as queued_jobs
+from facegen.image_store import ImageStore, master_dir
+from facegen.jobs import Career, Job, JobFilter, JobGone, load_career, queued_jobs
 from facegen.kits import KitTable
 from facegen.locking import LockBusy, file_lock
 from facegen.picture import crop_to_aspect, face_box
 from facegen.planner import reference_scale
 from facegen.prompt import Prompt, build_prompt
 from facegen.publish import PublishReport, publish_pack
-from facegen.renderer import HEIGHT as HEIGHT
-from facegen.renderer import INT8_SCOPE as INT8_SCOPE
-from facegen.renderer import MODEL_REPO as MODEL_REPO
-from facegen.renderer import WIDTH as WIDTH
-from facegen.renderer import AnimagineRenderer as AnimagineRenderer
-from facegen.renderer import Reference as Reference
-from facegen.renderer import Renderer as Renderer
-from facegen.renderer import Tagger as Tagger
+from facegen.renderer import (
+    HEIGHT,
+    INT8_SCOPE,
+    MODEL_REPO,
+    WIDTH,
+    AnimagineRenderer,
+    Reference,
+    Renderer,
+    Tagger,
+)
 from facegen.settings import GroupA, GroupB, GroupC, Settings
 from facegen.traits import (
     CharacterSheet,
@@ -73,6 +69,11 @@ MAX_ATTEMPTS = 3
 
 # Keep existing CLI, tests and experiment imports working after the module split.
 __all__ = [
+    "HEIGHT",
+    "INT8_SCOPE",
+    "MAX_ATTEMPTS",
+    "MODEL_REPO",
+    "WIDTH",
     "AnimagineRenderer",
     "Career",
     "Job",
@@ -86,11 +87,6 @@ __all__ = [
     "Tagger",
     "Worker",
     "WorkerBusy",
-    "HEIGHT",
-    "INT8_SCOPE",
-    "MAX_ATTEMPTS",
-    "MODEL_REPO",
-    "WIDTH",
     "fm_running",
     "load_career",
     "master_dir",

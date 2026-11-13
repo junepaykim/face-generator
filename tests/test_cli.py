@@ -13,7 +13,9 @@ from facegen.datasource.base import UnsupportedSaveError
 from facegen.datasource.records import Snapshot
 from facegen.settings import DEFAULTS_PATH
 
-FM_USER_LINE = 'fm_user_dir = "/mnt/c/Users/<Windows user>/Documents/Sports Interactive/Football Manager 27"'
+FM_USER_LINE = (
+    'fm_user_dir = "/mnt/c/Users/<Windows user>/Documents/Sports Interactive/Football Manager 27"'
+)
 
 
 class FakeSource:

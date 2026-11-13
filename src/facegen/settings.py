@@ -21,6 +21,9 @@ from facegen.traits import BANNABLE, BodyThresholds
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULTS_PATH = PROJECT_ROOT / "config" / "default.toml"
+LOCAL_PATH = PROJECT_ROOT / "config" / "local.toml"
+"""This PC's own folders, laid over the defaults' `[paths]`. Optional and not in git, so the
+repository holds no Windows user name."""
 
 # Keys the UI may not override: where things live on disk, and where the web UI listens (a
 # browser must not be able to open the tool to the network; AGENTS.md hard rule 6).
@@ -195,9 +198,33 @@ def flatten(tree: Mapping[str, Any], prefix: str = "") -> dict[str, Any]:
 
 
 def load_defaults(path: Path | None = None) -> dict[str, Any]:
-    """The defaults file as dotted keys."""
+    """The defaults file as dotted keys.
+
+    With the standard defaults file, config/local.toml (if present) is laid over it. A
+    defaults file given explicitly is read alone.
+    """
     with (path or DEFAULTS_PATH).open("rb") as f:
-        return flatten(tomllib.load(f))
+        values = flatten(tomllib.load(f))
+    if path is None:
+        values.update(load_local(values))
+    return values
+
+
+def load_local(defaults: Mapping[str, Any], path: Path = LOCAL_PATH) -> dict[str, Any]:
+    """config/local.toml as dotted keys, or nothing if there is none.
+
+    It may set only `[paths]` keys that the defaults have, each as text.
+    """
+    if not path.is_file():
+        return {}
+    with path.open("rb") as f:
+        local = flatten(tomllib.load(f))
+    for key, value in local.items():
+        if not key.startswith("paths.") or key not in defaults:
+            raise SettingsError(f"{path.name} may only set the defaults' [paths] keys, not {key!r}")
+        if not isinstance(value, str):
+            raise SettingsError(f"{path.name}: {key!r} needs a str, got {type(value).__name__}")
+    return local
 
 
 def _is_int(value: Any) -> bool:
