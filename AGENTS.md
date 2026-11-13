@@ -115,6 +115,7 @@ src/facegen/
   manual.py               the UI's requests: generate, new face, pin, remove, retry
   worker.py               GPU job runner
   quantise.py             INT8 weights for the UNet's Linear layers
+  prompt_cache.py         prompt embeddings in system memory; the next jobs' prompts in one trip
   service.py              facegen serve's worker thread and "sync now"
   qc.py                   quality and content checks
   publish.py              pictures and config.xml into FM27

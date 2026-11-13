@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import gc
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Any, Protocol
 from facegen import qc
 from facegen.gpu import on_gpu
 from facegen.prompt import Prompt
+from facegen.prompt_cache import EmbeddingCache
+from facegen.prompt_cache import prepare as prepare_texts
 
 if TYPE_CHECKING:
     from PIL.Image import Image
@@ -73,20 +75,34 @@ def _token_chunks(tokenizer: Any, text: str) -> list[list[int]]:
     return [ids[i : i + size] for i in range(0, len(ids), size)] or [[]]
 
 
-def _encode(pipe: Any, text: str, n_chunks: int) -> tuple[Any, Any]:
-    """SDXL prompt embedding without the 77-token cut-off.
+@dataclass(frozen=True, slots=True)
+class TextEmbedding:
+    """One prompt text through both text encoders, kept in system memory (fp16)."""
 
-    Splits the prompt into 75-token chunks, encodes each through both text encoders and
-    joins them, as ComfyUI and A1111 do. The stock pipeline silently drops everything after
-    token 77, which would cut the kit and the content terms from a long prompt.
+    hidden: Any
+    """[1, 77 * chunks, 2048]: each chunk's penultimate layer, both encoders side by side."""
+    pooled: Any
+    """[1, 1280]: the second encoder's pooled output of the first chunk."""
+    chunks: int
+
+
+def _encode_text(pipe: Any, text: str) -> TextEmbedding:
+    """SDXL prompt embedding without the 77-token cut-off, copied to system memory.
+
+    Splits the text into 75-token chunks, encodes each through both text encoders and joins
+    them, as ComfyUI and A1111 do. The stock pipeline silently drops everything after token
+    77, which would cut the kit and the content terms from a long prompt. Each chunk is
+    encoded on its own, so a text's embedding does not depend on the text it is paired with:
+    `pair_embeddings` pads the shorter one with the empty text's chunk afterwards.
     """
     import torch
 
     per_encoder = []
     pooled = None
+    counts = []
     for tok, enc in ((pipe.tokenizer, pipe.text_encoder), (pipe.tokenizer_2, pipe.text_encoder_2)):
         chunks = _token_chunks(tok, text)
-        chunks += [[]] * (n_chunks - len(chunks))
+        counts.append(len(chunks))
         hidden = []
         for k, chunk in enumerate(chunks):
             row = [tok.bos_token_id, *chunk, tok.eos_token_id]
@@ -96,12 +112,39 @@ def _encode(pipe: Any, text: str, n_chunks: int) -> tuple[Any, Any]:
             if enc is pipe.text_encoder_2 and k == 0:
                 pooled = out[0]
         per_encoder.append(torch.cat(hidden, dim=1))
-    return torch.cat(per_encoder, dim=-1), pooled
+    if counts[0] != counts[1]:
+        raise RuntimeError(f"the tokenizers split the prompt into {counts} chunks")
+    return TextEmbedding(torch.cat(per_encoder, dim=-1).cpu(), pooled.cpu(), counts[0])
+
+
+def pair_embeddings(
+    positive: TextEmbedding, negative: TextEmbedding, empty: TextEmbedding
+) -> tuple[Any, Any, Any, Any, int]:
+    """A positive and a negative prompt as the pipeline takes them, with their chunk count.
+
+    Both are padded to the same number of chunks with `empty`, the empty text's embedding (one
+    chunk of nothing but start, end and padding tokens). That is exactly what encoding each
+    text with the pair's chunk count would give, chunk for chunk, so the result is the same
+    to the bit as encoding the pair together.
+    """
+    import torch
+
+    n = max(positive.chunks, negative.chunks)
+
+    def padded(text: TextEmbedding) -> Any:
+        return torch.cat([text.hidden, *[empty.hidden] * (n - text.chunks)], dim=1)
+
+    return padded(positive), positive.pooled, padded(negative), negative.pooled, n
 
 
 INT8_SCOPE = "transformer_blocks"
 """The UNet's Linear layers stored as INT8: the 700 in its transformer blocks (attention and
 feed-forward), 4.1 of its 4.8 GiB in fp16."""
+
+TEXT_CACHE_SIZE = 128
+"""Prompt texts whose embeddings the renderer keeps in system memory (`prompt_cache`). One
+75-token chunk is 77 x 2048 fp16 values, 0.3 MiB; with the usual two or three chunks per text
+the full cache holds 80 to 120 MiB."""
 
 
 class AnimagineRenderer:
@@ -114,10 +157,16 @@ class AnimagineRenderer:
       rebuilt in fp16 per layer (`facegen.quantise`): the UNet's weights go from 4.8 to
       2.8 GiB.
     - `offload_text_encoders`: the text encoders (1.5 GiB) wait in system memory and come
-      onto the GPU only to encode a job's prompt. With the tagger doing the same, a group A
-      job's peak reserved memory stays under 8 GiB, so FM27 and a browser fit beside it.
+      onto the GPU only to encode prompts that are not cached yet. With the tagger doing the
+      same, a group A job's peak reserved memory stays under 8 GiB, so FM27 and a browser
+      fit beside it.
     The first two change the pictures slightly; offloading does not. With the first two off
     the renderer draws exactly as before; the spikes use that for their baseline.
+
+    Prompt embeddings are kept in system memory, TEXT_CACHE_SIZE texts at most
+    (`facegen.prompt_cache`). The worker calls `prepare` with the next jobs' prompts, so one
+    trip of the text encoders serves many jobs; a prompt nobody prepared is encoded when it
+    is first drawn. The cache changes no pixel: the pipeline gets the same embeddings.
     """
 
     model = MODEL_REPO
@@ -172,6 +221,8 @@ class AnimagineRenderer:
             raise RuntimeError(f"model not in float16: unet {pipe.unet.dtype}")
         self.detail_scale = detail_scale
         self.detail_strength = detail_strength
+        self._texts: EmbeddingCache[TextEmbedding] = EmbeddingCache(TEXT_CACHE_SIZE)
+        # The current job's prompt on the GPU, so its renders do not copy it again.
         self._embeds: dict[tuple[str, str], tuple[Any, ...]] = {}
         # The IP-Adapter, loaded at the first reference: (its attention processors, its image
         # projection), the UNet's own processors, and whether the adapter is switched in.
@@ -180,19 +231,53 @@ class AnimagineRenderer:
         self._adapter_on = False
         self._reference_embeds: dict[str, Any] = {}
 
+    # -- the prompt --
+
+    @staticmethod
+    def _texts_of(prompts: Iterable[Prompt]) -> list[str]:
+        # The empty text pads the shorter prompt of a pair (pair_embeddings).
+        return ["", *(t for p in prompts for t in (p.positive, p.negative))]
+
+    @contextmanager
+    def _encoders_on_gpu(self) -> Iterator[None]:
+        encoders = (self.pipe.text_encoder, self.pipe.text_encoder_2)
+        with self._torch.no_grad(), on_gpu(*encoders, enabled=self.offload_text_encoders):
+            yield
+
+    def prepare(self, prompts: Iterable[Prompt]) -> int:
+        """Encode every text of these prompts not cached yet, in one trip of the text encoders.
+
+        The first stage of drawing (`prompt_cache`): the worker passes the next jobs' prompts,
+        so their renders and detail passes need no trip of their own. Returns how many texts
+        were encoded; with 0 the encoders did not move.
+        """
+        return prepare_texts(
+            self._texts,
+            self._texts_of(prompts),
+            lambda text: _encode_text(self.pipe, text),
+            self._encoders_on_gpu,
+        )
+
+    def encoded(self, prompt: Prompt) -> bool:
+        """Whether the prompt is cached, so drawing it moves no text encoder."""
+        return not self._texts.missing(self._texts_of([prompt]))
+
     def _embeddings(self, prompt: Prompt) -> tuple[Any, ...]:
+        """The prompt's embeddings on the GPU, from the cache; encoded first if not there."""
         key = (prompt.positive, prompt.negative)
         if key not in self._embeds:
-            encoders = (self.pipe.text_encoder, self.pipe.text_encoder_2)
-            with self._torch.no_grad(), on_gpu(*encoders, enabled=self.offload_text_encoders):
-                n = max(len(_token_chunks(self.pipe.tokenizer, t)) for t in key)
-                pe, pp = _encode(self.pipe, prompt.positive, n)
-                ne, npool = _encode(self.pipe, prompt.negative, n)
-            self._embeds = {key: (pe, pp, ne, npool, n)}  # one prompt per job
+            self.prepare([prompt])  # nothing to do once the worker has prepared it
+            positive, negative, empty = (self._texts.get(t) for t in (*key, ""))
+            *tensors, n = pair_embeddings(positive, negative, empty)
+            on_card = tuple(t.to("cuda") for t in tensors)
+            self._embeds = {key: (*on_card, n)}  # one prompt per job
         return self._embeds[key]
 
     def prompt_chunks(self, prompt: Prompt) -> int:
-        return self._embeddings(prompt)[4]
+        """How many 75-token chunks the prompt is encoded in; needs no encoder."""
+        return max(
+            len(_token_chunks(self.pipe.tokenizer, t)) for t in (prompt.positive, prompt.negative)
+        )
 
     # -- the reference picture --
 
@@ -353,6 +438,7 @@ class AnimagineRenderer:
     def close(self) -> None:
         """Free the GPU memory the model holds."""
         self.pipe = self.img2img = None
+        self._texts.clear()
         self._embeds = {}
         self._adapter = None
         self._plain_processors = {}

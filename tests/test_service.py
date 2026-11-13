@@ -728,3 +728,15 @@ def current_pictures(env: Env) -> dict[int, sqlite3.Row]:
     return {
         r["unique_id"]: r for r in env.conn.execute("SELECT * FROM images WHERE is_current = 1")
     }
+
+
+def test_one_encoder_trip_serves_the_jobs_drawn_one_step_at_a_time(env: Env) -> None:
+    svc = env.service()
+    svc.step()
+    (renderer,) = env.gpu.renderers
+    assert [len(trip) for trip in renderer.trips] == [4]  # this job and the three queued
+    manual.generate(env.conn, env.cid, [STAR], env.settings)  # asked for meanwhile
+    run_until_idle(svc)
+    assert len(env.drawn()) == 5
+    assert len(renderer.trips) == 2  # only the new request needed another trip
+    assert renderer.trips[1][0] == renderer.prompts[3]  # drawn next: manual requests come first

@@ -122,8 +122,11 @@ flowchart LR
 ```
 
 **Trick 2: keep the helpers in system RAM.** The text encoders (1.5 GiB), the tagger and
-the face encoder wait in normal memory and move onto the GPU only for the second they're
-needed. This costs about 1 s of copying per job.
+the face encoder wait in normal memory and move onto the GPU only for the moment they're
+needed. Each trip takes time: 0.7 s for the text encoders, 0.2 s for the tagger. So the
+text encoders don't make a trip per job. The worker encodes the prompts of the next 32
+jobs in one trip and keeps the results (a few MB) in RAM. The model gets exactly the same
+numbers as before, so the pictures don't change. What's left is the tagger's two trips, about 0.45 s per job.
 
 **Trick 3: fp16 accumulation.** A matrix multiply adds up a lot of products. By default,
 PyTorch adds them up in fp32, and on GeForce cards that runs the fp16 tensor cores at half
@@ -139,17 +142,18 @@ pipeline runs; the text encoders and the tagger keep fp32.
 | Plain fp16 | 5.1 s | 19.9 s | 10.95 GiB |
 | + fp16 accumulation | 4.1 s | 16.4 s | 10.95 GiB |
 | + INT8 weights | 4.4 s | 17.2 s | 9.00 GiB |
-| **+ helpers in system RAM (what runs today)** | **4.4 s** | **≈ 18.3 s** | **6.88 GiB** |
+| **+ helpers in system RAM (what runs today)** | **4.4 s** | **≈ 17.7 s** | **6.88 GiB** |
 
-¹ Three candidate renders, a detail pass and the checks. The last row adds the ~1 s per
-job that moving the helpers costs.<br>
+¹ Three candidate renders, a detail pass and the checks. The last row adds the ~0.45 s
+per job that moving the helpers still costs (~1 s before prompts were encoded 32 jobs at
+a time).<br>
 ² The memory PyTorch reserves at the peak of a whole group A job. fp16 accumulation
 doesn't change memory, so the first two rows share one measurement. A re-draw with a
 reference face goes from 11.82 to 7.70 GiB (−35%).
 
 To be honest about it, **the big win is memory (−37%)**. Speed is a bonus. Renders are
-14% faster, but moving the helpers takes back about 1 s per job, so a whole group A player
-is only about 8% faster. INT8 here is about memory, not speed: unpacking costs a little
+14% faster, but moving the helpers takes back about 0.45 s per job, so a whole group A
+player is about 11% faster. INT8 here is about memory, not speed: unpacking costs a little
 time, and fp16 accumulation pays for it.
 
 ### 2. Why INT8, and not FP8, torch.compile or SageAttention

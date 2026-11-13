@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import Any
 
 from PIL import Image, ImageDraw
@@ -71,8 +71,26 @@ class FakeRenderer:
         """The reference given to each render and detail call, None for none."""
         self.fail_on_call = fail_on_call
         self.exc = exc or KeyboardInterrupt()
+        self.texts: set[str] = set()
+        """Prompt texts encoded so far, as the real renderer's cache holds them."""
+        self.trips: list[list[Prompt]] = []
+        """The prompts of each trip of the text encoders, in order."""
+
+    # The two stages of prompt encoding (facegen.prompt_cache), without the cache's size limit.
+
+    def prepare(self, prompts: Iterable[Prompt]) -> int:
+        prompts = list(prompts)
+        new = {t for p in prompts for t in (p.positive, p.negative)} - self.texts
+        if new:
+            self.trips.append(prompts)
+            self.texts |= new
+        return len(new)
+
+    def encoded(self, prompt: Prompt) -> bool:
+        return {prompt.positive, prompt.negative} <= self.texts
 
     def render(self, prompt: Prompt, seed: int, reference: Any = None) -> Image.Image:
+        self.prepare([prompt])  # as the real renderer encodes a prompt nobody prepared
         self.calls.append(("render", seed))
         self.prompts.append(prompt)
         self.references.append(reference)
@@ -85,6 +103,7 @@ class FakeRenderer:
     def detail(
         self, image: Image.Image, prompt: Prompt, seed: int, reference: Any = None
     ) -> Image.Image:
+        self.prepare([prompt])
         self.calls.append(("detail", seed))
         self.references.append(reference)
         out = image.resize((image.width * 3 // 2, image.height * 3 // 2))

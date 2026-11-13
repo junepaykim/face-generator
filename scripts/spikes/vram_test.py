@@ -73,7 +73,7 @@ def main(args: list[str]) -> None:
         t = time.perf_counter()
         sheet = sample_sheet("vram-test", uid, 1)
         prompt = build_prompt(sheet, "W07", kit, pick_pose(sheet.base_seed, 1))
-        phase(f"{label}: encode prompt", renderer.prompt_chunks, prompt)
+        phase(f"{label}: encode prompt", renderer.prepare, [prompt])  # one trip, this job only
         if reference is not None:
             # What the first render of a re-draw does first: load the adapter (once) and
             # embed the reference with the image encoder, which then goes back to RAM.

@@ -26,7 +26,7 @@ from __future__ import annotations
 import sqlite3
 import subprocess
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -66,6 +66,9 @@ from facegen.traits import (
 )
 
 MAX_ATTEMPTS = 3
+PRE_ENCODE_JOBS = 32
+"""How many jobs' prompts one trip of the text encoders encodes: the job about to run and
+the next ones in the queue (`Renderer.prepare`, `prompt_cache`)."""
 
 # Keep existing CLI, tests and experiment imports working after the module split.
 __all__ = [
@@ -73,6 +76,7 @@ __all__ = [
     "INT8_SCOPE",
     "MAX_ATTEMPTS",
     "MODEL_REPO",
+    "PRE_ENCODE_JOBS",
     "WIDTH",
     "AnimagineRenderer",
     "Career",
@@ -260,44 +264,43 @@ class Worker:
 
         A player with no sheet yet is shown with the sheet they would get.
         """
-        out = []
-        for job in self.runnable(f)[:limit]:
-            found = load_sheet(self.conn, self.career.id, job.unique_id, job.traits_version)
-            if found is None or (job.kind == "reroll" and job.traits_version is None):
-                sheet_version = next_sheet_version(self.conn, self.career.id, job.unique_id)
-                sheet = sample_sheet(
-                    self.career.key,
-                    job.unique_id,
-                    sheet_version,
-                    height_cm=job.height_cm,
-                    strength=job.strength,
-                    body=self.settings.body,
-                    personality=job.personality,
-                    personality_weight=self.settings.personality.weight,
-                )
-            else:
-                sheet_version, sheet = found
-            version = self.images.next_version(job.unique_id)
-            wording = job.target_band or age_wording(
-                job.age, job.group, job.at_my_club, self.settings.age
+        return [self._preview(job) for job in self.runnable(f)[:limit]]
+
+    def _preview(self, job: Job) -> Preview:
+        """What one queued job would draw; reads only."""
+        found = load_sheet(self.conn, self.career.id, job.unique_id, job.traits_version)
+        if found is None or (job.kind == "reroll" and job.traits_version is None):
+            sheet_version = next_sheet_version(self.conn, self.career.id, job.unique_id)
+            sheet = sample_sheet(
+                self.career.key,
+                job.unique_id,
+                sheet_version,
+                height_cm=job.height_cm,
+                strength=job.strength,
+                body=self.settings.body,
+                personality=job.personality,
+                personality_weight=self.settings.personality.weight,
             )
-            kit, kit_known = self.kits.kit_for(job.target_club_id, job.goalkeeper)
-            pose = pick_pose(sheet.base_seed, version)
-            my_club = self.settings.my_club if job.at_my_club else None
-            prompt = build_prompt(sheet, wording, kit, pose, my_club) if wording else None
-            out.append(
-                Preview(
-                    job,
-                    sheet,
-                    wording,
-                    kit.describe(),
-                    kit_known,
-                    pose,
-                    prompt,
-                    self.reference_scale(job),
-                )
-            )
-        return out
+        else:
+            sheet_version, sheet = found
+        version = self.images.next_version(job.unique_id)
+        wording = job.target_band or age_wording(
+            job.age, job.group, job.at_my_club, self.settings.age
+        )
+        kit, kit_known = self.kits.kit_for(job.target_club_id, job.goalkeeper)
+        pose = pick_pose(sheet.base_seed, version)
+        my_club = self.settings.my_club if job.at_my_club else None
+        prompt = build_prompt(sheet, wording, kit, pose, my_club) if wording else None
+        return Preview(
+            job,
+            sheet,
+            wording,
+            kit.describe(),
+            kit_known,
+            pose,
+            prompt,
+            self.reference_scale(job),
+        )
 
     def requeue_stale(self) -> int:
         """Jobs left 'running' by a worker that died go back to the queue, in any career.
@@ -344,8 +347,11 @@ class Worker:
                     n = len(summary.done) + len(summary.failed) + 1
                     total = max(total, n)
                     self.log(f"[{n}/{total}] {job.name} ({job.unique_id}), {job.kind} {job.group}")
+                    upcoming = ready[1:]
+                    if limit is not None:
+                        upcoming = upcoming[: limit - n]
                     try:
-                        outcome = self.run_job(job)
+                        outcome = self.run_job(job, upcoming)
                     except JobGone:
                         tried.discard(job.id)
                         continue
@@ -362,10 +368,12 @@ class Worker:
 
     # -- one job --
 
-    def run_job(self, job: Job) -> JobOutcome:
+    def run_job(self, job: Job, upcoming: Sequence[Job] = ()) -> JobOutcome:
+        """Run one job. `upcoming` are the queued jobs expected next, in order: when this
+        job's prompt is not encoded yet, theirs are encoded in the same trip."""
         job = jobs.claim(self.conn, self.career.id, job)
         try:
-            return self._run_job(job)
+            return self._run_job(job, upcoming)
         except BaseException as exc:
             # Interrupted, out of memory, model failure: the job is redone next time.
             jobs.release(self.conn, job.id, f"interrupted: {type(exc).__name__}: {exc}"[:500])
@@ -374,7 +382,7 @@ class Worker:
     def _group(self, group: str) -> GroupA | GroupB | GroupC:
         return getattr(self.settings.groups, group)
 
-    def _run_job(self, job: Job) -> JobOutcome:
+    def _run_job(self, job: Job, upcoming: Sequence[Job] = ()) -> JobOutcome:
         t0 = self.clock()
         s = self.settings
         group = self._group(job.group)
@@ -390,6 +398,7 @@ class Worker:
             return self._finish_failed(job, version, sheet_version, None, [], t0, "age unknown")
         prompt = build_prompt(sheet, wording, kit, pose, my_club)
         expect = qc.expectation(sheet, kit, my_club)
+        self._pre_encode(prompt, upcoming)
 
         folder = master_dir(self.data_dir, self.career.key, job.unique_id)
         reference, reference_info = None, None
@@ -494,6 +503,32 @@ class Worker:
             f"{reference_note}"
         )
         return JobOutcome(job, "done", image_id, version, self.clock() - t0, message)
+
+    def _pre_encode(self, prompt: Prompt, upcoming: Sequence[Job]) -> None:
+        """Encode this job's prompt and the next jobs' in one trip of the text encoders.
+
+        Only when this job's prompt is not encoded yet: so once per PRE_ENCODE_JOBS jobs, or
+        for a job queued after the last trip. The next jobs' prompts are the ones `preview`
+        shows, which the jobs draw unless something changes first; a prompt that changed is
+        encoded when its job draws it. A renderer without `prepare` encodes as it draws.
+        """
+        renderer = self.renderer
+        prepare = getattr(renderer, "prepare", None)
+        encoded = getattr(renderer, "encoded", None)
+        if prepare is None or encoded is None or encoded(prompt):
+            return
+        prompts = [prompt]
+        for job in upcoming[: PRE_ENCODE_JOBS - 1]:
+            try:
+                p = self._preview(job).prompt
+            except Exception as exc:  # noqa: BLE001 - the job reports it again when it runs
+                self.log(f"  not encoded ahead: {job.name} ({type(exc).__name__}: {exc})")
+                continue
+            if p is not None:
+                prompts.append(p)
+        texts = prepare(prompts)
+        if len(prompts) > 1:
+            self.log(f"  encoded the prompts of the next {len(prompts)} jobs ({texts} texts)")
 
     def _detail(
         self,

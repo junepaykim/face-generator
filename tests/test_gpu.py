@@ -123,8 +123,10 @@ def test_offloaded_models_keep_peak_vram_under_8_gib(
 
     renderer, tagger = gpu
     sheet, kit, _ = case
-    prompt = build_prompt(sheet, "W03", kit, "crossed")  # new prompt: the encoders must load
+    prompt = build_prompt(sheet, "W03", kit, "crossed")  # new prompts: the encoders must load
+    coming = [build_prompt(sheet, w, kit, "crossed") for w in ("W04", "W06", "W09")]
     torch.cuda.reset_peak_memory_stats()
+    assert renderer.prepare([prompt, *coming]) > 0  # the worker's trip for the next jobs
     candidates = [renderer.render(prompt, sheet.base_seed + k) for k in range(3)]
     tagger(candidates)
     reference = Reference("gpu-test-vram", candidates[0].crop(face_box(candidates[0])), 0.1)
@@ -142,3 +144,50 @@ def test_offloaded_models_keep_peak_vram_under_8_gib(
     for model in (pipe.text_encoder, pipe.text_encoder_2, pipe.image_encoder, tagger.model):
         assert next(model.parameters()).device.type == "cpu"
     assert pipe.unet.device.type == "cuda"
+
+
+def test_pre_encoded_prompts_draw_bit_for_bit_what_encoding_per_job_drew(
+    gpu: tuple[Any, Any], case: tuple[Any, Any, Any]
+) -> None:
+    """The prompt cache changes no pixel (user, 2026-11-12). Prompts prepared in one trip,
+    kept in system memory and copied back give the very embeddings the renderer encoded per
+    job before the cache, and the same picture to the byte."""
+    import torch
+    from encoding_reference import encode_pair_before_cache
+
+    from facegen.gpu import on_gpu
+    from facegen.prompt import build_prompt
+    from facegen.renderer import CFG, HEIGHT, STEPS, WIDTH
+
+    renderer, _ = gpu
+    sheet, kit, _ = case
+    # A young and an adult wording: two different negative prompts.
+    prompts = [build_prompt(sheet, w, kit, "crossed") for w in ("W02", "W05", "W08")]
+    renderer.prepare(prompts)
+    assert all(renderer.encoded(p) for p in prompts)
+    pipe = renderer.pipe
+    for prompt in prompts:
+        with torch.no_grad(), on_gpu(pipe.text_encoder, pipe.text_encoder_2):
+            expected = encode_pair_before_cache(pipe, prompt.positive, prompt.negative)
+        got = renderer._embeddings(prompt)
+        assert got[4] == expected[4] >= 2
+        for a, b in zip(got[:4], expected[:4], strict=True):
+            assert a.device == b.device and a.dtype == b.dtype and torch.equal(a, b)
+
+    # The picture, against the pipeline given the per-job encoding directly.
+    seed = sheet.base_seed
+    image = renderer.render(prompts[2], seed)
+    pe, pp, ne, npool, _ = expected
+    with torch.no_grad(), renderer._fp16_accumulation():
+        direct = pipe(
+            prompt_embeds=pe,
+            pooled_prompt_embeds=pp,
+            negative_prompt_embeds=ne,
+            negative_pooled_prompt_embeds=npool,
+            width=WIDTH,
+            height=HEIGHT,
+            num_inference_steps=STEPS,
+            guidance_scale=CFG,
+            generator=torch.Generator("cuda").manual_seed(seed),
+        ).images[0]
+    assert image.tobytes() == direct.tobytes()

@@ -541,3 +541,80 @@ def test_gallery_lists_pictures_and_review(env: Env) -> None:
     assert "Old Hand" in text and "Keeper" in text
     assert "1 current pictures, 1 sent to review" in text
     assert 'src="masters/' not in text  # links are relative to the page
+
+
+# -- the prompts encoded ahead (facegen.prompt_cache) --
+
+EVERY = JobFilter()
+
+
+def test_one_trip_of_the_text_encoders_serves_the_whole_queue(env: Env) -> None:
+    w, r, _ = env.worker()
+    summary = w.run(EVERY, publish=False)
+    assert len(summary.done) == 4
+    # One trip, before the first render: every job's prompt as the job then drew it, in order.
+    # (The fake renderer would have made a trip of its own for any prompt not prepared.)
+    assert len(r.trips) == 1
+    assert r.trips[0] == list(dict.fromkeys(r.prompts))
+
+
+def test_the_trips_follow_the_window_and_the_run_limit(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import facegen.worker as worker_module
+
+    monkeypatch.setattr(worker_module, "PRE_ENCODE_JOBS", 3)
+    w, r, _ = env.worker()
+    w.run(EVERY, limit=1, publish=False)
+    assert [len(trip) for trip in r.trips] == [1]  # nothing beyond the limit
+    w.run(EVERY, publish=False)
+    assert [len(trip) for trip in r.trips] == [1, 3]  # the other three in one window
+    assert len(set(r.prompts)) == 4
+
+
+def test_a_single_job_encodes_its_own_prompt_when_it_draws(env: Env) -> None:
+    w, r, _ = env.worker()
+    first, second, *_ = w.runnable(EVERY)
+    w.run_job(first)  # no queue given: the single-job path
+    assert r.trips == [[r.prompts[0]]]
+    w.run_job(second, w.runnable(EVERY)[1:])
+    assert len(r.trips) == 2 and r.trips[1][0] == r.prompts[-1]
+
+
+def test_a_job_queued_after_the_trip_gets_a_trip_of_its_own(env: Env) -> None:
+    from facegen import manual
+
+    w, r, _ = env.worker()
+    first, *rest = w.runnable(MINE)
+    w.run_job(first, rest)
+    assert [len(trip) for trip in r.trips] == [2]
+    manual.new_face(env.conn, w.career.id, first.unique_id, env.settings)  # queued now
+    w.run(MINE, publish=False)
+    assert len(r.trips) == 2
+    # The new face, encoded when its job came up: first in this run, as a manual request.
+    assert r.trips[1][0] == r.prompts[3]
+
+
+def test_a_job_that_cannot_be_previewed_does_not_stop_the_one_running(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    w, r, _ = env.worker()
+    first, second, third, _ = w.runnable(EVERY)
+    preview = w._preview
+
+    def broken(job: object) -> object:
+        if job is second:
+            raise KeyError("W99")
+        return preview(job)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(w, "_preview", broken)
+    assert w.run_job(first, [second, third]).status == "done"
+    assert len(r.trips) == 1 and len(r.trips[0]) == 2  # this job's prompt and the third's
+
+
+def test_the_renderers_cache_holds_a_whole_window_of_prompts() -> None:
+    from facegen.renderer import TEXT_CACHE_SIZE
+    from facegen.worker import PRE_ENCODE_JOBS
+
+    # A positive and a negative text per job, and the empty text that pads them.
+    assert 2 * PRE_ENCODE_JOBS + 1 <= TEXT_CACHE_SIZE

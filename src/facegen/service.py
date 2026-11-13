@@ -338,7 +338,7 @@ class WorkerService:
         self._set("running", f"{job.name}: {job.kind} {job.group.upper()}", job)
         self.log(f"{job.name} ({job.unique_id}), {job.kind} {job.group.upper()}")
         try:
-            outcome = worker.run_job(job)
+            outcome = worker.run_job(job, ready[1:])
         except JobGone:
             return 0.0  # cancelled or changed meanwhile (a settings change); look again
         except Exception as exc:  # noqa: BLE001 - model load, out of memory: pause and report
