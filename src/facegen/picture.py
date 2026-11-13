@@ -9,7 +9,8 @@ Pictures drawn before the change are square. They are not re-drawn automatically
 published they are cropped to 3:4 around their centre, which keeps the face.
 
 `face_box` finds the head for the reference picture of a re-draw (spec section 5), with the
-background-difference heuristic of bake-off run r4 (docs/research.md section 5).
+background-difference heuristic of bake-off run r4 (docs/research.md section 5), following a
+gradient or two-tone backdrop down the picture (figure.py).
 """
 
 from __future__ import annotations
@@ -69,19 +70,19 @@ _NO_FIGURE_TOP = 0.05  # where the crop starts when no figure is found
 
 
 def face_box(image: Image) -> Box:
-    """A square around the head, found against the plain studio backdrop.
+    """A square around the head, found against the studio backdrop.
 
-    The backdrop colour is the median of the two top corners. The top of the head is the
-    first row with enough pixels away from it; the square starts a little above that and
-    is centred across on the foreground in the band below. Crude, but every picture shares
-    the same media-day framing. With no figure found it falls back to the top centre.
-    The scan is figure.py's.
+    The backdrop is followed down from the two top corners, row by row (a plain, gradient
+    or two-tone backdrop). The top of the head is the first row with enough pixels away
+    from it; the square starts a little above that and is centred across on the foreground
+    in the band below. Crude, but every picture shares the same media-day framing. With no
+    figure found it falls back to the top centre. The scan is figure.py's.
     """
     width, height = image.size
     gw = _GRID
     gh = max(1, round(_GRID * height / width))
     grid = figure.grid(image, gw, gh)
-    bg = grid.backdrop(max(1, round(_CORNER * gw)))
+    bg = grid.edges(max(1, round(_CORNER * gw)), _DIFF)
     first = grid.first_row(bg, _DIFF, max(1, int(_ROW_SHARE * gw)))
 
     side = min(round(FACE_SHARE * height), width, height)

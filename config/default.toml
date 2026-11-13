@@ -75,8 +75,9 @@ detail_pass = false
 [staff]
 # My club's staff (coaches, physios, scouts, analysts, the board, and the manager: you) get
 # pictures like the players at my club: group A quality, tracked while at my club, re-drawn
-# when their age wording changes. They wear a track jacket in the club's colours rather than
-# the playing kit, and their age wording comes from [age.staff]. Staff at other clubs are not
+# when their age wording changes. They wear club wear for their job (src/facegen/wardrobe.py:
+# suits, coats, training wear, lab coats) with the club's colours on one piece, not the
+# playing kit, and their age wording comes from [age.staff]. Staff at other clubs are not
 # read. Pin a person to "never" on their page to leave them out. Requested by the user,
 # 2026-11-12 (docs/spec.md section 2).
 enabled = true

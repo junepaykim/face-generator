@@ -47,10 +47,43 @@ VERDICTS: dict[str, TagResult] = {
 }
 
 
-def figure(width: int = 56, height: int = 72, top: float = 0.04) -> Image.Image:
-    """A head and shoulders on the grey backdrop. The default is the model's 7:9 portrait
-    render (896x1152) at a small size; the worker crops it to 3:4."""
-    img = Image.new("RGB", (width, height), (200, 200, 205))
+BACKDROPS = ("grey", "vertical", "horizontal", "split", "diagonal")
+"""The backdrops `figure` can draw: the plain grey studio backdrop; a gradient top to bottom
+or left to right; two tones split down the middle or along a diagonal (shoot.py)."""
+
+
+def backdrop(width: int, height: int, kind: str = "grey") -> Image.Image:
+    """A backdrop with no figure: one of BACKDROPS."""
+    if kind == "grey":
+        return Image.new("RGB", (width, height), (200, 200, 205))
+    img = Image.new("RGB", (width, height))
+    a, b = (150, 190, 240), (20, 60, 150)  # light blue to navy
+    for y in range(height):
+        for x in range(width):
+            match kind:
+                case "vertical":
+                    t = y / max(1, height - 1)
+                case "horizontal":
+                    t = x / max(1, width - 1)
+                case "split":
+                    t = 0.0 if x < width / 2 else 1.0
+                case "diagonal":
+                    t = 0.0 if x / width + y / height < 0.9 else 1.0
+                case _:
+                    raise ValueError(kind)
+            if kind in ("split", "diagonal"):
+                colour = (200, 200, 205) if t == 0 else (235, 200, 60)  # grey and yellow
+            else:
+                colour = tuple(round(p + (q - p) * t) for p, q in zip(a, b, strict=True))
+            img.putpixel((x, y), colour)
+    return img
+
+
+def figure(width: int = 56, height: int = 72, top: float = 0.04, kind: str = "grey") -> Image.Image:
+    """A head and shoulders on a backdrop (BACKDROPS; the grey studio backdrop by default).
+    The default size is the model's 7:9 portrait render (896x1152) at a small size; the
+    worker crops it to 3:4."""
+    img = backdrop(width, height, kind)
     draw = ImageDraw.Draw(img)
     y = int(top * height)
     head = 0.24 * width

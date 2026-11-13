@@ -9,6 +9,10 @@ nothing of it is published.
 Pictures are 3:4 portraits (picture.py): the model renders at its portrait size near 3:4
 and the master is cropped to exactly 3:4.
 
+A player's picture is a shoot (shoot.py): the kit in one of its looks, a pose of arms and
+angle, and a backdrop, with the season from the career's in-game date. My club's staff are
+dressed by wardrobe.py, with a pose from traits.POSE on the grey backdrop.
+
 The model and the tagger sit behind the small `Renderer` and `Tagger` interfaces; the
 runner itself needs neither a GPU nor a save, so the tests drive it with fakes.
 
@@ -38,11 +42,11 @@ from facegen.db import transaction
 from facegen.domain import FinishedStatus
 from facegen.image_store import ImageStore, master_dir
 from facegen.jobs import Career, Job, JobFilter, JobGone, load_career, queued_jobs
-from facegen.kits import KitTable
+from facegen.kits import Kit, KitSource, KitTable
 from facegen.locking import LockBusy, file_lock
 from facegen.picture import crop_to_aspect, face_box
 from facegen.planner import reference_scale
-from facegen.prompt import Prompt, build_prompt
+from facegen.prompt import Prompt, Wear, build_prompt
 from facegen.publish import PublishReport, publish_pack
 from facegen.renderer import (
     HEIGHT,
@@ -54,7 +58,8 @@ from facegen.renderer import (
     Renderer,
     Tagger,
 )
-from facegen.settings import GroupA, GroupB, GroupC, Settings
+from facegen.settings import GroupA, GroupB, GroupC, MyClubSettings, Settings
+from facegen.shoot import DEFAULT_BACKDROP, Backdrop, Pose, Shoot, shoot_for
 from facegen.traits import (
     CharacterSheet,
     load_sheet,
@@ -64,6 +69,7 @@ from facegen.traits import (
     sample_sheet,
     select_sheet,
 )
+from facegen.wardrobe import Outfit, outfit_for
 
 MAX_ATTEMPTS = 3
 PRE_ENCODE_JOBS = 32
@@ -163,12 +169,32 @@ class JobOutcome:
 
 
 @dataclass(frozen=True, slots=True)
+class Setup:
+    """What one picture shows besides the character sheet: clothes, pose and backdrop."""
+
+    wear: Wear
+    pose: str | Pose
+    backdrop: Backdrop
+    kit_source: KitSource
+    """Where the kit's colours came from: config/kits.toml, the kit catalog or the fallback."""
+    shoot: Shoot | None = None
+    """A player's shoot; None for staff."""
+
+    def pose_text(self) -> str:
+        return self.pose.describe() if isinstance(self.pose, Pose) else self.pose
+
+    def describe(self) -> str:
+        """Clothes, pose and backdrop in a few words, for logs and previews."""
+        return f"{self.wear.describe()}, {self.pose_text()}, {self.backdrop.describe()} backdrop"
+
+
+@dataclass(frozen=True, slots=True)
 class Preview:
     job: Job
     sheet: CharacterSheet
     wording: str | None
     kit: str
-    kit_known: bool
+    kit_source: KitSource
     pose: str
     prompt: Prompt | None
     reference_scale: float | None = None
@@ -287,17 +313,16 @@ class Worker:
         wording = job.target_band or age_wording(
             job.age, job.group, job.at_my_club, self.settings.age, job.staff
         )
-        kit, kit_known = self.kits.kit_for(job.target_club_id, job.goalkeeper, staff=job.staff)
-        pose = pick_pose(sheet.base_seed, version)
+        setup = self._setup(job, sheet, version)
         my_club = self.settings.my_club if job.at_my_club else None
-        prompt = build_prompt(sheet, wording, kit, pose, my_club) if wording else None
+        prompt = self._prompt(sheet, wording, setup, my_club) if wording else None
         return Preview(
             job,
             sheet,
             wording,
-            kit.describe(),
-            kit_known,
-            pose,
+            setup.wear.describe(),
+            setup.kit_source,
+            f"{setup.pose_text()}, {setup.backdrop.describe()} backdrop",
             prompt,
             self.reference_scale(job),
         )
@@ -393,13 +418,13 @@ class Worker:
         wording = job.target_band or age_wording(
             job.age, job.group, job.at_my_club, s.age, job.staff
         )
-        kit, kit_known = self.kits.kit_for(job.target_club_id, job.goalkeeper, staff=job.staff)
-        pose = pick_pose(sheet.base_seed, version)
+        setup = self._setup(job, sheet, version)
+        wear = setup.wear
         my_club = s.my_club if job.at_my_club else None
         if wording is None:
             return self._finish_failed(job, version, sheet_version, None, [], t0, "age unknown")
-        prompt = build_prompt(sheet, wording, kit, pose, my_club)
-        expect = qc.expectation(sheet, kit, my_club)
+        prompt = self._prompt(sheet, wording, setup, my_club)
+        expect = qc.expectation(sheet, wear, my_club)
         self._pre_encode(prompt, upcoming)
 
         folder = master_dir(self.data_dir, self.career.key, job.unique_id)
@@ -432,11 +457,15 @@ class Worker:
 
         context = {
             "wording": wording,
-            "pose": pose,
-            "kit": kit.describe(),
-            "kit_known": kit_known,
+            "pose": setup.pose_text(),
+            "kit": wear.describe(),
+            "kit_known": setup.kit_source != "fallback",
+            "kit_source": setup.kit_source,
+            "backdrop": setup.backdrop.describe(),
+            "shoot": setup.shoot.context() if setup.shoot else None,
             "goalkeeper": job.goalkeeper,
             "staff": job.staff,
+            "outfit": wear.look if isinstance(wear, Outfit) else None,
             "my_club": job.at_my_club,
             "sheet_version": sheet_version,
             "reference": reference_info,
@@ -501,11 +530,42 @@ class Worker:
                 else f", no reference ({reference_info['why']})"
             )
         message = (
-            f"v{version} {wording}, {kit.describe()}, {pose}: {passed}/{len(candidates)} passed, "
+            f"v{version} {wording}, {setup.describe()}: {passed}/{len(candidates)} passed, "
             f"chose seed {winner.seed} (score {winner.result.score:.2f}){detail_note}"
             f"{reference_note}"
         )
         return JobOutcome(job, "done", image_id, version, self.clock() - t0, message)
+
+    def _setup(self, job: Job, sheet: CharacterSheet, version: int) -> Setup:
+        """A player's shoot (shoot.py), or for my club's staff an outfit in the home colours
+        (wardrobe.py) with a pose from the old library on the grey backdrop."""
+        if job.staff:
+            home, source = self.kits.kit_for(job.target_club_id, False)
+            outfit = outfit_for(home, job.staff_job, job.age, sheet.base_seed, version)
+            pose = pick_pose(sheet.base_seed, version)
+            return Setup(outfit, pose, DEFAULT_BACKDROP, source)
+        kit, source = self.kits.kit_for(job.target_club_id, job.goalkeeper)
+        home: Kit = kit
+        if job.goalkeeper:
+            home, _ = self.kits.kit_for(job.target_club_id, False)
+        shoot = shoot_for(
+            kit,
+            sheet.hair_colour,
+            sheet.base_seed,
+            version,
+            home=home,
+            age=job.age,
+            game_date=self.career.game_date,
+        )
+        return Setup(shoot.wear, shoot.pose, shoot.backdrop, source, shoot)
+
+    @staticmethod
+    def _prompt(
+        sheet: CharacterSheet, wording: str, setup: Setup, my_club: MyClubSettings | None
+    ) -> Prompt:
+        return build_prompt(
+            sheet, wording, setup.wear, setup.pose, my_club, backdrop=setup.backdrop
+        )
 
     def _pre_encode(self, prompt: Prompt, upcoming: Sequence[Job]) -> None:
         """Encode this job's prompt and the next jobs' in one trip of the text encoders.

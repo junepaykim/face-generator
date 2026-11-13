@@ -12,8 +12,9 @@ A picture passes only if all of these hold:
   check until a face detector is approved; decisions.md).
 
 Kit pattern and logos are not checked (user, 2026-11-10). Group A's candidates that pass
-are ranked by `score`: p(general), plus the tagger's mean confidence in the traits and shirt
-colours the prompt asked for, plus 1 - p(cowboy shot), which prefers the tighter framing.
+are ranked by `score`: p(general), plus the tagger's mean confidence in the traits, the kit's
+colours and a player's look and extra (for staff, the outfit's look, colour and prop) the
+prompt asked for, plus 1 - p(cowboy shot), which prefers the tighter framing.
 
 The checks are pure functions of tagger output and the picture. The tagger itself runs on
 the GPU and is loaded only by `Eva02Tagger`.
@@ -34,7 +35,7 @@ from facegen.traits import EYE_COLOUR, HAIR_COLOUR, TRAIT_TABLES, CharacterSheet
 if TYPE_CHECKING:
     from PIL.Image import Image
 
-    from facegen.kits import Kit
+    from facegen.prompt import Wear
     from facegen.settings import MyClubSettings
 
 TAG_THRESHOLD = 0.35
@@ -88,15 +89,16 @@ class Expectation:
 
 
 def expectation(
-    sheet: CharacterSheet, kit: Kit, my_club: MyClubSettings | None = None
+    sheet: CharacterSheet, wear: Wear, my_club: MyClubSettings | None = None
 ) -> Expectation:
+    """What the tagger should see: the sheet's hair and eyes, and, for ranking only, the
+    traits drawn and the kit's colours and look, or the staff outfit's look, colour and prop."""
     rank: dict[str, frozenset[str]] = {}
     for name, value in drawn_traits(sheet, my_club).items():
         tags = TRAIT_TABLES[name][value].tags
         if tags:
             rank[name] = tags
-    for i, group in enumerate(kit.shirt_tag_groups(), 1):
-        rank[f"shirt colour {i}"] = group
+    rank.update(wear.rank_tags())
     return Expectation(
         hair=HAIR_COLOUR[sheet.hair_colour].tags,
         eyes=EYE_COLOUR[sheet.eye_colour].tags,
@@ -190,13 +192,15 @@ _ROW_SHARE = 0.02  # a row with more foreground than this starts the figure
 def head_top(image: Image) -> float | None:
     """Where the figure starts, as a fraction of the height, or None if no figure is found.
 
-    The backdrop colour is the median of the two top corners; the first row with enough
-    pixels away from it is the top of the head (the heuristic of the reference test,
-    docs/research.md run r4). A busy background gives 0 here, so the check fails open and
-    the tagger's checks still apply. The scan is figure.py's.
+    The backdrop is followed down from the two top corners, row by row, so a gradient or
+    two-tone backdrop is backdrop too; the first row with enough pixels away from it is the
+    top of the head (the heuristic of the reference test, docs/research.md run r4). A busy
+    background gives 0 here, so the check fails open and the tagger's checks still apply.
+    The scan is figure.py's.
     """
     g = figure.grid(image, _GRID, _GRID)
-    first = g.first_row(g.backdrop(_CORNER), _DIFF, max(1, int(_ROW_SHARE * _GRID)))
+    edges = g.edges(_CORNER, _DIFF)
+    first = g.first_row(edges, _DIFF, max(1, int(_ROW_SHARE * _GRID)))
     return None if first is None else first / _GRID
 
 

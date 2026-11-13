@@ -1,9 +1,20 @@
-"""Finding the figure against the plain studio backdrop. Pure.
+"""Finding the figure against the studio backdrop. Pure.
 
 `qc.head_top` and `picture.face_box` both look at a small copy of the picture (the heuristic
-of bake-off run r4, docs/research.md section 5). The backdrop colour is the per-channel
-median of the two top corners; a pixel whose summed RGB difference from it is over `diff`
-is foreground.
+of bake-off run r4, docs/research.md section 5), extended for the gradient and two-tone
+backdrops of shoot.py (2026-11-12):
+
+- The backdrop is followed down the picture, row by row, at each side (`edges`). It starts
+  as the per-channel median of the top `corner` x `corner` square on that side. In each
+  row, the median of that side's outer `corner` pixels replaces it if it is within `diff`
+  of it: a gradient is followed a row at a time, while hair or an arm reaching the edge
+  (a jump) is not taken for backdrop.
+- A pixel is backdrop if its summed RGB difference from the row's left colour, its right
+  colour, or the colour between them at its place across (a sideways gradient) is at most
+  `diff`; otherwise it is foreground. Two tones split down the picture are both backdrop.
+
+On a plain backdrop every row's colours are the corners' colour, so this finds what the
+scan of the two top corners found before (docs/research.md).
 
 When the extension is built (native.py), Rust makes the small copy and scans it; otherwise
 Pillow makes it and Python scans it. Both give the same answers (tests/test_native.py).
@@ -11,6 +22,7 @@ Pillow makes it and Python scans it. Both give the same answers (tests/test_nati
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Protocol
 
 from facegen import native
@@ -19,6 +31,8 @@ if TYPE_CHECKING:
     from PIL.Image import Image
 
 type Rgb = tuple[int, int, int]
+type Edge = tuple[Rgb, Rgb]
+"""The backdrop's colour at the left and the right end of one row."""
 
 
 class Grid(Protocol):
@@ -29,9 +43,19 @@ class Grid(Protocol):
     @property
     def height(self) -> int: ...
     def tobytes(self) -> bytes: ...
-    def backdrop(self, corner: int) -> Rgb: ...
-    def first_row(self, backdrop: Rgb, diff: int, need: int) -> int | None: ...
-    def column_weights(self, backdrop: Rgb, diff: int, y0: int, y1: int) -> list[int]: ...
+    def edges(self, corner: int, diff: int) -> list[Edge]: ...
+    def first_row(self, edges: Sequence[Edge], diff: int, need: int) -> int | None: ...
+    def column_weights(self, edges: Sequence[Edge], diff: int, y0: int, y1: int) -> list[int]: ...
+
+
+def _distance(a: Rgb, b: Rgb) -> int:
+    return abs(a[0] - b[0]) + abs(a[1] - b[1]) + abs(a[2] - b[2])
+
+
+def _median(found: list[Rgb]) -> Rgb:
+    """Per channel, `sorted(values)[len // 2]`: the upper median for an even count."""
+    r, g, b = (sorted(p[i] for p in found)[len(found) // 2] for i in range(3))
+    return r, g, b
 
 
 class PyGrid:
@@ -52,32 +76,57 @@ class PyGrid:
         p = self.pixels
         return p[i], p[i + 1], p[i + 2]
 
-    def _foreground(self, x: int, y: int, bg: Rgb, diff: int) -> bool:
-        r, g, b = self._pixel(x, y)
-        return abs(r - bg[0]) + abs(g - bg[1]) + abs(b - bg[2]) > diff
+    def _foreground(self, x: int, y: int, edge: Edge, diff: int) -> bool:
+        p = self._pixel(x, y)
+        left, right = edge
+        if _distance(p, left) <= diff or _distance(p, right) <= diff:
+            return False
+        span = self.width - 1
+        if span == 0:
+            return True
+        between = (
+            (left[0] * (span - x) + right[0] * x) // span,
+            (left[1] * (span - x) + right[1] * x) // span,
+            (left[2] * (span - x) + right[2] * x) // span,
+        )
+        return _distance(p, between) > diff
 
-    def backdrop(self, corner: int) -> Rgb:
-        """The per-channel median of the two top `corner` x `corner` squares."""
+    def _check(self, edges: Sequence[Edge]) -> None:
+        if len(edges) != self.height:
+            raise ValueError(f"{len(edges)} edges for the grid's {self.height} rows")
+
+    def edges(self, corner: int, diff: int) -> list[Edge]:
+        """The backdrop's colour at both ends of each row, followed down from the top
+        corners while it changes by at most `diff` from one row to the next."""
         if not 0 < corner <= min(self.width, self.height):
             raise ValueError(f"corner {corner} does not fit a {self.width}x{self.height} grid")
-        xs = (*range(corner), *range(self.width - corner, self.width))
-        found = [self._pixel(x, y) for y in range(corner) for x in xs]
-        r, g, b = (sorted(p[i] for p in found)[len(found) // 2] for i in range(3))
-        return r, g, b
-
-    def first_row(self, backdrop: Rgb, diff: int, need: int) -> int | None:
-        """The first row with more than `need` foreground pixels."""
+        sides = (range(corner), range(self.width - corner, self.width))
+        current = [_median([self._pixel(x, y) for y in range(corner) for x in xs]) for xs in sides]
+        out: list[Edge] = []
         for y in range(self.height):
-            if sum(self._foreground(x, y, backdrop, diff) for x in range(self.width)) > need:
+            for side, xs in enumerate(sides):
+                row = _median([self._pixel(x, y) for x in xs])
+                if _distance(row, current[side]) <= diff:
+                    current[side] = row
+            out.append((current[0], current[1]))
+        return out
+
+    def first_row(self, edges: Sequence[Edge], diff: int, need: int) -> int | None:
+        """The first row with more than `need` foreground pixels."""
+        self._check(edges)
+        for y in range(self.height):
+            edge = edges[y]
+            if sum(self._foreground(x, y, edge, diff) for x in range(self.width)) > need:
                 return y
         return None
 
-    def column_weights(self, backdrop: Rgb, diff: int, y0: int, y1: int) -> list[int]:
+    def column_weights(self, edges: Sequence[Edge], diff: int, y0: int, y1: int) -> list[int]:
         """Foreground pixels in each column, counted over rows y0..y1."""
+        self._check(edges)
         if y1 > self.height:
             raise ValueError(f"row {y1} is past the grid's {self.height} rows")
         return [
-            sum(self._foreground(x, y, backdrop, diff) for y in range(y0, y1))
+            sum(self._foreground(x, y, edges[y], diff) for y in range(y0, y1))
             for x in range(self.width)
         ]
 

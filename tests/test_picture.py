@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from fakes import figure
+from fakes import BACKDROPS, figure
 from PIL import Image
 
 from facegen.picture import aspect_box, crop_to_aspect, face_box, published_size
@@ -66,3 +66,12 @@ def test_face_box_without_a_figure_takes_the_top_centre() -> None:
     left, top, right, bottom = face_box(blank)
     assert (right - left, bottom - top) == (144, 144)
     assert top == 20 and left == 78
+
+
+@pytest.mark.parametrize("kind", BACKDROPS)
+def test_face_box_on_every_backdrop(kind: str) -> None:
+    """Gradients and two tones (shoot.py) are followed as backdrop, not taken for the head."""
+    img = figure(448, 576, top=0.08, kind=kind)
+    left, top, right, _ = face_box(img)
+    assert top <= 0.08 * 576 <= top + 0.1 * 576
+    assert abs((left + right) / 2 - 224) <= 0.05 * 448

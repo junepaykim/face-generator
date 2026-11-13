@@ -43,7 +43,7 @@ from typing import Any
 
 from facegen import db
 from facegen.datasource.base import DataSource
-from facegen.kits import KitTable, load_kits
+from facegen.kits import KitTable, catalog_path, load_kits
 from facegen.poller import (
     UNSUPPORTED_ADVICE,
     NoSaveError,
@@ -268,7 +268,7 @@ class WorkerService:
             self._worker = Worker(
                 conn,
                 settings,
-                self._kits or load_kits(),
+                self._kits or load_kits(catalog=catalog_path(settings.paths.data_dir)),
                 career,
                 renderer_factory=self._renderer_factory,
                 tagger_factory=self._tagger_factory,

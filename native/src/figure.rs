@@ -2,8 +2,14 @@
 //!
 //! A [`Grid`] is a small RGB copy of a picture. `Grid.scaled` makes it from the full picture
 //! with a bit-exact port of Pillow's resize (resample.rs), so the Rust and Python scans see
-//! the same pixels. The backdrop colour is the per-channel median of the two top corners;
-//! a pixel whose summed RGB difference from it is over `diff` is foreground.
+//! the same pixels.
+//!
+//! The backdrop is followed down the picture at each side ([`Grid::edges_of`]): it starts as
+//! the per-channel median of the top `corner` x `corner` square on that side, and in each row
+//! the median of that side's outer `corner` pixels replaces it if within `diff` of it, so a
+//! gradient is followed and hair or an arm reaching the edge is not. A pixel is backdrop if
+//! its summed RGB difference from the row's left colour, right colour, or the colour between
+//! them at its place across is at most `diff`; otherwise it is foreground.
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -20,6 +26,13 @@ fn wrong_size(pixels: &[u8], width: usize, height: usize) -> PyErr {
 
 /// An RGB colour.
 pub type Rgb = (u8, u8, u8);
+
+/// The backdrop's colour at the left and the right end of one row.
+pub type Edge = (Rgb, Rgb);
+
+fn distance(a: Rgb, b: Rgb) -> u32 {
+    a.0.abs_diff(b.0) as u32 + a.1.abs_diff(b.1) as u32 + a.2.abs_diff(b.2) as u32
+}
 
 /// A small RGB picture, row by row, three bytes a pixel.
 #[pyclass(frozen, module = "facegen_native")]
@@ -47,57 +60,104 @@ impl Grid {
         (self.pixels[i], self.pixels[i + 1], self.pixels[i + 2])
     }
 
-    fn is_foreground(&self, x: usize, y: usize, bg: Rgb, diff: u32) -> bool {
-        let (r, g, b) = self.pixel(x, y);
-        let d = r.abs_diff(bg.0) as u32 + g.abs_diff(bg.1) as u32 + b.abs_diff(bg.2) as u32;
-        d > diff
+    fn is_foreground(&self, x: usize, y: usize, edge: Edge, diff: u32) -> bool {
+        let p = self.pixel(x, y);
+        let (left, right) = edge;
+        if distance(p, left) <= diff || distance(p, right) <= diff {
+            return false;
+        }
+        let span = (self.width - 1) as u32;
+        if span == 0 {
+            return true;
+        }
+        let x = x as u32;
+        // The colour between the two ends at x, as Python's `(l * (span - x) + r * x) // span`.
+        let mix = |l: u8, r: u8| ((l as u32 * (span - x) + r as u32 * x) / span) as u8;
+        let between = (
+            mix(left.0, right.0),
+            mix(left.1, right.1),
+            mix(left.2, right.2),
+        );
+        distance(p, between) > diff
     }
 
-    /// The backdrop colour, or None if the corner does not fit in the grid.
-    pub fn backdrop_of(&self, corner: usize) -> Option<Rgb> {
-        if corner == 0 || corner > self.width || corner > self.height {
-            return None;
-        }
-        // The same pixels, in the same order, as the Python version: rows 0..corner, and in
-        // each the left `corner` columns and then the right `corner` columns.
-        let xs: Vec<usize> = (0..corner).chain(self.width - corner..self.width).collect();
+    /// The per-channel median of the pixels at `xs` in rows `ys`: Python's
+    /// `sorted(values)[len(values) // 2]`, the upper median for an even count.
+    fn median_of(&self, xs: &[usize], ys: std::ops::Range<usize>) -> Rgb {
         let mut channels: [Vec<u8>; 3] = Default::default();
-        for y in 0..corner {
-            for &x in &xs {
+        for y in ys {
+            for &x in xs {
                 let (r, g, b) = self.pixel(x, y);
                 channels[0].push(r);
                 channels[1].push(g);
                 channels[2].push(b);
             }
         }
-        // Python's `sorted(values)[len(values) // 2]`: the upper median for an even count.
         let median = |values: &mut Vec<u8>| {
             values.sort_unstable();
             values[values.len() / 2]
         };
         let [r, g, b] = &mut channels;
-        Some((median(r), median(g), median(b)))
+        (median(r), median(g), median(b))
+    }
+
+    /// The backdrop at both ends of each row, followed down from the top corners while it
+    /// changes by at most `diff` from one row to the next; None if the corner does not fit.
+    pub fn edges_of(&self, corner: usize, diff: u32) -> Option<Vec<Edge>> {
+        if corner == 0 || corner > self.width || corner > self.height {
+            return None;
+        }
+        let sides: [Vec<usize>; 2] = [
+            (0..corner).collect(),
+            (self.width - corner..self.width).collect(),
+        ];
+        let mut current = [
+            self.median_of(&sides[0], 0..corner),
+            self.median_of(&sides[1], 0..corner),
+        ];
+        let mut out = Vec::with_capacity(self.height);
+        for y in 0..self.height {
+            for (side, xs) in sides.iter().enumerate() {
+                let row = self.median_of(xs, y..y + 1);
+                if distance(row, current[side]) <= diff {
+                    current[side] = row;
+                }
+            }
+            out.push((current[0], current[1]));
+        }
+        Some(out)
     }
 
     /// The first row with more than `need` foreground pixels.
-    pub fn first_row_of(&self, bg: Rgb, diff: u32, need: usize) -> Option<usize> {
+    pub fn first_row_of(&self, edges: &[Edge], diff: u32, need: usize) -> Option<usize> {
         (0..self.height).find(|&y| {
             (0..self.width)
-                .filter(|&x| self.is_foreground(x, y, bg, diff))
+                .filter(|&x| self.is_foreground(x, y, edges[y], diff))
                 .count()
                 > need
         })
     }
 
     /// Foreground pixels in each column, counted over rows y0..y1.
-    pub fn column_weights_of(&self, bg: Rgb, diff: u32, y0: usize, y1: usize) -> Vec<usize> {
+    pub fn column_weights_of(&self, edges: &[Edge], diff: u32, y0: usize, y1: usize) -> Vec<usize> {
         (0..self.width)
             .map(|x| {
                 (y0..y1)
-                    .filter(|&y| self.is_foreground(x, y, bg, diff))
+                    .filter(|&y| self.is_foreground(x, y, edges[y], diff))
                     .count()
             })
             .collect()
+    }
+
+    fn check_edges(&self, edges: &[Edge]) -> PyResult<()> {
+        if edges.len() != self.height {
+            return Err(PyValueError::new_err(format!(
+                "{} edges for the grid's {} rows",
+                edges.len(),
+                self.height
+            )));
+        }
+        Ok(())
     }
 }
 
@@ -141,9 +201,10 @@ impl Grid {
         PyBytes::new(py, &self.pixels)
     }
 
-    /// The backdrop colour: the per-channel median of the two top `corner` x `corner` squares.
-    fn backdrop(&self, corner: usize) -> PyResult<Rgb> {
-        self.backdrop_of(corner).ok_or_else(|| {
+    /// The backdrop's colour at both ends of each row, followed down from the top
+    /// `corner` x `corner` squares while it changes by at most `diff` a row.
+    fn edges(&self, corner: usize, diff: u32) -> PyResult<Vec<Edge>> {
+        self.edges_of(corner, diff).ok_or_else(|| {
             PyValueError::new_err(format!(
                 "corner {corner} does not fit a {}x{} grid",
                 self.width, self.height
@@ -152,25 +213,27 @@ impl Grid {
     }
 
     /// The first row with more than `need` foreground pixels, or None.
-    fn first_row(&self, backdrop: Rgb, diff: u32, need: usize) -> Option<usize> {
-        self.first_row_of(backdrop, diff, need)
+    fn first_row(&self, edges: Vec<Edge>, diff: u32, need: usize) -> PyResult<Option<usize>> {
+        self.check_edges(&edges)?;
+        Ok(self.first_row_of(&edges, diff, need))
     }
 
     /// Foreground pixels in each column, counted over rows y0..y1 (empty if y0 >= y1).
     fn column_weights(
         &self,
-        backdrop: Rgb,
+        edges: Vec<Edge>,
         diff: u32,
         y0: usize,
         y1: usize,
     ) -> PyResult<Vec<usize>> {
+        self.check_edges(&edges)?;
         if y1 > self.height {
             return Err(PyValueError::new_err(format!(
                 "row {y1} is past the grid's {} rows",
                 self.height
             )));
         }
-        Ok(self.column_weights_of(backdrop, diff, y0, y1))
+        Ok(self.column_weights_of(&edges, diff, y0, y1))
     }
 
     fn __repr__(&self) -> String {
@@ -207,31 +270,67 @@ mod tests {
         assert!(Grid::from_rgb(vec![0; 10], 2, 2).is_none());
     }
 
-    #[test]
-    fn backdrop_is_the_corner_colour() {
-        assert_eq!(sample().backdrop_of(2), Some(BG));
-        assert_eq!(sample().backdrop_of(0), None);
-        assert_eq!(sample().backdrop_of(9), None);
+    /// Every row's edges are the backdrop.
+    fn plain(height: usize) -> Vec<Edge> {
+        vec![(BG, BG); height]
     }
 
     #[test]
-    fn backdrop_takes_the_upper_median() {
-        // Two pixels: Python's sorted([10, 30])[1] is 30.
-        let grid = Grid::from_rgb(vec![10, 10, 10, 30, 30, 30], 2, 1).unwrap();
-        assert_eq!(grid.backdrop_of(1), Some((30, 30, 30)));
+    fn edges_are_the_corner_colour_on_a_plain_backdrop() {
+        assert_eq!(sample().edges_of(2, 60), Some(plain(8)));
+        assert_eq!(sample().edges_of(0, 60), None);
+        assert_eq!(sample().edges_of(9, 60), None);
+    }
+
+    #[test]
+    fn edges_take_the_upper_median() {
+        // Rows of 10, 30, 0, 0 with a corner of 2: each left strip is [10, 30], and Python's
+        // sorted([10, 30])[1] is 30.
+        let row = [10u8, 30, 0, 0];
+        let pixels: Vec<u8> = row.iter().chain(row.iter()).flat_map(|&v| [v; 3]).collect();
+        let grid = Grid::from_rgb(pixels, 4, 2).unwrap();
+        assert_eq!(
+            grid.edges_of(2, 60),
+            Some(vec![((30, 30, 30), (0, 0, 0)); 2])
+        );
+    }
+
+    #[test]
+    fn edges_follow_a_gradient_but_not_a_jump() {
+        // One column: grey getting darker by 10 a row, then a jump of 120 at row 4.
+        let shades = [200u8, 190, 180, 170, 50, 50];
+        let pixels: Vec<u8> = shades.iter().flat_map(|&v| [v, v, v]).collect();
+        let grid = Grid::from_rgb(pixels, 1, 6).unwrap();
+        let left: Vec<u8> = grid
+            .edges_of(1, 60)
+            .unwrap()
+            .iter()
+            .map(|e| e.0.0)
+            .collect();
+        assert_eq!(left, vec![200, 190, 180, 170, 170, 170]);
+    }
+
+    #[test]
+    fn a_sideways_gradient_is_backdrop() {
+        // One row from black to white, 0 to 252 in steps of 28; the middle is far from both
+        // ends but on the line between them.
+        let pixels: Vec<u8> = (0..10u8).flat_map(|x| [x * 28; 3]).collect();
+        let grid = Grid::from_rgb(pixels, 10, 1).unwrap();
+        let edges = grid.edges_of(1, 60).unwrap();
+        assert_eq!(grid.column_weights_of(&edges, 60, 0, 1), vec![0; 10]);
     }
 
     #[test]
     fn first_row_finds_the_head() {
         let grid = sample();
-        assert_eq!(grid.first_row_of(BG, 60, 1), Some(3));
-        assert_eq!(grid.first_row_of(BG, 60, 2), None); // never more than 2 in a row
+        assert_eq!(grid.first_row_of(&plain(8), 60, 1), Some(3));
+        assert_eq!(grid.first_row_of(&plain(8), 60, 2), None); // never more than 2 in a row
     }
 
     #[test]
     fn column_weights_count_the_band() {
-        let weights = sample().column_weights_of(BG, 60, 2, 6);
+        let weights = sample().column_weights_of(&plain(8), 60, 2, 6);
         assert_eq!(weights, vec![0, 0, 0, 0, 3, 3, 0, 0, 0, 0]);
-        assert_eq!(sample().column_weights_of(BG, 60, 5, 5), vec![0; 10]);
+        assert_eq!(sample().column_weights_of(&plain(8), 60, 5, 5), vec![0; 10]);
     }
 }

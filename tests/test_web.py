@@ -449,7 +449,7 @@ def test_my_clubs_staff_on_the_players_pages(env: Env) -> None:
     assert '<span class="tag">coach</span>' in page
     assert "Coach Rowe" not in env.client.get("/players?role=players").text
     detail = env.client.get(f"/players/{NEWGEN + 100}").text
-    assert "on my club&#39;s staff (coach), drawn in a track jacket" in detail
+    assert "on my club&#39;s staff (coach), dressed for their job" in detail
     assert "1 staff" in env.client.get("/status").text
 
 

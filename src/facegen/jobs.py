@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from facegen.age import age_wording
 from facegen.datasource.records import Personality
@@ -28,6 +28,8 @@ class Career:
     id: int
     key: str
     display_name: str
+    game_date: date | None = None
+    """The in-game date of the last save synced; it sets the season of a player's clothes."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,7 +51,9 @@ class Job:
     revision: int = 0
     personality: Personality | None = None
     staff: bool = False
-    """On my club's staff: drawn in a track jacket, aged by the staff table."""
+    """On my club's staff: dressed by the wardrobe, aged by the staff table."""
+    staff_job: str | None = None
+    """The staff job in words, None for a player or where the save names none."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,13 +76,23 @@ def load_career(conn: sqlite3.Connection, key: str | None = None) -> Career | No
     """The named career, or the active one: the career whose save was written last."""
     if key is not None:
         row = conn.execute(
-            "SELECT id, key, display_name FROM careers WHERE key = ?", (key,)
+            "SELECT id, key, display_name, last_game_date FROM careers WHERE key = ?", (key,)
         ).fetchone()
     else:
         row = conn.execute(
-            f"SELECT id, key, display_name FROM careers ORDER BY {ACTIVE_CAREER_ORDER} LIMIT 1"
+            "SELECT id, key, display_name, last_game_date FROM careers"
+            f" ORDER BY {ACTIVE_CAREER_ORDER} LIMIT 1"
         ).fetchone()
-    return Career(row["id"], row["key"], row["display_name"]) if row else None
+    if row is None:
+        return None
+    return Career(row["id"], row["key"], row["display_name"], _date(row["last_game_date"]))
+
+
+def _date(text: str | None) -> date | None:
+    try:
+        return date.fromisoformat(text) if text else None
+    except ValueError:
+        return None
 
 
 def queued_jobs(
@@ -88,7 +102,8 @@ def queued_jobs(
     rows = conn.execute(
         "SELECT j.id, j.unique_id, j.kind, j.group_name, j.target_club_id, j.target_band,"
         " j.manual, j.traits_version, j.revision, p.name, p.at_my_club, p.is_goalkeeper,"
-        " p.height_cm, p.strength, p.age, p.personality, p.is_staff"
+        " p.height_cm, p.strength, p.age, p.personality, p.is_staff,"
+        " p.staff_job"
         " FROM jobs j JOIN players p ON p.career_id = j.career_id AND p.unique_id = j.unique_id"
         " WHERE j.career_id = ? AND j.status = 'queued'"
         + (" AND j.id = ?" if job_id is not None else "")
@@ -114,6 +129,7 @@ def queued_jobs(
             revision=r["revision"],
             personality=personality_from_json(r["personality"]),
             staff=bool(r["is_staff"]),
+            staff_job=r["staff_job"],
         )
         for r in rows
     ]

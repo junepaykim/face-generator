@@ -1,14 +1,22 @@
 """Prompt assembly for Animagine XL 4.0 (docs/research.md section 5, Generation recipe). Pure.
 
 The content rule (docs/spec.md section 3; AGENTS.md hard rule 3) is fixed here, in code:
-every prompt carries the rating `safe` and the sportswear terms; every negative prompt
-carries CONTENT_NEGATIVE; a wording flagged as under 18 adds YOUNG_NEGATIVE. Nothing in the
-settings can remove or weaken these terms.
+every prompt carries the rating `safe`; every negative prompt carries CONTENT_NEGATIVE; a
+wording flagged as under 18 adds YOUNG_NEGATIVE. A player's prompt carries the sportswear
+terms (CONTENT_POSITIVE), whichever kit look shoot.py draws. My club's staff are drawn in the wardrobe's club wear instead of the
+kit (wardrobe.py): their prompt carries STAFF_POSITIVE (long sleeves), plus `sportswear` for
+club sportswear, and their negative adds STAFF_NEGATIVE so the playing kit is not drawn, plus
+`sportswear` for smart wear (user, 2026-11-12). Nothing in the settings can remove or weaken
+these terms.
 
 Players at my club get three adjustments (spec section 3), applied here so the stored
 character sheet is unchanged: banned traits (by default freckles and the muscular build) are
 left out of the prompt and added to its negative, tan and dark skin are drawn `soften_skin`
 steps lighter, and a seeded share (`round_eyes`) of sharp eyes are drawn round.
+
+A player's picture takes its clothes, pose and backdrop from shoot.py (the kit in one of its
+looks, arms and an angle, a plain, gradient or two-tone backdrop). My club's staff keep a pose
+from traits.POSE on the grey backdrop, DEFAULT_BACKDROP.
 
 Height and build words (petite, tall female, skinny, muscular female) follow the skin, for
 the tenth of players at each end only (traits.py, settings `body`).
@@ -23,6 +31,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from facegen.age import WORDINGS
+from facegen.kits import Kit
+from facegen.shoot import DEFAULT_BACKDROP, Backdrop, KitLook, Pose
 from facegen.traits import (
     ACCESSORY,
     BANNABLE,
@@ -40,15 +50,18 @@ from facegen.traits import (
     eyes_drawn_round,
     skin_words,
 )
+from facegen.wardrobe import Outfit
 
 if TYPE_CHECKING:
-    from facegen.kits import Kit
     from facegen.settings import MyClubSettings
 
 SUBJECT = "1girl, solo"
 RATING = "safe"
-FRAMING = "upper body, looking at viewer, standing, simple background, grey background"
+FRAMING = "upper body, looking at viewer, standing"
+"""Followed by the backdrop's words (shoot.Backdrop; "simple background, grey background")."""
 CONTENT_POSITIVE = "sportswear, soccer uniform, soccer"
+STAFF_POSITIVE = "long sleeves"
+STAFF_SPORTSWEAR = "sportswear"
 QUALITY = "masterpiece, high score, great score, absurdres"
 
 CONTENT_NEGATIVE = (
@@ -56,6 +69,8 @@ CONTENT_NEGATIVE = (
     "bikini, cleavage, midriff, navel, see-through, suggestive, revealing clothes, large breasts"
 )
 YOUNG_NEGATIVE = "mature female, adult, mature face, breasts"
+STAFF_NEGATIVE = "soccer uniform, jersey, shorts"
+STAFF_SMART_NEGATIVE = "sportswear"
 COMPOSITION_NEGATIVE = (
     "multiple girls, 2girls, multiple views, text, watermark, signature, username, artist name"
 )
@@ -82,17 +97,34 @@ def drawn_eye_shape(sheet: CharacterSheet, my_club: MyClubSettings | None = None
     return sheet.eye_shape
 
 
+type Wear = Kit | KitLook | Outfit
+"""A player's kit (as a plain match kit, or in a shoot's look), or a staff outfit."""
+
+
+def content_terms(wear: Wear) -> tuple[str, str]:
+    """The fixed clothing terms for a kit or a staff outfit: (positive, negative)."""
+    if isinstance(wear, Kit | KitLook):
+        return CONTENT_POSITIVE, ""
+    if wear.sporty:
+        return _join(STAFF_POSITIVE, STAFF_SPORTSWEAR), STAFF_NEGATIVE
+    return STAFF_POSITIVE, _join(STAFF_NEGATIVE, STAFF_SMART_NEGATIVE)
+
+
 def build_prompt(
     sheet: CharacterSheet,
     wording: str,
-    kit: Kit,
-    pose: str,
+    wear: Wear,
+    pose: str | Pose,
     my_club: MyClubSettings | None = None,
+    *,
+    backdrop: Backdrop = DEFAULT_BACKDROP,
 ) -> Prompt:
     """The prompt for one picture.
 
-    `wording` is the age wording key (W01 to W10, age.py). Pass `my_club` only for a player
-    at my club when the picture is drawn; it applies that club's adjustments.
+    `wording` is the age wording key (W01 to W10, age.py). `wear` is the player's kit, or a
+    staff outfit (wardrobe.py). `pose` is a key of traits.POSE or a shoot's arms and angle.
+    Pass `my_club` only for someone at my club when the picture is drawn; it applies that
+    club's adjustments.
     """
     age = WORDINGS[wording]  # KeyError on an unknown wording: never guess an age
     banned = frozenset(my_club.banned_traits) & BANNABLE.keys() if my_club else frozenset()
@@ -110,22 +142,25 @@ def build_prompt(
         "" if sheet.accessory in banned else ACCESSORY[sheet.accessory].words,
         "" if sheet.mark in banned else MARK[sheet.mark].words,
     )
+    content, wear_negative = content_terms(wear)
     positive = _join(
         SUBJECT,
         RATING,
         age.text,
         look,
-        kit.words(),
-        POSE[pose].words,
+        wear.words(),
+        pose.words() if isinstance(pose, Pose) else POSE[pose].words,
         EXPRESSION[sheet.expression].words,
         FRAMING,
-        CONTENT_POSITIVE,
+        backdrop.words(),
+        content,
         QUALITY,
     )
     negative = _join(
         CONTENT_NEGATIVE,
         YOUNG_NEGATIVE if age.young else "",
         _join(*(BANNABLE[t].words for t in sorted(banned))),
+        wear_negative,
         COMPOSITION_NEGATIVE,
         QUALITY_NEGATIVE,
     )

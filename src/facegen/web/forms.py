@@ -18,7 +18,8 @@ SECTION_NOTES = {
     "eligibility": "Applies at the next sync: these decide, when a save is read, who is in "
     "men's football, at my club and in a continental competition.",
     "newgen": "Used only when a new career is first synced.",
-    "staff": "Re-classifies at once. Staff are drawn at group A quality in a track jacket in the "
+    "staff": "Re-classifies at once. Staff are drawn at group A quality in club wear for their "
+    "job (suits for the board, training wear for coaches, lab coats for doctors) in the "
     "club's colours; turning this off cancels their queued pictures and keeps the drawn ones.",
     "no_photo": "Re-classifies at once. Without a photo means FM27 ships none for them and no "
     "facepack in the graphics folder maps them; facegen's own pictures do not count. Both are "

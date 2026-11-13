@@ -1,10 +1,24 @@
-"""Kit colours per club (docs/spec.md section 3), from config/kits.toml. Pure.
+"""Kit colours per club (docs/spec.md section 3), from config/kits.toml. Pure, apart from the
+loaders at the end.
 
 A kit is described with a fixed vocabulary of colours and patterns, never free text, so the
 table cannot put arbitrary words into a prompt: the wardrobe stays football kit (content
-rule, spec section 3). Goalkeepers wear their club's goalkeeper kit. My club's staff wear a
-track jacket in the home shirt's colours, long-sleeved club sportswear rather than the playing
-kit (decisions.md, 2026-11-12). A club missing from the table gets the neutral fallback kit.
+rule, spec section 3). Goalkeepers wear their club's goalkeeper kit. My club's staff do not
+wear the kit: wardrobe.py dresses them, with the home kit's colours on one piece. A player's
+picture wears the kit in one of shoot.py's looks.
+
+Where a kit comes from, first match wins (`KitTable.kit_for`):
+
+1. config/kits.toml, written by hand: colours, pattern, shorts and goalkeeper kit.
+2. The kit catalog: colours estimated from FM27's own 2D home-shirt image of the club
+   (user, 2026-11-12). `scripts/spikes/kit_colour_probe.py` reads the images from the game
+   install and writes its estimates to data/kit-colour-probe/report.json, which stays on
+   this PC. An estimate gives one or two shirt colours, never a pattern: two colours are
+   drawn as a "mixed" shirt, with no layout asked for, because two colours alone do not say
+   whether they are stripes, hoops or sleeves. Its shorts are unknown and left out, and its
+   goalkeeper wears the first of KEEPER_COLOURS that is not like the home shirt (FM27's
+   goalkeeper colours are not known). A club FM27 has no image for is not in the catalog.
+3. The neutral fallback kit.
 
 Stripes and hoops are drawn as well as the model manages (decisions.md); the quality check
 does not look at the kit. Its shirt colours only help rank group A's candidates.
@@ -12,13 +26,19 @@ does not look at the kit. Its shirt colours only help rank group A's candidates.
 
 from __future__ import annotations
 
+import json
 import tomllib
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 KITS_PATH = Path(__file__).resolve().parents[2] / "config" / "kits.toml"
+CATALOG_REPORT = Path("kit-colour-probe") / "report.json"
+"""The kit catalog, relative to the data folder: the colour probe's output."""
+
+type KitSource = Literal["table", "catalog", "fallback"]
+"""Where a kit came from: config/kits.toml, the kit catalog, or the fallback kit."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,27 +47,29 @@ class Colour:
     """Prompt word."""
     shirt_tags: frozenset[str]
     """Tagger tags for a shirt in this colour."""
+    families: frozenset[str]
+    """Broad colour families, to tell which backdrops would blend with it (shoot.py)."""
 
 
-def _c(words: str, *tags: str) -> Colour:
-    return Colour(words, frozenset(tags))
+def _c(words: str, tags: tuple[str, ...], families: tuple[str, ...]) -> Colour:
+    return Colour(words, frozenset(tags), frozenset(families))
 
 
 COLOURS: dict[str, Colour] = {
-    "red": _c("red", "red shirt"),
-    "claret": _c("dark red", "red shirt"),
-    "white": _c("white", "white shirt"),
-    "black": _c("black", "black shirt"),
-    "blue": _c("blue", "blue shirt"),
-    "sky": _c("light blue", "blue shirt"),
-    "navy": _c("navy blue", "blue shirt"),
-    "yellow": _c("yellow", "yellow shirt"),
-    "amber": _c("orange", "orange shirt", "yellow shirt"),
-    "orange": _c("orange", "orange shirt"),
-    "green": _c("green", "green shirt"),
-    "purple": _c("purple", "purple shirt"),
-    "grey": _c("grey", "grey shirt"),
-    "pink": _c("pink", "pink shirt"),
+    "red": _c("red", ("red shirt",), ("red",)),
+    "claret": _c("dark red", ("red shirt",), ("red",)),
+    "white": _c("white", ("white shirt",), ("white",)),
+    "black": _c("black", ("black shirt",), ("black",)),
+    "blue": _c("blue", ("blue shirt",), ("blue",)),
+    "sky": _c("light blue", ("blue shirt",), ("blue",)),
+    "navy": _c("navy blue", ("blue shirt",), ("blue",)),
+    "yellow": _c("yellow", ("yellow shirt",), ("yellow",)),
+    "amber": _c("orange", ("orange shirt", "yellow shirt"), ("orange", "yellow")),
+    "orange": _c("orange", ("orange shirt",), ("orange",)),
+    "green": _c("green", ("green shirt",), ("green",)),
+    "purple": _c("purple", ("purple shirt",), ("purple",)),
+    "grey": _c("grey", ("grey shirt",), ("grey",)),
+    "pink": _c("pink", ("pink shirt",), ("pink",)),
 }
 
 # pattern -> needs a second shirt colour
@@ -57,7 +79,16 @@ PATTERNS: dict[str, bool] = {
     "hoops": True,  # horizontal
     "sleeves": True,  # body in the first colour, sleeves in the second
     "two-tone": True,  # halves or quarters
+    "mixed": True,  # two colours, layout not known (the kit catalog's estimates)
 }
+
+KEEPER_COLOURS = ("green", "yellow", "orange", "purple")
+"""A catalog club's goalkeeper wears the first of these unlike every home shirt colour."""
+
+
+def families(colours: tuple[str, ...]) -> frozenset[str]:
+    """The colour families of some kit colours."""
+    return frozenset(f for c in colours for f in COLOURS[c].families)
 
 
 class KitError(ValueError):
@@ -73,14 +104,17 @@ class Kit:
     """Collar colour."""
     gloves: str | None = None
     goalkeeper: bool = False
-    staff: bool = False
-    """A staff member's track jacket in this kit's shirt colours, instead of the shirt."""
 
     def words(self) -> str:
-        """Prompt words for this kit."""
+        """Prompt words for this kit as a plain match kit: short sleeves and shorts, or for a
+        goalkeeper long sleeves and gloves (as tested in the bake-off: no shorts)."""
+        if self.goalkeeper:
+            return f"goalkeeper, {self.shirt_words()}, long sleeves, {self.gloves_words()}"
+        return ", ".join(p for p in (self.shirt_words(), "short sleeves", self.shorts_words()) if p)
+
+    def shirt_words(self) -> str:
+        """The shirt alone: colours, pattern and collar."""
         c = [COLOURS[x].words for x in self.shirt]
-        if self.staff:
-            return self._jacket_words(c)
         match self.pattern:
             case "plain":
                 parts = [f"{c[0]} shirt"]
@@ -92,42 +126,53 @@ class Kit:
                 parts = [f"{c[0]} shirt", f"{c[1]} sleeves"]
             case "two-tone":
                 parts = [f"{c[0]} and {c[1]} two-tone shirt"]
+            case "mixed":
+                parts = [f"{c[0]} and {c[1]} shirt"]
             case _:
                 raise KitError(f"unknown pattern {self.pattern!r}")
         if self.trim:
             parts.append(f"{COLOURS[self.trim].words} collar")
-        if self.goalkeeper:
-            # As tested in the bake-off: long sleeves and gloves, no shorts in the prompt.
-            parts = ["goalkeeper", *parts, "long sleeves"]
-            parts.append(f"{COLOURS[self.gloves or 'black'].words} gloves")
-        else:
-            parts.append("short sleeves")
-            if self.shorts:
-                parts.append(f"{COLOURS[self.shorts].words} shorts")
         return ", ".join(parts)
 
-    def _jacket_words(self, c: list[str]) -> str:
+    def jacket_words(self) -> str:
+        """The club track jacket in this kit's shirt colours (and collar)."""
+        c = [COLOURS[x].words for x in self.shirt]
         if self.pattern == "sleeves":
             parts = [f"{c[0]} track jacket", f"{c[1]} sleeves"]
         else:  # stripes and hoops are not asked of a jacket: its two colours are enough
             parts = [f"{' and '.join(c)} track jacket"]
         if self.trim:
             parts.append(f"{COLOURS[self.trim].words} collar")
-        parts.append("long sleeves")
         return ", ".join(parts)
 
-    def shirt_tag_groups(self) -> tuple[frozenset[str], ...]:
-        """One group per shirt colour; any tag in a group shows that colour was drawn."""
+    def shorts_words(self) -> str:
+        """The shorts, or nothing where they are not known."""
+        return f"{COLOURS[self.shorts].words} shorts" if self.shorts else ""
+
+    def gloves_words(self) -> str:
+        return f"{COLOURS[self.gloves or 'black'].words} gloves"
+
+    def colours(self) -> tuple[str, ...]:
+        """Every colour of the shirt, collar and shorts, without repeats."""
+        return tuple(dict.fromkeys(c for c in (*self.shirt, self.trim, self.shorts) if c))
+
+    def shirt_tag_groups(self, garment: str = "shirt") -> tuple[frozenset[str], ...]:
+        """One group per shirt colour; any tag in a group shows that colour was drawn.
+
+        `garment` names what the colour is on: "jacket" gives "blue jacket" for "blue shirt".
+        """
         groups = tuple(COLOURS[x].shirt_tags for x in dict.fromkeys(self.shirt))
-        if self.staff:  # the tagger names a jacket's colour as "blue jacket"
-            return tuple(frozenset(t.replace(" shirt", " jacket") for t in g) for g in groups)
-        return groups
+        if garment == "shirt":
+            return groups
+        return tuple(frozenset(t.replace(" shirt", f" {garment}") for t in g) for g in groups)
+
+    def rank_tags(self) -> dict[str, frozenset[str]]:
+        """Ranking only: each shirt colour to the tags that show it was drawn."""
+        return {f"shirt colour {i}": g for i, g in enumerate(self.shirt_tag_groups(), 1)}
 
     def describe(self) -> str:
         shirt = " and ".join(self.shirt)
-        text = f"{shirt} {self.pattern}" if self.pattern != "plain" else shirt
-        if self.staff:
-            return f"track jacket, {' and '.join(self.shirt)}"
+        text = f"{shirt} {self.pattern}" if self.pattern not in ("plain", "mixed") else shirt
         if self.goalkeeper:
             return f"goalkeeper {text}"
         return f"{text}, {self.shorts} shorts" if self.shorts else text
@@ -143,19 +188,23 @@ class ClubKits:
 class KitTable:
     clubs: Mapping[int, ClubKits]
     fallback: ClubKits
+    catalog: Mapping[int, ClubKits] = field(default_factory=dict)
+    """Clubs whose colours are estimated from FM27's kit images, by unique club ID."""
 
-    def kit_for(
-        self, club_id: int | None, goalkeeper: bool, *, staff: bool = False
-    ) -> tuple[Kit, bool]:
-        """The kit to draw and whether the club is in the table (False: the fallback).
+    def kit_for(self, club_id: int | None, goalkeeper: bool) -> tuple[Kit, KitSource]:
+        """The kit to draw and where it came from: the table, the catalog or the fallback.
 
-        Staff get a track jacket in the home kit's colours, goalkeeping coaches included.
+        Staff, goalkeeping coaches included, take the home kit: its colours dress them.
         """
-        kits = self.clubs.get(club_id) if club_id is not None else None
-        chosen = kits or self.fallback
-        if staff:
-            return replace(chosen.home, staff=True), kits is not None
-        return (chosen.goalkeeper if goalkeeper else chosen.home), kits is not None
+        kits: ClubKits
+        source: KitSource
+        if club_id is not None and club_id in self.clubs:
+            kits, source = self.clubs[club_id], "table"
+        elif club_id is not None and club_id in self.catalog:
+            kits, source = self.catalog[club_id], "catalog"
+        else:
+            kits, source = self.fallback, "fallback"
+        return (kits.goalkeeper if goalkeeper else kits.home), source
 
 
 def _colour(where: str, value: Any) -> str:
@@ -213,6 +262,70 @@ def parse_kits(data: Mapping[str, Any]) -> KitTable:
     return KitTable(clubs=clubs, fallback=_club_kits("fallback", data["fallback"]))
 
 
-def load_kits(path: Path | None = None) -> KitTable:
+# --- the kit catalog ---------------------------------------------------------------------
+
+
+def keeper_colour(home: Kit) -> str:
+    """A goalkeeper colour unlike the home shirt's, for a club whose keeper kit is unknown."""
+    taken = families((*home.shirt, *((home.trim,) if home.trim else ())))
+    for colour in KEEPER_COLOURS:
+        if not COLOURS[colour].families & taken:
+            return colour
+    return KEEPER_COLOURS[0]
+
+
+def catalog_kit(row: Mapping[str, Any]) -> Kit | None:
+    """The home kit for one row of the colour probe's report; None if it gives no colour.
+
+    Only the broad colour names are used, never the measured RGB values. A second colour
+    makes a "mixed" shirt: the probe does not say how the colours are laid out.
+    """
+    if row.get("status") != "estimated":
+        return None
+    primary = (row.get("primary") or {}).get("name")
+    if primary not in COLOURS:
+        return None
+    secondary = (row.get("secondary") or {}).get("name")
+    if secondary in COLOURS and secondary != primary:
+        return Kit(shirt=(primary, secondary), pattern="mixed")
+    return Kit(shirt=(primary,))
+
+
+def parse_catalog(report: Mapping[str, Any]) -> dict[int, ClubKits]:
+    """Club ID to kits, from the colour probe's report: the home rows with an estimate."""
+    results = report.get("results")
+    if not isinstance(results, list):
+        raise KitError("kit catalog: no 'results' list")
+    clubs: dict[int, ClubKits] = {}
+    for row in results:
+        if not isinstance(row, Mapping) or row.get("kind") != "home":
+            continue
+        club_id = row.get("club_id")
+        home = catalog_kit(row)
+        if not isinstance(club_id, int) or home is None:
+            continue
+        keeper = Kit(shirt=(keeper_colour(home),), goalkeeper=True)
+        clubs[club_id] = ClubKits(home=home, goalkeeper=keeper)
+    return clubs
+
+
+def catalog_path(data_dir: Path) -> Path:
+    return data_dir / CATALOG_REPORT
+
+
+def load_kits(path: Path | None = None, *, catalog: Path | None = None) -> KitTable:
+    """config/kits.toml (or `path`), with the kit catalog at `catalog` if that file exists.
+
+    No catalog file means no catalog: clubs outside the table get the fallback kit, as before.
+    """
     with (path or KITS_PATH).open("rb") as f:
-        return parse_kits(tomllib.load(f))
+        table = parse_kits(tomllib.load(f))
+    if catalog is None or not catalog.is_file():
+        return table
+    try:
+        report = json.loads(catalog.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise KitError(f"kit catalog {catalog}: {exc}") from exc
+    if not isinstance(report, Mapping):
+        raise KitError(f"kit catalog {catalog}: not a JSON object")
+    return replace(table, catalog=parse_catalog(report))

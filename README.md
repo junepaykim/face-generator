@@ -252,8 +252,17 @@ the ones you see most often get the best pictures, and everyone else is skipped.
   below their native size. So every group renders at full size. The groups differ in how
   many tries they get, whether they get the detail pass, and how big the published file
   is.
+- **A new photo shoot each time.** The character sheet keeps a player's face, hair and
+  eyes; each picture draws the rest. The kit is worn with short, long or layered sleeves,
+  a collar, or as club training wear: a track jacket, open over the shirt or zipped to a
+  high collar. The in-game date sets the season, so winter brings more long sleeves and
+  jackets. Each player has a favourite style, and seniors now and then wear an armband.
+  Poses combine arms and an angle (front, a turn, a head tilt, contrapposto), and the
+  backdrop is a plain colour, a gradient or two tones, never the kit's or hair's colour.
 - **Your staff too.** Coaches, physios, scouts, the board and your own manager get group A
-  pictures in a track jacket in the club's colours. Their age wording has its own table of
+  pictures, dressed for the job: suits and overcoats for the board, a suit or a bench coat
+  for the manager, training wear and a whistle for coaches, lab coats for doctors, with the
+  club's colours on a tie, scarf or jacket. Their age wording has its own table of
   very wide, seven-year bands, so most staff fall in the middle of the range.
 - **Thresholds are live.** Each setting is saved as you change it in the web UI, the page
   says who moved and what was queued, and Undo puts it back, several steps at once if you
@@ -390,7 +399,10 @@ Other handy commands:
 | `uv run facegen status` | Shows careers, group counts and the queue |
 | `uv run facegen serve --no-worker` | Runs only the web UI, with no GPU work |
 
-Club kit colours are in `config/kits.toml`. A club that isn't listed gets a neutral kit.
+Club kit colours are in `config/kits.toml`. A club that isn't listed takes the colours
+estimated from FM27's own image of its home shirt, if you have run
+`scripts/spikes/kit_colour_probe.py --install-dir <FM27 install> --all-home` (it needs
+UnityPy, and writes to `data/kit-colour-probe/`). Otherwise it gets a neutral kit.
 
 ## Known limits
 
@@ -406,8 +418,9 @@ Club kit colours are in `config/kits.toml`. A club that isn't listed gets a neut
 - **The save reader is alpha software.** [`fmsave`](https://github.com/rhiever/fmsave) is
   pinned at 0.11.0, and a game patch can break reading until fmsave catches up. A save the
   tool can't read is skipped and reported, and existing pictures stay.
-- **Kits are approximate.** Colours come from a hand-made table, stripes and hoops are
-  hit-and-miss, and there are no real badges or sponsors.
+- **Kits are approximate.** Colours come from a hand-made table or are estimated from
+  FM27's kit images (colours only, no pattern), stripes and hoops are hit-and-miss, and
+  there are no real badges or sponsors.
 - **Faces are similar, not identical.** A re-drawn face stays close to the old one but
   isn't a copy. Faces also don't match the in-game 3D model, because the save doesn't
   expose a newgen's hair or skin.

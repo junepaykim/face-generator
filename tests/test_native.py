@@ -10,7 +10,7 @@ import random
 from pathlib import Path
 
 import pytest
-from fakes import figure
+from fakes import BACKDROPS, figure
 from PIL import Image, ImageChops, ImageDraw
 
 from facegen import native
@@ -41,7 +41,13 @@ def scene(seed: int) -> Image.Image:
     return img
 
 
-PICTURES = [figure(512, 512, top=0.06), figure(56, 72), *map(scene, range(8)), noise(64, 48, 1)]
+PICTURES = [
+    figure(512, 512, top=0.06),
+    figure(56, 72),
+    *(figure(224, 288, top=0.08, kind=kind) for kind in BACKDROPS[1:]),
+    *map(scene, range(8)),
+    noise(64, 48, 1),
+]
 
 
 @pytest.mark.parametrize(
@@ -96,14 +102,14 @@ def test_the_rust_scan_matches_python(image: Image.Image) -> None:
     assert (rust.width, rust.height) == (python.width, python.height) == (128, 96)
     assert rust.tobytes() == python.tobytes()
     for corner in (1, 5, 8, 48, 96):
-        bg = rust.backdrop(corner)
-        assert bg == python.backdrop(corner)
         for diff in (0, 60, 200):
+            edges = rust.edges(corner, diff)
+            assert edges == python.edges(corner, diff)
             for need in (0, 2, 60):
-                assert rust.first_row(bg, diff, need) == python.first_row(bg, diff, need)
+                assert rust.first_row(edges, diff, need) == python.first_row(edges, diff, need)
             for y0, y1 in ((0, 96), (10, 40), (30, 30), (50, 20)):
-                assert rust.column_weights(bg, diff, y0, y1) == python.column_weights(
-                    bg, diff, y0, y1
+                assert rust.column_weights(edges, diff, y0, y1) == python.column_weights(
+                    edges, diff, y0, y1
                 )
 
 
@@ -114,9 +120,14 @@ def test_both_scans_refuse_the_same_bad_input() -> None:
         g = make(b"\x00" * 12, 2, 2)
         for corner in (0, 3):
             with pytest.raises(ValueError):
-                g.backdrop(corner)
+                g.edges(corner, 60)
+        edges = g.edges(1, 60)
         with pytest.raises(ValueError):
-            g.column_weights((0, 0, 0), 60, 0, 3)
+            g.column_weights(edges, 60, 0, 3)
+        with pytest.raises(ValueError):
+            g.column_weights(edges[:1], 60, 0, 2)  # one edge for two rows
+        with pytest.raises(ValueError):
+            g.first_row(edges[:1], 60, 0)
 
 
 @pytest.mark.parametrize("image", PICTURES)

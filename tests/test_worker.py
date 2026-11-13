@@ -8,7 +8,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pytest
-from factories import MY_CLUB, NEWGEN, PLAIN_PERSONALITY, RIVAL, player, snapshot
+from factories import GAME_DATE, MY_CLUB, NEWGEN, PLAIN_PERSONALITY, RIVAL, player, snapshot
 from fakes import FakeRenderer, FakeTagger
 from PIL import Image
 
@@ -627,12 +627,14 @@ def test_the_renderers_cache_holds_a_whole_window_of_prompts() -> None:
     assert 2 * PRE_ENCODE_JOBS + 1 <= TEXT_CACHE_SIZE
 
 
-def test_my_clubs_staff_are_drawn_at_a_quality_in_a_track_jacket(
+def test_my_clubs_staff_are_drawn_at_a_quality_in_club_wear_for_their_job(
     conn: sqlite3.Connection, settings: Settings, tmp_path: Path
 ) -> None:
     from factories import staff_member
 
     from facegen.age import WORDINGS
+    from facegen.prompt import STAFF_NEGATIVE, STAFF_POSITIVE
+    from facegen.wardrobe import ROLES
 
     coach = NEWGEN + 100
     s = replace(
@@ -649,16 +651,58 @@ def test_my_clubs_staff_are_drawn_at_a_quality_in_a_track_jacket(
     w, renderer, _ = env.worker()
     staff_job = next(j for j in w.runnable(MINE) if j.unique_id == coach)
     assert staff_job.staff and staff_job.target_band == "W03"  # 25-31 in the staff table
+    assert staff_job.staff_job == "coach"
     w.run_job(staff_job)
     image = env.current(coach)
     assert image is not None and image["group_name"] == "a" and image["age_band"] == "W03"
     # Group A: three candidates and the detail pass, as for the players at my club.
     assert len([c for c in renderer.calls if c[0] == "render"]) == s.groups.a.candidates
     prompt = image["prompt"]
-    assert "track jacket" in prompt and "shorts" not in prompt
+    render = json.loads(image["render"])
+    assert render["staff"] is True and render["outfit"] in ROLES["coach"].looks
+    assert "soccer uniform" not in prompt and "shorts" not in prompt
     assert WORDINGS["W03"].text in prompt
-    # The content rule is the same for staff: fixed terms, and the under-18 negatives for W03.
-    assert "safe" in prompt and "sportswear" in prompt
+    # The content rule holds for staff: `safe`, long sleeves, the fixed negative, the
+    # under-18 negatives for W03, and the playing kit kept out.
+    assert "safe" in prompt and STAFF_POSITIVE in prompt
     assert CONTENT_NEGATIVE in image["negative_prompt"]
     assert YOUNG_NEGATIVE in image["negative_prompt"]
-    assert json.loads(image["render"])["staff"] is True
+    assert STAFF_NEGATIVE in image["negative_prompt"]
+    # Staff keep the old pose library on the grey backdrop: no player shoot.
+    assert render["shoot"] is None and render["backdrop"] == "grey"
+    assert "simple background, grey background" in prompt
+
+
+def test_a_players_picture_is_a_shoot_recorded_with_it(env: Env) -> None:
+    from facegen.shoot import BACKDROP_COLOURS, LOOKS, season_of
+
+    w, _r, _t = env.worker()
+    assert w.career.game_date == GAME_DATE
+    w.run(MINE, publish=False)
+    for uid in (OLD_HAND, KEEPER):
+        image = env.current(uid)
+        render = json.loads(image["render"])
+        shoot = render["shoot"]
+        assert shoot["look"] in LOOKS and shoot["season"] == season_of(GAME_DATE)
+        assert render["kit_source"] == "fallback"  # the test club is in no table
+        assert render["kit_known"] is False
+        assert render["pose"] == f"{shoot['arms']}, {shoot['angle']}"
+        assert render["backdrop"] == shoot["backdrop"]
+        assert "simple background" in image["prompt"]
+        colours = [c for c in BACKDROP_COLOURS if f"{c} background" in image["prompt"]]
+        assert colours and set(colours) <= set(render["backdrop"].split())
+        assert CONTENT_NEGATIVE in image["negative_prompt"]
+    assert "gloves" in env.current(KEEPER)["prompt"]
+
+
+def test_the_season_follows_the_in_game_date(env: Env) -> None:
+    from datetime import date
+
+    w, _, _ = env.worker()
+    job = next(j for j in w.runnable(MINE) if j.unique_id == OLD_HAND)
+    seasons = {}
+    for day in (date(2026, 12, 20), date(2027, 7, 1), None):
+        w.career = replace(w.career, game_date=day)
+        sheet = sample_sheet(w.career.key, OLD_HAND, 1, height_cm=180, strength=10)
+        seasons[day] = w._setup(job, sheet, 1).shoot.season
+    assert list(seasons.values()) == ["winter", "summer", "unknown"]

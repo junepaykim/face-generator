@@ -52,6 +52,13 @@ def _badge(text: str, cls: str = "") -> str:
     return f'<span class="b {cls}">{html.escape(text)}</span>'
 
 
+def _kit_note(render: dict[str, Any]) -> str:
+    """Where the kit's colours came from, when it was not the hand-written table."""
+    if render.get("kit_source") == "catalog":
+        return " <i>(colours from FM27's kit image)</i>"
+    return "" if render.get("kit_known", True) else " <i>(fallback kit)</i>"
+
+
 def _rel(path: str | None, career_key: str) -> str:
     if not path:
         return ""
@@ -124,8 +131,14 @@ def render_page(title: str, career_key: str, entries: list[dict[str, Any]]) -> s
                 f"{_badge(str(e['age_band']))} {_badge(e['reason'])}</div>"
             ),
             f"<div>kit: {html.escape(str(render.get('kit', '')))}"
-            + ("" if render.get("kit_known", True) else " <i>(fallback kit)</i>")
-            + f"<br>pose: {html.escape(str(render.get('pose', '')))}</div>",
+            + _kit_note(render)
+            + f"<br>pose: {html.escape(str(render.get('pose', '')))}"
+            + (
+                f" · backdrop: {html.escape(str(render['backdrop']))}"
+                if render.get("backdrop")
+                else ""
+            )
+            + "</div>",
             f'<div class="muted">{html.escape(sheet)}</div>',
         ]
         if detail:

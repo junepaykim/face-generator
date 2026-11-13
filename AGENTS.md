@@ -14,7 +14,10 @@ FM27, and the web UI (`facegen serve`) works with the GPU worker. Phases 4 (auto
 5 (updates for tracked players) are built and wait for the user's exit tests. Pictures are
 3:4 portraits since 2026-11-11. Since 2026-11-12 my club's staff get pictures too, the
 settings page saves each change as it is made, with undo, and pre-existing players with no photo
-in FM27 are picked like newgens (`no_photo.enabled`). Still open from Phase 0.1: the continental competition IDs.
+in FM27 are picked like newgens (`no_photo.enabled`). Players' pictures are shoots since
+2026-11-12: the kit in several looks, poses of arms and angle, coloured backdrops, the season
+from the in-game date; clubs outside the kit table take colours from FM27's own kit images.
+Still open from Phase 0.1: the continental competition IDs.
 Build the rest phase by phase from `docs/implementation-plan.md`.
 
 ## Read first
@@ -125,6 +128,8 @@ src/facegen/
   age.py                  real age to age wording (the age band)
   picture.py              the 3:4 shape, published sizes, the reference face crop
   traits.py               character sheet sampling
+  wardrobe.py             my club's staff's clothes, by job
+  shoot.py                a player's picture: kit look, extra, arms and angle, backdrop
   prompt.py               prompt assembly
   planner.py              snapshot diff to jobs
   sync.py                 snapshot into the database, classify, plan

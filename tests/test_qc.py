@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import replace
 
 import pytest
+from fakes import BACKDROPS, backdrop
+from fakes import figure as figure_on
 from PIL import Image, ImageDraw
 
 from facegen import qc
@@ -166,3 +168,12 @@ def test_content_tags_fail_even_when_rated_general(tag: str) -> None:
     r = check(t, EXPECT, 0.03)
     assert not r.passed and r.failures == (f"content: {tag}",)
     assert check(tags(**{tag.replace(" ", "_"): 0.3}), EXPECT, 0.03).passed  # below 0.35
+
+
+@pytest.mark.parametrize("kind", BACKDROPS)
+@pytest.mark.parametrize("top", [0.0, 0.05, 0.15, 0.3])
+def test_head_top_on_every_backdrop(kind: str, top: float) -> None:
+    """A gradient or two-tone backdrop (shoot.py) is backdrop: the head is found where it is."""
+    found = head_top(figure_on(224, 288, top=top, kind=kind))
+    assert found is not None and abs(found - top) <= 0.02, (kind, top, found)
+    assert head_top(backdrop(224, 288, kind)) is None

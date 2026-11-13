@@ -22,7 +22,7 @@ from typing import TextIO
 from facegen import db
 from facegen.datasource.base import DataSource
 from facegen.gallery import write_gallery
-from facegen.kits import KitError, load_kits
+from facegen.kits import KitError, catalog_path, load_kits
 from facegen.poller import UNSUPPORTED_ADVICE, NoSaveError, SaveUnreadableError, sync_save
 from facegen.publish import RELOAD_HINT, PublishError, PublishReport, publish_active
 from facegen.settings import Settings, load_settings
@@ -39,6 +39,11 @@ from facegen.worker import (
 )
 
 _TIER_NAMES = {0: "manual", 1: "A, my club", 2: "A", 3: "B", 4: "C"}
+KIT_SOURCE_NOTES = {
+    "table": "",
+    "catalog": " (colours from FM27's kit image)",
+    "fallback": " (fallback kit)",
+}
 
 
 def _default_source() -> DataSource:
@@ -278,9 +283,9 @@ def cmd_run(
     if career is None:
         return 2
     try:
-        kits = load_kits(args.kits)
+        kits = load_kits(args.kits, catalog=catalog_path(settings.paths.data_dir))
     except KitError as exc:
-        print(f"config/kits.toml: {exc}", file=out)
+        print(f"kits: {exc}", file=out)
         return 2
     worker = Worker(
         conn,
@@ -301,7 +306,7 @@ def cmd_run(
             print(
                 f"{i:>4}. {j.name} ({j.unique_id}) {j.kind} {j.group.upper()}"
                 f"{' GK' if j.goalkeeper else ''}: {p.wording}, {p.kit}"
-                f"{'' if p.kit_known else ' (fallback kit)'}, {p.pose}"
+                f"{KIT_SOURCE_NOTES[p.kit_source]}, {p.pose}"
                 f"{'' if p.reference_scale is None else f', reference {p.reference_scale}'}",
                 file=out,
             )
@@ -394,9 +399,9 @@ def cmd_serve(
         print(f"ui.host is {host!r}: facegen serves on this PC only (127.0.0.1).", file=out)
         return 2
     try:
-        kits = load_kits()
+        kits = load_kits(catalog=catalog_path(settings.paths.data_dir))
     except KitError as exc:
-        print(f"config/kits.toml: {exc}", file=out)
+        print(f"kits: {exc}", file=out)
         return 2
     db_path = settings.paths.db_path
     worker = None

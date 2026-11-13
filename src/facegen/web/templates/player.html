@@ -14,7 +14,7 @@
 
   <div class="facts">
     <h1>{{ p.name }}{% if p.is_goalkeeper %} <span class="tag">GK</span>{% endif %}{% if p.is_staff %} <span class="tag">{{ p.staff_job or "staff" }}</span>{% endif %}</h1>
-    <p class="muted">unique ID {{ p.unique_id }} · {% if p.is_staff %}{{ "on my club's staff" if p.present else "was on my club's staff" }}{% if p.staff_job %} ({{ p.staff_job }}){% endif %}, drawn in a track jacket{% else %}{{ "newgen" if p.is_newgen else "pre-existing" }}{% endif %}{% if p.academy %} from my academy{% endif %}{% if not p.present %} · <strong>{{ "no longer on my club's staff" if p.is_staff else "not in the latest save" }}</strong>{% endif %}</p>
+    <p class="muted">unique ID {{ p.unique_id }} · {% if p.is_staff %}{{ "on my club's staff" if p.present else "was on my club's staff" }}{% if p.staff_job %} ({{ p.staff_job }}){% endif %}, dressed for their job{% else %}{{ "newgen" if p.is_newgen else "pre-existing" }}{% endif %}{% if p.academy %} from my academy{% endif %}{% if not p.present %} · <strong>{{ "no longer on my club's staff" if p.is_staff else "not in the latest save" }}</strong>{% endif %}</p>
     <table class="kv">
       <tr><th>Club</th><td>{% if p.club_id is not none %}<a href="/players?club_id={{ p.club_id }}">{{ p.club or p.club_id }}</a>{% else %}free agent{% endif %}
         {% if p.loan_parent_club %}<span class="muted">(on loan from {{ p.loan_parent_club }})</span>{% endif %}
@@ -102,7 +102,7 @@
 {% if cur %}
 <section class="card">
   <h2>Current picture</h2>
-  <p class="small">Kit: {{ cur.render.kit }}{% if cur.render.kit_known == false %} <em>(fallback kit)</em>{% endif %} · pose: {{ cur.render.pose }} · seed {{ cur.seed }} · {{ cur.model }}{% if cur.render.detail %} · detail pass {{ "used" if cur.render.detail.used else "rejected by the check" }}{% endif %}</p>
+  <p class="small">Kit: {{ cur.render.kit }}{% if cur.render.kit_source == "catalog" %} <em>(colours from FM27's kit image)</em>{% elif cur.render.kit_known == false %} <em>(fallback kit)</em>{% endif %} · pose: {{ cur.render.pose }}{% if cur.render.backdrop %} · backdrop: {{ cur.render.backdrop }}{% endif %}{% if cur.render.shoot and cur.render.shoot.style != "none" %} · favourite style: {{ cur.render.shoot.style }}{% endif %}{% if cur.render.shoot and cur.render.shoot.season != "unknown" %} · {{ cur.render.shoot.season }}{% endif %} · seed {{ cur.seed }} · {{ cur.model }}{% if cur.render.detail %} · detail pass {{ "used" if cur.render.detail.used else "rejected by the check" }}{% endif %}</p>
   {% set ref = cur.render.reference %}
   {% if ref and ref.used %}
   <div class="ref">
