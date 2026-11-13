@@ -2,6 +2,12 @@ version = 1
 revision = 3
 requires-python = ">=3.12"
 
+[manifest]
+members = [
+    "facegen",
+    "facegen-native",
+]
+
 [[package]]
 name = "accelerate"
 version = "1.15.0"
@@ -384,6 +390,9 @@ gpu = [
     { name = "torch" },
     { name = "transformers" },
 ]
+native = [
+    { name = "facegen-native" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -409,6 +418,12 @@ gpu = [
     { name = "torch", specifier = ">=2.6" },
     { name = "transformers", specifier = ">=4.50" },
 ]
+native = [{ name = "facegen-native", directory = "native" }]
+
+[[package]]
+name = "facegen-native"
+version = "0.1.0"
+source = { directory = "native" }
 
 [[package]]
 name = "fastapi"

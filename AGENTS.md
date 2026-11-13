@@ -31,6 +31,9 @@ quietly changing either.
 ## Environment
 
 - WSL2 on the Windows PC that runs FM27. Python 3.12, `uv`.
+- Rust (stable, from rustup, with rustfmt and clippy) for the optional extension in
+  `native/`; `uv sync` builds it with maturin. `uv sync --no-group native` leaves it out
+  and the Python versions run instead.
 - GPU: RTX 4080, 16 GB VRAM, visible from WSL.
 - FM27 user folder: `/mnt/c/Users/<Windows user>/Documents/Sports Interactive/Football Manager 27`.
   This PC's real path is in `config/local.toml`, which is not in git. Never write the
@@ -48,10 +51,15 @@ uv run ruff format .    # format
 uv run facegen sync --dry-run   # read the newest save (via a snapshot copy), store nothing
 uv run facegen serve            # web UI on http://127.0.0.1:8765/ with the GPU worker
 uv run facegen serve --no-worker   # the UI only: no GPU work
+(cd native && cargo test && cargo clippy --all-targets && cargo fmt --check)   # the Rust side
 ```
 
 `FACEGEN_TEST_SAVE=data/snapshots/<file>.fm uv run pytest` also runs the one test that
 reads a real save copy.
+
+The Rust extension is rebuilt by the next `uv sync` or `uv run` after a change under
+`native/src/`. Everything in it has a Python version; `tests/test_native.py` checks that
+the two agree, and the geometry (crop boxes, sizes, thresholds) stays in Python.
 
 ## Hard rules
 
@@ -118,10 +126,13 @@ src/facegen/
   prompt_cache.py         prompt embeddings in system memory; the next jobs' prompts in one trip
   service.py              facegen serve's worker thread and "sync now"
   qc.py                   quality and content checks
+  figure.py               the figure scan behind qc.head_top and picture.face_box
+  native.py               loads the optional Rust extension, or None
   publish.py              pictures and config.xml into FM27
   poller.py               save-folder watcher
   web/                    FastAPI app, queries, templates, static CSS and JS
   cli.py                  command-line entry points
+native/                   optional Rust extension (PyO3, maturin): figure scan, PNG encoder
 scripts/spikes/           throwaway Phase 0 experiments
 tests/                    unit tests for the pure modules
 data/                     runtime state, not in git

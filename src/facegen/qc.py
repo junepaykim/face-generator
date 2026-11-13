@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from statistics import fmean
 from typing import TYPE_CHECKING, Any
 
+from facegen import figure
 from facegen.prompt import drawn_traits
 from facegen.traits import EYE_COLOUR, HAIR_COLOUR, TRAIT_TABLES, CharacterSheet
 
@@ -192,25 +193,11 @@ def head_top(image: Image) -> float | None:
     The backdrop colour is the median of the two top corners; the first row with enough
     pixels away from it is the top of the head (the heuristic of the reference test,
     docs/research.md run r4). A busy background gives 0 here, so the check fails open and
-    the tagger's checks still apply.
+    the tagger's checks still apply. The scan is figure.py's.
     """
-    small = image.convert("RGB").resize((_GRID, _GRID))
-    px = small.load()
-    assert px is not None
-    corner = [
-        px[x, y] for y in range(_CORNER) for x in (*range(_CORNER), *range(_GRID - _CORNER, _GRID))
-    ]
-    bg = tuple(sorted(c[i] for c in corner)[len(corner) // 2] for i in range(3))
-    need = max(1, int(_ROW_SHARE * _GRID))
-    for y in range(_GRID):
-        count = 0
-        for x in range(_GRID):
-            r, g, b = px[x, y][:3]
-            if abs(r - bg[0]) + abs(g - bg[1]) + abs(b - bg[2]) > _DIFF:
-                count += 1
-        if count > need:
-            return y / _GRID
-    return None
+    g = figure.grid(image, _GRID, _GRID)
+    first = g.first_row(g.backdrop(_CORNER), _DIFF, max(1, int(_ROW_SHARE * _GRID)))
+    return None if first is None else first / _GRID
 
 
 # --- the tagger (GPU) ------------------------------------------------------------------------

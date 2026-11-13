@@ -1,0 +1,22 @@
+[package]
+name = "facegen-native"
+version = "0.1.0"
+edition = "2024"
+description = "Rust versions of facegen's CPU-bound picture work, for Python through PyO3."
+publish = false
+
+[lib]
+name = "facegen_native"
+# cdylib is the Python extension; rlib lets `cargo test` link the unit tests.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+fast_image_resize = "6.1.0"
+image = { version = "0.25.10", default-features = false, features = ["png"] }
+oxipng = { version = "10.2.1", default-features = false, features = ["parallel"] }
+pyo3 = { version = "0.30.1", features = ["abi3-py312"] }
+rayon = "1.12.0"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

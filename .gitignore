@@ -7,6 +7,9 @@ __pycache__/
 dist/
 *.egg-info/
 
+# Rust build output (native/); Cargo.lock stays tracked
+native/target/
+
 # Runtime state and generated pictures
 data/
 

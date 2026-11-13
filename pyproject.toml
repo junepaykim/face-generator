@@ -35,9 +35,19 @@ gpu = [
     "safetensors>=0.4",
     "timm>=1.0",
 ]
+# The optional Rust extension (native/, built with maturin; needs a Rust toolchain). It
+# speeds up the figure scan and the published-picture encoder; every part of it has a
+# Python fallback. `uv sync --no-group native` leaves it out.
+native = ["facegen-native"]
 
 [tool.uv]
-default-groups = ["dev", "gpu"]
+default-groups = ["dev", "gpu", "native"]
+
+[tool.uv.workspace]
+members = ["native"]
+
+[tool.uv.sources]
+facegen-native = { workspace = true, editable = false }
 
 [build-system]
 requires = ["hatchling"]

@@ -1,0 +1,22 @@
+[build-system]
+requires = ["maturin>=1.8,<2"]
+build-backend = "maturin"
+
+[project]
+name = "facegen-native"
+version = "0.1.0"
+description = "Rust versions of facegen's CPU-bound picture work (optional)."
+requires-python = ">=3.12"
+
+[tool.maturin]
+module-name = "facegen_native"
+profile = "release"
+
+[tool.uv]
+# Rebuild when the Rust side changes, not only when this file does.
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "Cargo.toml" },
+    { file = "Cargo.lock" },
+    { file = "src/**/*.rs" },
+]

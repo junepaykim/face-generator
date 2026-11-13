@@ -24,15 +24,16 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from facegen import native
 from facegen.db import active_career_id, transaction
 from facegen.locking import file_lock
-from facegen.picture import crop_to_aspect, published_size
+from facegen.picture import Box, aspect_box, crop_to_aspect, published_size
 
 if TYPE_CHECKING:
     from facegen.settings import Settings
@@ -99,8 +100,53 @@ def write_config(folder: Path, ids: Iterable[int], fm_user_dir: Path) -> bool:
     return True
 
 
-def published_bytes(master: Path, long_edge: int) -> bytes:
-    """The master as a 3:4 portrait `long_edge` pixels high, as PNG bytes."""
+_CHUNK = 8
+"""Pictures the Rust encoder takes at once: enough to keep the cores busy, few enough that
+the decoded masters (about 7 MB each) stay small in memory."""
+
+
+def published_bytes(master: Path, long_edge: int, *, rust: bool = True) -> bytes:
+    """The master as a 3:4 portrait `long_edge` pixels high, as PNG bytes.
+
+    The Rust encoder is used when it is built (see `published_pictures`), unless `rust` is
+    False.
+    """
+    if rust and native.ext is not None:
+        return native.ext.encode_portrait(master, _crop_box(master), published_size(long_edge))
+    return _pillow_bytes(master, long_edge)
+
+
+def published_pictures(items: Sequence[tuple[Path, int]], *, rust: bool = True) -> Iterator[bytes]:
+    """`published_bytes` for each (master, long edge), in order.
+
+    With the Rust extension (native.py), a chunk of pictures at a time is decoded, cropped,
+    scaled with Lanczos-3 and saved as an optimised 8-bit RGB PNG on all cores. Without it,
+    Pillow does the same one picture at a time. The pictures are not byte-identical: on the
+    58 real masters, 99.98% of channel values were within one level of Pillow's (fixed-point
+    rounding), and a few pixels on hard edges differed by up to 15, because the Rust resize
+    runs its vertical pass before the horizontal one and so clips Lanczos's overshoot at a
+    different stage (docs/research.md). The quality and content checks look at the master,
+    not at this copy.
+    """
+    if not rust or native.ext is None:
+        for master, long_edge in items:
+            yield _pillow_bytes(master, long_edge)
+        return
+    for start in range(0, len(items), _CHUNK):
+        jobs = [(m, _crop_box(m), published_size(e)) for m, e in items[start : start + _CHUNK]]
+        yield from native.ext.encode_portraits(jobs)
+
+
+def _crop_box(master: Path) -> Box:
+    """The 3:4 box of the master, from its header alone."""
+    from PIL import Image
+
+    with Image.open(master) as im:
+        return aspect_box(im.width, im.height)
+
+
+def _pillow_bytes(master: Path, long_edge: int) -> bytes:
+    """The Python version of the encoder."""
     import io
 
     from PIL import Image
@@ -169,9 +215,10 @@ def publish_career(
         " WHERE career_id = ? AND is_current = 1 ORDER BY unique_id",
         (career_id,),
     ).fetchall()
-    written = unchanged = 0
+    unchanged = 0
     missing: list[int] = []
     mapped: list[int] = []
+    todo: list[tuple[int, Path, Path, int]] = []  # image id, master, destination, size
     for r in rows:
         dest = folder / f"{r['unique_id']}.png"
         if r["published_path"] == str(dest) and dest.is_file():
@@ -184,10 +231,17 @@ def publish_career(
         if master is None or not master.is_file():
             missing.append(r["unique_id"])
             continue
-        publish_picture(master, folder, r["unique_id"], sizes[r["group_name"]], fm_user_dir)
-        conn.execute("UPDATE images SET published_path = ? WHERE id = ?", (str(dest), r["id"]))
-        written += 1
+        _guard(dest, fm_user_dir)
+        todo.append((r["id"], master, dest, sizes[r["group_name"]]))
         mapped.append(r["unique_id"])
+    # Encoded together, so the Rust encoder can work on several pictures at once.
+    if todo:
+        folder.mkdir(parents=True, exist_ok=True)
+    pictures = published_pictures([(master, size) for _, master, _, size in todo])
+    for (image_id, _, dest, _), data in zip(todo, pictures, strict=True):
+        _write_atomic(dest, data)
+        conn.execute("UPDATE images SET published_path = ? WHERE id = ?", (str(dest), image_id))
+    written = len(todo)
     shown = mapped if active else []
     config_changed = (
         write_config(folder, shown, fm_user_dir) if mapped or folder.exists() else False

@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from facegen import figure
+
 if TYPE_CHECKING:
     from PIL.Image import Image
 
@@ -73,23 +75,14 @@ def face_box(image: Image) -> Box:
     first row with enough pixels away from it; the square starts a little above that and
     is centred across on the foreground in the band below. Crude, but every picture shares
     the same media-day framing. With no figure found it falls back to the top centre.
+    The scan is figure.py's.
     """
     width, height = image.size
     gw = _GRID
     gh = max(1, round(_GRID * height / width))
-    small = image.convert("RGB").resize((gw, gh))
-    px = small.load()
-    assert px is not None
-    c = max(1, round(_CORNER * gw))
-    corner = [px[x, y] for y in range(c) for x in (*range(c), *range(gw - c, gw))]
-    bg = tuple(sorted(p[i] for p in corner)[len(corner) // 2] for i in range(3))
-
-    def fg(x: int, y: int) -> bool:
-        r, g, b = px[x, y][:3]
-        return abs(r - bg[0]) + abs(g - bg[1]) + abs(b - bg[2]) > _DIFF
-
-    need = max(1, int(_ROW_SHARE * gw))
-    first = next((y for y in range(gh) if sum(fg(x, y) for x in range(gw)) > need), None)
+    grid = figure.grid(image, gw, gh)
+    bg = grid.backdrop(max(1, round(_CORNER * gw)))
+    first = grid.first_row(bg, _DIFF, max(1, int(_ROW_SHARE * gw)))
 
     side = min(round(FACE_SHARE * height), width, height)
     if first is None:
@@ -99,7 +92,7 @@ def face_box(image: Image) -> Box:
         top = max(0, round(first * height / gh) - round(_ABOVE * height))
         y0 = round(top * gh / height)
         y1 = min(gh, y0 + max(1, round(side * gh / height)))
-        weights = [sum(fg(x, y) for y in range(y0, y1)) for x in range(gw)]
+        weights = grid.column_weights(bg, _DIFF, y0, y1)
         total = sum(weights)
         if total:
             centre = sum(w * (x + 0.5) for x, w in enumerate(weights)) / total

@@ -323,6 +323,9 @@ FACEGEN_TEST_GPU=1 uv run pytest tests/test_gpu.py
 - An NVIDIA GPU that WSL can see, with about 8 GB of free VRAM. It was tested on an
   RTX 4080 16 GB.
 - Python 3.12 and [`uv`](https://docs.astral.sh/uv/).
+- Optionally, Rust from [rustup](https://rustup.rs/), for a small extension that
+  republishes a pack about 9× faster. Without Rust, install with
+  `uv sync --no-group native`; everything works the same, only slower to publish.
 - About 11 GB of disk for the models, plus a few GB for PyTorch with CUDA.
 
 **1. Install.** From the cloned repo:
