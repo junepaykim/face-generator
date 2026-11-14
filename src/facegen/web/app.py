@@ -36,7 +36,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import FormData
 
 from facegen import db, manual, photos, settings_history
-from facegen.age import table_name
+from facegen.age import audience, table_name
 from facegen.classify import Group
 from facegen.manual import ManualError
 from facegen.planner import REFERENCE_KINDS, reference_scale
@@ -383,7 +383,7 @@ def create_app(ctx: AppContext) -> FastAPI:
             d=detail,
             p=p,
             settings=settings,
-            age_table=table_name(p["group_name"], bool(p["at_my_club"]), bool(p["is_staff"])),
+            age_table=table_name(p["group_name"], bool(p["at_my_club"]), **audience(p)),
             redraw_reference=uses_reference("redraw", bool(p["at_my_club"]), settings),
             eyes_round=bool(detail["sheet"])
             and eyes_drawn_round(

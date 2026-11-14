@@ -56,6 +56,7 @@
     {% if sync %}
       {% if sync.running %}<p><span class="state state-running">syncing</span> started {{ sync.started }}; this takes about half a minute.</p>
       {% elif sync.message %}<p class="ok small">{{ sync.message }}</p>{% endif %}
+      {% if sync.notice and not sync.running %}<p class="small"><strong>Nothing new in the save.</strong> {{ sync.notice }}</p>{% endif %}
       {% if sync.error %}<p class="bad small">{{ sync.error }}</p>{% endif %}
       {% for w in sync.warnings %}<p class="muted small">Warning: {{ w }}</p>{% endfor %}
     {% endif %}
@@ -69,7 +70,7 @@
     {% if counts %}
       <table class="kv">
         <tr><th>Group A</th><td><a href="/players?group=a">{{ counts.a }}</a> <span class="muted">({{ counts.a_my_club }} at my club{% if counts.a_staff %}, of them <a href="/players?role=staff">{{ counts.a_staff }} staff</a>{% endif %})</span></td></tr>
-        <tr><th>Group B</th><td><a href="/players?group=b">{{ counts.b }}</a></td></tr>
+        <tr><th>Group B</th><td><a href="/players?group=b">{{ counts.b }}</a>{% if counts.youth or counts.media %} <span class="muted">({% if counts.youth %}<a href="/players?role=youth">{{ counts.youth }} in my youth teams</a>{% endif %}{% if counts.youth and counts.media %}, {% endif %}{% if counts.media %}<a href="/players?role=media&amp;group=grouped">{{ counts.media }} journalists and press officers</a>{% endif %})</span>{% endif %}</td></tr>
         <tr><th>Group C</th><td><a href="/players?group=c">{{ counts.c }}</a></td></tr>
         <tr><th>Tracked</th><td>{{ counts.tracked }}</td></tr>
         <tr><th>Pinned</th><td><a href="/players?group=pinned">{{ counts.pinned }}</a></td></tr>

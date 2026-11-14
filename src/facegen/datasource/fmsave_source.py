@@ -16,11 +16,13 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from facegen.datasource import people
 from facegen.datasource.base import SaveReadError, UnsupportedSaveError
 from facegen.datasource.records import (
     ClubRecord,
     Gender,
     LeagueTableRecord,
+    MediaRecord,
     Personality,
     PlayerRecord,
     SaveMeta,
@@ -100,6 +102,7 @@ def convert_player(p: Any, uid_map: Mapping[int, int], game_date: date | None) -
         is_goalkeeper=bool(p.natural_positions) and p.natural_positions[0] == "GK",
         strength=attributes.strength if attributes is not None else None,
         personality=convert_personality(getattr(p, "personality", None)),
+        team_slot=getattr(p, "team_slot", None),
     )
 
 
@@ -157,6 +160,92 @@ def convert_staff(
             )
         )
     return tuple(out)
+
+
+def convert_media(
+    found: Iterable[people.PersonRecord],
+    role: str,
+    names: tuple[people.NameAt, people.NameAt, people.NameAt],
+    flags: bytes,
+    game_date: date | None,
+    club_id: int | None = None,
+) -> list[MediaRecord]:
+    """Journalists' or press officers' records as MediaRecords."""
+    out = []
+    for r in found:
+        age = _age_on(r.birth_date, game_date) if game_date is not None else None
+        out.append(
+            MediaRecord(
+                unique_id=r.unique_id,
+                name=people.display_name(r, *names) or f"{role.capitalize()} {r.unique_id}",
+                birth_date=r.birth_date,
+                age=age,
+                role=role,
+                nation_id=r.nation_id,
+                club_id=club_id,
+                female=people.name_is_female(flags, r.first_name_id),
+            )
+        )
+    return out
+
+
+def read_people(
+    save: Any,
+    managed_uid: int | None,
+    managed_id: int | None,
+    staff_first_names: Mapping[int, str | None],
+    game_date: date | None,
+) -> tuple[tuple[MediaRecord, ...], dict[int, bool]]:
+    """Journalists, my club's press officers, and whether each of my club's staff is a woman.
+
+    fmsave 0.11.0 reads none of these, so they come from the game database's bytes through
+    datasource/people.py. This borrows fmsave's decompressed section, its name pools and its
+    club index: internals of the pinned version (AGENTS.md rule 5), so any failure here is
+    reported and the sync goes on without them. `staff_first_names` maps a staff member's
+    unique ID to their first name as fmsave reads it.
+    """
+    context = save._context
+    pools = context.name_pools()
+    latest_year = game_date.year if game_date is not None else date.today().year
+    with context.section("game_db") as db:
+
+        def first(i: int) -> str | None:
+            return pools.first_names.name_at(db, i)
+
+        def surname(i: int) -> str | None:
+            return pools.surnames.name_at(db, i)
+
+        def common(i: int) -> str | None:
+            return pools.common_names.name_at(db, i)
+
+        names = (first, surname, common)
+        flags = people.first_name_flags(db, pools.first_names.entry_count)
+        if flags is None:
+            # Without it every gender would read as unknown: keep what earlier syncs read.
+            raise ValueError("the first names' gender table was not found in the game database")
+        sizes = {
+            "start": pools.end_offset,
+            "first_names": pools.first_names.entry_count,
+            "surnames": pools.surnames.entry_count,
+            "latest_year": latest_year,
+        }
+        media = convert_media(
+            people.journalists(db, **sizes), "journalist", names, flags, game_date
+        )
+        if managed_uid is not None:
+            by_index = context.club_index().uid_by_club_index
+            mine = [index for index, uid in by_index.items() if uid == managed_uid]
+            media += convert_media(
+                people.press_officers(db, mine, **sizes),
+                "press officer",
+                names,
+                flags,
+                game_date,
+                managed_id,
+            )
+        by_text = people.female_by_text((n for n in staff_first_names.values() if n), first, flags)
+        female = {uid: by_text[n] for uid, n in staff_first_names.items() if n and n in by_text}
+    return tuple(media), female
 
 
 def convert_league_tables(
@@ -262,12 +351,34 @@ class FmsaveDataSource:
         # on a full save, docs/research.md); a failure there should not stop a sync either.
         staff: tuple[StaffRecord, ...] = ()
         staff_read = True
+        first_names: dict[int, str | None] = {}
         if managed:
             try:
-                staff = convert_staff(save.staff(), uid_map, managed[0].club_uid, info.game_date)
+                mine = [s for s in save.staff() if s.club_uid == managed[0].club_uid]
+                staff = convert_staff(mine, uid_map, managed[0].club_uid, info.game_date)
+                first_names = {s.unique_id: getattr(s, "first_name", None) for s in mine}
             except fmsave.FmsaveError as exc:
                 staff_read = False
                 notes.append(f"staff data unavailable, staff pictures left as they were: {exc}")
+        # Journalists, press officers and who is a woman: read from the game database's bytes
+        # (datasource/people.py), as fmsave does not. A failure here must not stop a sync.
+        media: tuple[MediaRecord, ...] = ()
+        media_read = True
+        try:
+            media, female = read_people(
+                save,
+                managed[0].club_uid if managed else None,
+                managed_id,
+                first_names,
+                info.game_date,
+            )
+            staff = tuple(replace(s, female=female.get(s.unique_id)) for s in staff)
+        except Exception as exc:  # noqa: BLE001 - experimental reader; the sync goes on
+            media_read = False
+            notes.append(
+                "journalists, press officers and staff genders unavailable "
+                f"({type(exc).__name__}: {exc}); their pictures are left as they were"
+            )
 
         return Snapshot(
             meta=SaveMeta(
@@ -287,4 +398,6 @@ class FmsaveDataSource:
             fixture_counts=fixture_counts,
             staff=staff,
             staff_read=staff_read,
+            media=media,
+            media_read=media_read,
         )

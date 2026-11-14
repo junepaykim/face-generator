@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 
-from facegen.classify import Group, PlayerFacts, classify, rule_matches
+from facegen.classify import Group, PlayerFacts, Rules, classify, rule_matches
 from facegen.settings import Groups, Settings
 
 
@@ -242,11 +242,11 @@ def test_the_newgen_rules_never_apply_to_staff(groups: Groups) -> None:
 
 def test_staff_pictures_turned_off(groups: Groups) -> None:
     mine = facts(is_staff=True, at_my_club=True)
-    c = classify(mine, groups, staff=False)
+    c = classify(mine, groups, Rules(staff=False))
     assert c.group is None and not c.tracked and "staff pictures are off" in c.reasons[0]
     # A pin still hand-picks them; players at my club are unaffected.
-    assert classify(replace(mine, pin="b"), groups, staff=False).group is Group.B
-    assert classify(facts(at_my_club=True), groups, staff=False).group is Group.A
+    assert classify(replace(mine, pin="b"), groups, Rules(staff=False)).group is Group.B
+    assert classify(facts(at_my_club=True), groups, Rules(staff=False)).group is Group.A
     assert classify(replace(mine, pin="never"), groups).group is None
 
 
@@ -287,11 +287,11 @@ def test_newgen_reasons_are_unchanged(groups: Groups) -> None:
 
 
 def test_no_photo_setting_off_leaves_them_out(groups: Groups) -> None:
-    c = classify(no_photo(ca=190), groups, no_photo=False)
+    c = classify(no_photo(ca=190), groups, Rules(no_photo=False))
     assert c.group is None
     # Newgens and my club are unaffected.
-    assert classify(facts(ca=190), groups, no_photo=False).group is Group.A
-    assert classify(no_photo(at_my_club=True), groups, no_photo=False).group is Group.A
+    assert classify(facts(ca=190), groups, Rules(no_photo=False)).group is Group.A
+    assert classify(no_photo(at_my_club=True), groups, Rules(no_photo=False)).group is Group.A
 
 
 def test_the_academy_rules_stay_newgens_own(groups: Groups) -> None:
@@ -314,3 +314,80 @@ def test_without_a_photo_at_my_club_is_group_a_as_everyone_there(groups: Groups)
 def test_a_pin_still_overrides_a_player_without_a_photo(groups: Groups) -> None:
     assert classify(no_photo(ca=190, pin="never"), groups).group is None
     assert classify(no_photo(ca=60, pin="c"), groups).group is Group.C
+
+
+# --- my club's youth teams (user, 2026-11-13) --------------------------------------------------
+
+
+def youth(**kw: object) -> PlayerFacts:
+    base: dict[str, object] = {"at_my_club": True, "youth": True, "is_newgen": False}
+    return facts(**{**base, **kw})
+
+
+def test_my_youth_teams_are_group_b_and_tracked(groups: Groups) -> None:
+    c = classify(youth(ca=40, pa=90), groups)
+    assert c.group is Group.B
+    assert c.tracked is True
+    assert c.reasons == ("in my club's youth or reserve team", "tracked while at my club")
+
+
+def test_a_youth_player_reaching_group_a_thresholds_is_a(groups: Groups) -> None:
+    c = classify(youth(ca=60, pa=180), groups)
+    assert c.group is Group.A and c.tracked is True
+    assert c.reasons == ("youth team, PA 180 > 170",)
+
+
+def test_the_first_team_is_a_and_the_youth_rule_can_be_turned_off(groups: Groups) -> None:
+    assert classify(youth(youth=False, ca=40, pa=90), groups).group is Group.A
+    assert classify(youth(ca=40, pa=90), groups, Rules(youth=False)).group is Group.A
+
+
+def test_academy_youth_keep_the_academy_reason(groups: Groups) -> None:
+    c = classify(youth(is_newgen=True, academy=True, ca=40, pa=90), groups)
+    assert c.group is Group.B and c.tracked is True
+    assert "came through my academy" in c.reasons
+
+
+def test_the_youth_rule_is_about_my_club(groups: Groups) -> None:
+    # A youth player elsewhere follows the newgen rules alone.
+    assert classify(facts(youth=True, ca=40, pa=90), groups).group is None
+
+
+# --- journalists and press officers (user, 2026-11-13) ----------------------------------------
+
+
+def media(role: str, **kw: object) -> PlayerFacts:
+    base: dict[str, object] = {"media": role, "is_newgen": False, "ca": 0, "pa": None}
+    return facts(**{**base, **kw})
+
+
+def test_local_journalists_and_my_press_officers_are_b_and_not_tracked(groups: Groups) -> None:
+    c = classify(media("journalist", local_media=True), groups)
+    assert (c.group, c.tracked, c.reasons) == (
+        Group.B,
+        False,
+        ("journalist from my club's country",),
+    )
+    c = classify(media("press officer", local_media=True, at_my_club=True), groups)
+    assert (c.group, c.tracked, c.reasons) == (Group.B, False, ("my club's press officer",))
+
+
+def test_other_journalists_only_by_a_pin(groups: Groups) -> None:
+    assert classify(media("journalist"), groups).group is None
+    c = classify(media("journalist", pin="b"), groups)
+    assert (c.group, c.tracked) == (Group.B, False)
+    # Not even a pin to A tracks them: their picture is drawn once.
+    assert classify(media("journalist", pin="a"), groups).tracked is False
+
+
+def test_media_never_follow_the_player_rules(groups: Groups) -> None:
+    f = media("journalist", is_newgen=True, ca=190, pa=200, in_my_league=True, photo=False)
+    assert classify(f, groups).group is None
+
+
+def test_media_switches(groups: Groups) -> None:
+    j = media("journalist", local_media=True)
+    p = media("press officer", local_media=True, at_my_club=True)
+    assert classify(j, groups, Rules(journalists=False)).group is None
+    assert classify(p, groups, Rules(journalists=False)).group is Group.B
+    assert classify(p, groups, Rules(press_officers=False)).group is None

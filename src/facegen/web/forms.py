@@ -21,6 +21,12 @@ SECTION_NOTES = {
     "staff": "Re-classifies at once. Staff are drawn at group A quality in club wear for their "
     "job (suits for the board, training wear for coaches, lab coats for doctors) in the "
     "club's colours; turning this off cancels their queued pictures and keeps the drawn ones.",
+    "youth": "Re-classifies at once. My club's teams other than the first team are the "
+    "reserves, under-23s and under-18s. A player moved to the first team rises to group A and "
+    "is re-drawn at A quality.",
+    "media": "Re-classifies at once. Journalists and press officers are read from the save at "
+    "each sync and drawn once, at group B quality, as the gender the save gives them. Turning "
+    "this off cancels their queued pictures and keeps the drawn ones.",
     "no_photo": "Re-classifies at once. Without a photo means FM27 ships none for them and no "
     "facepack in the graphics folder maps them; facegen's own pictures do not count. Both are "
     "read again at each sync. The group thresholds apply as for newgens, the academy rules do "
@@ -36,14 +42,16 @@ SECTION_NOTES = {
 }
 # The thresholds first: they are what the page is mostly for (spec section 7).
 SECTION_ORDER = (
-    "groups", "staff", "no_photo", "age", "schedule", "eligibility", "my_club", "body",
-    "personality", "reference", "newgen",
+    "groups", "staff", "youth", "media", "no_photo", "age", "schedule", "eligibility",
+    "my_club", "body", "personality", "reference", "newgen",
 )  # fmt: skip
 SECTION_TITLES = {
     "groups.a": "Group A",
     "groups.b": "Group B",
     "groups.c": "Group C",
     "staff": "Staff at my club",
+    "youth": "My club's youth teams",
+    "media": "Journalists and press officers",
     "no_photo": "Pre-existing players without a photo",
     "eligibility": "Who counts",
     "newgen": "Newgens",
@@ -52,6 +60,8 @@ SECTION_TITLES = {
     "age.b": "Age wordings: group B",
     "age.c": "Age wordings: group C",
     "age.staff": "Age wordings: staff at my club",
+    "age.media": "Age wordings: journalists and press officers drawn as women",
+    "age.male": "Age wordings: staff and media drawn as men",
     "reference": "Reference picture",
     "my_club": "Players at my club",
     "body": "Height and build",
@@ -93,6 +103,10 @@ LABELS_IN = {
     "groups.c.league_pa_above": "In my league: PA above",
     "staff.enabled": "Draw my club's staff (coaches, physios, scouts, the board and you)",
     "no_photo.enabled": "Pick them by the newgen thresholds for groups A, B and C",
+    "youth.enabled": "Draw my club's reserve, under-23 and under-18 players at group B "
+    "(group A once they reach A's CA or PA, or join the first team)",
+    "media.journalists": "Draw journalists from my club's country",
+    "media.press_officers": "Draw my club's press officers",
 }
 
 

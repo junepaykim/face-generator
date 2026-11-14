@@ -454,6 +454,19 @@ def test_a_redraw_at_my_club_uses_the_current_picture_as_a_reference(env: Env) -
     assert (env.data / info["crop"]).is_file()
 
 
+def test_a_picture_of_the_other_gender_is_never_a_reference(env: Env) -> None:
+    w, _, _ = env.worker()
+    w.run(MINE)
+    # A re-draw asking for a man's wording, with a girl's picture current: no reference.
+    _queue_job(env, OLD_HAND, "redraw", MY_CLUB, "M2")
+    w2, r2, _ = env.worker(tagger=FakeTagger(["man"] * 9))
+    done = w2.run(MINE).done
+    assert [o.job.unique_id for o in done] == [OLD_HAND]
+    assert set(r2.references) == {None}
+    info = json.loads(env.current(OLD_HAND)["render"])["reference"]
+    assert info["used"] is False and info["why"] == "the current picture is of the other gender"
+
+
 def test_a_redraw_elsewhere_or_with_the_reference_off_uses_none(env: Env) -> None:
     group_a = JobFilter(groups=frozenset({"a"}))
     w, _, _ = env.worker()
@@ -645,7 +658,7 @@ def test_my_clubs_staff_are_drawn_at_a_quality_in_club_wear_for_their_job(
             fm_install_dir=tmp_path / "fm-install",
         ),
     )
-    snap = snapshot(world(), staff=[staff_member(coach, age=30, job="coach")])
+    snap = snapshot(world(), staff=[staff_member(coach, age=30, job="coach", female=True)])
     run_sync(conn, snap, s, save_file="career.fm")
     env = Env(conn, s, tmp_path / "fm", tmp_path / "data")
     w, renderer, _ = env.worker()
@@ -706,3 +719,70 @@ def test_the_season_follows_the_in_game_date(env: Env) -> None:
         sheet = sample_sheet(w.career.key, OLD_HAND, 1, height_cm=180, strength=10)
         seasons[day] = w._setup(job, sheet, 1).shoot.season
     assert list(seasons.values()) == ["winter", "summer", "unknown"]
+
+
+def _staff_env(
+    conn: sqlite3.Connection, settings: Settings, tmp_path: Path, **snap: object
+) -> tuple[Env, Settings]:
+    s = replace(
+        settings,
+        paths=Paths(
+            fm_user_dir=tmp_path / "fm",
+            data_dir=tmp_path / "data",
+            fm_install_dir=tmp_path / "fm-install",
+        ),
+    )
+    run_sync(conn, snapshot(world(), **snap), s, save_file="career.fm")  # type: ignore[arg-type]
+    return Env(conn, s, tmp_path / "fm", tmp_path / "data"), s
+
+
+def test_someone_drawn_as_a_man_is_drawn_and_checked_as_one(
+    conn: sqlite3.Connection, settings: Settings, tmp_path: Path
+) -> None:
+    from factories import staff_member
+
+    from facegen.prompt import COMPOSITION_NEGATIVE_MALE, SUBJECT_MALE
+    from facegen.sync import reclassify
+
+    scout = NEWGEN + 100
+    env, s = _staff_env(
+        conn, settings, tmp_path, staff=[staff_member(scout, age=50, job="scout", female=False)]
+    )
+    conn.execute("UPDATE players SET drawn_male = 1 WHERE unique_id = ?", (scout,))
+    reclassify(conn, 1, s)
+    # A picture of one girl fails his check; one of a man passes.
+    w, _renderer, _tagger = env.worker(tagger=FakeTagger(["pass"] * 3 + ["man"] * 9))
+    job = next(j for j in w.runnable(MINE) if j.unique_id == scout)
+    assert job.drawn_male and job.target_band == "M3"
+    w.run_job(job)
+    image = env.current(scout)
+    assert image is not None and image["age_band"] == "M3"
+    assert image["prompt"].startswith(SUBJECT_MALE)
+    assert COMPOSITION_NEGATIVE_MALE in image["negative_prompt"]
+    check = json.loads(image["check_result"])
+    assert check["attempts"] == 2  # the first round was three girls
+    assert json.loads(image["render"])["male"] is True
+
+
+def test_a_journalist_is_dressed_for_work_on_the_grey_backdrop(
+    conn: sqlite3.Connection, settings: Settings, tmp_path: Path
+) -> None:
+    from factories import media_person
+
+    from facegen.wardrobe import ROLES
+
+    reporter = 2_002_097_912
+    env, s = _staff_env(
+        conn, settings, tmp_path, media=[media_person(reporter, female=True, age=59)]
+    )
+    w, renderer, _ = env.worker()
+    job = next(j for j in w.runnable(JobFilter()) if j.unique_id == reporter)
+    assert (job.media_role, job.group, job.target_band) == ("journalist", "b", "W07")
+    w.run_job(job)
+    image = env.current(reporter)
+    render = json.loads(image["render"])
+    assert render["media"] == "journalist" and render["outfit"] in ROLES["journalist"].looks
+    assert render["backdrop"] == "grey" and render["male"] is False
+    # Group B: one candidate, no detail pass.
+    assert len([c for c in renderer.calls if c[0] == "render"]) == s.groups.b.candidates
+    assert "soccer" not in image["prompt"]

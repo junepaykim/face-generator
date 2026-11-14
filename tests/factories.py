@@ -9,6 +9,7 @@ from facegen.datasource.records import (
     ClubRecord,
     Gender,
     LeagueTableRecord,
+    MediaRecord,
     Personality,
     PlayerRecord,
     SaveMeta,
@@ -75,6 +76,7 @@ def player(
     join: date | None = None,
     goalkeeper: bool = False,
     personality: Personality | None = None,
+    team_slot: int | None = 0,
 ) -> PlayerRecord:
     return PlayerRecord(
         unique_id=unique_id,
@@ -91,6 +93,7 @@ def player(
         is_goalkeeper=goalkeeper,
         strength=12,
         personality=personality,
+        team_slot=team_slot if club_id is not None else None,
     )
 
 
@@ -104,6 +107,7 @@ def staff_member(
     ca: int | None = 50,
     join: date | None = None,
     human: bool = False,
+    female: bool | None = None,
 ) -> StaffRecord:
     return StaffRecord(
         unique_id=unique_id,
@@ -116,6 +120,28 @@ def staff_member(
         pa=None if ca is None else ca + 10,
         club_join_date=join,
         is_human_manager=human,
+        female=female,
+    )
+
+
+def media_person(
+    unique_id: int,
+    *,
+    role: str = "journalist",
+    nation: int | None = 1,
+    club_id: int | None = None,
+    age: int | None = 50,
+    female: bool | None = True,
+) -> MediaRecord:
+    return MediaRecord(
+        unique_id=unique_id,
+        name=f"{role.capitalize()} {unique_id}",
+        birth_date=date(1976, 1, 1),
+        age=age,
+        role=role,
+        nation_id=nation,
+        club_id=club_id,
+        female=female,
     )
 
 
@@ -145,6 +171,8 @@ def snapshot(
     fixture_counts: Mapping[int, Mapping[int, int]] | None = None,
     staff: Iterable[StaffRecord] = (),
     staff_read: bool = True,
+    media: Iterable[MediaRecord] = (),
+    media_read: bool = True,
 ) -> Snapshot:
     if tables is None:
         tables = (
@@ -169,4 +197,6 @@ def snapshot(
         fixture_counts=fixture_counts,
         staff=tuple(staff),
         staff_read=staff_read,
+        media=tuple(media),
+        media_read=media_read,
     )

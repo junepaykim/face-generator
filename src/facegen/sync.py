@@ -17,10 +17,11 @@ from typing import Any
 
 from facegen import photos as photo_index
 from facegen.age import age_wording
-from facegen.classify import Classification, Group, PlayerFacts, classify
+from facegen.classify import Classification, Group, PlayerFacts, Rules, classify
 from facegen.datasource.records import Gender, Snapshot
 from facegen.db import transaction
 from facegen.domain import ACTIVE_JOB_STATUSES
+from facegen.gender import drawn_male
 from facegen.identity import (
     Person,
     best_career,
@@ -95,6 +96,8 @@ class SyncReport:
     new_at_my_club: int = 0
     """Players at my club who were not there at the career's previous sync (youth intake,
     signings, loans in). Their jobs go to the front of the automatic queue. 0 on a first sync."""
+    new_staff: int = 0
+    """People on my club's staff who were not at the career's previous sync. 0 on a first sync."""
 
 
 # --- career ------------------------------------------------------------------------------
@@ -207,6 +210,11 @@ _PLAYER_COLUMNS = (
     "last_seen_sync",
     "is_staff",
     "staff_job",
+    "youth_team",
+    "media_role",
+    "local_media",
+    "female",
+    "drawn_male",
 )
 _KEEP_ON_UPDATE = {"career_id", "unique_id", "first_seen_sync"}
 _UPSERT_PLAYER = (
@@ -223,6 +231,7 @@ class IngestStats:
     my_league_clubs: int
     continental_clubs: int
     arrivals_at_my_club: int = 0
+    staff_arrivals: int = 0
 
 
 def ingest(
@@ -232,17 +241,20 @@ def ingest(
     settings: Settings,
     sync_id: int,
 ) -> IngestStats:
-    """Write the snapshot's clubs, players and my club's staff, with the facts the rules need.
+    """Write the snapshot's clubs, players, my club's staff, journalists and press officers,
+    with the facts the rules need.
 
-    Staff are stored as rows beside the players (`is_staff`), keyed on the same unique ID. A
-    person who is also a player (a player-coach) is stored once, as the player.
+    Staff are stored as rows beside the players (`is_staff`), keyed on the same unique ID, and
+    so are journalists and press officers (`media_role`). A person who is also a player (a
+    player-coach) is stored once, as the player.
     """
     cid = career.id
     prev = {
         r["unique_id"]: r
         for r in conn.execute(
             "SELECT unique_id, is_newgen, in_scope, first_club_id, club_id, club_since,"
-            " at_my_club, present, academy, is_staff FROM players WHERE career_id = ?",
+            " at_my_club, present, academy, is_staff, media_role, female FROM players"
+            " WHERE career_id = ?",
             (cid,),
         )
     }
@@ -294,6 +306,8 @@ def ingest(
         ):
             arrivals += 1
         club_since = _club_since(old, p.club_id, p.club_join_date, game_date)
+        # A team of my club's other than the first team: reserves, under-23s, under-18s.
+        youth = p.club_id is not None and p.club_id == my_club and p.team_slot not in (None, 0)
         rows.append(
             (
                 cid,
@@ -323,18 +337,29 @@ def ingest(
                 sync_id,
                 0,
                 None,
+                int(youth),
+                None,
+                0,
+                None,
+                0,
             )
         )
-    rows.extend(
-        _staff_rows(
-            career, snapshot, settings, sync_id, prev, first_sync, league_clubs, continental_clubs
-        )
+    staff_rows = _staff_rows(
+        career, snapshot, settings, sync_id, prev, first_sync, league_clubs, continental_clubs
     )
+    staff_arrivals = sum(
+        1
+        for r in staff_rows
+        if not first_sync and not ((old := prev.get(r[1])) and old["present"] and old["at_my_club"])
+    )
+    rows.extend(staff_rows)
+    rows.extend(_media_rows(career, snapshot, sync_id, prev))
     conn.executemany(_UPSERT_PLAYER, rows)
-    # Staff the reader could not read this time are left as they were, not counted as gone.
+    # People a reader could not read this time are left as they were, not counted as gone.
     conn.execute(
         "UPDATE players SET present = 0 WHERE career_id = ? AND last_seen_sync != ?"
-        + ("" if snapshot.staff_read else " AND is_staff = 0"),
+        + ("" if snapshot.staff_read else " AND is_staff = 0")
+        + ("" if snapshot.media_read else " AND media_role IS NULL"),
         (cid, sync_id),
     )
     conn.executemany(
@@ -355,7 +380,9 @@ def ingest(
             for c in snapshot.clubs.values()
         ],
     )
-    return IngestStats(first_sync, len(league_clubs), len(continental_clubs), arrivals)
+    return IngestStats(
+        first_sync, len(league_clubs), len(continental_clubs), arrivals, staff_arrivals
+    )
 
 
 def _club_since(
@@ -400,6 +427,10 @@ def _staff_rows(
             previously_newgen=bool(old and old["is_newgen"]),
             first_seen_mid_career=old is None and not first_sync,
         )
+        # Without the people reader this time, keep what an earlier sync read.
+        female = s.female
+        if female is None and not snapshot.media_read and old and old["female"] is not None:
+            female = bool(old["female"])
         rows.append(
             (
                 career.id,
@@ -429,6 +460,75 @@ def _staff_rows(
                 sync_id,
                 1,
                 "manager (you)" if s.is_human_manager else s.job,
+                0,
+                None,
+                0,
+                None if female is None else int(female),
+                int(
+                    drawn_male(
+                        career.key, s.unique_id, staff=True, media=False, female=female, job=s.job
+                    )
+                ),
+            )
+        )
+    return rows
+
+
+def _media_rows(
+    career: Career, snapshot: Snapshot, sync_id: int, prev: dict[int, sqlite3.Row]
+) -> list[tuple[Any, ...]]:
+    """Player-table rows for journalists and my club's press officers, in _PLAYER_COLUMNS order.
+
+    They are never newgens or players: CA 0, no club for a journalist. A journalist from my
+    club's country, or a press officer of my club, is `local_media`. Someone who is also a
+    player or on my club's staff is stored once, as that.
+    """
+    my_club = snapshot.managed_club_id
+    club = snapshot.clubs.get(my_club) if my_club is not None else None
+    my_nation = club.nation_id if club is not None else None
+    taken = {p.unique_id for p in snapshot.players} | {s.unique_id for s in snapshot.staff}
+    rows = []
+    for m in snapshot.media:
+        if m.unique_id in taken:
+            continue
+        old = prev.get(m.unique_id)
+        at_my_club = my_club is not None and m.club_id == my_club
+        local = at_my_club if m.role == "press officer" else m.nation_id == my_nation
+        male = drawn_male(career.key, m.unique_id, staff=False, media=True, female=m.female)
+        rows.append(
+            (
+                career.id,
+                m.unique_id,
+                m.name,
+                _iso(m.birth_date),
+                m.age,
+                None,  # height
+                0,  # CA: not a player
+                None,  # PA
+                0,  # goalkeeper
+                None,  # Strength
+                None,  # personality: not read for them
+                m.club_id,
+                None,  # loan parent
+                "[]",
+                _club_since(old, m.club_id, None, snapshot.meta.game_date),
+                0,  # newgen: players only
+                1,  # in scope
+                int(at_my_club),
+                0,  # in my league
+                0,  # continental
+                old["first_club_id"] if old else None,
+                0,  # academy
+                1,  # present
+                sync_id,
+                sync_id,
+                0,  # staff
+                None,  # staff job
+                0,  # youth team
+                m.role,
+                int(local and my_nation is not None),
+                None if m.female is None else int(m.female),
+                int(male),
             )
         )
     return rows
@@ -519,6 +619,7 @@ def _classify(
     photo_status = photo_index.status(conn)
     photos_known = photo_status is not None and photo_status.game_known
 
+    rules = Rules.of(settings)
     classifications: dict[int, Classification] = {}
     changed: list[tuple[Any, ...]] = []
     moved: list[Move] = []
@@ -544,8 +645,11 @@ def _classify(
                 pin=r["pin"],
                 is_staff=staff,
                 photo=bool(r["has_photo"]) if photos_known else None,
+                youth=bool(r["youth_team"]),
+                media=r["media_role"],
+                local_media=bool(r["local_media"]),
             )
-            c = classify(facts, settings.groups, settings.staff.enabled, settings.no_photo.enabled)
+            c = classify(facts, settings.groups, rules)
         else:
             gone = "no longer on my club's staff" if staff else "not in the latest save"
             c = Classification(None, False, (gone,))
@@ -558,12 +662,17 @@ def _classify(
                 moved.append(Move(uid, r["group_name"], bool(r["tracked"]), group, c.tracked))
         if c.group is None and uid not in active:
             continue
+        who = {
+            "staff": staff,
+            "media": r["media_role"] is not None,
+            "male": bool(r["drawn_male"]),
+        }
         states.append(
             PlayerPlanState(
                 unique_id=uid,
                 classification=c,
                 club_id=r["club_id"],
-                age_band=age_wording(r["age"], c.group, bool(r["at_my_club"]), settings.age, staff),
+                age_band=age_wording(r["age"], c.group, bool(r["at_my_club"]), settings.age, **who),
                 at_my_club=bool(r["at_my_club"]),
                 club_since=_date(r["club_since"]),
                 pa=r["pa"],
@@ -573,7 +682,7 @@ def _classify(
                 manual_allowed=bool(r["present"] and r["in_scope"] and r["pin"] != "never"),
                 manual_band=(
                     age_wording(
-                        r["age"], active[uid].group, bool(r["at_my_club"]), settings.age, staff
+                        r["age"], active[uid].group, bool(r["at_my_club"]), settings.age, **who
                     )
                     if uid in active
                     else None
@@ -660,15 +769,21 @@ def _counts(conn: sqlite3.Connection, career_id: int, snapshot: Snapshot) -> dic
     )
     row = conn.execute(
         "SELECT"
-        " SUM(in_scope) AS in_scope,"
+        " SUM(in_scope AND media_role IS NULL) AS in_scope,"
         " SUM(in_scope AND is_newgen) AS newgens,"
         " SUM(group_name = 'a') AS a,"
         " SUM(group_name = 'a' AND at_my_club) AS a_my_club,"
         " SUM(group_name = 'b') AS b,"
         " SUM(group_name = 'c') AS c,"
         " SUM(tracked) AS tracked,"
-        " SUM(at_my_club) AS at_my_club,"
-        " SUM(academy) AS academy"
+        " SUM(at_my_club AND media_role IS NULL) AS at_my_club,"
+        " SUM(academy) AS academy,"
+        " SUM(youth_team) AS youth_team,"
+        " SUM(media_role = 'journalist') AS journalists,"
+        " SUM(media_role = 'journalist' AND local_media) AS local_journalists,"
+        " SUM(media_role = 'press officer') AS press_officers,"
+        " SUM(media_role IS NOT NULL AND group_name IS NOT NULL) AS media_picked,"
+        " SUM(drawn_male) AS drawn_male"
         " FROM players WHERE career_id = ? AND present = 1",
         (career_id,),
     ).fetchone()
@@ -774,6 +889,7 @@ def run_sync(
             warnings=warnings,
             table=player_table(conn, career.id) if with_table else [],
             new_at_my_club=stats.arrivals_at_my_club,
+            new_staff=stats.staff_arrivals,
         )
 
 

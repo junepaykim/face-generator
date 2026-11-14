@@ -20,6 +20,9 @@ from the in-game date; clubs outside the kit table take colours from FM27's own 
 Since 2026-11-13 the plan's phases 7 to 13 turn the tool into a Windows program. Phase 7
 (GPU fault recovery) is done: `facegen serve` runs the GPU worker in a child process
 (`facegen worker`) that is started again after a GPU fault. Phase 8 waits for the user.
+Since 2026-11-13 my club's youth teams are group B, journalists and press officers get
+pictures (read from the save's bytes by `datasource/people.py`, as fmsave does not), and
+staff and media can be drawn as men (`gender.py`).
 Still open from Phase 0.1: the continental competition IDs.
 Build the rest phase by phase from `docs/implementation-plan.md`.
 
@@ -123,10 +126,12 @@ src/facegen/
   settings.py             defaults plus database overrides
   settings_history.py     the UI's settings saves, with undo and redo
   db.py                   SQLite schema and migrations
-  datasource/             DataSource protocol, plain records, fmsave adapter
+  datasource/             DataSource protocol, plain records, fmsave adapter;
+                          people.py: gender flags, journalists, press officers from game_db
   identity.py             newgen boundary, career fingerprint
   leagues.py              my league and continental membership
   classify.py             group rules
+  gender.py               who is drawn as a man: staff by a share per job, media as the save
   photos.py               who FM27 shows a photo for: its catalog and facepacks, scanned per sync
   age.py                  real age to age wording (the age band)
   picture.py              the 3:4 shape, published sizes, the reference face crop

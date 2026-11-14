@@ -63,6 +63,9 @@ class PlayerRecord:
     """Strength on the 1 to 20 display scale."""
     personality: Personality | None = None
     """None when the save holds none for the player."""
+    team_slot: int | None = None
+    """The player's team at their club: 0 the first team, higher the club's other teams
+    (reserves, under-23s, under-18s); None for a free agent or an unknown team."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +88,27 @@ class StaffRecord:
     """When the contract at the club started; None for a role with no contract."""
     is_human_manager: bool = False
     personality: Personality | None = None
+    female: bool | None = None
+    """A woman, by her first name's entry in the game database (datasource/people.py); None
+    where the save does not tell."""
+
+
+@dataclass(frozen=True, slots=True)
+class MediaRecord:
+    """A journalist, or a press officer attached to my club (datasource/people.py)."""
+
+    unique_id: int
+    """The game's unique ID for the person; what FM27's config.xml maps, as for players."""
+    name: str
+    birth_date: date | None
+    age: int | None
+    role: str
+    """"journalist" or "press officer"."""
+    nation_id: int | None
+    """Save-local ID of the person's nation, as ClubRecord.nation_id."""
+    club_id: int | None
+    """A press officer's club; None for a journalist."""
+    female: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,3 +151,8 @@ class Snapshot:
     staff_read: bool = True
     """False when the staff reader failed: the staff stored before are then left as they were,
     rather than counted as gone from my club."""
+    media: tuple[MediaRecord, ...] = ()
+    """Every journalist in the save, and my club's press officers."""
+    media_read: bool = True
+    """False when the media reader failed: the media people stored before are left as they
+    were."""

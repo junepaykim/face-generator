@@ -9,15 +9,26 @@ My club's staff are people, not players: they are in group A while on my club's 
 A pre-existing player without a photo in FM27 (neither the game's own nor a facepack's) is
 picked by the newgen thresholds too, when `no_photo` is on (user, 2026-11-12). The academy
 rules stay newgens' own.
+
+Players in my club's teams other than the first team (reserves, under-23s, under-18s) are in
+group B, or A when their CA or PA reaches group A's thresholds, while `youth` is on (user,
+2026-11-13); moving to the first team puts them in A. They are tracked while at my club.
+
+Journalists from my club's country and my club's press officers are in group B and not
+tracked (user, 2026-11-13); other journalists only by a pin. The player rules never apply to
+them.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from facegen.settings import Groups
+
+if TYPE_CHECKING:
+    from facegen.settings import Settings
 
 
 class Group(StrEnum):
@@ -57,6 +68,43 @@ class PlayerFacts:
     photo: bool | None = None
     """FM27 shows a photo for them other than ours: its own or a facepack's. None: unknown
     (FM27's photo list was not read), which never counts as without a photo."""
+    youth: bool = False
+    """A player at my club in one of its teams other than the first team."""
+    media: str | None = None
+    """"journalist" or "press officer" for those people; None for players and staff."""
+    local_media: bool = False
+    """A journalist from my club's country, or a press officer of my club."""
+
+
+@dataclass(frozen=True, slots=True)
+class Rules:
+    """The switches the rules follow, from the settings."""
+
+    staff: bool = True
+    """Settings `staff.enabled`: my club's staff get pictures."""
+    no_photo: bool = True
+    """Settings `no_photo.enabled`: pre-existing players without a photo follow the newgen
+    thresholds."""
+    youth: bool = True
+    """Settings `youth.enabled`: my club's other teams are in group B unless they reach A."""
+    journalists: bool = True
+    """Settings `media.journalists`: journalists from my club's country are in group B."""
+    press_officers: bool = True
+    """Settings `media.press_officers`: my club's press officers are in group B."""
+
+    @classmethod
+    def of(cls, settings: Settings) -> Rules:
+        return cls(
+            staff=settings.staff.enabled,
+            no_photo=settings.no_photo.enabled,
+            youth=settings.youth.enabled,
+            journalists=settings.media.journalists,
+            press_officers=settings.media.press_officers,
+        )
+
+
+ALL_RULES = Rules()
+"""Every rule on: the defaults."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,25 +127,36 @@ def _either(ca: int, pa: int | None, ca_bar: int, pa_bar: int) -> str | None:
 
 def without_photo(f: PlayerFacts) -> bool:
     """A pre-existing player FM27 shows no photo for: neither its own nor a facepack's."""
-    return not f.is_newgen and not f.is_staff and f.photo is False
+    return not f.is_newgen and not f.is_staff and not f.media and f.photo is False
 
 
-def rule_matches(
-    f: PlayerFacts, g: Groups, staff: bool = True, no_photo: bool = True
-) -> list[tuple[Group, str]]:
-    """Every group rule the player meets, with its reason, ignoring pins.
+def my_youth(f: PlayerFacts, rules: Rules) -> bool:
+    """A player in one of my club's other teams, under the youth rule."""
+    return rules.youth and f.at_my_club and f.youth and not f.is_staff and not f.media
 
-    `staff` is whether my club's staff get pictures (settings `staff.enabled`); `no_photo`
-    whether pre-existing players without a photo follow the newgen thresholds (settings
-    `no_photo.enabled`).
-    """
+
+def rule_matches(f: PlayerFacts, g: Groups, rules: Rules = ALL_RULES) -> list[tuple[Group, str]]:
+    """Every group rule the person meets, with its reason, ignoring pins."""
     matches: list[tuple[Group, str]] = []
     if f.is_staff:
-        if f.at_my_club and staff:
+        if f.at_my_club and rules.staff:
             matches.append((Group.A, "on my club's staff"))
         return matches
-    if f.at_my_club:
+    if f.media == "journalist":
+        if f.local_media and rules.journalists:
+            matches.append((Group.B, "journalist from my club's country"))
+        return matches
+    if f.media == "press officer":
+        if f.local_media and rules.press_officers:
+            matches.append((Group.B, "my club's press officer"))
+        return matches
+    if my_youth(f, rules):
+        matches.append((Group.B, "in my club's youth or reserve team"))
+        if why := _either(f.ca, f.pa, g.a.ca_above, g.a.pa_above):
+            matches.append((Group.A, f"youth team, {why}"))
+    elif f.at_my_club:
         matches.append((Group.A, "at my club"))
+    no_photo = rules.no_photo
     if f.is_newgen:
         who, where_sep = "newgen", " "
     elif no_photo and without_photo(f):
@@ -123,28 +182,30 @@ def rule_matches(
     return matches
 
 
-def classify(
-    f: PlayerFacts, g: Groups, staff: bool = True, no_photo: bool = True
-) -> Classification:
-    """The player's group, whether they are tracked, and why.
+def classify(f: PlayerFacts, g: Groups, rules: Rules = ALL_RULES) -> Classification:
+    """The person's group, whether they are tracked, and why.
 
     - Players outside the eligible football (women's clubs) are ignored, pins included.
-    - A pin overrides the rules: "never" excludes the player, a group sets it exactly.
-    - Otherwise the player takes the highest group any rule gives.
-    - Group A players are tracked; so is an academy newgen, for good.
-    - My club's staff are in group A while `staff` (settings `staff.enabled`) is on.
-    - Pre-existing players without a photo follow the newgen thresholds while `no_photo`
-      (settings `no_photo.enabled`) is on.
+    - A pin overrides the rules: "never" excludes the person, a group sets it exactly.
+    - Otherwise the person takes the highest group any rule gives.
+    - Group A players are tracked; so is an academy newgen, for good, and a player in my
+      club's other teams while there.
+    - My club's staff are in group A while `rules.staff` is on.
+    - Pre-existing players without a photo follow the newgen thresholds while
+      `rules.no_photo` is on.
+    - Journalists and press officers are in group B (`rules.journalists`,
+      `rules.press_officers`) and never tracked: their picture is drawn once.
     """
     if not f.in_scope:
         return Classification(None, False, ("not in men's football",))
 
-    academy_tracked = g.b.my_academy and f.academy and f.is_newgen and not f.is_staff
+    player = not f.is_staff and not f.media
+    academy_tracked = g.b.my_academy and f.academy and f.is_newgen and player
 
     if f.pin == "never":
         return Classification(None, False, ("pinned to never",))
 
-    matches = rule_matches(f, g, staff, no_photo)
+    matches = rule_matches(f, g, rules)
     if f.pin is not None:
         group = Group(f.pin)
         reasons = [f"pinned to {group.label}"]
@@ -156,7 +217,12 @@ def classify(
     else:
         return Classification(None, False, ())
 
-    tracked = group is Group.A or academy_tracked
+    if f.media:
+        return Classification(group, False, tuple(reasons))
+    youth_tracked = my_youth(f, rules)
+    tracked = group is Group.A or academy_tracked or youth_tracked
     if academy_tracked and group is not Group.A:
         reasons.append("tracked: came through my academy")
+    elif youth_tracked and group is not Group.A:
+        reasons.append("tracked while at my club")
     return Classification(group, tracked, tuple(reasons))

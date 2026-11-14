@@ -11,7 +11,9 @@ and the master is cropped to exactly 3:4.
 
 A player's picture is a shoot (shoot.py): the kit in one of its looks, a pose of arms and
 angle, and a backdrop, with the season from the career's in-game date. My club's staff are
-dressed by wardrobe.py, with a pose from traits.POSE on the grey backdrop.
+dressed by wardrobe.py, with a pose from traits.POSE on the grey backdrop; journalists and
+press officers too, with a calm pose or none (a prop in hand). Someone whose age wording is
+a man's (gender.py) is drawn and checked as a man.
 
 The model and the tagger sit behind the small `Renderer` and `Tagger` interfaces; the
 runner itself needs neither a GPU nor a save, so the tests drive it with fakes.
@@ -37,7 +39,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from facegen import jobs, qc
-from facegen.age import age_wording
+from facegen.age import age_wording, is_male
 from facegen.db import transaction
 from facegen.domain import FinishedStatus
 from facegen.image_store import ImageStore, master_dir
@@ -69,7 +71,7 @@ from facegen.traits import (
     sample_sheet,
     select_sheet,
 )
-from facegen.wardrobe import Outfit, outfit_for
+from facegen.wardrobe import Outfit, media_pose, outfit_for
 
 MAX_ATTEMPTS = 3
 PRE_ENCODE_JOBS = 32
@@ -181,7 +183,9 @@ class Setup:
     """A player's shoot; None for staff."""
 
     def pose_text(self) -> str:
-        return self.pose.describe() if isinstance(self.pose, Pose) else self.pose
+        if isinstance(self.pose, Pose):
+            return self.pose.describe()
+        return self.pose or "no arm pose"
 
     def describe(self) -> str:
         """Clothes, pose and backdrop in a few words, for logs and previews."""
@@ -317,7 +321,7 @@ class Worker:
             sheet_version, sheet = found
         version = self.images.next_version(job.unique_id)
         wording = job.target_band or age_wording(
-            job.age, job.group, job.at_my_club, self.settings.age, job.staff
+            job.age, job.group, job.at_my_club, self.settings.age, **_audience(job)
         )
         setup = self._setup(job, sheet, version)
         my_club = self.settings.my_club if job.at_my_club else None
@@ -422,7 +426,7 @@ class Worker:
         )
         version = self.images.next_version(job.unique_id)
         wording = job.target_band or age_wording(
-            job.age, job.group, job.at_my_club, s.age, job.staff
+            job.age, job.group, job.at_my_club, s.age, **_audience(job)
         )
         setup = self._setup(job, sheet, version)
         wear = setup.wear
@@ -430,14 +434,14 @@ class Worker:
         if wording is None:
             return self._finish_failed(job, version, sheet_version, None, [], t0, "age unknown")
         prompt = self._prompt(sheet, wording, setup, my_club)
-        expect = qc.expectation(sheet, wear, my_club)
+        expect = qc.expectation(sheet, wear, my_club, male=is_male(wording))
         self._pre_encode(prompt, upcoming)
 
         folder = master_dir(self.data_dir, self.career.key, job.unique_id)
         reference, reference_info = None, None
         scale = self.reference_scale(job)
         if scale is not None:
-            reference, reference_info = self._reference(job, scale, folder, version)
+            reference, reference_info = self._reference(job, scale, folder, version, wording)
         cand_dir = folder / f"v{version:03d}-candidates"
         candidates: list[Candidate] = []
         winner: Candidate | None = None
@@ -471,6 +475,8 @@ class Worker:
             "shoot": setup.shoot.context() if setup.shoot else None,
             "goalkeeper": job.goalkeeper,
             "staff": job.staff,
+            "media": job.media_role,
+            "male": is_male(wording),
             "outfit": wear.look if isinstance(wear, Outfit) else None,
             "my_club": job.at_my_club,
             "sheet_version": sheet_version,
@@ -544,7 +550,13 @@ class Worker:
 
     def _setup(self, job: Job, sheet: CharacterSheet, version: int) -> Setup:
         """A player's shoot (shoot.py), or for my club's staff an outfit in the home colours
-        (wardrobe.py) with a pose from the old library on the grey backdrop."""
+        (wardrobe.py) with a pose from the old library on the grey backdrop; for a journalist
+        or press officer, clothes for their work with a calm pose or a prop in hand."""
+        if job.media_role:
+            home, source = self.kits.kit_for(job.target_club_id, False)
+            outfit = outfit_for(home, job.media_role, job.age, sheet.base_seed, version)
+            pose = media_pose(outfit, sheet.base_seed, version)
+            return Setup(outfit, pose, DEFAULT_BACKDROP, source)
         if job.staff:
             home, source = self.kits.kit_for(job.target_club_id, False)
             outfit = outfit_for(home, job.staff_job, job.age, sheet.base_seed, version)
@@ -676,22 +688,27 @@ class Worker:
     # -- storage --
 
     def _reference(
-        self, job: Job, scale: float, folder: Path, version: int
+        self, job: Job, scale: float, folder: Path, version: int, wording: str
     ) -> tuple[Reference | None, dict[str, Any]]:
         """The player's current picture as a reference, and what to record about it.
 
         The face is cropped from the current master (`picture.face_box`) and kept next to the
-        new picture as vNNN-reference.webp. With no current picture or its file gone, the job
-        is drawn without a reference and the record says why.
+        new picture as vNNN-reference.webp. With no current picture or its file gone, or a
+        current picture of the other gender than `wording`'s, the job is drawn without a
+        reference and the record says why.
         """
         info: dict[str, Any] = {"scale": scale, **_reference_settings(self.renderer)}
         row = self.conn.execute(
-            "SELECT id, version, master_path FROM images"
-            " WHERE career_id = ? AND unique_id = ? AND is_current = 1",
+            "SELECT id, version, master_path, COALESCE(restored_band, age_band) AS band"
+            " FROM images WHERE career_id = ? AND unique_id = ? AND is_current = 1",
             (self.career.id, job.unique_id),
         ).fetchone()
         if row is None or not row["master_path"]:
             return None, {"used": False, "why": "no current picture", **info}
+        if row["band"] is not None and is_male(row["band"]) != is_male(wording):
+            why = "the current picture is of the other gender"
+            self.log(f"  drawn without a reference: {why}")
+            return None, {"used": False, "why": why, **info}
         master = self.data_dir / row["master_path"]
         if not master.is_file():
             why = f"picture file missing: {row['master_path']}"
@@ -714,6 +731,11 @@ class Worker:
             crop=self.images.rel(path),
         )
         return Reference(f"{row['master_path']}|{box}", crop, scale), info
+
+
+def _audience(job: Job) -> dict[str, bool]:
+    """`age_wording`'s staff, media and male flags for a job's person."""
+    return {"staff": job.staff, "media": job.media_role is not None, "male": job.drawn_male}
 
 
 def _model_extras(renderer: Renderer, prompt: Prompt) -> dict[str, Any]:

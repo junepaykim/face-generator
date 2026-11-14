@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
-from facegen.age import age_wording
+from facegen.age import age_wording, audience
 from facegen.classify import GROUP_RANK, Group
 from facegen.db import active_career_id, transaction
 from facegen.jobs import queue_manual as _queue
@@ -430,9 +430,7 @@ def restore_picture(
         if not (data_dir / img["master_path"]).is_file():
             raise ManualError(f"v{img['version']}'s picture file is missing from data/")
         group = p["group_name"] or img["group_name"]
-        band = age_wording(
-            p["age"], group, bool(p["at_my_club"]), settings.age, bool(p["is_staff"])
-        )
+        band = age_wording(p["age"], group, bool(p["at_my_club"]), settings.age, **audience(p))
         conn.execute(
             "UPDATE images SET is_current = 0, published_path = NULL"
             " WHERE career_id = ? AND unique_id = ? AND is_current = 1",

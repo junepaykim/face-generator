@@ -438,6 +438,21 @@ def test_sync_now(env: Env) -> None:
     assert status.message is not None and status.message.startswith("Synced career.fm")
     assert (env.settings.paths.snapshots_dir / "career.fm").is_file()  # read from a copy
     assert woken == [1, 1]
+    assert status.notice is None  # a new save
+
+    # FM27 has not saved since: Sync now says so rather than look as if it missed something.
+    assert syncer.start()
+    syncer.join(10)
+    status = syncer.status()
+    assert status.error is None and status.notice is not None
+    assert status.notice.startswith("FM27 has not saved since career.fm was last synced")
+    assert "save the game" in status.notice.lower()
+
+    # A new save is news again.
+    os.utime(save, (1_700_000_100, 1_700_000_100))
+    assert syncer.start()
+    syncer.join(10)
+    assert syncer.status().notice is None
 
 
 def test_an_error_outside_a_job_does_not_end_the_thread(env: Env) -> None:

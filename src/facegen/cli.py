@@ -106,10 +106,22 @@ def format_report(r: SyncReport) -> str:
             f" ({c['with_photo']:,} have one); {c['without_photo_picked']:,} of them in a group"
             " outside my club"
         )
+    if c.get("youth_team"):
+        lines.append(
+            f"Youth       {c['youth_team']:,} in my club's teams other than the first team"
+        )
+    if c.get("journalists") or c.get("press_officers"):
+        lines.append(
+            f"Media       {c['journalists']:,} journalists ({c['local_journalists']:,} from my"
+            f" club's country), {c['press_officers']:,} press officers;"
+            f" {c['media_picked']:,} in a group"
+        )
     if r.new_at_my_club:
         lines.append(
             f"New         {r.new_at_my_club:,} at my club since the last sync: drawn first"
         )
+    if r.new_staff:
+        lines.append(f"            {r.new_staff:,} new on my club's staff since the last sync")
     if r.enqueued:
         parts = ", ".join(
             f"{kind} {group.upper()} {n:,}" for (kind, group), n in sorted(r.enqueued.items())

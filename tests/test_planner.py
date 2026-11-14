@@ -21,7 +21,7 @@ from facegen.planner import (
     queue_position,
     reference_scale,
 )
-from facegen.settings import Settings
+from facegen.settings import ReferenceSettings, Settings
 
 A = Classification(Group.A, True, ("at my club",))
 A_NEWGEN = Classification(Group.A, True, ("newgen, CA 160 > 155",))
@@ -317,3 +317,27 @@ def test_switching_the_reference_off_stops_it_everywhere(settings: Settings) -> 
     for kind in ("kit", "age", "upgrade", "redraw"):
         assert reference_scale(kind, True, off) is None
         assert reference_scale(kind, False, off) is None
+
+
+# --- the other gender (gender.py) ---------------------------------------------------------------
+
+
+def test_a_tracked_person_now_drawn_as_a_man_gets_a_new_face() -> None:
+    s = state(A, age_band="M2", at_my_club=True, image=ImageState(Group.A, 10, "W05"))
+    want = desired_job(s)
+    assert want is not None and (want.kind, want.reason) == ("reroll", "drawn as a man")
+    assert reference_scale(want.kind, True, _reference()) is None  # a new face: no reference
+    back = state(A, age_band="W05", at_my_club=True, image=ImageState(Group.A, 10, "M2"))
+    assert desired_job(back).kind == "reroll"  # type: ignore[union-attr]
+    # The same gender in another band is an ordinary age re-draw.
+    older = state(A, age_band="M3", at_my_club=True, image=ImageState(Group.A, 10, "M2"))
+    assert desired_job(older).kind == "age"  # type: ignore[union-attr]
+
+
+def test_an_untracked_person_is_not_redrawn_for_gender() -> None:
+    s = state(B, age_band="M2", image=ImageState(Group.B, 10, "W05"))
+    assert desired_job(s) is None
+
+
+def _reference() -> ReferenceSettings:
+    return ReferenceSettings(enabled=True, scale=0.1, other_clubs=True)

@@ -6,7 +6,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
-from facegen.age import age_wording
+from facegen.age import age_wording, audience
 from facegen.datasource.records import Personality
 from facegen.db import ACTIVE_CAREER_ORDER, transaction
 from facegen.domain import FinishedStatus, GroupName, JobKind
@@ -54,6 +54,10 @@ class Job:
     """On my club's staff: dressed by the wardrobe, aged by the staff table."""
     staff_job: str | None = None
     """The staff job in words, None for a player or where the save names none."""
+    media_role: str | None = None
+    """"journalist" or "press officer": dressed for their work, aged by the media table."""
+    drawn_male: bool = False
+    """Drawn as a man (gender.py): aged by the men's table."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,7 +107,7 @@ def queued_jobs(
         "SELECT j.id, j.unique_id, j.kind, j.group_name, j.target_club_id, j.target_band,"
         " j.manual, j.traits_version, j.revision, p.name, p.at_my_club, p.is_goalkeeper,"
         " p.height_cm, p.strength, p.age, p.personality, p.is_staff,"
-        " p.staff_job"
+        " p.staff_job, p.media_role, p.drawn_male"
         " FROM jobs j JOIN players p ON p.career_id = j.career_id AND p.unique_id = j.unique_id"
         " WHERE j.career_id = ? AND j.status = 'queued'"
         + (" AND j.id = ?" if job_id is not None else "")
@@ -130,6 +134,8 @@ def queued_jobs(
             personality=personality_from_json(r["personality"]),
             staff=bool(r["is_staff"]),
             staff_job=r["staff_job"],
+            media_role=r["media_role"],
+            drawn_male=bool(r["drawn_male"]),
         )
         for r in rows
     ]
@@ -309,7 +315,7 @@ def queue_manual(
     settings: Settings,
 ) -> None:
     """Queue a manual job for the player, taking over their queued automatic job if any."""
-    band = age_wording(p["age"], group, bool(p["at_my_club"]), settings.age, bool(p["is_staff"]))
+    band = age_wording(p["age"], group, bool(p["at_my_club"]), settings.age, **audience(p))
     timestamp = now()
     values = (kind, group, TIER_MANUAL, rank, p["club_id"], band, reason)
     cur = conn.execute(

@@ -574,6 +574,8 @@ class SyncStatus:
     unsupported: bool = False
     """The last sync failed because the save reader cannot read the save's build."""
     warnings: list[str] = field(default_factory=list)
+    notice: str | None = None
+    """Sync now read a save that was already synced: FM27 has not saved since."""
 
 
 SYNCED, UNREADABLE, FAILED = "synced", "unreadable", "failed"
@@ -589,7 +591,30 @@ def describe_sync(report: SyncReport) -> str:
     )
     if report.new_at_my_club:
         text += f" {report.new_at_my_club} new at my club, drawn first."
+    if report.new_staff:
+        text += f" {report.new_staff} new on my club's staff."
     return text
+
+
+def unchanged_save_notice(conn: sqlite3.Connection, games_dir: Path) -> str | None:
+    """What to tell the user when the newest save is one that is already synced, else None.
+
+    facegen reads the save file, not the running game: a signing or a new member of staff is
+    in it only once FM27 has saved (spec section 6).
+    """
+    newest = find_latest_save(games_dir)
+    if newest is None:
+        return None
+    version = SaveVersion.of(newest)
+    row = sync_of_save(conn, newest.name, version.mtime)
+    if row is None or row["error"]:
+        return None
+    return (
+        f"FM27 has not saved since {newest.name} was last synced (saved {version.saved_at()}), "
+        "so this sync found nothing new. facegen reads the save file, not the running game: "
+        "a signing or a new member of staff reaches it when FM27 saves. Save the game (or wait "
+        "for its autosave), then press Sync now again."
+    )
 
 
 def describe_activation(report: PublishReport | None) -> str | None:
@@ -660,9 +685,12 @@ class SyncService:
         unsupported = False
         outcome = FAILED
         warnings: list[str] = []
+        notice = None
         conn = db.connect(self.db_path, busy_timeout_ms=BUSY_TIMEOUT_MS)
         try:
             settings = load_settings(conn, self.defaults_path)
+            if save is None and trigger == "sync now":
+                notice = unchanged_save_notice(conn, settings.paths.games_dir)
             report = sync_save(
                 conn, settings, self._source_factory(), save, preview=0, trigger=trigger
             )
@@ -670,6 +698,8 @@ class SyncService:
             message = describe_sync(report)
             warnings = list(report.warnings)
             self._log(message)
+            if notice:
+                self._log(notice)
             try:
                 if line := describe_activation(publish_active(conn, settings)):
                     self._log(line)
@@ -697,6 +727,7 @@ class SyncService:
                     error=error,
                     unsupported=unsupported,
                     warnings=warnings,
+                    notice=notice if outcome == SYNCED else None,
                 )
         self._on_done()
         return outcome

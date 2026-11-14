@@ -57,7 +57,18 @@ def test_age_tables_match_spec():
         # My club's staff (user, 2026-11-12): wide bands, W02 the youngest.
         "staff": {"W02": 18, "W03": 25, "W04": 32, "W05": 39, "W06": 46, "W07": 53,
                   "W08": 61, "W09": 68, "W10": 75},
+        # Women in the media (user, 2026-11-13): the staff bands from W05 up.
+        "media": {"W05": 18, "W06": 46, "W07": 53, "W08": 61, "W09": 68, "W10": 75},
+        # Staff and media drawn as men.
+        "male": {"M1": 18, "M2": 30, "M3": 45, "M4": 60},
     }  # fmt: skip
+
+
+def test_youth_and_media_are_drawn_by_default():
+    """User, 2026-11-13: my club's youth teams at group B, journalists and press officers."""
+    d = load()
+    assert d["youth"] == {"enabled": True}
+    assert d["media"] == {"journalists": True, "press_officers": True}
 
 
 def test_paths_name_no_windows_user():

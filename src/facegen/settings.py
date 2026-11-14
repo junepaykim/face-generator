@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from facegen.age import TABLES, WORDINGS
+from facegen.age import MALE_TABLES, TABLES, WORDINGS
 from facegen.traits import BANNABLE, BodyThresholds
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -127,6 +127,10 @@ class AgeSettings:
     c: tuple[tuple[int, str], ...]
     staff: tuple[tuple[int, str], ...]
     """My club's staff, whatever their group: wide bands, W02 the youngest (user, 2026-11-12)."""
+    media: tuple[tuple[int, str], ...]
+    """Women in the media (journalists, press officers): the staff bands from W05 up."""
+    male: tuple[tuple[int, str], ...]
+    """Staff and media drawn as men (gender.py): the male wordings M1 to M4."""
 
     def table(self, name: str) -> tuple[tuple[int, str], ...]:
         return getattr(self, name)
@@ -138,6 +142,26 @@ class StaffSettings:
 
     enabled: bool
     """False: staff are in no group unless pinned; their pictures are kept."""
+
+
+@dataclass(frozen=True, slots=True)
+class YouthSettings:
+    """My club's teams other than the first team (user, 2026-11-13)."""
+
+    enabled: bool
+    """True: players in my club's reserve, under-23 and under-18 teams are in group B, or A
+    when their CA or PA reaches group A's thresholds, and A once they join the first team.
+    False: they are in group A like the first team."""
+
+
+@dataclass(frozen=True, slots=True)
+class MediaSettings:
+    """Journalists and press officers (user, 2026-11-13), drawn once at group B."""
+
+    journalists: bool
+    """Journalists from my club's country are drawn without a request."""
+    press_officers: bool
+    """My club's press officers are drawn without a request."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,6 +222,8 @@ class Settings:
     groups: Groups
     staff: StaffSettings
     no_photo: NoPhotoSettings
+    youth: YouthSettings
+    media: MediaSettings
     age: AgeSettings
     reference: ReferenceSettings
     my_club: MyClubSettings
@@ -318,9 +344,13 @@ def build_settings(values: Mapping[str, Any], overridden: frozenset[str] = froze
         rows = sorted((k.removeprefix(prefix), v[k]) for k in v if k.startswith(prefix))
         if not rows:
             raise SettingsError(f"age.{name} needs at least one wording")
+        male_table = name in MALE_TABLES
         for wording, first_age in rows:
             if wording not in WORDINGS:
                 raise SettingsError(f"unknown age wording {prefix}{wording}")
+            if WORDINGS[wording].male != male_table:
+                kind = "men's (M1 to M4)" if male_table else "women's (W01 to W10)"
+                raise SettingsError(f"age.{name} holds {kind} wordings only, not {wording}")
             if not _is_int(first_age):
                 raise SettingsError(f"setting {prefix}{wording!r} needs an int")
             _range(prefix + wording, first_age, 0, 100)
@@ -411,6 +441,10 @@ def build_settings(values: Mapping[str, Any], overridden: frozenset[str] = froze
         ),
         staff=StaffSettings(enabled=v["staff.enabled"]),
         no_photo=NoPhotoSettings(enabled=v["no_photo.enabled"]),
+        youth=YouthSettings(enabled=v["youth.enabled"]),
+        media=MediaSettings(
+            journalists=v["media.journalists"], press_officers=v["media.press_officers"]
+        ),
         age=age,
         reference=ReferenceSettings(
             enabled=v["reference.enabled"],

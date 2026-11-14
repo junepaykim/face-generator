@@ -15,6 +15,11 @@ against a white shirt.
 The outfit is seeded by the sheet's base seed and the picture version, like the pose: the
 same picture is always drawn in the same clothes, and a new picture may change them.
 
+Journalists and press officers are dressed from the same library (user, 2026-11-13):
+journalists in smart casual wear with no club colours, often holding a notebook or a
+microphone or wearing a press pass; press officers in club smart wear with a lanyard or a
+clipboard. With a prop in hand they take no arm pose; otherwise a calm one (`media_pose`).
+
 The library is part of the content rule (spec section 3) and has no setting. Every look is
 long-sleeved and layered, and none is cropped, sleeveless or open over skin. Headwear is
 left out (it would hide the hair the quality check looks for), and so are glasses, which are
@@ -27,7 +32,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from facegen.kits import COLOURS, Kit
-from facegen.traits import Option, pick
+from facegen.traits import POSE, Option, pick
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,6 +192,20 @@ LOOKS: dict[str, Look] = {
         sporty=False,
         tones=("navy blue", "grey", "black"),
     ),
+    # Journalists: smart casual, no club colours.
+    "press trench coat": _look(
+        "trench coat, {tone} turtleneck sweater",
+        ("trench coat", "turtleneck"),
+        sporty=False,
+        tones=("black", "grey", "brown"),
+        lean="senior",
+    ),
+    "press cardigan": _look(
+        "{tone} cardigan, white collared shirt",
+        ("cardigan",),
+        sporty=False,
+        tones=("grey", "brown", "navy blue", "beige"),
+    ),
 }
 
 PROPS: dict[str, Option] = {
@@ -195,7 +214,16 @@ PROPS: dict[str, Option] = {
     "lanyard": Option("lanyard, id card", 1, frozenset({"lanyard", "id card"})),
     "stethoscope": Option("stethoscope", 1, frozenset({"stethoscope"})),
     "wristwatch": Option("wristwatch", 1, frozenset({"wristwatch", "watch"})),
+    "notebook": Option(
+        "holding notebook, holding pen", 1, frozenset({"holding notebook", "notebook"})
+    ),
+    "microphone": Option("holding microphone", 1, frozenset({"holding microphone", "microphone"})),
+    "clipboard": Option("holding clipboard", 1, frozenset({"holding clipboard", "clipboard"})),
 }
+HELD_PROPS = frozenset({"notebook", "microphone", "clipboard"})
+"""Props held in both hands: the picture takes no arm pose."""
+MEDIA_POSES = {"crossed": 2, "behind": 2, "hips": 1}
+"""Arm poses for journalists and press officers without a prop in hand (keys of traits.POSE)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -276,6 +304,27 @@ ROLES: dict[str, Role] = {
         },
         {"none": 2, "lanyard": 2},
     ),
+    "journalist": Role(
+        {
+            "open-collar blazer": 3,
+            "shirt and knit": 2,
+            "turtleneck and blazer": 2,
+            "press cardigan": 2,
+            "field jacket": 1,
+            "press trench coat": 1,
+        },
+        {"notebook": 3, "lanyard": 2, "microphone": 1, "none": 2},
+    ),
+    "press officer": Role(
+        {
+            "suit and tie": 2,
+            "open-collar blazer": 2,
+            "blazer and shirt": 2,
+            "polo shirt": 1,
+            "cardigan": 1,
+        },
+        {"lanyard": 3, "none": 2, "clipboard": 1},
+    ),
     "staff": Role(  # a job the save does not name
         {
             "track jacket": 3,
@@ -292,6 +341,8 @@ ROLES: dict[str, Role] = {
 # scout" is a scout, "recruitment analyst" an analyst, "loan manager" a director and
 # "head of youth development" a coach. Labels fmsave does not name yet are covered by words.
 _JOB_WORDS = (
+    ("journalist", "journalist"),
+    ("press", "press officer"),
     ("doctor", "doctor"),
     ("physio", "medical"),
     ("scien", "medical"),
@@ -400,6 +451,17 @@ def outfit_for(
     tones = {t: Option(t) for t in LOOKS[look_name].tones}
     tone = pick(tones, "outfit", base_seed, image_version, "tone") if tones else None
     return dress(home, role_name, look_name, prop_name, tone)
+
+
+def media_pose(outfit: Outfit, base_seed: int, image_version: int) -> str:
+    """A journalist's or press officer's pose: none with a prop in hand, else a calm one.
+
+    The key of traits.POSE, or "" for no arm pose.
+    """
+    if outfit.prop in HELD_PROPS:
+        return ""
+    poses = {name: Option(POSE[name].words, weight) for name, weight in MEDIA_POSES.items()}
+    return pick(poses, "media pose", base_seed, image_version)
 
 
 def dress(

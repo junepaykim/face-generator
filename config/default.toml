@@ -79,8 +79,25 @@ detail_pass = false
 # suits, coats, training wear, lab coats) with the club's colours on one piece, not the
 # playing kit, and their age wording comes from [age.staff]. Staff at other clubs are not
 # read. Pin a person to "never" on their page to leave them out. Requested by the user,
-# 2026-11-12 (docs/spec.md section 2).
+# 2026-11-12 (docs/spec.md section 2). A woman on the staff is drawn as a woman; a man is
+# drawn as a man or a woman, by a share that depends on the job (src/facegen/gender.py).
 enabled = true
+
+[youth]
+# Players in my club's teams other than the first team (reserves, under-23s, under-18s) are
+# in group B, or group A when their CA or PA reaches group A's thresholds, and group A once
+# they are moved to the first team, which re-draws them at A quality (user, 2026-11-13). They
+# are tracked while at my club. Off: they are in group A like the first team.
+enabled = true
+
+[media]
+# Journalists and press officers (user, 2026-11-13), read from the save by
+# src/facegen/datasource/people.py. They are drawn once at group B quality, as the gender the
+# save gives them, in clothes for their work, and not tracked. Journalists from my club's
+# country and my club's press officers are drawn without a request; any other journalist can
+# be picked on the Players page.
+journalists = true
+press_officers = true
 
 [no_photo]
 # Pre-existing players with no photo in FM27 (a silhouette) are picked like newgens: the
@@ -139,6 +156,22 @@ W07 = 53                            # 53-60
 W08 = 61                            # 61-67
 W09 = 68                            # 68-74
 W10 = 75                            # 75 and older
+
+[age.media]                         # journalists and press officers drawn as women
+# The staff bands from W05 up (user, 2026-11-13).
+W05 = 18                            # under 46
+W06 = 46                            # 46-52
+W07 = 53                            # 53-60
+W08 = 61                            # 61-67
+W09 = 68                            # 68-74
+W10 = 75                            # 75 and older
+
+[age.male]                          # staff and media drawn as men
+# Men's wordings follow real age more closely; every one is an adult look.
+M1 = 18                             # under 30: young man
+M2 = 30                             # 30-44: mature male
+M3 = 45                             # 45-59: mature, middle-aged
+M4 = 60                             # 60 and older: old man
 
 [reference]
 # A re-draw of a player who already has a picture (new kit, new age wording, promotion to

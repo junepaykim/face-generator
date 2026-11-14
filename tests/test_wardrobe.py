@@ -140,7 +140,8 @@ def test_no_look_or_prop_shows_skin_or_the_playing_kit() -> None:
             texts.append(dress(COLCHESTER, "staff", name, tone=tone).words())
     for text in texts:
         for word in FORBIDDEN:
-            assert word not in text, (word, text)
+            # At the start of a word: "crop" is a cropped top, not the "crop" in "microphone".
+            assert not re.search(rf"\b{word}", text), (word, text)
 
 
 def test_same_inputs_same_outfit_and_pictures_vary() -> None:
@@ -213,7 +214,10 @@ def test_staff_prompts_keep_the_content_rule(wording: str) -> None:
         for prop in PROPS:
             outfit = dress(RED, "staff", name, prop)
             p = build_prompt(SHEET, wording, outfit, "crossed")
-            assert p.positive.startswith("1girl, solo, safe, ")
+            male = WORDINGS[wording].male
+            assert p.positive.startswith(
+                "1boy, solo, male focus, safe, " if male else "1girl, solo, safe, "
+            )
             assert p.positive.endswith(QUALITY)
             assert STAFF_POSITIVE in p.positive
             assert CONTENT_POSITIVE not in p.positive and "soccer" not in p.positive
@@ -245,3 +249,52 @@ def test_quality_check_ranks_on_the_outfit() -> None:
     assert rank["club colour"] == frozenset({"red necktie"})
     assert rank["prop"] == frozenset({"stethoscope"})
     assert "shirt colour 1" not in rank
+
+
+# --- journalists and press officers (user, 2026-11-13) ----------------------------------------
+
+from facegen.traits import POSE
+from facegen.wardrobe import HELD_PROPS, MEDIA_POSES, media_pose
+
+
+def test_media_roles_from_their_titles() -> None:
+    assert role_for("journalist") == "journalist"
+    assert role_for("press officer") == "press officer"
+    assert role_for("head physio") == "medical"  # staff jobs are unchanged
+
+
+def test_journalists_wear_no_club_colours() -> None:
+    for seed in range(300):
+        outfit = outfit_for(RED, "journalist", 50, seed, 1)
+        assert outfit.role == "journalist" and outfit.look in ROLES["journalist"].looks
+        assert not re.search(r"\bred\b", outfit.words()), outfit.words()
+        assert not outfit.sporty
+
+
+def test_press_officers_wear_club_smart_wear() -> None:
+    looks = {outfit_for(RED, "press officer", 30, seed, 1).look for seed in range(300)}
+    assert looks == set(ROLES["press officer"].looks)
+    colours = [outfit_for(RED, "press officer", 30, seed, 1).words() for seed in range(300)]
+    assert any(re.search(r"\bred\b", words) for words in colours)
+
+
+def test_a_prop_in_hand_means_no_arm_pose() -> None:
+    for seed in range(300):
+        outfit = outfit_for(RED, "journalist", 50, seed, 1)
+        pose = media_pose(outfit, seed, 1)
+        if outfit.prop in HELD_PROPS:
+            assert pose == ""
+        else:
+            assert pose in MEDIA_POSES and pose in POSE
+    props = {outfit_for(RED, "journalist", 50, seed, 1).prop for seed in range(300)}
+    assert {"notebook", "microphone", "lanyard", "none"} <= props
+
+
+def test_media_prompts_keep_the_content_rule() -> None:
+    for seed in range(60):
+        outfit = outfit_for(RED, "journalist", 50, seed, 1)
+        for wording in ("W05", "W09", "M2", "M4"):
+            p = build_prompt(SHEET, wording, outfit, media_pose(outfit, seed, 1))
+            assert STAFF_POSITIVE in p.positive and STAFF_NEGATIVE in p.negative
+            assert p.negative.startswith(CONTENT_NEGATIVE)
+            assert "soccer" not in p.positive and ", ," not in p.positive

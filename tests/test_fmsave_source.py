@@ -7,6 +7,8 @@ otherwise, so the suite needs no save file.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace as NS
@@ -258,6 +260,11 @@ def test_reads_a_real_save_copy() -> None:
     assert len({p.unique_id for p in snap.players}) == len(snap.players)
     with_personality = sum(p.personality is not None for p in snap.players)
     assert with_personality > 0.9 * len(snap.players)
+    # Journalists, press officers and genders: read from the game database's bytes.
+    assert snap.media_read, snap.meta.warnings
+    assert sum(m.role == "journalist" for m in snap.media) > 100
+    assert {m.female for m in snap.media} == {True, False}
+    assert any(p.team_slot == 0 for p in snap.players if p.club_id == snap.managed_club_id)
 
 
 def test_staff_job_in_words() -> None:
@@ -297,6 +304,39 @@ def test_convert_staff_keeps_one_club_and_each_person_once() -> None:
 # --- load(): how fmsave's errors and warnings reach the report ---------------------------------
 
 
+class FakePool:
+    def __init__(self, names: list[str]) -> None:
+        self.names = names
+        self.entry_count = len(names)
+
+    def name_at(self, buffer: bytes, index: int) -> str | None:
+        return self.names[index] if 0 <= index < len(self.names) else None
+
+
+class FakeContext:
+    """fmsave's internals that datasource/people.py borrows, over test_people's bytes."""
+
+    def name_pools(self) -> NS:
+        from test_people import FIRST, SURNAMES
+
+        return NS(
+            first_names=FakePool(FIRST),
+            surnames=FakePool(SURNAMES),
+            common_names=FakePool([]),
+            end_offset=0,
+        )
+
+    @contextmanager
+    def section(self, name: str) -> Iterator[bytes]:
+        from test_people import db
+
+        assert name == "game_db"
+        yield db()
+
+    def club_index(self) -> NS:
+        return NS(uid_by_club_index={12666: 10, 99: 11})
+
+
 class FakeSave:
     """Stands in for fmsave.Save: one club, one player, and readers that can fail."""
 
@@ -306,7 +346,10 @@ class FakeSave:
         known_build: bool = True,
         fail: Exception | None = None,
         staff_fail: Exception | None = None,
+        people: bool = False,
     ) -> None:
+        if people:
+            self._context = FakeContext()
         self.info = NS(
             game="FM27",
             build="27.0.0+2486695" if known_build else "27.1.0+2600000",
@@ -342,7 +385,11 @@ class FakeSave:
     def staff(self) -> list[NS]:
         if self._staff_fail is not None:
             raise self._staff_fail
-        return [fm_staff(3001), fm_staff(3002, club_uid=11)]
+        return [
+            fm_staff(3001, first_name="Emma"),
+            fm_staff(3002, club_uid=11),
+            fm_staff(3003, first_name="Jake"),
+        ]
 
     def close(self) -> None:
         self.closed = True
@@ -364,7 +411,7 @@ def test_load_reads_and_closes_the_save(monkeypatch: pytest.MonkeyPatch) -> None
     _patch_open(monkeypatch, save)
     snap = FmsaveDataSource().load(Path("Career.fm"))
     assert [p.unique_id for p in snap.players] == [2_002_100_000]
-    assert [s.unique_id for s in snap.staff] == [3001]  # my club's staff only
+    assert [s.unique_id for s in snap.staff] == [3001, 3003]  # my club's staff only
     assert snap.staff_read
     assert snap.meta.known_build and save.closed
     assert not any("not one fmsave" in w for w in snap.meta.warnings)
@@ -428,3 +475,51 @@ def test_a_save_from_another_game_is_unsupported(monkeypatch: pytest.MonkeyPatch
     with pytest.raises(SaveReadError, match="checks failed"):
         FmsaveDataSource().load(Path("Career.fm"))
     assert damaged.closed
+
+
+def test_team_slot_is_read() -> None:
+    assert convert_player(fm_player(1, team_slot=2), UID_MAP, None).team_slot == 2
+    assert convert_player(fm_player(1), UID_MAP, None).team_slot is None
+
+
+def test_journalists_press_officers_and_genders(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_open(monkeypatch, FakeSave(people=True))
+    snap = FmsaveDataSource().load(Path("Career.fm"))
+    assert snap.media_read
+    assert [(m.unique_id, m.role, m.nation_id, m.club_id, m.female) for m in snap.media] == [
+        (2002097912, "journalist", 139, None, False),
+        (2002097939, "journalist", 140, None, True),
+        (2002076347, "press officer", 139, 1010, True),
+    ]
+    jake = snap.media[0]
+    assert (jake.name, jake.age, jake.birth_date) == ("Jake Diaz", 55, date(1970, 10, 24))
+    # My club's staff: Emma is a woman's name, Jake a man's.
+    assert [(s.unique_id, s.female) for s in snap.staff] == [(3001, True), (3003, False)]
+
+
+def test_without_the_people_reader_the_sync_goes_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_open(monkeypatch, FakeSave())  # no fmsave internals to borrow
+    snap = FmsaveDataSource().load(Path("Career.fm"))
+    assert snap.players and snap.staff and snap.media == () and not snap.media_read
+    assert all(s.female is None for s in snap.staff)
+    assert any(
+        "journalists, press officers and staff genders unavailable" in w for w in snap.meta.warnings
+    )
+
+
+def test_without_the_gender_table_the_people_stay_as_they_were(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    save = FakeSave(people=True)
+    real = save._context.name_pools
+
+    def pools() -> NS:
+        found = real()
+        found.first_names = FakePool([*found.first_names.names, "Extra"])  # count no longer matches
+        return found
+
+    save._context.name_pools = pools  # type: ignore[method-assign]
+    _patch_open(monkeypatch, save)
+    snap = FmsaveDataSource().load(Path("Career.fm"))
+    assert not snap.media_read and snap.media == ()
+    assert any("gender table was not found" in w for w in snap.meta.warnings)

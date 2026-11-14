@@ -131,12 +131,52 @@ SKIN_SCALE = ("pale skin", "", "slightly tanned skin", "tan", "dark skin, dark-s
 _SKIN_STEP = {"fair": 0, "light": 1, "tan": 3, "dark": 4}
 
 
-def skin_words(skin: str, soften: int = 0) -> str:
+def skin_words(skin: str, soften: int = 0, *, male: bool = False) -> str:
     """Prompt words for a skin tone; tan and dark go `soften` steps lighter, never past light."""
     step = _SKIN_STEP[skin]
     if step >= 3:
         step = max(step - soften, 1)
-    return SKIN_SCALE[step]
+    words = SKIN_SCALE[step]
+    return words.replace("dark-skinned female", "dark-skinned male") if male else words
+
+
+# --- drawn as a man ------------------------------------------------------------------------
+# Staff and media people drawn as men (gender.py) keep their sheet's hair and eye colour, eye
+# shape, skin, mark, glasses and expression. Their hair style and facial hair are drawn from
+# these tables, seeded by the sheet's base seed alone, so they hold for every picture of the
+# sheet; the sheet itself is unchanged. Hair accessories and the fringe are left out.
+
+MALE_HAIR_STYLE = {
+    "short": _o("short hair", 4, "short hair"),
+    "very short": _o("very short hair", 2, "very short hair"),
+    "messy": _o("short hair, messy hair", 2, "messy hair"),
+    "spiked": _o("short hair, spiked hair", 1, "spiked hair"),
+    "undercut": _o("short hair, undercut", 1, "undercut"),
+    "medium": _o("medium hair", 1, "medium hair"),
+}
+FACIAL_HAIR = {
+    "none": _o("", 4),
+    "stubble": _o("stubble", 2, "stubble"),
+    "beard": _o("beard", 1, "beard"),
+    "mustache": _o("mustache", 1, "mustache"),
+    "goatee": _o("goatee", 1, "goatee"),
+}
+MALE_ACCESSORIES = frozenset({"glasses"})
+"""The sheet's accessories a man is drawn with; the rest are hair accessories."""
+
+
+@dataclass(frozen=True, slots=True)
+class MaleLook:
+    hair_style: str
+    facial_hair: str
+
+
+def male_look(base_seed: int) -> MaleLook:
+    """The hair style and facial hair of a sheet drawn as a man."""
+    return MaleLook(
+        hair_style=pick(MALE_HAIR_STYLE, "male hair", base_seed),
+        facial_hair=pick(FACIAL_HAIR, "facial hair", base_seed),
+    )
 
 
 # --- height and build ----------------------------------------------------------------------
@@ -273,8 +313,15 @@ def eyes_drawn_round(eye_shape: str, base_seed: int, share: float) -> bool:
     return int.from_bytes(_digest("round eyes", base_seed)[:8], "big") < share * 2**64
 
 
-# Every stored trait, by sheet field: the sampled ones plus height and build.
-TRAIT_TABLES: dict[str, Mapping[str, Option]] = {**FIELDS, "height": HEIGHT, "build": BUILD}
+# Every stored trait, by sheet field: the sampled ones plus height and build; and a man's
+# hair style and facial hair, derived from the sheet.
+TRAIT_TABLES: dict[str, Mapping[str, Option]] = {
+    **FIELDS,
+    "height": HEIGHT,
+    "build": BUILD,
+    "male_hair": MALE_HAIR_STYLE,
+    "facial_hair": FACIAL_HAIR,
+}
 
 # Traits that `my_club.banned_traits` may name: accessories, marks, and the height and
 # build classes that add words (e.g. "muscular", banned at my club by default).

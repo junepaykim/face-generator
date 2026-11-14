@@ -329,7 +329,23 @@ CREATE TABLE photo_scan (
 );
 """
 
-MIGRATIONS: tuple[str, ...] = (_V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9)
+# Youth teams, journalists and press officers, and drawing people as men (2026-11-13).
+# - players.youth_team: a player at my club in one of its teams other than the first team
+#   (reserves, under-23s, under-18s); they are drawn at group B unless they qualify for A.
+# - players.media_role: 'journalist' or 'press officer' for those people (datasource/people.py),
+#   NULL for players and staff. players.local_media: a journalist from my club's country, or a
+#   press officer of my club: the ones drawn without a request.
+# - players.female: the person is a woman, by their first name (NULL: unknown; players are not
+#   read). players.drawn_male: drawn as a man (staff and media only; gender.py).
+_V10 = """
+ALTER TABLE players ADD COLUMN youth_team INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE players ADD COLUMN media_role TEXT CHECK (media_role IN ('journalist', 'press officer'));
+ALTER TABLE players ADD COLUMN local_media INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE players ADD COLUMN female INTEGER;
+ALTER TABLE players ADD COLUMN drawn_male INTEGER NOT NULL DEFAULT 0;
+"""
+
+MIGRATIONS: tuple[str, ...] = (_V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10)
 
 # The active career: the one whose save was written last (spec section 8). A career synced
 # without a save time (tests, old rows) falls back to when it was synced.

@@ -294,7 +294,7 @@ def player_counts(conn: sqlite3.Connection, career_id: int) -> dict[str, int]:
         "     AND p.pin IS NULL) AS without_photo_picked"
         " FROM players p LEFT JOIN photos ph ON ph.unique_id = p.unique_id"
         " WHERE p.career_id = ? AND p.present = 1 AND p.in_scope = 1 AND p.is_newgen = 0"
-        " AND p.is_staff = 0",
+        " AND p.is_staff = 0 AND p.media_role IS NULL",
         (career_id,),
     ).fetchone()
     return {k: v or 0 for k, v in dict(row).items()}

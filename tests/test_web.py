@@ -453,6 +453,37 @@ def test_my_clubs_staff_on_the_players_pages(env: Env) -> None:
     assert "1 staff" in env.client.get("/status").text
 
 
+def test_youth_and_media_on_the_players_pages(env: Env) -> None:
+    from factories import media_person, player, staff_member
+
+    conn = env.conn()
+    run_sync(
+        conn,
+        snapshot(
+            [*world(), player(1050, name="Kid Hale", age=17, team_slot=2)],
+            staff=[staff_member(NEWGEN + 100, name="Coach Rowe", job="coach", female=False)],
+            media=[media_person(2_002_097_912, female=False)],
+        ),
+        env.settings,
+        save_file="career.fm",
+    )
+    conn.close()
+    youth = env.client.get("/players?role=youth").text
+    assert "Kid Hale" in youth and "Coach Rowe" not in youth
+    assert '<span class="tag">youth team</span>' in youth
+    media = env.client.get("/players?role=media").text
+    assert "Journalist 2002097912" in media and "Kid Hale" not in media
+    assert '<span class="tag">journalist</span>' in media
+    assert "Journalist 2002097912" not in env.client.get("/players?role=players").text
+    detail = env.client.get("/players/2002097912").text
+    assert "journalist from my club&#39;s country, dressed for their work" in detail
+    assert "a man in the save, drawn as a man" in detail
+    coach = env.client.get(f"/players/{NEWGEN + 100}").text
+    assert "a man in the save, drawn as a" in coach
+    status = env.client.get("/status").text
+    assert "1 in my youth teams" in status and "1 journalists and press officers" in status
+
+
 def test_photos_on_the_players_pages_and_the_dashboard(env: Env) -> None:
     def names(query: str) -> set[str]:
         text = env.client.get(f"/players?{query}").text

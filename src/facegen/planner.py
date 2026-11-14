@@ -16,6 +16,8 @@ Rules:
 - A job that failed its checks and went to review is not re-queued for the same target.
 - A re-draw that keeps the character sheet may use the existing picture as a reference
   (`reference_scale`); by default only for players at my club.
+- A tracked person whose picture shows the other gender (a member of staff now drawn as a
+  man, gender.py; the age band's wording says which) gets a new face, without a reference.
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
 
+from facegen.age import is_male
 from facegen.classify import Classification, Group
 from facegen.domain import JobKind, JobStatus
 from facegen.settings import ReferenceSettings
@@ -180,6 +183,9 @@ def desired_job(s: PlayerPlanState) -> DesiredJob | None:
         return job("upgrade", f"promoted to A from {img.group.label}")
     if not s.classification.tracked:
         return None
+    bands = s.age_band is not None and img.age_band is not None
+    if bands and is_male(s.age_band) != is_male(img.age_band):
+        return job("reroll", "drawn as a man" if is_male(s.age_band) else "drawn as a woman")
     if s.club_id != img.club_id:
         return job("kit", "changed club")
     if s.age_band is not None and img.age_band is not None and s.age_band != img.age_band:

@@ -16,7 +16,7 @@ from urllib.parse import urlencode
 
 from facegen import photos
 from facegen.manual import restorable
-from facegen.traits import CharacterSheet, personality_from_json, personality_leans
+from facegen.traits import CharacterSheet, male_look, personality_from_json, personality_leans
 
 PER_PAGE = 100
 
@@ -34,7 +34,13 @@ LEAGUES = {
     "other": "elsewhere",
 }
 ORIGINS = {"any": "newgen or pre-existing", "newgen": "newgens", "existing": "pre-existing"}
-ROLES = {"any": "players and staff", "players": "players", "staff": "my club's staff"}
+ROLES = {
+    "any": "everyone",
+    "players": "players",
+    "youth": "my club's youth teams",
+    "staff": "my club's staff",
+    "media": "journalists and press officers",
+}
 GROUP_FILTERS = {
     "any": "any group",
     "grouped": "in a group",
@@ -179,10 +185,15 @@ def _where(f: PlayerFilter) -> tuple[str, list[Any]]:
         clauses.append("p.is_newgen = 1")
     elif f.origin == "existing":
         clauses.append("p.is_newgen = 0")
-    if f.role == "players":
-        clauses.append("p.is_staff = 0")
-    elif f.role == "staff":
-        clauses.append("p.is_staff = 1")
+    match f.role:
+        case "players":
+            clauses.append("p.is_staff = 0 AND p.media_role IS NULL")
+        case "youth":
+            clauses.append("p.youth_team = 1")
+        case "staff":
+            clauses.append("p.is_staff = 1")
+        case "media":
+            clauses.append("p.media_role IS NOT NULL")
     match f.group:
         case "grouped":
             clauses.append("p.group_name IS NOT NULL")
@@ -240,7 +251,8 @@ def players_page(
     rows = conn.execute(
         "SELECT p.unique_id, p.name, p.age, p.ca, p.pa, p.is_newgen, p.academy, p.at_my_club,"
         " p.in_my_league, p.in_continental, p.in_scope, p.group_name, p.tracked, p.reasons,"
-        " p.pin, p.club_id, p.is_goalkeeper, p.is_staff, p.staff_job, c.name AS club,"
+        " p.pin, p.club_id, p.is_goalkeeper, p.is_staff, p.staff_job, p.media_role,"
+        " p.youth_team, p.local_media, p.drawn_male, c.name AS club,"
         " i.id AS image_id, ph.game AS photo_game, ph.facepack AS photo_facepack,"
         " i.published_path, i.group_name AS image_group, j.status AS job_status,"
         f" j.kind AS job_kind, j.manual AS job_manual, {_LATEST_JOB} AS latest_job"
@@ -300,6 +312,7 @@ def player_detail(
             "version": sheet_row["version"],
             "created_at": sheet_row["created_at"],
             "fields": {k: v for k, v in asdict(cs).items()},
+            "male": asdict(male_look(cs.base_seed)) if player["drawn_male"] else None,
         }
     jobs = [
         dict(j)
@@ -337,7 +350,9 @@ def counts(conn: sqlite3.Connection, career_id: int) -> dict[str, int]:
         "SELECT SUM(group_name = 'a') AS a, SUM(group_name = 'a' AND at_my_club) AS a_my_club,"
         " SUM(group_name = 'b') AS b, SUM(group_name = 'c') AS c, SUM(tracked) AS tracked,"
         " SUM(at_my_club) AS at_my_club, SUM(pin IS NOT NULL) AS pinned,"
-        " SUM(is_staff AND at_my_club) AS staff, SUM(group_name = 'a' AND is_staff) AS a_staff"
+        " SUM(is_staff AND at_my_club) AS staff, SUM(group_name = 'a' AND is_staff) AS a_staff,"
+        " SUM(youth_team) AS youth, SUM(group_name IS NOT NULL AND media_role IS NOT NULL)"
+        " AS media"
         " FROM players WHERE career_id = ? AND present = 1",
         (career_id,),
     ).fetchone()

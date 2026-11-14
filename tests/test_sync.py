@@ -653,9 +653,10 @@ ME = NEWGEN + 101  # the save's human manager
 def staff_world() -> list:
     from factories import staff_member
 
+    # Both women in the save: drawn as women, aged by the staff table (gender.py).
     return [
-        staff_member(COACH, age=45, job="assistant manager", ca=180),
-        staff_member(ME, age=49, job="manager", ca=None, human=True),
+        staff_member(COACH, age=45, job="assistant manager", ca=180, female=True),
+        staff_member(ME, age=49, job="manager", ca=None, human=True, female=True),
     ]
 
 
@@ -687,12 +688,12 @@ def test_my_clubs_staff_are_group_a_tracked_and_aged_by_the_staff_table(
 def test_a_staff_age_band_change_is_redrawn(conn: sqlite3.Connection, settings: Settings) -> None:
     from factories import staff_member
 
-    sync(conn, snapshot(world(), staff=[staff_member(COACH, age=52)]), settings)
+    sync(conn, snapshot(world(), staff=[staff_member(COACH, age=52, female=True)]), settings)
     conn.execute("DELETE FROM jobs")
     add_image(conn, COACH, "a", MY_CLUB, "W06")
-    sync(conn, snapshot(world(), staff=[staff_member(COACH, age=52)]), settings)
+    sync(conn, snapshot(world(), staff=[staff_member(COACH, age=52, female=True)]), settings)
     assert COACH not in jobs_of(conn)
-    sync(conn, snapshot(world(), staff=[staff_member(COACH, age=53)]), settings)
+    sync(conn, snapshot(world(), staff=[staff_member(COACH, age=53, female=True)]), settings)
     assert jobs_of(conn)[COACH] == ("age", "a", "W07")
 
 
@@ -752,7 +753,10 @@ def test_new_staff_are_not_counted_as_arrivals(
     sync(conn, snapshot(world()), settings)
     report = sync(conn, snapshot(world(), staff=staff_world()), settings)
     assert report.new_at_my_club == 0
+    assert report.new_staff == 2  # counted on their own line
     assert report.counts["a"] == 2 + 2 + 1  # my two players, the two staff, ABROAD_A
+    again = sync(conn, snapshot(world(), staff=staff_world()), settings)
+    assert again.new_staff == 0
 
 
 # --- pre-existing players without a photo (user, 2026-11-12) ---------------------------------
@@ -869,3 +873,168 @@ def test_a_dry_run_stores_no_photo_scan(conn: sqlite3.Connection, settings: Sett
     assert report.enqueued[("initial", "a")] == 4  # my two, ABROAD_A and STAR_ELSEWHERE
     for table in ("photos", "photo_scan"):
         assert conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0, table
+
+
+# --- my club's youth teams (user, 2026-11-13) -------------------------------------------------
+
+YOUTH_OLD = 1050  # pre-existing, at my club, in a youth team
+
+
+def test_my_youth_teams_are_group_b_until_the_first_team(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    kid = player(YOUTH_OLD, ca=50, pa=120, age=17, team_slot=2)
+    report = sync(conn, snapshot([*world(), kid]), settings)
+    row = player_row(conn, YOUTH_OLD)
+    assert (row["youth_team"], row["group_name"], row["tracked"]) == (1, "b", 1)
+    assert queued(conn)[YOUTH_OLD] == ("initial", "b")
+    assert report.counts["youth_team"] == 1
+    # The first team is still group A, and a youth player elsewhere is no one's youth.
+    assert groups(conn)[MINE_OLD] == "a" and player_row(conn, MINE_OLD)["youth_team"] == 0
+    add_image(conn, YOUTH_OLD, "b", MY_CLUB, "W02")
+    # Moved to the first team: group A, re-drawn at A quality.
+    sync(conn, snapshot([*world(), replace(kid, team_slot=0)]), settings)
+    assert groups(conn)[YOUTH_OLD] == "a"
+    assert queued(conn)[YOUTH_OLD] == ("upgrade", "a")
+
+
+def test_a_youth_player_with_group_a_ability_is_a(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    sync(
+        conn, snapshot([*world(), player(YOUTH_OLD, ca=60, pa=175, age=17, team_slot=1)]), settings
+    )
+    assert groups(conn)[YOUTH_OLD] == "a"
+
+
+def test_the_youth_rule_can_be_turned_off(conn: sqlite3.Connection, settings: Settings) -> None:
+    report = sync(
+        conn, snapshot([*world(), player(YOUTH_OLD, ca=50, age=17, team_slot=2)]), settings
+    )
+    s = set_override(conn, "youth.enabled", False)
+    reclassify(conn, report.career.id, s)
+    assert groups(conn)[YOUTH_OLD] == "a"
+    assert queued(conn)[YOUTH_OLD] == ("initial", "a")
+
+
+# --- journalists and press officers (user, 2026-11-13) ----------------------------------------
+
+HOME_REPORTER = 2_002_097_912  # from my club's country (nation 1)
+AWAY_REPORTER = 2_002_097_913  # from abroad
+MY_PRESS = 2_002_076_347  # my club's press officer
+
+
+def media_world() -> list:
+    from factories import media_person
+
+    return [
+        media_person(HOME_REPORTER, nation=1, female=False, age=55),
+        media_person(AWAY_REPORTER, nation=2, female=True, age=40),
+        media_person(MY_PRESS, role="press officer", club_id=MY_CLUB, female=True, age=29),
+    ]
+
+
+def test_journalists_and_press_officers_are_stored_and_drawn_once_at_b(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    report = sync(conn, snapshot(world(), media=media_world()), settings)
+    home, away, press = (player_row(conn, u) for u in (HOME_REPORTER, AWAY_REPORTER, MY_PRESS))
+    assert (home["media_role"], home["local_media"], home["is_newgen"], home["ca"]) == (
+        "journalist", 1, 0, 0,
+    )  # fmt: skip
+    assert (home["group_name"], home["tracked"], home["drawn_male"], home["female"]) == (
+        "b", 0, 1, 0,
+    )  # fmt: skip
+    assert (away["local_media"], away["group_name"]) == (0, None)
+    assert (press["at_my_club"], press["local_media"], press["group_name"]) == (1, 1, "b")
+    jobs = jobs_of(conn)
+    assert jobs[HOME_REPORTER] == ("initial", "b", "M3")  # a man of 55
+    assert jobs[MY_PRESS] == ("initial", "b", "W05")  # a woman of 29: band 5 at the least
+    assert AWAY_REPORTER not in jobs
+    assert report.counts["journalists"] == 2 and report.counts["local_journalists"] == 1
+    assert report.counts["press_officers"] == 1 and report.counts["media_picked"] == 2
+    # Not counted among the players in men's football.
+    assert report.counts["in_scope"] == sync_count_players(conn)
+
+
+def sync_count_players(conn: sqlite3.Connection) -> int:
+    return conn.execute(
+        "SELECT COUNT(*) FROM players WHERE present = 1 AND in_scope = 1 AND media_role IS NULL"
+    ).fetchone()[0]
+
+
+def test_a_journalist_from_abroad_can_be_hand_picked(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    report = sync(conn, snapshot(world(), media=media_world()), settings)
+    conn.execute("UPDATE players SET pin = 'b' WHERE unique_id = ?", (AWAY_REPORTER,))
+    reclassify(conn, report.career.id, settings)
+    assert jobs_of(conn)[AWAY_REPORTER] == ("initial", "b", "W05")  # a woman of 40
+
+
+def test_media_switches_and_reader_failures(conn: sqlite3.Connection, settings: Settings) -> None:
+    report = sync(conn, snapshot(world(), media=media_world()), settings)
+    s = set_override(conn, "media.journalists", False)
+    reclassify(conn, report.career.id, s)
+    assert HOME_REPORTER not in jobs_of(conn) and MY_PRESS in jobs_of(conn)
+    s = set_override(conn, "media.journalists", True)
+    reclassify(conn, report.career.id, s)
+    # A sync whose media reader failed leaves them as they were.
+    sync(conn, snapshot(world(), media=(), media_read=False), s)
+    assert player_row(conn, HOME_REPORTER)["present"] == 1
+    assert HOME_REPORTER in jobs_of(conn)
+    # Gone from a save that was read: no longer drawn, as for anyone.
+    sync(conn, snapshot(world(), media=media_world()[1:]), s)
+    assert player_row(conn, HOME_REPORTER)["present"] == 0
+    assert HOME_REPORTER not in jobs_of(conn)
+
+
+# --- drawn as a man (gender.py) -------------------------------------------------------------
+
+
+def test_staff_gender_is_stored_and_men_take_the_mens_table(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    from factories import staff_member
+
+    from facegen.gender import drawn_male
+
+    people = [staff_member(COACH + i, age=50, job="coach", female=False) for i in range(40)]
+    report = sync(conn, snapshot(world(), staff=people), settings)
+    jobs = jobs_of(conn)
+    men = 0
+    for s in people:
+        row = player_row(conn, s.unique_id)
+        male = drawn_male(
+            report.career.key, s.unique_id, staff=True, media=False, female=False, job="coach"
+        )
+        assert (row["female"], row["drawn_male"]) == (0, int(male))
+        assert jobs[s.unique_id][2] == ("M3" if male else "W06")
+        men += male
+    assert 10 < men < 40  # about 70% of the men are drawn as men
+
+
+def test_a_staff_member_drawn_as_the_other_gender_gets_a_new_face(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    from factories import staff_member
+
+    report = sync(
+        conn, snapshot(world(), staff=[staff_member(COACH, age=45, female=True)]), settings
+    )
+    conn.execute("DELETE FROM jobs")
+    add_image(conn, COACH, "a", MY_CLUB, "W05")
+    # Say this person is now drawn as a man (a man in the save, his share drawn).
+    conn.execute("UPDATE players SET drawn_male = 1 WHERE unique_id = ?", (COACH,))
+    reclassify(conn, report.career.id, settings)
+    assert jobs_of(conn)[COACH] == ("reroll", "a", "M3")
+
+
+def test_stored_gender_stays_when_the_people_reader_failed(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    from factories import staff_member
+
+    sync(conn, snapshot(world(), staff=[staff_member(COACH, female=True)]), settings)
+    sync(conn, snapshot(world(), staff=[staff_member(COACH)], media_read=False), settings)
+    assert (player_row(conn, COACH)["female"], player_row(conn, COACH)["drawn_male"]) == (1, 0)
