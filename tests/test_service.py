@@ -23,6 +23,7 @@ from facegen.service import (
     PollerService,
     SyncService,
     WorkerService,
+    WorkerStatus,
 )
 from facegen.settings import Settings, load_settings, set_overrides
 from facegen.sync import classify_and_plan, run_sync
@@ -245,6 +246,85 @@ def test_an_error_pauses_the_worker_and_keeps_the_job(env: Env) -> None:
     assert env.drawn() == [(MINE_2, "initial")]
 
 
+def _illegal_access() -> RuntimeError:
+    return RuntimeError("CUDA error: an illegal memory access was encountered")
+
+
+def test_a_gpu_fault_stops_drawing_and_keeps_the_job(env: Env) -> None:
+    env.gpu.fail_first_render = _illegal_access()
+    svc = env.service()
+    assert svc.step() > 0
+    status = svc.status()
+    assert status.state == "gpu-fault" and status.gpu_fault and status.paused
+    assert "start it again" in status.detail and "trying again" not in status.detail
+    assert "illegal memory access" in (status.last_error or "")
+    assert not status.models_loaded
+    assert env.drawn() == [] and env.queued()[0][0] == MINE_2  # back in the queue
+    # Nothing draws again in this process, whatever is pressed.
+    assert not svc.resume() and not svc.generate_now()
+    assert svc.step() > 0 and env.drawn() == []
+    status = svc.status()
+    assert status.state == "gpu-fault" and not status.generate_now
+    assert len(env.gpu.renderers) == 1  # no new model was loaded onto the dead card
+
+
+def test_a_gpu_fault_whose_cleanup_fails_too_leaves_no_closed_model(env: Env) -> None:
+    """The crash of 2026-11-13: freeing the card failed as well, and the next job was given
+    the closed model (AttributeError: 'NoneType' object has no attribute 'text_encoder')."""
+    env.gpu.fail_first_render = _illegal_access()
+    svc = env.service()
+
+    def broken_close() -> None:
+        raise _illegal_access()
+
+    original = env.gpu.renderer
+
+    def renderer():  # type: ignore[no-untyped-def]
+        r = original()
+        r.close = broken_close  # type: ignore[method-assign]
+        return r
+
+    svc._renderer_factory = renderer
+    assert svc.step() > 0  # does not raise
+    assert svc.status().state == "gpu-fault"
+    assert svc._worker is not None and not svc._worker.models_loaded
+    assert any("could not free the GPU cleanly" in line for line in svc.status().log)
+
+
+def test_a_gpu_fault_outside_a_job_is_not_retried(env: Env) -> None:
+    svc = env.service()
+    calls = []
+
+    def step() -> float:
+        calls.append(1)
+        svc._stop.set()
+        raise _illegal_access()
+
+    svc.step = step  # type: ignore[method-assign]
+    svc._loop()
+    assert calls == [1] and svc.status().state == "gpu-fault"
+
+
+def test_worker_errors_reach_the_log_file_with_their_traceback(env: Env) -> None:
+    import logging
+
+    from facegen.service import log_to_file
+
+    path = log_to_file(env.settings.paths.data_dir)
+    assert log_to_file(env.settings.paths.data_dir) == path  # asked twice: one handler
+    try:
+        env.gpu.fail_first_render = _illegal_access()
+        env.service().step()
+        text = path.read_text(encoding="utf-8")
+    finally:
+        log = logging.getLogger("facegen")
+        for handler in list(log.handlers):
+            log.removeHandler(handler)
+            handler.close()
+    assert "Traceback" in text and "illegal memory access" in text and "GPU fault" in text
+    assert text.count("Traceback") == 1
+
+
 def test_a_job_cancelled_between_choosing_and_starting_is_skipped(env: Env) -> None:
     svc = env.service()
     original = svc._worker_for
@@ -404,6 +484,140 @@ def test_an_idle_worker_says_what_it_holds_back(env: Env) -> None:
     assert env.drawn()[-1] == (B_NEWGEN, "initial")
     run_until_idle(svc)
     assert svc.status().detail == "the queue is empty"
+
+
+# --- Phase 7b: in a worker process, the loop ends wherever the GPU must be let go of -----------
+
+
+@dataclass
+class RecordingLink:
+    """Stands in for worker_process.ChildLink."""
+
+    lines: list[str] = field(default_factory=list)
+    statuses: list[WorkerStatus] = field(default_factory=list)
+
+    def line(self, text: str) -> None:
+        self.lines.append(text)
+
+    def status(self, read) -> None:  # type: ignore[no-untyped-def]
+        self.statuses.append(read())
+
+
+def test_in_a_worker_process_a_gpu_fault_ends_the_loop(env: Env) -> None:
+    env.gpu.fail_first_render = _illegal_access()
+    link = RecordingLink()
+    svc = env.service(link=link, generate_now=True)
+    svc.step()
+    assert svc.exit is not None and svc.exit.reason == "fault"
+    assert svc.exit.job is not None and svc.exit.job.unique_id == MINE_2
+    assert "illegal memory access" in (svc.exit.message or "")
+    assert svc._stop.is_set()
+    assert env.queued()[0][0] == MINE_2  # back in the queue for the next process
+    status = svc.status()
+    assert status.state == "gpu-fault" and "start it again" not in status.detail
+    assert status.generate_now and not status.paused  # left for the next process
+    assert any("GPU fault: " in line for line in link.lines)
+    assert not any("drawing stopped" in line for line in link.lines)
+    assert link.statuses[-1].state == "gpu-fault"
+
+
+def test_in_a_worker_process_a_job_error_ends_the_loop(env: Env) -> None:
+    env.gpu.fail_first_render = RuntimeError("CUDA out of memory")
+    svc = env.service(link=RecordingLink())
+    svc.step()
+    assert svc.exit is not None and svc.exit.reason == "error"
+    assert svc.exit.job is not None and svc.exit.job.unique_id == MINE_2
+    assert "CUDA out of memory" in (svc.exit.message or "")
+    assert env.queued()[0][0] == MINE_2
+
+
+def test_in_a_worker_process_pause_publishes_and_ends_the_loop(env: Env) -> None:
+    svc = env.service(link=RecordingLink())
+    assert svc.step() == 0.0 and svc.exit is None
+    svc.pause()
+    svc.step()
+    assert svc.exit is not None and svc.exit.reason == "paused"
+    assert not svc.status().models_loaded
+    pack = env.settings.paths.fm_user_dir / "graphics" / "facegen"
+    assert len(list(pack.glob("*/*.png"))) == 1
+
+
+def test_in_a_worker_process_freeing_the_gpu_ends_the_loop(env: Env) -> None:
+    svc = env.service(link=RecordingLink())
+    svc.step()
+    env.fm[0] = True  # FM27 starts while the model is loaded
+    svc.step()
+    assert svc.exit is not None and svc.exit.reason == "freed"
+    # The next process has loaded nothing: it waits for FM27 and stays.
+    fresh = env.service(link=RecordingLink())
+    assert fresh.step() == FM_POLL_SECONDS
+    assert fresh.exit is None and fresh.status().state == "waiting"
+
+
+def test_in_a_worker_process_an_empty_queue_ends_the_loop_after_a_while(env: Env) -> None:
+    svc = env.service(link=RecordingLink())
+    run_until_idle(svc)
+    assert svc.exit is None
+    env.clock.now += IDLE_UNLOAD_SECONDS
+    svc.step()
+    assert svc.exit is not None and svc.exit.reason == "freed"
+    fresh = env.service(link=RecordingLink())
+    env.clock.now += IDLE_UNLOAD_SECONDS
+    fresh.step()
+    fresh.step()
+    assert fresh.exit is None  # nothing loaded, nothing to free
+
+
+def test_in_a_worker_process_pause_ends_the_loop_with_no_career_or_another_worker(
+    env: Env, config_file: Path
+) -> None:
+    settings = load_settings(defaults_path=config_file)
+    empty = WorkerService(
+        settings.paths.db_path.with_name("empty.db"),
+        renderer_factory=FakeRenderer,
+        tagger_factory=FakeTagger,
+        defaults_path=config_file,
+        kits=load_kits(),
+        link=RecordingLink(),
+    )
+    empty.step()
+    assert empty.exit is None
+    empty.pause()
+    empty.step()
+    assert empty.exit is not None and empty.exit.reason == "paused"
+
+    svc = env.service(link=RecordingLink())
+    svc.pause()
+    with worker_lock(env.settings.paths.data_dir):  # another worker holds the GPU
+        svc.run()  # returns at once instead of waiting for it
+    assert svc.exit is not None and svc.exit.reason == "paused"
+
+
+def test_in_a_worker_process_a_crash_of_the_loop_says_so(env: Env) -> None:
+    svc = env.service(link=RecordingLink())
+
+    def broken(conn: sqlite3.Connection) -> None:
+        raise sqlite3.DatabaseError("file is not a database")
+
+    svc._requeue_stale = broken  # type: ignore[method-assign]
+    svc.run()
+    assert svc.exit is not None and svc.exit.reason == "crashed"
+    assert "file is not a database" in (svc.exit.message or "")
+
+
+def test_in_a_worker_process_the_link_hears_each_line_and_change_once(env: Env) -> None:
+    link = RecordingLink()
+    svc = env.service(link=link)
+    svc.step()
+    assert any(line.endswith("Mine Two (1002), initial A") for line in link.lines)
+    assert all(line[2] == ":" for line in link.lines)  # time-stamped
+    assert link.statuses[-1].done == 1
+    # Without a link nothing is sent and nothing ends.
+    plain = env.service()
+    plain.step()
+    plain.pause()
+    plain.step()
+    assert plain.exit is None and not plain._stop.is_set()
 
 
 # --- Phase 4: the save watcher, career packs and the exit test -------------------------------

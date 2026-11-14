@@ -6,15 +6,17 @@ facegen publish
 facegen gallery
 facegen status
 facegen serve [--port N] [--paused] [--no-worker] [--no-watch]
+facegen worker [--generate-now]   (started by serve: the GPU worker in its own process)
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import os
 import sqlite3
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
@@ -66,11 +68,14 @@ def _default_tagger() -> Tagger:
 
 @dataclass(frozen=True, slots=True)
 class Gpu:
-    """What `run` uses for the GPU and the FM27 check; the tests pass fakes."""
+    """What `run` and `worker` use for the GPU and the FM27 check; the tests pass fakes."""
 
     renderer: Callable[[], Renderer] = _default_renderer
     tagger: Callable[[], Tagger] = _default_tagger
     fm_check: Callable[[], bool | None] = fm_running
+    program: tuple[str, ...] | None = None
+    """How `serve` starts facegen for its worker process, before `[--config X] worker`;
+    None: this Python with `-m facegen.cli`. The tests give a script that passes fakes."""
 
 
 def format_report(r: SyncReport) -> str:
@@ -389,31 +394,28 @@ def cmd_serve(
     *,
     run_server: Callable[..., None] | None = None,
 ) -> int:
-    """The web UI with the worker and the save watcher in the background, until Ctrl+C."""
-    from facegen.service import PollerService, SyncService, WorkerService
+    """The web UI with the save watcher in the background and the GPU worker in a process of
+    its own (`facegen worker`, supervised by worker_process.WorkerProxy), until Ctrl+C."""
+    from facegen.service import PollerService, SyncService, log_to_file
     from facegen.web.app import AppContext, create_app
+    from facegen.worker_process import STOP_TIMEOUT, WorkerProxy, worker_command
 
     host = settings.ui.host
     port = args.port or settings.ui.port
     if host not in LOOPBACK:
         print(f"ui.host is {host!r}: facegen serves on this PC only (127.0.0.1).", file=out)
         return 2
-    try:
-        kits = load_kits(catalog=catalog_path(settings.paths.data_dir))
+    try:  # the worker process loads them again; a broken table is reported here, at once
+        load_kits(catalog=catalog_path(settings.paths.data_dir))
     except KitError as exc:
         print(f"kits: {exc}", file=out)
         return 2
     db_path = settings.paths.db_path
+    print(f"Log: {log_to_file(settings.paths.data_dir)}", file=out, flush=True)
     worker = None
     if not args.no_worker:
-        worker = WorkerService(
-            db_path,
-            renderer_factory=gpu.renderer,
-            tagger_factory=gpu.tagger,
-            defaults_path=args.config,
-            kits=kits,
-            fm_check=gpu.fm_check,
-            start_paused=args.paused,
+        worker = WorkerProxy(
+            worker_command(gpu.program, args.config), db_path=db_path, start_paused=args.paused
         )
     syncer = SyncService(
         db_path,
@@ -442,9 +444,45 @@ def cmd_serve(
         if poller is not None:
             poller.stop(timeout=None)
         if worker is not None:
-            print("Stopping the worker after the current job...", file=out, flush=True)
+            print(
+                f"Stopping the worker after the current job (at most {STOP_TIMEOUT:.0f} s)...",
+                file=out,
+                flush=True,
+            )
             worker.stop(timeout=None)
     return 0
+
+
+def cmd_worker(args: argparse.Namespace, settings: Settings, gpu: Gpu, out: TextIO) -> int:
+    """The GPU worker as a child of `facegen serve`: commands on stdin, messages on stdout
+    (worker_process). Not meant to be run by hand."""
+    import faulthandler
+    import signal
+
+    from facegen.worker_process import protocol_streams, serve_child
+
+    commands: Iterable[str] = sys.stdin
+    process = out is sys.stdout
+    if process:
+        signal.signal(signal.SIGINT, signal.SIG_IGN)  # Ctrl+C is the parent's: it sends stop
+        faulthandler.enable()  # a crash in native code leaves its stack on stderr, so in the log
+        commands, out = protocol_streams(sys.stdin, sys.stdout)
+    ended = serve_child(
+        settings,
+        defaults_path=args.config,
+        renderer_factory=gpu.renderer,
+        tagger_factory=gpu.tagger,
+        fm_check=gpu.fm_check,
+        commands=commands,
+        out=out,
+        generate_now=args.generate_now,
+    )
+    if process and ended.reason == "fault":
+        # The CUDA context is dead, and torch tearing it down at exit could hang or abort.
+        # Everything has been said and stored: leave without the interpreter's clean-up.
+        sys.stderr.flush()
+        os._exit(0)
+    return 2 if ended.reason == "crashed" else 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -475,6 +513,10 @@ def build_parser() -> argparse.ArgumentParser:
     v.add_argument("--paused", action="store_true", help="start with the worker paused")
     v.add_argument("--no-worker", action="store_true", help="no GPU work")
     v.add_argument("--no-watch", action="store_true", help="do not watch the saves folder")
+    w = sub.add_parser(
+        "worker", help="the GPU worker process that serve starts (JSON lines on stdin and stdout)"
+    )
+    w.add_argument("--generate-now", action="store_true", help="draw the whole queue at once")
     return parser
 
 
@@ -505,6 +547,9 @@ def main(
             return cmd_serve(
                 args, settings, source_factory, gpu or Gpu(), out, run_server=run_server
             )
+        if args.command == "worker":
+            conn.close()  # the worker opens its own
+            return cmd_worker(args, settings, gpu or Gpu(), out)
         return cmd_status(settings, conn, out)
     finally:
         conn.close()

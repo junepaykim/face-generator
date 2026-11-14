@@ -13,6 +13,16 @@ in `schedule.auto_groups`, in queue order, and publishes after each picture.
   unloaded so the card is free for the game.
 - An error (model failed to load, out of memory) pauses the worker and shows the error;
   the job goes back to the queue. Resume tries again.
+- A GPU fault (gpu.is_fatal: the driver reported an error that leaves the process's CUDA
+  context dead) also puts the job back, but nothing can be drawn again in this process:
+  the state is "gpu-fault", and Resume and Generate now are refused with the reason.
+- In a worker process (`facegen worker`, given a `link` to its parent), the loop ends
+  instead wherever the GPU must be let go of for certain, and `exit` says why: paused,
+  a job error, a GPU fault, or the models unloaded because FM27 runs or the queue stayed
+  empty ("freed"). The process then exits, which frees all of its GPU memory, and the
+  parent (worker_process.WorkerProxy) starts a new one when there is work again.
+- Every line of the worker's log, and the full traceback of every error, also goes to the
+  "facegen" logger; `facegen serve` writes it to data/logs/facegen.log (`log_to_file`).
 - At start it publishes the active career's pictures once, so a pack left behind (pictures
   drawn by `facegen run --no-publish`, or older square pictures now cropped to 3:4) is put
   right without waiting for the next picture.
@@ -30,6 +40,8 @@ does; only the GPU waits for the game.
 
 from __future__ import annotations
 
+import logging
+import os
 import sqlite3
 import threading
 import time
@@ -38,11 +50,14 @@ from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from facegen import db
 from facegen.datasource.base import DataSource
+from facegen.gpu import describe as describe_gpu
+from facegen.gpu import is_fatal
 from facegen.kits import KitTable, catalog_path, load_kits
 from facegen.poller import (
     UNSUPPORTED_ADVICE,
@@ -77,10 +92,48 @@ FM_POLL_SECONDS = 30.0
 IDLE_UNLOAD_SECONDS = 300.0
 """An empty queue for this long frees the GPU."""
 LOG_LINES = 200
+GPU_FAULT_ADVICE = (
+    "The graphics driver reported an error, and this run of facegen cannot draw any more. "
+    "Close facegen and start it again to continue; the queue is kept."
+)
+CHILD_FAULT_DETAIL = "the graphics driver reported an error; this worker process ends"
+LOG_FILE = Path("logs") / "facegen.log"
+"""Relative to the data folder."""
+
+logger = logging.getLogger("facegen")
+
+
+def log_to_file(data_dir: Path) -> Path:
+    """Send the "facegen" logger to data/logs/facegen.log (1 MB, three old files kept)."""
+    path = data_dir / LOG_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not any(getattr(h, "baseFilename", None) == str(path.resolve()) for h in logger.handlers):
+        handler = RotatingFileHandler(path, maxBytes=1_000_000, backupCount=3, encoding="utf-8")
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+    return path
 
 
 def _stamp() -> str:
     return datetime.now().strftime("%H:%M:%S")
+
+
+EXIT_REASONS = ("stopped", "paused", "error", "freed", "fault", "crashed")
+"""Why a worker process's loop ended: asked to stop (or the parent went away); paused; a job
+failed with an error that may pass (the worker pauses); the models were unloaded (FM27 runs,
+the queue stayed empty); a GPU fault; or the loop itself crashed."""
+
+
+@dataclass(frozen=True, slots=True)
+class Exit:
+    """Why a worker process's loop ended, for its parent (see EXIT_REASONS)."""
+
+    reason: str
+    message: str | None = None
+    job: Job | None = None
+    """The job being drawn, for a job error or a GPU fault during one."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,16 +141,41 @@ class WorkerStatus:
     """What the dashboard shows about the worker."""
 
     state: str
-    """starting, idle, paused, waiting, running, error or stopped."""
+    """starting, idle, paused, waiting, running, error, gpu-fault or stopped."""
     detail: str
     current: Job | None
     paused: bool
+    gpu_fault: bool
+    """The GPU cannot be used again in this process: only a restart draws again."""
     generate_now: bool
     models_loaded: bool
     done: int
     failed: int
     last_error: str | None
     log: tuple[str, ...]
+
+
+class Link(Protocol):
+    """A worker process's line to its parent (worker_process.ChildLink)."""
+
+    def line(self, text: str) -> None:
+        """A line for the dashboard's log, time-stamped."""
+
+    def status(self, read: Callable[[], WorkerStatus]) -> None:
+        """The status changed: `read` gives it. The link reads and sends in one step, so
+        two threads cannot send theirs in the wrong order."""
+
+
+class WorkerControl(Protocol):
+    """What the web app and "sync now" use: WorkerService in a thread, or
+    worker_process.WorkerProxy for a worker process."""
+
+    def pause(self) -> None: ...
+    def resume(self) -> bool: ...
+    def generate_now(self) -> bool: ...
+    def wake(self) -> None: ...
+    def status(self) -> WorkerStatus: ...
+    def log(self, line: str) -> None: ...
 
 
 class WorkerService:
@@ -111,8 +189,10 @@ class WorkerService:
         kits: KitTable | None = None,
         fm_check: Callable[[], bool | None] = fm_running,
         start_paused: bool = False,
+        generate_now: bool = False,
         clock: Callable[[], float] = time.monotonic,
         conn: sqlite3.Connection | None = None,
+        link: Link | None = None,
     ) -> None:
         self.db_path = db_path
         self.defaults_path = defaults_path
@@ -133,13 +213,17 @@ class WorkerService:
         self._detail = ""
         self._current: Job | None = None
         self._paused = start_paused
-        self._generate_now = False
+        self._generate_now = generate_now
         self._done = 0
         self._failed = 0
         self._last_error: str | None = None
+        self._gpu_fault = False
         self._idle_since: float | None = None
         self._unpublished = True
         """Publish at the next chance: after a picture, and once at start."""
+        self._link = link
+        self.exit: Exit | None = None
+        """In a worker process, why the loop ended; None until it does."""
 
     # -- control, from the web threads --
 
@@ -149,20 +233,30 @@ class WorkerService:
         self.log("Paused.")
         self.wake()
 
-    def resume(self) -> None:
+    def resume(self) -> bool:
+        """Go on drawing. False, with nothing changed, after a GPU fault."""
         with self._lock:
+            if self._gpu_fault:
+                return False
             self._paused = False
             self._last_error = None
         self.log("Resumed.")
         self.wake()
+        return True
 
-    def generate_now(self) -> None:
-        """Draw the whole current queue, every group, even while FM27 runs (spec section 6)."""
+    def generate_now(self) -> bool:
+        """Draw the whole current queue, every group, even while FM27 runs (spec section 6).
+
+        False, with nothing changed, after a GPU fault.
+        """
         with self._lock:
+            if self._gpu_fault:
+                return False
             self._generate_now = True
             self._paused = False
         self.log("Generate now: drawing the whole queue, every group, even if FM27 is running.")
         self.wake()
+        return True
 
     def wake(self) -> None:
         """Look at the queue now rather than at the next poll."""
@@ -175,6 +269,7 @@ class WorkerService:
                 detail=self._detail,
                 current=self._current,
                 paused=self._paused,
+                gpu_fault=self._gpu_fault,
                 generate_now=self._generate_now,
                 models_loaded=self._worker is not None and self._worker.models_loaded,
                 done=self._done,
@@ -184,18 +279,48 @@ class WorkerService:
             )
 
     def log(self, line: str) -> None:
+        stamped = f"{_stamp()}  {line}"
         with self._lock:
-            self._log.append(f"{_stamp()}  {line}")
+            self._log.append(stamped)
+        logger.info("%s", line)
+        if self._link is not None:
+            self._link.line(stamped)
+            self._link.status(self.status)
 
     def _set(self, state: str, detail: str = "", current: Job | None = None) -> None:
         with self._lock:
             self._state, self._detail, self._current = state, detail, current
+        if self._link is not None:
+            self._link.status(self.status)
+
+    def _leave_if_paused(self) -> bool:
+        """In a worker process, a pause ends it wherever the loop is waiting."""
+        with self._lock:
+            paused = self._paused
+        return paused and self._leave("paused")
+
+    def _leave(self, reason: str, message: str | None = None, job: Job | None = None) -> bool:
+        """In a worker process, end the loop so the process exits; else do nothing.
+
+        Returns whether the loop ends. The first reason given is the one kept.
+        """
+        if self._link is None:
+            return False
+        if self.exit is None:
+            self.exit = Exit(reason, message, job)
+        self._stop.set()
+        self._wake.set()
+        return True
 
     # -- the thread --
 
     def start(self) -> None:
         self._thread = threading.Thread(target=self._main, name="facegen-worker", daemon=True)
         self._thread.start()
+
+    def run(self) -> None:
+        """The loop in this thread, until stopped: a worker process's main thread."""
+        self._main()
 
     def stop(self, timeout: float | None = None) -> None:
         """Ask the loop to stop after the current job; wait up to `timeout` seconds."""
@@ -211,16 +336,22 @@ class WorkerService:
                 settings = load_settings(conn, self.defaults_path)
                 try:
                     with worker_lock(settings.paths.data_dir):
-                        self.log("Worker started.")
+                        if self._link is None:
+                            self.log("Worker started.")
+                        else:  # one per process: the log file is enough
+                            logger.info("worker process %d started its loop", os.getpid())
                         self._requeue_stale(conn)
                         self._loop()
                     break
                 except WorkerBusy:
                     self._set("waiting", "another facegen worker is running (facegen run?)")
-                    self._wait(FM_POLL_SECONDS)
-        except Exception as exc:  # noqa: BLE001 - never die silently: show it in the UI
+                    if not self._leave_if_paused():
+                        self._wait(FM_POLL_SECONDS)
+        except Exception as exc:  # never die silently: show it in the UI
             self._set("error", f"worker crashed: {exc}")
             self.log("".join(traceback.format_exception_only(exc)).strip())
+            logger.error("worker crashed", exc_info=exc)
+            self._leave("crashed", f"worker crashed: {type(exc).__name__}: {exc}")
         finally:
             if self._worker is not None:
                 self._worker.unload()
@@ -233,13 +364,39 @@ class WorkerService:
         while not self._stop.is_set():
             try:
                 delay = self.step()
-            except Exception as exc:  # noqa: BLE001 - e.g. the database stayed locked: retry
+            except Exception as exc:  # e.g. the database stayed locked: retry
                 message = f"{type(exc).__name__}: {exc}"
-                self._set("error", f"{message}; trying again shortly")
-                self.log(f"Worker error: {message}")
-                delay = FM_POLL_SECONDS
+                logger.error("worker pass failed", exc_info=exc)
+                if is_fatal(exc):  # outside a job, e.g. while publishing frees the card
+                    self._fault(message)
+                    delay = IDLE_POLL_SECONDS
+                else:
+                    self._set("error", f"{message}; trying again shortly")
+                    self.log(f"Worker error: {message}")
+                    delay = FM_POLL_SECONDS
             if delay > 0:
                 self._wait(delay)
+
+    def _fault(self, message: str, job: Job | None = None) -> None:
+        """A GPU fault: stop drawing for good, let go of the models, say what to do.
+
+        In a worker process the process ends instead and its parent decides what follows;
+        the requests (generate now) are left as they were for the next process.
+        """
+        leaving = self._leave("fault", message, job)
+        with self._lock:
+            self._gpu_fault = True
+            self._last_error = f"{job.name}: {message}" if job else message
+            if not leaving:
+                self._paused = True
+                self._generate_now = False
+        if self._worker is not None:
+            self._worker.unload()
+        self.log(
+            f"  GPU fault: {message}" if leaving else f"  GPU fault, drawing stopped: {message}"
+        )
+        logger.error("GPU fault (%s)", describe_gpu())
+        self._set("gpu-fault", CHILD_FAULT_DETAIL if leaving else GPU_FAULT_ADVICE)
 
     def _wait(self, seconds: float) -> None:
         self._wake.wait(seconds)
@@ -290,16 +447,23 @@ class WorkerService:
         worker = self._worker_for(conn)
         if worker is None:
             self._set("idle", "no career yet: sync a save")
+            self._leave_if_paused()
             return IDLE_POLL_SECONDS
         settings = worker.settings
         with self._lock:
             paused, generate_now = self._paused, self._generate_now
+            gpu_fault = self._gpu_fault
 
+        if gpu_fault:
+            self._publish_pending(worker)  # needs no GPU: finished pictures still reach FM27
+            self._set("gpu-fault", GPU_FAULT_ADVICE)
+            return IDLE_POLL_SECONDS
         if paused:
             self._publish_pending(worker)
             if worker.unload():
                 self.log("Paused: the GPU is free.")
             self._set("paused", self._last_error or "")
+            self._leave("paused")
             return IDLE_POLL_SECONDS
 
         if generate_now:
@@ -316,6 +480,7 @@ class WorkerService:
                 self._idle_since = now
             elif now - self._idle_since >= IDLE_UNLOAD_SECONDS and worker.unload():
                 self.log("Queue empty: the GPU is free.")
+                self._leave("freed")
             self._set("idle", self._idle_detail(worker))
             return IDLE_POLL_SECONDS
         self._idle_since = None
@@ -326,6 +491,7 @@ class WorkerService:
                 self._publish_pending(worker)
                 if worker.unload():
                     self.log("FM27 is running: the GPU is free.")
+                    self._leave("freed")
                 why = (
                     "FM27 is running"
                     if running
@@ -341,14 +507,19 @@ class WorkerService:
             outcome = worker.run_job(job, ready[1:])
         except JobGone:
             return 0.0  # cancelled or changed meanwhile (a settings change); look again
-        except Exception as exc:  # noqa: BLE001 - model load, out of memory: pause and report
+        except Exception as exc:  # model load, out of memory: pause and report
             message = f"{type(exc).__name__}: {exc}"
+            logger.error("job failed: %s (%s)", job.name, job.unique_id, exc_info=exc)
+            if is_fatal(exc):
+                self._fault(message, job)
+                return IDLE_POLL_SECONDS
             with self._lock:
                 self._paused = True
                 self._last_error = f"{job.name}: {message}"
             worker.unload()
             self.log(f"  error, worker paused: {message}")
             self._set("error", self._last_error or message)
+            self._leave("error", self._last_error, job)
             return IDLE_POLL_SECONDS
         with self._lock:
             if outcome.status == "done":

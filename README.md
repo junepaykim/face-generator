@@ -77,11 +77,13 @@ flowchart LR
 The parts talk to each other only through one SQLite database:
 
 - A **poller** watches the saves folder, so every save or autosave starts a sync.
-- A **worker** owns the GPU.
+- A **worker** owns the GPU. It runs in a process of its own, so a graphics driver error
+  costs one restart rather than the session, and quitting or pausing hands every byte of
+  video memory back.
 - A small **FastAPI page** lets you change thresholds and ask for pictures by hand.
 
 By default the worker waits while FM27 is running and frees the GPU when you start the
-game.
+game. Its log is in `data/logs/facegen.log`.
 
 ## The constraint
 

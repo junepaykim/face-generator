@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import gc
 from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
@@ -436,7 +437,8 @@ class AnimagineRenderer:
         }
 
     def close(self) -> None:
-        """Free the GPU memory the model holds."""
+        """Free the GPU memory the model holds. Never raises: after a CUDA fault even
+        `empty_cache` fails, and the references are dropped all the same."""
         self.pipe = self.img2img = None
         self._texts.clear()
         self._embeds = {}
@@ -444,7 +446,8 @@ class AnimagineRenderer:
         self._plain_processors = {}
         self._reference_embeds = {}
         gc.collect()
-        self._torch.cuda.empty_cache()
+        with contextlib.suppress(Exception):
+            self._torch.cuda.empty_cache()
 
     def memory(self) -> dict[str, float]:
         cuda = self._torch.cuda

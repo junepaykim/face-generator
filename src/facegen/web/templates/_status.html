@@ -15,12 +15,14 @@
       <p class="muted small">GPU model {{ "loaded" if worker.models_loaded else "not loaded" }} · this session {{ worker.done }} drawn, {{ worker.failed }} sent to review{% if worker.generate_now %} · <strong>generating now</strong> (FM27 check off until the queue is empty){% endif %}</p>
       {% if worker.last_error %}<p class="bad small">{{ worker.last_error }}</p>{% endif %}
       <div class="buttons">
-        {% if worker.paused %}
+        {% if worker.gpu_fault %}
+          <span class="muted small">Close facegen and start it again to go on drawing.</span>
+        {% elif worker.paused %}
           <form method="post" action="/worker/resume"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="primary">Resume</button></form>
         {% else %}
           <form method="post" action="/worker/pause"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button>Pause</button></form>
         {% endif %}
-        {% if not worker.generate_now %}
+        {% if not worker.generate_now and not worker.gpu_fault %}
           <form method="post" action="/worker/generate-now"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button title="Draw the whole queue now, every group, even while FM27 is running">Generate now</button></form>
         {% endif %}
       </div>

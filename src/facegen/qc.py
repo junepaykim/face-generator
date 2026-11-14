@@ -243,11 +243,13 @@ class Eva02Tagger:
 
     def close(self) -> None:
         """Free the GPU memory the tagger holds."""
+        import contextlib
         import gc
 
         self.model = None
         gc.collect()
-        self._torch.cuda.empty_cache()
+        with contextlib.suppress(Exception):  # after a CUDA fault this fails too
+            self._torch.cuda.empty_cache()
 
     def __call__(self, images: Sequence[Image]) -> list[TagResult]:
         from facegen.gpu import on_gpu

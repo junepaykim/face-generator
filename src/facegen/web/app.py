@@ -42,7 +42,13 @@ from facegen.manual import ManualError
 from facegen.planner import REFERENCE_KINDS, reference_scale
 from facegen.poller import UNSUPPORTED_ADVICE
 from facegen.publish import RELOAD_HINT, PublishError
-from facegen.service import BUSY_TIMEOUT_MS, PollerService, SyncService, WorkerService
+from facegen.service import (
+    BUSY_TIMEOUT_MS,
+    GPU_FAULT_ADVICE,
+    PollerService,
+    SyncService,
+    WorkerControl,
+)
 from facegen.settings import Settings, SettingsError, load_defaults, load_settings
 from facegen.settings_history import Outcome
 from facegen.traits import TRAIT_TABLES, eyes_drawn_round
@@ -78,7 +84,8 @@ KIND_NAMES = {
 class AppContext:
     db_path: Path
     defaults_path: Path | None = None
-    worker: WorkerService | None = None
+    worker: WorkerControl | None = None
+    """WorkerService in a thread, or worker_process.WorkerProxy for a worker process."""
     syncer: SyncService | None = None
     poller: PollerService | None = None
 
@@ -263,9 +270,11 @@ def create_app(ctx: AppContext) -> FastAPI:
             case "pause":
                 ctx.worker.pause()
             case "resume":
-                ctx.worker.resume()
+                if not ctx.worker.resume():
+                    return _redirect("/", err=GPU_FAULT_ADVICE)
             case "generate-now":
-                ctx.worker.generate_now()
+                if not ctx.worker.generate_now():
+                    return _redirect("/", err=GPU_FAULT_ADVICE)
             case _:
                 raise HTTPException(404)
         return _redirect("/")

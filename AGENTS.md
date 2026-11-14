@@ -17,6 +17,9 @@ settings page saves each change as it is made, with undo, and pre-existing playe
 in FM27 are picked like newgens (`no_photo.enabled`). Players' pictures are shoots since
 2026-11-12: the kit in several looks, poses of arms and angle, coloured backdrops, the season
 from the in-game date; clubs outside the kit table take colours from FM27's own kit images.
+Since 2026-11-13 the plan's phases 7 to 13 turn the tool into a Windows program. Phase 7
+(GPU fault recovery) is done: `facegen serve` runs the GPU worker in a child process
+(`facegen worker`) that is started again after a GPU fault. Phase 8 waits for the user.
 Still open from Phase 0.1: the continental competition IDs.
 Build the rest phase by phase from `docs/implementation-plan.md`.
 
@@ -57,7 +60,7 @@ uv run pytest           # run tests
 uv run ruff check .     # lint
 uv run ruff format .    # format
 uv run facegen sync --dry-run   # read the newest save (via a snapshot copy), store nothing
-uv run facegen serve            # web UI on http://127.0.0.1:8765/ with the GPU worker
+uv run facegen serve            # web UI on http://127.0.0.1:8765/; the GPU worker in a child process
 uv run facegen serve --no-worker   # the UI only: no GPU work
 (cd native && cargo test && cargo clippy --all-targets && cargo fmt --check)   # the Rust side
 ```
@@ -137,7 +140,9 @@ src/facegen/
   worker.py               GPU job runner
   quantise.py             INT8 weights for the UNet's Linear layers
   prompt_cache.py         prompt embeddings in system memory; the next jobs' prompts in one trip
-  service.py              facegen serve's worker thread and "sync now"
+  service.py              the worker loop, "sync now" and the save watcher
+  worker_process.py       the worker as a child process: pipe protocol, child, WorkerProxy
+  supervision.py          restart, give-up and review policy after a GPU fault
   qc.py                   quality and content checks
   figure.py               the figure scan behind qc.head_top and picture.face_box
   native.py               loads the optional Rust extension, or None

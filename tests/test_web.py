@@ -504,6 +504,18 @@ def test_worker_and_sync_buttons(env: Env) -> None:
     assert env.client.post("/worker/explode").status_code == 404
 
 
+def test_after_a_gpu_fault_the_buttons_are_refused_with_what_to_do(env: Env) -> None:
+    env.worker._fault("AcceleratorError: CUDA error: an illegal memory access was encountered")
+    for action in ("resume", "generate-now"):
+        page = follow(env, env.client.post(f"/worker/{action}"))
+        assert "start it again" in page
+    status = env.worker.status()
+    assert status.gpu_fault and status.paused and not status.generate_now
+    page = env.client.get("/status").text
+    assert "gpu-fault" in page and "/worker/resume" not in page
+    assert "/worker/generate-now" not in page
+
+
 def test_only_local_requests_are_answered(env: Env) -> None:
     assert env.client.get("/", headers={"host": "evil.example"}).status_code == 403
     assert env.client.get("/", headers={"host": "127.0.0.1.evil.example:8765"}).status_code == 403

@@ -2,6 +2,8 @@
 
 - Models load from the local Hugging Face cache only; nothing reaches the network while
   rendering or tagging (AGENTS.md hard rule 6).
+- `is_fatal` tells an error that ends the process's use of the GPU (a dead CUDA context)
+  from one it can get past, such as running out of memory.
 - `expandable_segments` keeps reserved-but-unused GPU memory low. Windows holds about 3 GB
   of the card's 16; without it the driver spills into system RAM and rendering slows down
   (docs/research.md section 5).
@@ -29,6 +31,52 @@ def prepare_environment() -> None:
         "PYTORCH_CUDA_ALLOC_CONF", ""
     ):
         print("warning: torch was imported before the GPU environment was set", file=sys.stderr)
+
+
+_FATAL_TYPES = frozenset({"AcceleratorError"})
+_FATAL_TEXT = (
+    "cuda error",
+    "cudaerror",
+    "device-side assert",
+    "unspecified launch failure",
+    "illegal memory access",
+)
+
+
+def is_fatal(exc: BaseException) -> bool:
+    """Whether the error left the process's CUDA context dead.
+
+    After such an error every later CUDA call fails too, freeing memory included: only a
+    new process draws again. Running out of memory is not one: the context lives and the
+    job can be tried again. Told from the type's name and the message, so no torch is
+    needed; an error raised from another (`raise ... from`) counts if its cause does.
+    """
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        text = str(current).lower()
+        if "out of memory" not in text and (
+            type(current).__name__ in _FATAL_TYPES or any(mark in text for mark in _FATAL_TEXT)
+        ):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def describe() -> str:
+    """torch's version and the card, for the log; never raises and never imports torch."""
+    torch = sys.modules.get("torch")
+    if torch is None:
+        return "torch not loaded"
+    try:
+        return (
+            f"torch {torch.__version__}, CUDA {torch.version.cuda}, {torch.cuda.get_device_name(0)}"
+        )
+    except Exception as exc:  # noqa: BLE001 - a dead context fails here too
+        return (
+            f"torch {getattr(torch, '__version__', '?')} (card not readable: {type(exc).__name__})"
+        )
 
 
 @contextmanager

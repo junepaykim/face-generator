@@ -65,8 +65,8 @@ input[type=checkbox] { width: 16px; height: 16px; }
 .state { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px;
          font-weight: 600; background: var(--line); }
 .state-running { background: var(--okbg); color: var(--ok); }
-.state-waiting, .state-paused { background: var(--warnbg); color: var(--warn); }
-.state-error, .state-stopped { background: var(--badbg); color: var(--bad); }
+.state-waiting, .state-paused, .state-restarting { background: var(--warnbg); color: var(--warn); }
+.state-error, .state-gpu-fault, .state-stopped { background: var(--badbg); color: var(--bad); }
 
 table { border-collapse: collapse; }
 table.kv th { text-align: left; font-weight: 500; color: var(--muted); padding: 2px 14px 2px 0;

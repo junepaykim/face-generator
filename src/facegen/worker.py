@@ -265,15 +265,21 @@ class Worker:
     def unload(self) -> bool:
         """Free the GPU: drop the model and the tagger; they load again on the next job.
 
-        Returns whether anything was loaded.
+        Returns whether anything was loaded. Never raises: the models are let go of first,
+        so a `close` that fails (after a CUDA fault every GPU call does) cannot leave a
+        closed model behind for the next job.
         """
-        loaded = self.models_loaded
-        for model in (self._renderer, self._tagger):
-            close = getattr(model, "close", None)
-            if close is not None:
-                close()
+        models = (self._renderer, self._tagger)
         self._renderer = self._tagger = None
-        return loaded
+        for model in models:
+            close = getattr(model, "close", None)
+            if close is None:
+                continue
+            try:
+                close()
+            except Exception as exc:  # noqa: BLE001 - report it; the model is gone either way
+                self.log(f"  could not free the GPU cleanly: {type(exc).__name__}: {exc}")
+        return any(m is not None for m in models)
 
     # -- queue --
 

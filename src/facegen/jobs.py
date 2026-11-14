@@ -181,6 +181,21 @@ def requeue_stale(conn: sqlite3.Connection) -> int:
         ).rowcount
 
 
+def send_to_review(conn: sqlite3.Connection, job_id: int, error: str) -> bool:
+    """Fail a job the worker could not get through (the graphics driver failed while drawing
+    it, more than once), so it waits on the review list instead of being tried again. No
+    picture is kept. False if the job is no longer queued or running."""
+    with transaction(conn):
+        return (
+            conn.execute(
+                "UPDATE jobs SET status = 'failed', error = ?, updated_at = ?"
+                " WHERE id = ? AND status IN ('queued', 'running')",
+                (error, now(), job_id),
+            ).rowcount
+            == 1
+        )
+
+
 def finish(
     conn: sqlite3.Connection,
     job_id: int,
