@@ -48,10 +48,10 @@ from collections.abc import Callable, Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Any, TextIO
 
-from facegen import db, jobs
+from facegen import db, jobs, procs
 from facegen.datasource.records import Personality
 from facegen.jobs import Job
-from facegen.kits import KitError, KitTable, catalog_path, load_kits
+from facegen.kits import KitError, KitTable, load_kits
 from facegen.renderer import Renderer, Tagger
 from facegen.service import (
     BUSY_TIMEOUT_MS,
@@ -213,6 +213,41 @@ def protocol_streams(stdin: TextIO, stdout: TextIO) -> tuple[Iterator[str], Text
     return fd_lines(stdin.fileno()), messages
 
 
+PIPE_POLL_SECONDS = 0.05
+"""How often the worker process looks for a command on Windows (`pipe_reader`)."""
+
+
+def pipe_reader(fd: int, *, poll: float = PIPE_POLL_SECONDS) -> Callable[[], bytes]:
+    """A function that returns the next bytes from `fd`, b"" at the end of input.
+
+    On Windows a pipe is not read until something is waiting in it (PeekNamedPipe). A read
+    left waiting on a pipe handle holds up every other call on that handle, and loading a
+    DLL asks Windows about the standard handles: with a thread waiting on stdin, `import
+    torch` stopped inside numpy until the parent next sent a command, which could be never
+    (docs/research.md section 10). Elsewhere, and for anything but a pipe, a plain read.
+    """
+    if os.name != "nt":
+        return lambda: os.read(fd, 4096)
+    import _winapi
+    import msvcrt
+
+    handle = msvcrt.get_osfhandle(fd)
+    if _winapi.GetFileType(handle) != _winapi.FILE_TYPE_PIPE:
+        return lambda: os.read(fd, 4096)
+
+    def read() -> bytes:
+        while True:
+            try:
+                available, _ = _winapi.PeekNamedPipe(handle, 0)
+            except OSError:  # the parent closed its end (ERROR_BROKEN_PIPE): the end
+                return b""
+            if available:
+                return os.read(fd, min(available, 65536))
+            time.sleep(poll)
+
+    return read
+
+
 def fd_lines(fd: int) -> Iterator[str]:
     """The lines read from a file descriptor, without Python's buffered reader.
 
@@ -220,10 +255,11 @@ def fd_lines(fd: int) -> Iterator[str]:
     thread waiting inside sys.stdin's buffered reader holds its lock, and the interpreter
     cannot take that lock as it shuts down: it aborts ("could not acquire lock for
     <stdin> at interpreter shutdown", SIGABRT) after a few seconds. A bare `os.read` holds
-    no such lock.
+    no such lock. On Windows the pipe is polled instead of waited on (`pipe_reader`).
     """
+    read = pipe_reader(fd)
     pending = b""
-    while chunk := os.read(fd, 4096):
+    while chunk := read():
         pending += chunk
         *lines, pending = pending.split(b"\n")
         for line in lines:
@@ -277,7 +313,7 @@ def serve_child(
     try:
         if kits is None:
             try:
-                kits = load_kits(catalog=catalog_path(settings.paths.data_dir))
+                kits = load_kits(data_dir=settings.paths.data_dir)
             except KitError as exc:
                 ex = Exit("crashed", f"kits: {exc}")
                 link.exit(ex)
@@ -538,7 +574,8 @@ class WorkerProxy:
             }
         else:
             extra = {"start_new_session": True}
-        return subprocess.Popen(
+        # No console window of its own on Windows (procs.py), even when the parent has none.
+        return procs.popen_quiet(
             command,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,

@@ -52,10 +52,8 @@ from facegen.worker_process import WorkerProxy, worker_command
 
 CHILD = Path(__file__).resolve().parent / "soak_child.py"
 LINES = {
-    "fm_user_dir": 'fm_user_dir = "/mnt/c/Users/<Windows user>/Documents/Sports Interactive/'
-    'Football Manager 27"',
-    "fm_install_dir": 'fm_install_dir = "/mnt/c/Program Files (x86)/Steam/steamapps/common/'
-    'Football Manager 27"',
+    "fm_user_dir": 'fm_user_dir = ""',
+    "fm_install_dir": 'fm_install_dir = ""',
     "data_dir": 'data_dir = "data"',
 }
 

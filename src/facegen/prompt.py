@@ -24,10 +24,8 @@ the tenth of players at each end only (traits.py, settings `body`).
 Logos, brand marks, lettering and numbers on kits are accepted (decisions.md, 2026-11-10),
 so the negative prompt deliberately has no terms for them.
 
-Staff, journalists and press officers drawn as men (gender.py; a men's age wording, age.py)
-get SUBJECT_MALE, the sheet's colours with a man's hair style and facial hair (traits.py),
-MALE_CONTENT_NEGATIVE beside CONTENT_NEGATIVE, and COMPOSITION_NEGATIVE_MALE. The content
-rule is the same for them: fully clothed, long sleeves, nothing bare.
+Everyone is drawn as a woman or a girl (user, 2026-11-14): staff, journalists and press
+officers included.
 """
 
 from __future__ import annotations
@@ -45,18 +43,14 @@ from facegen.traits import (
     EXPRESSION,
     EYE_COLOUR,
     EYE_SHAPE,
-    FACIAL_HAIR,
     FRINGE,
     HAIR_COLOUR,
     HAIR_STYLE,
     HEIGHT,
-    MALE_ACCESSORIES,
-    MALE_HAIR_STYLE,
     MARK,
     POSE,
     CharacterSheet,
     eyes_drawn_round,
-    male_look,
     skin_words,
 )
 from facegen.wardrobe import Outfit
@@ -65,7 +59,6 @@ if TYPE_CHECKING:
     from facegen.settings import MyClubSettings
 
 SUBJECT = "1girl, solo"
-SUBJECT_MALE = "1boy, solo, male focus"
 RATING = "safe"
 FRAMING = "upper body, looking at viewer, standing"
 """Followed by the backdrop's words (shoot.Backdrop; "simple background, grey background")."""
@@ -83,10 +76,6 @@ STAFF_NEGATIVE = "soccer uniform, jersey, shorts"
 STAFF_SMART_NEGATIVE = "sportswear"
 COMPOSITION_NEGATIVE = (
     "multiple girls, 2girls, multiple views, text, watermark, signature, username, artist name"
-)
-MALE_CONTENT_NEGATIVE = "shirtless, topless male, pectorals, bara, abs"
-COMPOSITION_NEGATIVE_MALE = (
-    "1girl, multiple boys, 2boys, multiple views, text, watermark, signature, username, artist name"
 )
 QUALITY_NEGATIVE = (
     "lowres, bad anatomy, bad hands, error, missing finger, extra digits, fewer digits, "
@@ -144,35 +133,21 @@ def build_prompt(
     banned = frozenset(my_club.banned_traits) & BANNABLE.keys() if my_club else frozenset()
     soften = my_club.soften_skin if my_club else 0
 
-    if age.male:
-        man = male_look(sheet.base_seed)
-        accessory = sheet.accessory if sheet.accessory in MALE_ACCESSORIES else "none"
-        look = _join(
-            HAIR_COLOUR[sheet.hair_colour].words,
-            MALE_HAIR_STYLE[man.hair_style].words,
-            EYE_COLOUR[sheet.eye_colour].words,
-            EYE_SHAPE[drawn_eye_shape(sheet, my_club)].words,
-            skin_words(sheet.skin, soften, male=True),
-            "" if accessory in banned else ACCESSORY[accessory].words,
-            "" if sheet.mark in banned else MARK[sheet.mark].words,
-            FACIAL_HAIR[man.facial_hair].words,
-        )
-    else:
-        look = _join(
-            HAIR_COLOUR[sheet.hair_colour].words,
-            HAIR_STYLE[sheet.hair_style].words,
-            FRINGE[sheet.fringe].words,
-            EYE_COLOUR[sheet.eye_colour].words,
-            EYE_SHAPE[drawn_eye_shape(sheet, my_club)].words,
-            skin_words(sheet.skin, soften),
-            "" if sheet.height in banned else HEIGHT[sheet.height].words,
-            "" if sheet.build in banned else BUILD[sheet.build].words,
-            "" if sheet.accessory in banned else ACCESSORY[sheet.accessory].words,
-            "" if sheet.mark in banned else MARK[sheet.mark].words,
-        )
+    look = _join(
+        HAIR_COLOUR[sheet.hair_colour].words,
+        HAIR_STYLE[sheet.hair_style].words,
+        FRINGE[sheet.fringe].words,
+        EYE_COLOUR[sheet.eye_colour].words,
+        EYE_SHAPE[drawn_eye_shape(sheet, my_club)].words,
+        skin_words(sheet.skin, soften),
+        "" if sheet.height in banned else HEIGHT[sheet.height].words,
+        "" if sheet.build in banned else BUILD[sheet.build].words,
+        "" if sheet.accessory in banned else ACCESSORY[sheet.accessory].words,
+        "" if sheet.mark in banned else MARK[sheet.mark].words,
+    )
     content, wear_negative = content_terms(wear)
     positive = _join(
-        SUBJECT_MALE if age.male else SUBJECT,
+        SUBJECT,
         RATING,
         age.text,
         look,
@@ -186,11 +161,10 @@ def build_prompt(
     )
     negative = _join(
         CONTENT_NEGATIVE,
-        MALE_CONTENT_NEGATIVE if age.male else "",
         YOUNG_NEGATIVE if age.young else "",
         _join(*(BANNABLE[t].words for t in sorted(banned))),
         wear_negative,
-        COMPOSITION_NEGATIVE_MALE if age.male else COMPOSITION_NEGATIVE,
+        COMPOSITION_NEGATIVE,
         QUALITY_NEGATIVE,
     )
     return Prompt(positive, negative)
@@ -203,28 +177,10 @@ def pose_words(pose: str | Pose) -> str:
     return POSE[pose].words if pose else ""
 
 
-def drawn_traits(
-    sheet: CharacterSheet, my_club: MyClubSettings | None = None, *, male: bool = False
-) -> dict[str, str]:
+def drawn_traits(sheet: CharacterSheet, my_club: MyClubSettings | None = None) -> dict[str, str]:
     """The sheet fields the prompt actually asks for, after my-club rules, by TRAIT_TABLES
-    name. Used by qc.py. `male`: drawn as a man, with his hair style and facial hair."""
+    name. Used by qc.py."""
     banned = frozenset(my_club.banned_traits) if my_club else frozenset()
-    if male:
-        man = male_look(sheet.base_seed)
-        drawn = {
-            "hair_colour": sheet.hair_colour,
-            "male_hair": man.hair_style,
-            "eye_colour": sheet.eye_colour,
-            "eye_shape": drawn_eye_shape(sheet, my_club),
-            "expression": sheet.expression,
-        }
-        if man.facial_hair != "none":
-            drawn["facial_hair"] = man.facial_hair
-        if sheet.accessory in MALE_ACCESSORIES and sheet.accessory not in banned:
-            drawn["accessory"] = sheet.accessory
-        if sheet.mark != "none" and sheet.mark not in banned:
-            drawn["mark"] = sheet.mark
-        return drawn
     drawn = {
         "hair_colour": sheet.hair_colour,
         "hair_style": sheet.hair_style,

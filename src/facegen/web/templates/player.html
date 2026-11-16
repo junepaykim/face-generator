@@ -14,7 +14,7 @@
 
   <div class="facts">
     <h1>{{ p.name }}{% if p.is_goalkeeper %} <span class="tag">GK</span>{% endif %}{% if p.is_staff %} <span class="tag">{{ p.staff_job or "staff" }}</span>{% endif %}{% if p.media_role %} <span class="tag">{{ p.media_role }}</span>{% endif %}{% if p.youth_team %} <span class="tag">youth team</span>{% endif %}</h1>
-    <p class="muted">unique ID {{ p.unique_id }} · {% if p.is_staff %}{{ "on my club's staff" if p.present else "was on my club's staff" }}{% if p.staff_job %} ({{ p.staff_job }}){% endif %}, dressed for their job{% elif p.media_role == "journalist" %}journalist{{ " from my club's country" if p.local_media }}, dressed for their work{% elif p.media_role %}{{ "my club's press officer" if p.local_media else "press officer" }}, dressed for their work{% else %}{{ "newgen" if p.is_newgen else "pre-existing" }}{% if p.youth_team %} in one of my club's youth or reserve teams{% endif %}{% endif %}{% if p.academy %} from my academy{% endif %}{% if p.is_staff or p.media_role %} · {% if p.female is none %}gender unknown{% else %}{{ "a woman" if p.female else "a man" }} in the save{% endif %}, drawn as {{ "a man" if p.drawn_male else "a woman" }}{% endif %}{% if not p.present %} · <strong>{{ "no longer on my club's staff" if p.is_staff else "not in the latest save" }}</strong>{% endif %}</p>
+    <p class="muted">unique ID {{ p.unique_id }} · {% if p.is_staff %}{{ "on my club's staff" if p.present else "was on my club's staff" }}{% if p.staff_job %} ({{ p.staff_job }}){% endif %}, dressed for their job{% elif p.media_role == "journalist" %}journalist{{ " from my club's country" if p.local_media }}, dressed for their work{% elif p.media_role %}{{ "my club's press officer" if p.local_media else "press officer" }}, dressed for their work{% else %}{{ "newgen" if p.is_newgen else "pre-existing" }}{% if p.youth_team %} in one of my club's youth or reserve teams{% endif %}{% endif %}{% if p.academy %} from my academy{% endif %}{% if p.is_staff or p.media_role %} · {% if p.female is none %}gender unknown{% else %}{{ "a woman" if p.female else "a man" }} in the save{% endif %}, drawn as a woman{% endif %}{% if not p.present %} · <strong>{{ "no longer on my club's staff" if p.is_staff else "not in the latest save" }}</strong>{% endif %}</p>
     <table class="kv">
       <tr><th>Club</th><td>{% if p.club_id is not none %}<a href="/players?club_id={{ p.club_id }}">{{ p.club or p.club_id }}</a>{% elif p.media_role %}<span class="muted">none</span>{% else %}free agent{% endif %}
         {% if p.loan_parent_club %}<span class="muted">(on loan from {{ p.loan_parent_club }})</span>{% endif %}
@@ -77,7 +77,7 @@
         </select>
       </label>
       <button>Set</button>
-      <span class="muted small">A group pin is a hand-pick: it queues a picture, as Generate does.</span>
+      <span class="muted small">A group pin is a hand-pick: it queues a picture, as Generate does.{% if p.media_role %} Pin a regular at my club to A: group A quality, and tracked, so re-drawn when their age wording changes.{% endif %}</span>
     </form>
   </div>
 
@@ -88,9 +88,6 @@
         {% for k, v in d.sheet.fields.items() if k != "base_seed" %}
           <tr><th>{{ k|replace("_", " ") }}</th><td>{{ v }}{% if k in trait_tables and trait_tables[k][v].words %} <span class="muted small">({{ trait_tables[k][v].words }})</span>{% endif %}</td></tr>
         {% endfor %}
-        {% if d.sheet.male %}
-          <tr><th>drawn as a man</th><td>{{ d.sheet.male.hair_style }} hair, facial hair {{ d.sheet.male.facial_hair }} <span class="muted small">(from the base seed; hair accessories and the fringe are left out)</span></td></tr>
-        {% endif %}
         <tr><th>base seed</th><td>{{ d.sheet.fields.base_seed }}</td></tr>
         <tr><th>version</th><td>{{ d.sheet.version }} <span class="muted small">({{ d.sheet.created_at[:10] }})</span></td></tr>
       </table>
@@ -105,7 +102,7 @@
 {% if cur %}
 <section class="card">
   <h2>Current picture</h2>
-  <p class="small">Kit: {{ cur.render.kit }}{% if cur.render.kit_source == "catalog" %} <em>(colours from FM27's kit image)</em>{% elif cur.render.kit_known == false %} <em>(fallback kit)</em>{% endif %} · pose: {{ cur.render.pose }}{% if cur.render.backdrop %} · backdrop: {{ cur.render.backdrop }}{% endif %}{% if cur.render.shoot and cur.render.shoot.style != "none" %} · favourite style: {{ cur.render.shoot.style }}{% endif %}{% if cur.render.shoot and cur.render.shoot.season != "unknown" %} · {{ cur.render.shoot.season }}{% endif %} · seed {{ cur.seed }} · {{ cur.model }}{% if cur.render.detail %} · detail pass {{ "used" if cur.render.detail.used else "rejected by the check" }}{% endif %}</p>
+  <p class="small">Kit: {{ cur.render.kit }}{% if cur.render.kit_source == "catalog" %} <em>(colours from FM27's kit image)</em>{% elif cur.render.kit_source == "bundled" %} <em>(bundled colours from FM27's kit image)</em>{% elif cur.render.kit_known == false %} <em>(fallback kit)</em>{% endif %} · pose: {{ cur.render.pose }}{% if cur.render.backdrop %} · backdrop: {{ cur.render.backdrop }}{% endif %}{% if cur.render.shoot and cur.render.shoot.style != "none" %} · favourite style: {{ cur.render.shoot.style }}{% endif %}{% if cur.render.shoot and cur.render.shoot.season != "unknown" %} · {{ cur.render.shoot.season }}{% endif %} · seed {{ cur.seed }} · {{ cur.model }}{% if cur.render.detail %} · detail pass {{ "used" if cur.render.detail.used else "rejected by the check" }}{% endif %}</p>
   {% set ref = cur.render.reference %}
   {% if ref and ref.used %}
   <div class="ref">

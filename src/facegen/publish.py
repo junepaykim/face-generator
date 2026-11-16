@@ -2,7 +2,8 @@
 
 Each career has its own pack, `<FM27 user dir>/graphics/facegen/<career key>/`: one 3:4
 portrait PNG per player named `<unique_id>.png`, its height the group's published size, plus
-a classic facepack `config.xml` that maps each ID to its picture. FM27 loads changes on
+a classic facepack `config.xml` that maps both the numeric and `r-` person ID to its
+picture. FM27 uses the latter for generated people, including staff. It loads changes on
 Settings -> Reload Skin, or at its next start. A master that is not 3:4 (a square picture
 drawn before the change to 3:4) is cropped to 3:4 around its centre.
 
@@ -45,6 +46,15 @@ class PublishError(RuntimeError):
     """A path would leave graphics/facegen/, or a picture is missing."""
 
 
+class FolderNotSetError(PublishError):
+    """FM27's user folder is neither set nor found: there is nowhere to publish to."""
+
+    def __init__(self) -> None:
+        from facegen.settings import folder_not_set_message
+
+        super().__init__(folder_not_set_message())
+
+
 def packs_root(fm_user_dir: Path) -> Path:
     return fm_user_dir / "graphics" / "facegen"
 
@@ -66,10 +76,18 @@ def _guard(path: Path, fm_user_dir: Path) -> None:
 
 
 def config_xml(ids: Iterable[int]) -> str:
-    """The classic facepack mapping (verified in FM27, Phase 0.2)."""
+    """Map each picture in both FM person namespaces.
+
+    Database people use the numeric ID; generated players and staff use ``r-<ID>``.
+    The save adapter does not expose an authoritative graphics-ID flag, and the
+    eligibility ``is_newgen`` flag is not one (staff can be first seen mid-career).
+    Keep both aliases to the same PNG rather than guess from age, role or ID range.
+    ``from`` is always the numeric filename, without an ``r-`` prefix.
+    """
     records = "".join(
-        f'\t\t<record from="{i}" to="graphics/pictures/person/{i}/portrait"/>\n'
+        f'\t\t<record from="{i}" to="graphics/pictures/person/{prefix}{i}/portrait"/>\n'
         for i in sorted(set(ids))
+        for prefix in ("", "r-")
     )
     return (
         "<record>\n"
@@ -282,8 +300,11 @@ def publish_pack(
     conn: sqlite3.Connection, settings: Settings, career_id: int, career_key: str
 ) -> PublishReport:
     """Publish one career's pictures. If it is the active career, its config.xml maps them
-    and every other pack is unmapped; otherwise its config.xml maps nothing."""
+    and every other pack is unmapped; otherwise its config.xml maps nothing. Raises
+    FolderNotSetError without FM27's folder."""
     fm_user_dir = settings.paths.fm_user_dir
+    if fm_user_dir is None:
+        raise FolderNotSetError()
     with publish_lock(settings.paths.data_dir), transaction(conn):
         active = active_career_id(conn) == career_id
         report = publish_career(
@@ -318,7 +339,7 @@ def unpublish(
     career_id: int,
     career_key: str,
     unique_id: int,
-    fm_user_dir: Path,
+    fm_user_dir: Path | None,
     *,
     active: bool = True,
 ) -> bool:
@@ -327,8 +348,11 @@ def unpublish(
     The picture stops being current; the master and the database history are kept. The
     planner would queue an eligible player again, so the UI's "remove picture" (Phase 3)
     pairs this with a "never" pin. A pack that is not `active` keeps mapping nothing.
-    Returns whether anything was removed. Callers hold `publish_lock`.
+    Returns whether anything was removed. Callers hold `publish_lock`. Raises
+    FolderNotSetError without FM27's folder, before anything changes.
     """
+    if fm_user_dir is None:
+        raise FolderNotSetError()
     folder = pack_dir(fm_user_dir, career_key)
     dest = folder / f"{unique_id}.png"
     _guard(dest, fm_user_dir)

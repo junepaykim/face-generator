@@ -103,10 +103,7 @@ def test_player_prompts_keep_the_content_terms(wording: str) -> None:
         for kit in (COLCHESTER, KEEPER):
             shoot = shoot_for(kit, "black", seed, 1, age=31, game_date=WINTER)
             p = build_prompt(SHEET, wording, shoot.wear, shoot.pose, backdrop=shoot.backdrop)
-            male = WORDINGS[wording].male
-            assert p.positive.startswith(
-                "1boy, solo, male focus, safe, " if male else "1girl, solo, safe, "
-            )
+            assert p.positive.startswith("1girl, solo, safe, ")
             assert CONTENT_POSITIVE in p.positive and p.positive.endswith(QUALITY)
             assert p.negative.startswith(CONTENT_NEGATIVE)
             assert "simple background" in p.positive

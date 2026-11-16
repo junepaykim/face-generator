@@ -942,14 +942,12 @@ def test_journalists_and_press_officers_are_stored_and_drawn_once_at_b(
     assert (home["media_role"], home["local_media"], home["is_newgen"], home["ca"]) == (
         "journalist", 1, 0, 0,
     )  # fmt: skip
-    assert (home["group_name"], home["tracked"], home["drawn_male"], home["female"]) == (
-        "b", 0, 1, 0,
-    )  # fmt: skip
+    assert (home["group_name"], home["tracked"], home["female"]) == ("b", 0, 0)
     assert (away["local_media"], away["group_name"]) == (0, None)
     assert (press["at_my_club"], press["local_media"], press["group_name"]) == (1, 1, "b")
     jobs = jobs_of(conn)
-    assert jobs[HOME_REPORTER] == ("initial", "b", "M3")  # a man of 55
-    assert jobs[MY_PRESS] == ("initial", "b", "W05")  # a woman of 29: band 5 at the least
+    assert jobs[HOME_REPORTER] == ("initial", "b", "W07")  # a man of 55, drawn as a woman
+    assert jobs[MY_PRESS] == ("initial", "b", "W04")  # a woman of 29: band 4 at the least
     assert AWAY_REPORTER not in jobs
     assert report.counts["journalists"] == 2 and report.counts["local_journalists"] == 1
     assert report.counts["press_officers"] == 1 and report.counts["media_picked"] == 2
@@ -989,45 +987,55 @@ def test_media_switches_and_reader_failures(conn: sqlite3.Connection, settings: 
     assert HOME_REPORTER not in jobs_of(conn)
 
 
-# --- drawn as a man (gender.py) -------------------------------------------------------------
+def test_a_regular_journalist_pinned_to_a_is_tracked(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    """Journalists seen around my club often go to group A and are tracked (2026-11-14)."""
+    report = sync(conn, snapshot(world(), media=media_world()), settings)
+    conn.execute("UPDATE players SET pin = 'a' WHERE unique_id = ?", (HOME_REPORTER,))
+    reclassify(conn, report.career.id, settings)
+    row = player_row(conn, HOME_REPORTER)
+    assert (row["group_name"], row["tracked"]) == ("a", 1)
+    assert jobs_of(conn)[HOME_REPORTER] == ("initial", "a", "W07")
+    # Drawn, then older: re-drawn for the new band though a journalist has no club.
+    conn.execute("DELETE FROM jobs")
+    add_image(conn, HOME_REPORTER, "a", None, "W07")
+    conn.execute("UPDATE players SET age = 61 WHERE unique_id = ?", (HOME_REPORTER,))
+    reclassify(conn, report.career.id, settings)
+    assert jobs_of(conn)[HOME_REPORTER] == ("age", "a", "W08")
 
 
-def test_staff_gender_is_stored_and_men_take_the_mens_table(
+# --- everyone drawn as a woman (user, 2026-11-14) ---------------------------------------------
+
+
+def test_men_on_the_staff_take_the_staff_table(
     conn: sqlite3.Connection, settings: Settings
 ) -> None:
     from factories import staff_member
 
-    from facegen.gender import drawn_male
-
-    people = [staff_member(COACH + i, age=50, job="coach", female=False) for i in range(40)]
-    report = sync(conn, snapshot(world(), staff=people), settings)
+    people = [staff_member(COACH + i, age=50, job="coach", female=False) for i in range(10)]
+    sync(conn, snapshot(world(), staff=people), settings)
     jobs = jobs_of(conn)
-    men = 0
     for s in people:
-        row = player_row(conn, s.unique_id)
-        male = drawn_male(
-            report.career.key, s.unique_id, staff=True, media=False, female=False, job="coach"
-        )
-        assert (row["female"], row["drawn_male"]) == (0, int(male))
-        assert jobs[s.unique_id][2] == ("M3" if male else "W06")
-        men += male
-    assert 10 < men < 40  # about 70% of the men are drawn as men
+        assert player_row(conn, s.unique_id)["female"] == 0
+        assert jobs[s.unique_id] == ("initial", "a", "W06")
 
 
-def test_a_staff_member_drawn_as_the_other_gender_gets_a_new_face(
-    conn: sqlite3.Connection, settings: Settings
-) -> None:
+def test_a_picture_of_a_man_gets_a_new_face(conn: sqlite3.Connection, settings: Settings) -> None:
     from factories import staff_member
 
     report = sync(
-        conn, snapshot(world(), staff=[staff_member(COACH, age=45, female=True)]), settings
+        conn,
+        snapshot(world(), staff=[staff_member(COACH, age=45, female=False)], media=media_world()),
+        settings,
     )
     conn.execute("DELETE FROM jobs")
-    add_image(conn, COACH, "a", MY_CLUB, "W05")
-    # Say this person is now drawn as a man (a man in the save, his share drawn).
-    conn.execute("UPDATE players SET drawn_male = 1 WHERE unique_id = ?", (COACH,))
+    add_image(conn, COACH, "a", MY_CLUB, "M3")  # drawn as a man on 2026-11-13
+    add_image(conn, HOME_REPORTER, "b", None, "M3")  # untracked, drawn once
     reclassify(conn, report.career.id, settings)
-    assert jobs_of(conn)[COACH] == ("reroll", "a", "M3")
+    jobs = jobs_of(conn)
+    assert jobs[COACH] == ("reroll", "a", "W05")
+    assert jobs[HOME_REPORTER] == ("reroll", "b", "W07")
 
 
 def test_stored_gender_stays_when_the_people_reader_failed(
@@ -1037,4 +1045,4 @@ def test_stored_gender_stays_when_the_people_reader_failed(
 
     sync(conn, snapshot(world(), staff=[staff_member(COACH, female=True)]), settings)
     sync(conn, snapshot(world(), staff=[staff_member(COACH)], media_read=False), settings)
-    assert (player_row(conn, COACH)["female"], player_row(conn, COACH)["drawn_male"]) == (1, 0)
+    assert player_row(conn, COACH)["female"] == 1

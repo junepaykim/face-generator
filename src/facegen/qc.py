@@ -7,8 +7,7 @@ A picture passes only if all of these hold:
 - a hair colour tag and an eye colour tag of the sheet are present (tag threshold 0.35);
   the eye colour also shows a face is there;
 - `solo` and `1girl` are present and none of `multiple views`, `multiple girls`, `2girls`,
-  `no humans` (for someone drawn as a man: `solo` and `1boy`, and none of `multiple views`,
-  `multiple boys`, `2boys`, `no humans`, `1girl`);
+  `no humans`;
 - the figure's head starts in the top fifth of the picture (a stand-in for a face-size
   check until a face detector is approved; decisions.md).
 
@@ -41,25 +40,19 @@ if TYPE_CHECKING:
 
 TAG_THRESHOLD = 0.35
 REQUIRED_TAGS = ("solo", "1girl")
-REQUIRED_TAGS_MALE = ("solo", "1boy")
 # Content rule: a picture tagged with any of these is rejected even if its top rating is
-# "general" (decisions.md, from the Z-Image test: a bare midriff rated general 0.66). The
-# last two are a man's bare chest; "pectorals" stays in the negative prompt only, as a man
-# in a tight shirt can earn it fully clothed.
+# "general" (decisions.md, from the Z-Image test: a bare midriff rated general 0.66).
 CONTENT_TAGS = (
     "nude", "nipples", "underwear", "lingerie", "swimsuit", "bikini", "cleavage", "midriff",
-    "navel", "see-through", "crop top", "revealing clothes", "topless male", "bara",
+    "navel", "see-through", "crop top", "revealing clothes",
 )  # fmt: skip
 FORBIDDEN_TAGS = ("multiple views", "multiple girls", "2girls", "no humans")
-FORBIDDEN_TAGS_MALE = ("multiple views", "multiple boys", "2boys", "no humans", "1girl")
 HEAD_TOP_MAX = 0.20
 """Highest allowed start of the figure, as a fraction of the picture height. Every one of
 the 426 Animagine bake-off pictures started at 0.10 or above it (docs/research.md)."""
 
 # Kept in the stored check result, at any probability: a rough record of age and framing.
-PROBE_TAGS = (
-    "child", "aged down", "mature female", "mature male", "old man", "cowboy shot", "upper body",
-)  # fmt: skip
+PROBE_TAGS = ("child", "aged down", "mature female", "cowboy shot", "upper body")
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,18 +86,15 @@ class Expectation:
     eyes: frozenset[str]
     rank: Mapping[str, frozenset[str]] = field(default_factory=dict)
     """Ranking only: trait or shirt colour name to the tags that show it."""
-    male: bool = False
-    """Drawn as a man: one boy, not one girl."""
 
 
 def expectation(
-    sheet: CharacterSheet, wear: Wear, my_club: MyClubSettings | None = None, *, male: bool = False
+    sheet: CharacterSheet, wear: Wear, my_club: MyClubSettings | None = None
 ) -> Expectation:
     """What the tagger should see: the sheet's hair and eyes, and, for ranking only, the
-    traits drawn and the kit's colours and look, or the staff outfit's look, colour and prop.
-    `male`: drawn as a man (a men's age wording)."""
+    traits drawn and the kit's colours and look, or the staff outfit's look, colour and prop."""
     rank: dict[str, frozenset[str]] = {}
-    for name, value in drawn_traits(sheet, my_club, male=male).items():
+    for name, value in drawn_traits(sheet, my_club).items():
         tags = TRAIT_TABLES[name][value].tags
         if tags:
             rank[name] = tags
@@ -113,7 +103,6 @@ def expectation(
         hair=HAIR_COLOUR[sheet.hair_colour].tags,
         eyes=EYE_COLOUR[sheet.eye_colour].tags,
         rank=rank,
-        male=male,
     )
 
 
@@ -164,13 +153,10 @@ def check(tags: TagResult, expect: Expectation, head_top: float | None) -> Check
         failures.append("hair colour not seen")
     if not any(tags.present(t) for t in expect.eyes):
         failures.append("eye colour not seen")
-    required = REQUIRED_TAGS_MALE if expect.male else REQUIRED_TAGS
-    forbidden = FORBIDDEN_TAGS_MALE if expect.male else FORBIDDEN_TAGS
-    missing = [t for t in required if not tags.present(t)]
-    extra = [t for t in forbidden if tags.present(t)]
+    missing = [t for t in REQUIRED_TAGS if not tags.present(t)]
+    extra = [t for t in FORBIDDEN_TAGS if tags.present(t)]
     if missing or extra:
-        who = "not one man: " if expect.male else "not one girl: "
-        failures.append(who + ", ".join([f"no {t}" for t in missing] + extra))
+        failures.append("not one girl: " + ", ".join([f"no {t}" for t in missing] + extra))
     if head_top is None:
         failures.append("no figure found against the background")
     elif head_top > HEAD_TOP_MAX:

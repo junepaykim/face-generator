@@ -28,7 +28,9 @@ from facegen.datasource.records import (
     SaveMeta,
     Snapshot,
     StaffRecord,
+    is_first_team_manager,
 )
+from facegen.leagues import clubs_in_competitions, my_league_competitions
 
 _GENDERS = {"MEN": Gender.MEN, "WOMEN": Gender.WOMEN}
 _FIRST_TEAM_SLOTS = (0, None)
@@ -131,13 +133,24 @@ def staff_job(coded: Any) -> str | None:
 
 
 def convert_staff(
-    staff: Iterable[Any], uid_map: Mapping[int, int], club_uid: int, game_date: date | None
+    staff: Iterable[Any],
+    uid_map: Mapping[int, int],
+    club_uid: int,
+    game_date: date | None,
+    *,
+    manager_club_ids: frozenset[int] = frozenset(),
 ) -> tuple[StaffRecord, ...]:
-    """The staff of one club (by save-local uid), each person once, first record wins."""
+    """My club's staff and first-team managers of the supplied stable club IDs."""
     seen: set[int] = set()
     out: list[StaffRecord] = []
     for s in staff:
-        if s.club_uid != club_uid or s.unique_id is None or s.unique_id in seen:
+        mine = s.club_uid == club_uid
+        league_manager = (
+            uid_map.get(s.club_uid) in manager_club_ids
+            and getattr(s, "team_slot", None) == 0
+            and is_first_team_manager(staff_job(s.job))
+        )
+        if not (mine or league_manager) or s.unique_id is None or s.unique_id in seen:
             continue
         seen.add(s.unique_id)
         age = s.age
@@ -150,7 +163,7 @@ def convert_staff(
                 name=s.name or s.full_name or s.legal_name or f"Staff {s.unique_id}",
                 birth_date=s.birth_date,
                 age=age,
-                club_id=uid_map.get(club_uid, club_uid),
+                club_id=uid_map.get(s.club_uid, s.club_uid),
                 job=staff_job(s.job),
                 ca=ability.current if ability is not None else None,
                 pa=ability.potential if ability is not None else None,
@@ -354,9 +367,22 @@ class FmsaveDataSource:
         first_names: dict[int, str | None] = {}
         if managed:
             try:
-                mine = [s for s in save.staff() if s.club_uid == managed[0].club_uid]
-                staff = convert_staff(mine, uid_map, managed[0].club_uid, info.game_date)
-                first_names = {s.unique_id: getattr(s, "first_name", None) for s in mine}
+                all_staff = list(save.staff())
+                competitions = my_league_competitions(managed_id, clubs, tables, fixture_counts)
+                league_clubs = clubs_in_competitions(competitions, tables, fixture_counts)
+                staff = convert_staff(
+                    all_staff,
+                    uid_map,
+                    managed[0].club_uid,
+                    info.game_date,
+                    manager_club_ids=league_clubs,
+                )
+                selected = {s.unique_id for s in staff}
+                first_names = {
+                    s.unique_id: getattr(s, "first_name", None)
+                    for s in all_staff
+                    if s.unique_id in selected
+                }
             except fmsave.FmsaveError as exc:
                 staff_read = False
                 notes.append(f"staff data unavailable, staff pictures left as they were: {exc}")

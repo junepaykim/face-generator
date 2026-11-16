@@ -322,21 +322,39 @@ def test_switching_the_reference_off_stops_it_everywhere(settings: Settings) -> 
 # --- the other gender (gender.py) ---------------------------------------------------------------
 
 
-def test_a_tracked_person_now_drawn_as_a_man_gets_a_new_face() -> None:
-    s = state(A, age_band="M2", at_my_club=True, image=ImageState(Group.A, 10, "W05"))
-    want = desired_job(s)
-    assert want is not None and (want.kind, want.reason) == ("reroll", "drawn as a man")
-    assert reference_scale(want.kind, True, _reference()) is None  # a new face: no reference
-    back = state(A, age_band="W05", at_my_club=True, image=ImageState(Group.A, 10, "M2"))
-    assert desired_job(back).kind == "reroll"  # type: ignore[union-attr]
-    # The same gender in another band is an ordinary age re-draw.
-    older = state(A, age_band="M3", at_my_club=True, image=ImageState(Group.A, 10, "M2"))
-    assert desired_job(older).kind == "age"  # type: ignore[union-attr]
+def test_a_picture_of_a_man_gets_a_new_face_tracked_or_not() -> None:
+    """Staff and media drawn as men on 2026-11-13 are drawn as women again (2026-11-14)."""
+    for band in ("M1", "M2", "M3", "M4"):
+        s = state(A, age_band="W05", at_my_club=True, image=ImageState(Group.A, 10, band))
+        want = desired_job(s)
+        assert want is not None and (want.kind, want.reason) == ("reroll", "drawn as a woman")
+        assert want.target_band == "W05"
+        assert reference_scale(want.kind, True, _reference()) is None  # new face: no reference
+    # Untracked people (journalists drawn once) are re-drawn too, and with no club.
+    journalist = state(B, club_id=None, media=True, image=ImageState(Group.B, None, "M2"))
+    assert kind_of(journalist) == "reroll"
+    # A woman's picture in another band is an ordinary age re-draw for the tracked only.
+    older = state(A, age_band="W06", at_my_club=True, image=ImageState(Group.A, 10, "W05"))
+    assert kind_of(older) == "age"
+    assert kind_of(state(B, age_band="W06", image=ImageState(Group.B, 10, "W05"))) is None
 
 
-def test_an_untracked_person_is_not_redrawn_for_gender() -> None:
-    s = state(B, age_band="M2", image=ImageState(Group.B, 10, "W05"))
-    assert desired_job(s) is None
+def test_a_regular_journalist_is_redrawn_without_a_club() -> None:
+    """A journalist pinned to A is tracked (classify.py) though they have no club or kit."""
+    regular = Classification(Group.A, True, ("pinned to A", "tracked: a regular at my club"))
+    img = ImageState(Group.A, None, "W04")
+    assert kind_of(state(regular, club_id=None, media=True, image=img)) is None
+    want = desired_job(state(regular, club_id=None, media=True, image=img, age_band="W05"))
+    assert want is not None and (want.kind, want.reason) == ("age", "age band W04 to W05")
+    upgrade = state(regular, club_id=None, media=True, image=ImageState(Group.B, None, "W04"))
+    assert kind_of(upgrade) == "upgrade"
+    # A press officer's club makes no kit re-draw either.
+    moved = state(
+        regular, club_id=7, media=True, age_band="W04", image=ImageState(Group.A, 10, "W04")
+    )
+    assert kind_of(moved) is None
+    # A player without a club still waits for one.
+    assert kind_of(state(A, club_id=None, image=ImageState(Group.A, 10, "M2"))) is None
 
 
 def _reference() -> ReferenceSettings:

@@ -31,6 +31,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from facegen.datasource.records import is_first_team_manager
 from facegen.kits import COLOURS, Kit
 from facegen.traits import POSE, Option, pick
 
@@ -366,6 +367,8 @@ LEAN_FACTOR = 3
 
 def role_for(job: str | None) -> str:
     """The wardrobe role for a staff job in words; "staff" when the save names none."""
+    if is_first_team_manager(job):
+        return "manager"
     if job:
         for word, role in _JOB_WORDS:
             if word in job:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -22,14 +23,16 @@ from facegen.publish import (
 SIZES = {"a": 1024, "b": 768, "c": 512}
 
 
-def test_config_xml_matches_the_verified_format() -> None:
+def test_config_xml_maps_database_and_generated_people() -> None:
     assert config_xml([29141735, 2002069100, 29141735]) == (
         "<record>\n"
         '\t<boolean id="preload" value="false"/>\n'
         '\t<boolean id="amap" value="false"/>\n'
         '\t<list id="maps">\n'
         '\t\t<record from="29141735" to="graphics/pictures/person/29141735/portrait"/>\n'
+        '\t\t<record from="29141735" to="graphics/pictures/person/r-29141735/portrait"/>\n'
         '\t\t<record from="2002069100" to="graphics/pictures/person/2002069100/portrait"/>\n'
+        '\t\t<record from="2002069100" to="graphics/pictures/person/r-2002069100/portrait"/>\n'
         "\t</list>\n"
         "</record>\n"
     )
@@ -124,6 +127,7 @@ def test_publish_career_is_idempotent(conn: sqlite3.Connection, tmp_path: Path) 
     with Image.open(folder / "20.png") as im:
         assert im.size == (576, 768)
     assert 'from="40"' not in (folder / "config.xml").read_text()
+    assert "person/r-20/portrait" in (folder / "config.xml").read_text()
 
     before = {p.name: p.stat().st_mtime_ns for p in folder.iterdir()}
     second = publish_career(conn, 1, "k", fm, SIZES, data_dir=data)
@@ -142,6 +146,45 @@ def test_nothing_to_publish_writes_nothing(conn: sqlite3.Connection, tmp_path: P
     assert not report.changed and not (tmp_path / "fm").exists()
 
 
+def test_publish_repairs_old_mappings_without_redrawing_or_reencoding(
+    conn: sqlite3.Connection, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import xml.etree.ElementTree as ET
+
+    fm, data = tmp_path / "fm", tmp_path / "data"
+    data.mkdir()
+    Image.new("RGB", (48, 64)).save(data / "master.png")
+    _career(conn)
+    # Both a low database ID and a high generated-person ID use the same publisher;
+    # there need not be any player classification row (staff/media included).
+    ids = (10, 2_002_200_001)
+    for uid in ids:
+        _image(conn, uid, "b", "master.png")
+    publish_career(conn, 1, "k", fm, SIZES, data_dir=data)
+    folder = pack_dir(fm, "k")
+    config = folder / "config.xml"
+    legacy = "\n".join(line for line in config.read_text().splitlines() if "/r-" not in line)
+    config.write_text(legacy)
+    before = {p.name: p.read_bytes() for p in folder.glob("*.png")}
+
+    def no_encoding(items: list[tuple[Path, int]]) -> Iterator[bytes]:
+        assert not items, "repairing a mapping must reuse the published pictures"
+        return iter(())
+
+    monkeypatch.setattr("facegen.publish.published_pictures", no_encoding)
+    report = publish_career(conn, 1, "k", fm, SIZES, data_dir=data)
+    assert (report.written, report.unchanged, report.mapped) == (0, 2, 2)
+    assert report.config_changed
+    maps = {r.attrib["to"]: r.attrib["from"] for r in ET.parse(config).findall("./list/record")}
+    assert maps == {
+        f"graphics/pictures/person/{prefix}{uid}/portrait": str(uid)
+        for uid in ids
+        for prefix in ("", "r-")
+    }
+    assert {p.name: p.read_bytes() for p in folder.glob("*.png")} == before
+    assert not publish_career(conn, 1, "k", fm, SIZES, data_dir=data).changed
+
+
 def test_unpublish_removes_file_and_mapping(conn: sqlite3.Connection, tmp_path: Path) -> None:
     fm, data = tmp_path / "fm", tmp_path / "data"
     (data / "masters").mkdir(parents=True)
@@ -155,6 +198,7 @@ def test_unpublish_removes_file_and_mapping(conn: sqlite3.Connection, tmp_path: 
     assert not (folder / "10.png").exists() and (data / "masters" / "a.png").exists()
     text = (folder / "config.xml").read_text()
     assert 'from="10"' not in text and 'from="20"' in text
+    assert "person/r-10/portrait" not in text and "person/r-20/portrait" in text
     # Publishing again does not bring it back: the picture is no longer current.
     assert publish_career(conn, 1, "k", fm, SIZES, data_dir=data).written == 0
 

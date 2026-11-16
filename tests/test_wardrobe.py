@@ -214,10 +214,7 @@ def test_staff_prompts_keep_the_content_rule(wording: str) -> None:
         for prop in PROPS:
             outfit = dress(RED, "staff", name, prop)
             p = build_prompt(SHEET, wording, outfit, "crossed")
-            male = WORDINGS[wording].male
-            assert p.positive.startswith(
-                "1boy, solo, male focus, safe, " if male else "1girl, solo, safe, "
-            )
+            assert p.positive.startswith("1girl, solo, safe, ")
             assert p.positive.endswith(QUALITY)
             assert STAFF_POSITIVE in p.positive
             assert CONTENT_POSITIVE not in p.positive and "soccer" not in p.positive
@@ -293,8 +290,9 @@ def test_a_prop_in_hand_means_no_arm_pose() -> None:
 def test_media_prompts_keep_the_content_rule() -> None:
     for seed in range(60):
         outfit = outfit_for(RED, "journalist", 50, seed, 1)
-        for wording in ("W05", "W09", "M2", "M4"):
+        for wording in ("W04", "W05", "W09"):
             p = build_prompt(SHEET, wording, outfit, media_pose(outfit, seed, 1))
+            assert p.positive.startswith("1girl, solo, safe, ")
             assert STAFF_POSITIVE in p.positive and STAFF_NEGATIVE in p.negative
             assert p.negative.startswith(CONTENT_NEGATIVE)
             assert "soccer" not in p.positive and ", ," not in p.positive

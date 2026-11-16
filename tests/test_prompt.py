@@ -53,17 +53,13 @@ def test_prompt_order_matches_the_recipe() -> None:
     assert p.negative == f"{CONTENT_NEGATIVE}, {COMPOSITION_NEGATIVE}, {QUALITY_NEGATIVE}"
 
 
-def subject(wording: str) -> str:
-    return "1boy, solo, male focus, safe, " if WORDINGS[wording].male else "1girl, solo, safe, "
-
-
 @pytest.mark.parametrize("wording", sorted(WORDINGS))
 @pytest.mark.parametrize("pose", sorted(POSE))
 def test_content_terms_are_always_there(wording: str, pose: str) -> None:
     for my_club in (None, MY_CLUB):
         for kit in (KIT, GK):
             p = build_prompt(SHEET, wording, kit, pose, my_club)
-            assert p.positive.startswith(subject(wording))
+            assert p.positive.startswith("1girl, solo, safe, ")
             assert CONTENT_POSITIVE in p.positive
             assert p.positive.endswith(QUALITY)
             assert p.negative.startswith(CONTENT_NEGATIVE)
@@ -184,53 +180,3 @@ def test_muscular_is_banned_at_my_club_only() -> None:
     )
     # Every player at my club carries the ban, whatever their build.
     assert "muscular female" in build_prompt(SHEET, "W08", KIT, "v", mc).negative
-
-
-# --- drawn as a man (gender.py) -----------------------------------------------------------------
-
-from facegen.prompt import (
-    COMPOSITION_NEGATIVE_MALE,
-    MALE_CONTENT_NEGATIVE,
-    SUBJECT_MALE,
-)
-from facegen.traits import FACIAL_HAIR, MALE_HAIR_STYLE, male_look
-
-
-@pytest.mark.parametrize("wording", ["M1", "M2", "M3", "M4"])
-def test_a_mans_prompt(wording: str) -> None:
-    look = male_look(SHEET.base_seed)
-    p = build_prompt(SHEET, wording, KIT, "crossed")
-    assert p.positive.startswith(f"{SUBJECT_MALE}, safe, {WORDINGS[wording].text}, ")
-    assert "1girl" not in p.positive and "female" not in p.positive
-    assert "dark-skinned male" in p.positive
-    assert MALE_HAIR_STYLE[look.hair_style].words in p.positive
-    assert FACIAL_HAIR[look.facial_hair].words in p.positive
-    # The fringe and hair accessories are a girl's: left out.
-    assert "bangs" not in p.positive and "hairband" not in p.positive
-    assert p.negative == (
-        f"{CONTENT_NEGATIVE}, {MALE_CONTENT_NEGATIVE}, {COMPOSITION_NEGATIVE_MALE}, "
-        f"{QUALITY_NEGATIVE}"
-    )
-    assert YOUNG_NEGATIVE not in p.negative
-
-
-def test_a_man_keeps_glasses_and_the_my_club_rules() -> None:
-    sheet = replace(SHEET, accessory="glasses")
-    assert "glasses" in build_prompt(sheet, "M2", KIT, "crossed").positive
-    mine = build_prompt(SHEET, "M2", KIT, "crossed", MY_CLUB)
-    assert "freckles" not in mine.positive and "freckles" in mine.negative
-    assert "dark skin" not in mine.positive and "slightly tanned skin" in mine.positive
-
-
-def test_a_mans_drawn_traits() -> None:
-    look = male_look(SHEET.base_seed)
-    drawn = drawn_traits(replace(SHEET, accessory="glasses"), male=True)
-    assert drawn["male_hair"] == look.hair_style
-    assert "hair_style" not in drawn and "fringe" not in drawn
-    assert drawn["accessory"] == "glasses"
-    assert "accessory" not in drawn_traits(SHEET, male=True)  # a hairband is a girl's
-
-
-def test_a_mans_look_is_seeded_by_the_sheet() -> None:
-    assert male_look(7) == male_look(7)
-    assert len({male_look(seed) for seed in range(200)}) > 10

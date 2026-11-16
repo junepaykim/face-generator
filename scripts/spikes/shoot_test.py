@@ -25,7 +25,7 @@ from pathlib import Path
 
 from facegen import qc
 from facegen.gpu import prepare_environment
-from facegen.kits import catalog_path, load_kits
+from facegen.kits import load_kits
 from facegen.picture import face_box
 from facegen.prompt import build_prompt
 from facegen.settings import load_settings
@@ -105,7 +105,7 @@ def main() -> None:
 
     RUN.mkdir(parents=True, exist_ok=True)
     settings = load_settings()
-    kits = load_kits(catalog=catalog_path(settings.paths.data_dir))
+    kits = load_kits(data_dir=settings.paths.data_dir)
     results_path = RUN / "results.json"
     results = json.loads(results_path.read_text()) if results_path.exists() else {}
     renderer = tagger = None

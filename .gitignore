@@ -11,7 +11,7 @@ dist/
 native/target/
 
 # Runtime state and generated pictures
-data/
+/data/
 
 # Game files and model weights never belong in the repository
 *.fm

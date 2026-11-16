@@ -26,8 +26,6 @@ _TRAIT_TAGS = {
 VERDICTS: dict[str, TagResult] = {
     # Every hair and eye colour tag present, so any sheet passes.
     "pass": TagResult(GENERAL, {"solo": 0.99, "1girl": 0.99, **dict.fromkeys(_COLOUR_TAGS, 0.6)}),
-    # The same for someone drawn as a man.
-    "man": TagResult(GENERAL, {"solo": 0.99, "1boy": 0.99, **dict.fromkeys(_COLOUR_TAGS, 0.6)}),
     # Also confident in every trait and shirt colour: ranks above "pass".
     "good": TagResult(
         GENERAL,

@@ -10,6 +10,11 @@ Example:
 
 The catalog reader deliberately validates the observed length/pointer layout and
 fails on changes, rather than associating a team with a neighbouring asset by guess.
+
+After an FM27 update, refresh the colours that ship with facegen: run this with
+--all-home, then `scripts/build_kit_catalog.py`, which reduces the report to club IDs and
+colour names (src/facegen/data/kit_catalog.json). Raise PROBE_VERSION whenever
+estimate_colours changes what it reports.
 """
 
 from __future__ import annotations
@@ -22,9 +27,12 @@ import struct
 import sys
 import time
 from collections import Counter
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+PROBE_VERSION = 1
+"""The estimator's version, recorded in the report and the bundled catalog."""
 KEY = re.compile(rb"kit2d_([0-9]+)_(home|away|third)(?![A-Za-z0-9_])")
 HERE = Path(__file__).resolve().parents[2]
 
@@ -113,19 +121,22 @@ def estimate_colours(image: Any) -> dict[str, Any]:
             name = "sky"
         elif name == "red" and max(rv, gv, bv) < 0.50:
             name = "claret"
-        palette.append({
-            "name": name,
-            "hex": "#" + "".join(f"{c:02X}" for c in rgb),
-            "rgb": rgb,
-            "sample_fraction": round(count / total, 4),
-        })
+        palette.append(
+            {
+                "name": name,
+                "hex": "#" + "".join(f"{c:02X}" for c in rgb),
+                "rgb": rgb,
+                "sample_fraction": round(count / total, 4),
+            }
+        )
     # A colour near a bucket boundary (cream vs white, for example) can land in
     # two labels. Merge visually near-identical representatives before ranking.
     merged: list[dict[str, Any]] = []
     for colour in palette:
         close = next(
             (
-                p for p in merged
+                p
+                for p in merged
                 if sum((a - b) ** 2 for a, b in zip(p["rgb"], colour["rgb"])) < 32**2
             ),
             None,
@@ -135,8 +146,7 @@ def estimate_colours(image: Any) -> dict[str, Any]:
             continue
         a, b = close["sample_fraction"], colour["sample_fraction"]
         close["rgb"] = [
-            round((x * a + y * b) / (a + b))
-            for x, y in zip(close["rgb"], colour["rgb"])
+            round((x * a + y * b) / (a + b)) for x, y in zip(close["rgb"], colour["rgb"])
         ]
         close["hex"] = "#" + "".join(f"{c:02X}" for c in close["rgb"])
         close["sample_fraction"] = round(a + b, 4)
@@ -259,9 +269,14 @@ def main() -> None:
             )
     for key in sorted(wanted & entries.keys() - results.keys()):
         results[key] = {
-            **entries[key], "status": "extraction_failed", "primary": None, "secondary": None
+            **entries[key],
+            "status": "extraction_failed",
+            "primary": None,
+            "secondary": None,
         }
     summary = {
+        "probe_version": PROBE_VERSION,
+        "generated": datetime.now(UTC).isoformat(timespec="seconds"),
         "catalog_sha256": catalog_hash,
         "unitypy_version": UnityPy.__version__,
         "kit_keys": len(entries),
@@ -288,8 +303,12 @@ def main() -> None:
     for row in results.values():
         if row.get("club_id") in args.club or row["status"] != "estimated":
             colours = [row.get(k) for k in ("primary", "secondary")]
-            print(row["key"], row.get("texture_name", ""), row["status"],
-                  [(c["name"], c["hex"], c["sample_fraction"]) for c in colours if c])
+            print(
+                row["key"],
+                row.get("texture_name", ""),
+                row["status"],
+                [(c["name"], c["hex"], c["sample_fraction"]) for c in colours if c],
+            )
 
 
 if __name__ == "__main__":

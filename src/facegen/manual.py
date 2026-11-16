@@ -308,7 +308,7 @@ def remove_picture(
     The master pictures and their history stay in data/. Returns whether a published
     picture or mapping was removed.
     """
-    fm_user_dir: Path = settings.paths.fm_user_dir
+    fm_user_dir = settings.paths.fm_user_dir
     # The publish lock before the transaction, as publish_pack takes them.
     with publish_lock(settings.paths.data_dir), transaction(conn):
         p = _player(conn, career_id, uid)

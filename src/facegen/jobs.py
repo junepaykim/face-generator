@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
 from facegen.age import age_wording, audience
-from facegen.datasource.records import Personality
+from facegen.datasource.records import Personality, is_first_team_manager
 from facegen.db import ACTIVE_CAREER_ORDER, transaction
 from facegen.domain import FinishedStatus, GroupName, JobKind
 from facegen.planner import TIER_MANUAL, Plan
@@ -56,8 +56,6 @@ class Job:
     """The staff job in words, None for a player or where the save names none."""
     media_role: str | None = None
     """"journalist" or "press officer": dressed for their work, aged by the media table."""
-    drawn_male: bool = False
-    """Drawn as a man (gender.py): aged by the men's table."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,7 +105,7 @@ def queued_jobs(
         "SELECT j.id, j.unique_id, j.kind, j.group_name, j.target_club_id, j.target_band,"
         " j.manual, j.traits_version, j.revision, p.name, p.at_my_club, p.is_goalkeeper,"
         " p.height_cm, p.strength, p.age, p.personality, p.is_staff,"
-        " p.staff_job, p.media_role, p.drawn_male"
+        " p.staff_job, p.media_role"
         " FROM jobs j JOIN players p ON p.career_id = j.career_id AND p.unique_id = j.unique_id"
         " WHERE j.career_id = ? AND j.status = 'queued'"
         + (" AND j.id = ?" if job_id is not None else "")
@@ -135,7 +133,6 @@ def queued_jobs(
             staff=bool(r["is_staff"]),
             staff_job=r["staff_job"],
             media_role=r["media_role"],
-            drawn_male=bool(r["drawn_male"]),
         )
         for r in rows
     ]
@@ -250,6 +247,7 @@ def allocate_sheet(
             personality_weight=personality_weight,
             new_face=job.kind == "reroll",
             activate=False,
+            manager=job.staff and is_first_team_manager(job.staff_job),
         )
         conn.execute("UPDATE jobs SET traits_version = ? WHERE id = ?", (version, job.id))
         return version, sheet

@@ -211,3 +211,24 @@ def test_phase_5_migration_republishes_square_pictures_and_can_record_a_restore(
     assert row["restored_at"] is None and row["restored_group"] is None
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute("UPDATE images SET restored_group = 'x'")
+
+
+def test_migration_11_drops_drawn_male_and_the_mens_targets() -> None:
+    """Everyone is drawn as a woman again (2026-11-14): queued jobs lose a men's band."""
+    conn = sqlite3.connect(":memory:", isolation_level=None)
+    conn.row_factory = sqlite3.Row
+    for script in db.MIGRATIONS[:10]:
+        conn.executescript(script)
+    conn.execute("PRAGMA user_version = 10")
+    conn.execute(
+        "INSERT INTO careers (id, key, display_name, fingerprint, created_at, updated_at)"
+        " VALUES (1, 'c1', 'Career', '[]', 'now', 'now')"
+    )
+    for uid, status, band in ((7, "queued", "M2"), (8, "queued", "W05"), (9, "done", "M3")):
+        _job(conn, status, uid)
+        conn.execute("UPDATE jobs SET target_band = ? WHERE unique_id = ?", (band, uid))
+    assert db.migrate(conn) == len(db.MIGRATIONS) == 11
+    columns = {r["name"] for r in conn.execute("PRAGMA table_info(players)")}
+    assert "drawn_male" not in columns and "female" in columns
+    bands = dict(conn.execute("SELECT unique_id, target_band FROM jobs").fetchall())
+    assert bands == {7: None, 8: "W05", 9: "M3"}  # finished jobs keep their record

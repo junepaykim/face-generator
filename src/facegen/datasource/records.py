@@ -14,6 +14,11 @@ class Gender(StrEnum):
     UNKNOWN = "unknown"
 
 
+def is_first_team_manager(job: str | None) -> bool:
+    """Manager title, excluding assistants; the adapter also checks the team's slot."""
+    return (job or "").strip().lower() in {"manager", "manager (you)", "head coach"}
+
+
 @dataclass(frozen=True, slots=True)
 class ClubRecord:
     club_id: int
@@ -147,7 +152,7 @@ class Snapshot:
     across saves, what the continental settings list), else minus one minus the save-local ID.
     """
     staff: tuple[StaffRecord, ...] = ()
-    """My club's staff only; staff elsewhere are not read into the tool."""
+    """My club's staff and first-team managers at clubs in my current league."""
     staff_read: bool = True
     """False when the staff reader failed: the staff stored before are then left as they were,
     rather than counted as gone from my club."""

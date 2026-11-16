@@ -159,8 +159,15 @@ def _walk(graphics: Path, previous: Mapping[str, Any]) -> tuple[dict[str, Any], 
 
 def _read_index(paths: Paths, configs: list[list[Any]]) -> PhotoIndex:
     warnings: list[str] = []
-    catalog = paths.fm_install_dir / CATALOG_DIR / CATALOG_FILE
     game: frozenset[int] | None
+    if paths.fm_install_dir is None:
+        game = None
+        warnings.append(
+            "FM27's install folder is not set and was not found on this PC, so no pre-existing"
+            " player counts as without a photo; set paths.fm_install_dir in config/local.toml"
+        )
+        return PhotoIndex(game, _facepack_ids(paths, configs, warnings), tuple(warnings))
+    catalog = paths.fm_install_dir / CATALOG_DIR / CATALOG_FILE
     try:
         game = game_photo_ids(catalog.read_bytes())
     except OSError:
@@ -176,13 +183,18 @@ def _read_index(paths: Paths, configs: list[list[Any]]) -> PhotoIndex:
                 f"FM27's photo list ({catalog}) names no photos: has a game update changed its "
                 "format? No pre-existing player counts as without a photo (docs/research.md)"
             )
+    return PhotoIndex(game, _facepack_ids(paths, configs, warnings), tuple(warnings))
+
+
+def _facepack_ids(paths: Paths, configs: list[list[Any]], warnings: list[str]) -> frozenset[int]:
     facepack: set[int] = set()
-    for rel, _size, _mtime in configs:
+    graphics = paths.graphics_dir
+    for rel, _size, _mtime in configs if graphics is not None else ():
         try:
-            facepack |= facepack_ids((paths.graphics_dir / rel).read_bytes())
+            facepack |= facepack_ids((graphics / rel).read_bytes())
         except OSError as exc:
             warnings.append(f"could not read the facepack mapping graphics/{rel}: {exc}")
-    return PhotoIndex(game, frozenset(facepack), tuple(warnings))
+    return frozenset(facepack)
 
 
 def scan(paths: Paths, previous: Mapping[str, Any] | None = None) -> PhotoScan:
@@ -191,9 +203,13 @@ def scan(paths: Paths, previous: Mapping[str, Any] | None = None) -> PhotoScan:
     `previous` is the state the last scan stored (`stored_state`), or None to read everything.
     """
     previous = previous or {}
-    folders, configs = _walk(paths.graphics_dir, previous.get("folders", {}))
+    graphics = paths.graphics_dir
+    folders, configs = (
+        _walk(graphics, previous.get("folders", {})) if graphics is not None else ({}, [])
+    )
+    install = paths.fm_install_dir
     state = {
-        "catalog": _catalog_version(paths.fm_install_dir),
+        "catalog": _catalog_version(install) if install is not None else None,
         "configs": configs,
         "folders": folders,
     }

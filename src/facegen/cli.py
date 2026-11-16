@@ -7,6 +7,7 @@ facegen gallery
 facegen status
 facegen serve [--port N] [--paused] [--no-worker] [--no-watch]
 facegen worker [--generate-now]   (started by serve: the GPU worker in its own process)
+facegen native [--install [--from DIR]]
 """
 
 from __future__ import annotations
@@ -21,13 +22,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
 
-from facegen import db
+from facegen import db, native, native_wheel
 from facegen.datasource.base import DataSource
 from facegen.gallery import write_gallery
-from facegen.kits import KitError, catalog_path, load_kits
+from facegen.kits import KitError, load_kits
 from facegen.poller import UNSUPPORTED_ADVICE, NoSaveError, SaveUnreadableError, sync_save
 from facegen.publish import RELOAD_HINT, PublishError, PublishReport, publish_active
-from facegen.settings import Settings, load_settings
+from facegen.settings import Settings, folder_not_set_message, load_settings
 from facegen.sync import SyncReport
 from facegen.worker import (
     Career,
@@ -44,6 +45,7 @@ _TIER_NAMES = {0: "manual", 1: "A, my club", 2: "A", 3: "B", 4: "C"}
 KIT_SOURCE_NOTES = {
     "table": "",
     "catalog": " (colours from FM27's kit image)",
+    "bundled": " (bundled colours from FM27's kit image)",
     "fallback": " (fallback kit)",
 }
 
@@ -204,6 +206,12 @@ def cmd_sync(
 
 
 def cmd_status(settings: Settings, conn: sqlite3.Connection, out: TextIO) -> int:
+    print(f"FM27 folder   {settings.paths.describe('paths.fm_user_dir')}", file=out)
+    print(f"FM27 install  {settings.paths.describe('paths.fm_install_dir')}", file=out)
+    print(f"Rust code     {native.status().describe()}", file=out)
+    if settings.paths.fm_user_dir is None:
+        print(folder_not_set_message(), file=out)
+    print(file=out)
     careers = conn.execute(
         "SELECT id, key, display_name, last_game_date, updated_at FROM careers ORDER BY updated_at"
     ).fetchall()
@@ -256,6 +264,47 @@ def cmd_status(settings: Settings, conn: sqlite3.Connection, out: TextIO) -> int
     return 0
 
 
+def cmd_native(
+    args: argparse.Namespace,
+    out: TextIO,
+    *,
+    host: native_wheel.Host | None = None,
+    native_dir: Path | None = None,
+    fetch: Callable[[str, Path], None] = native_wheel.download,
+    installer: Callable[[Path], None] = native_wheel.uv_install,
+    loads: Callable[[], bool] = native_wheel.imports_cleanly,
+) -> int:
+    """Whether the Rust extension is in use, and with --install the prebuilt wheel for this
+    PC (native_wheel.py). Exit 3 when it could not be installed: the launcher goes on with
+    the Python versions."""
+    now = native.status()
+    print(f"Rust code   {now.describe()}", file=out)
+    try:
+        chosen = native_wheel.plan(host, native_dir=native_dir)
+    except (OSError, native_wheel.WheelError) as exc:
+        print(f"Wheel       {exc}", file=out)
+        return 3 if args.install else 0
+    print(f"Wheel       {chosen.describe()}", file=out)
+    if not args.install:
+        if not now.in_use and chosen.wheel is not None:
+            print("Run `facegen native --install` to install it.", file=out)
+        return 0
+    if now.in_use:
+        print("Nothing to install.", file=out)
+        return 0
+    try:
+        name = native_wheel.install(chosen, source=args.wheel_dir, fetch=fetch, installer=installer)
+    except native_wheel.WheelError as exc:
+        print(f"Not installed: {exc}", file=out)
+        print("facegen goes on with the Python versions.", file=out)
+        return 3
+    if not loads():
+        print(f"Installed {name}, but it does not load here; the Python versions run.", file=out)
+        return 3
+    print(f"Installed {name} (SHA-256 checked): in use from facegen's next start.", file=out)
+    return 0
+
+
 def _career(conn: sqlite3.Connection, key: str | None, out: TextIO) -> Career | None:
     career = load_career(conn, key)
     if career is None:
@@ -300,7 +349,7 @@ def cmd_run(
     if career is None:
         return 2
     try:
-        kits = load_kits(args.kits, catalog=catalog_path(settings.paths.data_dir))
+        kits = load_kits(args.kits, data_dir=settings.paths.data_dir)
     except KitError as exc:
         print(f"kits: {exc}", file=out)
         return 2
@@ -418,7 +467,7 @@ def cmd_serve(
         print(f"ui.host is {host!r}: facegen serves on this PC only (127.0.0.1).", file=out)
         return 2
     try:  # the worker process loads them again; a broken table is reported here, at once
-        load_kits(catalog=catalog_path(settings.paths.data_dir))
+        load_kits(data_dir=settings.paths.data_dir)
     except KitError as exc:
         print(f"kits: {exc}", file=out)
         return 2
@@ -441,7 +490,10 @@ def cmd_serve(
     url = f"http://{'[::1]' if host == '::1' else host}:{port}/"
     print(f"facegen UI at {url}  (Ctrl+C to stop)", file=out, flush=True)
     if poller is not None:
-        print(f"Watching {settings.paths.games_dir} for new saves.", file=out, flush=True)
+        if settings.paths.games_dir is None:
+            print(folder_not_set_message(), file=out, flush=True)
+        else:
+            print(f"Watching {settings.paths.games_dir} for new saves.", file=out, flush=True)
         poller.start()
     if worker is not None:
         worker.start()
@@ -529,7 +581,34 @@ def build_parser() -> argparse.ArgumentParser:
         "worker", help="the GPU worker process that serve starts (JSON lines on stdin and stdout)"
     )
     w.add_argument("--generate-now", action="store_true", help="draw the whole queue at once")
+    n = sub.add_parser("native", help="whether the Rust extension is in use; install its wheel")
+    n.add_argument(
+        "--install",
+        action="store_true",
+        help="download this PC's prebuilt wheel, check its SHA-256 and install it",
+    )
+    n.add_argument(
+        "--from",
+        dest="wheel_dir",
+        type=Path,
+        metavar="DIR",
+        help="with --install: take the wheel from this folder instead of downloading it",
+    )
     return parser
+
+
+def utf8_output(*streams: TextIO) -> None:
+    """Write UTF-8 whatever the console's code page: names such as James Rodríguez cannot be
+    written in cp949 or cp1252, and a print would raise. Python already writes Unicode to a
+    Windows console window; this is for output sent to a pipe or a file."""
+    for stream in streams:
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):  # already written to, or a closed stream
+            continue
 
 
 def main(
@@ -540,8 +619,12 @@ def main(
     out: TextIO | None = None,
     run_server: Callable[..., None] | None = None,
 ) -> int:
+    if out is None:
+        utf8_output(sys.stdout, sys.stderr)
     out = out or sys.stdout
     args = build_parser().parse_args(argv)
+    if args.command == "native":  # needs no settings or database
+        return cmd_native(args, out)
     paths = load_settings(defaults_path=args.config).paths
     conn = db.connect(paths.db_path)
     try:

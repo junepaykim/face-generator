@@ -58,7 +58,7 @@ from facegen import db
 from facegen.datasource.base import DataSource
 from facegen.gpu import describe as describe_gpu
 from facegen.gpu import is_fatal
-from facegen.kits import KitTable, catalog_path, load_kits
+from facegen.kits import KitTable, load_kits
 from facegen.poller import (
     UNSUPPORTED_ADVICE,
     NoSaveError,
@@ -69,7 +69,7 @@ from facegen.poller import (
     sync_save,
 )
 from facegen.publish import PublishError, PublishReport, publish_active
-from facegen.settings import load_settings
+from facegen.settings import folder_not_set_message, load_settings
 from facegen.sync import SyncReport, sync_of_save
 from facegen.worker import (
     Job,
@@ -425,7 +425,7 @@ class WorkerService:
             self._worker = Worker(
                 conn,
                 settings,
-                self._kits or load_kits(catalog=catalog_path(settings.paths.data_dir)),
+                self._kits or load_kits(data_dir=settings.paths.data_dir),
                 career,
                 renderer_factory=self._renderer_factory,
                 tagger_factory=self._tagger_factory,
@@ -545,8 +545,8 @@ class WorkerService:
         )
 
     def _publish_pending(self, worker: Worker) -> None:
-        if not self._unpublished:
-            return
+        if not self._unpublished or worker.settings.paths.fm_user_dir is None:
+            return  # without FM27's folder the pictures wait; the next sync publishes them
         try:
             report = worker.publish()
         except PublishError as exc:
@@ -596,13 +596,13 @@ def describe_sync(report: SyncReport) -> str:
     return text
 
 
-def unchanged_save_notice(conn: sqlite3.Connection, games_dir: Path) -> str | None:
+def unchanged_save_notice(conn: sqlite3.Connection, games_dir: Path | None) -> str | None:
     """What to tell the user when the newest save is one that is already synced, else None.
 
     facegen reads the save file, not the running game: a signing or a new member of staff is
     in it only once FM27 has saved (spec section 6).
     """
-    newest = find_latest_save(games_dir)
+    newest = find_latest_save(games_dir) if games_dir is not None else None
     if newest is None:
         return None
     version = SaveVersion.of(newest)
@@ -736,7 +736,8 @@ class SyncService:
 @dataclass(frozen=True, slots=True)
 class PollerStatus:
     state: str
-    """starting, no save, synced, settling, due, syncing, error or stopped."""
+    """starting, not set (FM27's folder), no save, synced, settling, due, syncing, error or
+    stopped."""
     detail: str
     checked: str | None
     """When the folder was last looked at (local time)."""
@@ -786,11 +787,15 @@ class PollerService:
         conn = self._connection()
         settings = load_settings(conn, self.defaults_path)
         interval = float(settings.schedule.poll_seconds)
+        games = settings.paths.games_dir
+        if games is None:
+            self._set("not set", folder_not_set_message())
+            return interval
         try:
-            newest_path = find_latest_save(settings.paths.games_dir)
+            newest_path = find_latest_save(games)
             newest = SaveVersion.of(newest_path) if newest_path is not None else None
         except OSError as exc:  # the save vanished between listing and stat, or /mnt/c is gone
-            self._set("error", f"cannot look at {settings.paths.games_dir}: {exc}")
+            self._set("error", f"cannot look at {games}: {exc}")
             return interval
         done = sync_of_save(conn, newest.path.name, newest.mtime) if newest else None
         decision = self._watcher.look(newest, done is not None, self._clock(), interval)

@@ -25,8 +25,9 @@ SECTION_NOTES = {
     "reserves, under-23s and under-18s. A player moved to the first team rises to group A and "
     "is re-drawn at A quality.",
     "media": "Re-classifies at once. Journalists and press officers are read from the save at "
-    "each sync and drawn once, at group B quality, as the gender the save gives them. Turning "
-    "this off cancels their queued pictures and keeps the drawn ones.",
+    "each sync and drawn once, as women, at group B quality; one pinned to A on their page is "
+    "drawn at A quality and tracked. Turning this off cancels their queued pictures and keeps "
+    "the drawn ones.",
     "no_photo": "Re-classifies at once. Without a photo means FM27 ships none for them and no "
     "facepack in the graphics folder maps them; facegen's own pictures do not count. Both are "
     "read again at each sync. The group thresholds apply as for newgens, the academy rules do "
@@ -60,8 +61,7 @@ SECTION_TITLES = {
     "age.b": "Age wordings: group B",
     "age.c": "Age wordings: group C",
     "age.staff": "Age wordings: staff at my club",
-    "age.media": "Age wordings: journalists and press officers drawn as women",
-    "age.male": "Age wordings: staff and media drawn as men",
+    "age.media": "Age wordings: journalists and press officers",
     "reference": "Reference picture",
     "my_club": "Players at my club",
     "body": "Height and build",

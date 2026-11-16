@@ -235,9 +235,9 @@ the ones you see most often get the best pictures, and everyone else is skipped.
 
 | Group | Who (default thresholds) | Tries | Detail pass | Published size |
 |---|---|---|---|---|
-| **A** | Everyone at your club, staff included; any newgen with CA > 155 or PA > 170 | best of 3 | yes | 768×1024 |
-| **B** | Your academy graduates after they leave; newgens with CA > 130 or PA > 150 who are in your league or a continental cup; any newgen with CA > 140 or PA > 155 | 1 | no | 576×768 |
-| **C** | Newgens in your league with CA > 115 or PA > 140 | 1 | no | 384×512 |
+| **A** | Your first team and your staff; any newgen with CA > 155 or PA > 170 | best of 3 | yes | 768×1024 |
+| **B** | Your other teams (reserves, under-23s, under-18s); your academy graduates after they leave; newgens with CA > 130 or PA > 150 who are in your league or a continental cup; any newgen with CA > 140 or PA > 155; journalists from your club's country and your press officers | 1 | no | 576×768 |
+| **C** | Newgens in your league with CA > 115 or PA > 140; the other clubs' managers in your league who have no photo | 1 | no | 384×512 |
 | none | Everyone else | no picture, unless you pick them by hand in the web UI | | |
 
 - **Real players without a photo count as newgens.** FM27 ships photos for some leagues
@@ -266,6 +266,10 @@ the ones you see most often get the best pictures, and everyone else is skipped.
   for the manager, training wear and a whistle for coaches, lab coats for doctors, with the
   club's colours on a tie, scarf or jacket. Their age wording has its own table of
   very wide, seven-year bands, so most staff fall in the middle of the range.
+- **The people around the club.** Journalists and press officers get one picture each, in
+  work clothes with a press pass or a lanyard. The other clubs' managers in your league
+  get one too if FM27 has no photo of them. Pin someone you see often to group A and they
+  are kept up to date like your own staff.
 - **Thresholds are live.** Each setting is saved as you change it in the web UI, the page
   says who moved and what was queued, and Undo puts it back, several steps at once if you
   like. Newly eligible players join the queue, and existing pictures are never deleted.
@@ -338,14 +342,19 @@ FACEGEN_TEST_GPU=1 uv run pytest tests/test_gpu.py
 
 **You need:**
 
-- A Windows PC with FM27 and WSL2 (Ubuntu).
-- An NVIDIA GPU that WSL can see, with about 8 GB of free VRAM. It was tested on an
-  RTX 4080 16 GB.
-- Python 3.12 and [`uv`](https://docs.astral.sh/uv/).
-- Optionally, Rust from [rustup](https://rustup.rs/), for a small extension that
-  republishes a pack about 9× faster. Without Rust, install with
-  `uv sync --no-group native`; everything works the same, only slower to publish.
-- About 11 GB of disk for the models, plus a few GB for PyTorch with CUDA.
+- A Windows PC with FM27. facegen runs on Windows itself, or in WSL2 (Ubuntu); the same
+  commands work in both.
+- An NVIDIA GPU with about 8 GB of free VRAM. It was tested on an RTX 4080 16 GB.
+- Python 3.12 and [`uv`](https://docs.astral.sh/uv/). uv fetches Python if you have none.
+- Optionally, a small Rust extension that republishes a pack about 9× faster. In WSL with
+  Rust from [rustup](https://rustup.rs/), `uv sync` builds it; without Rust there, install
+  with `uv sync --no-group native`. On Windows, or anywhere without Rust,
+  `uv run facegen native --install` installs a prebuilt build of it from this repo's
+  releases, checked against the SHA-256 listed in `native/wheels.sha256`; after that, update
+  with `uv sync --inexact`, since a plain `uv sync` removes it. Without it everything works
+  the same, only slower to publish. `uv run facegen native` says whether it is in use.
+- About 11 GB of disk for the models, plus a few GB for PyTorch with CUDA. On Windows uv
+  takes PyTorch from PyTorch's own CUDA index, since PyPI's Windows build has no CUDA.
 
 **1. Install.** From the cloned repo:
 
@@ -353,12 +362,15 @@ FACEGEN_TEST_GPU=1 uv run pytest tests/test_gpu.py
 uv sync
 ```
 
-**2. Point it at FM27.** Create `config/local.toml` with your FM27 user folder as WSL sees
-it. This file is not in git, so your Windows user name stays out of the repo.
+**2. FM27's folders.** facegen finds FM27's user folder (in your Documents folder, OneDrive
+included) and its Steam install (in any Steam library) by itself; `uv run facegen status`
+shows what it found. If yours are elsewhere, create `config/local.toml`. It is not in git, so
+your Windows user name stays out of the repo. Write a Windows path in single quotes; in WSL
+it works too.
 
 ```toml
 [paths]
-fm_user_dir = "/mnt/c/Users/<you>/Documents/Sports Interactive/Football Manager 27"
+fm_user_dir = 'C:\Users\<you>\Documents\Sports Interactive\Football Manager 27'
 ```
 
 **3. Download the models once** (~11 GB). After this, everything runs offline.
@@ -402,15 +414,21 @@ Other handy commands:
 | `uv run facegen serve --no-worker` | Runs only the web UI, with no GPU work |
 
 Club kit colours are in `config/kits.toml`. A club that isn't listed takes the colours
-estimated from FM27's own image of its home shirt, if you have run
+estimated from FM27's own image of its home shirt: facegen ships these for the 832 clubs
+FM27 has an image for (`src/facegen/data/kit_catalog.json`, colour names only), so there is
+nothing to set up. After a game update you can estimate them again on your PC with
 `scripts/spikes/kit_colour_probe.py --install-dir <FM27 install> --all-home` (it needs
-UnityPy, and writes to `data/kit-colour-probe/`). Otherwise it gets a neutral kit.
+UnityPy, and writes to `data/kit-colour-probe/`); a newer estimate there comes first, and
+`scripts/build_kit_catalog.py` turns it into the bundled file. A club in neither gets a
+neutral kit.
 
 ## Known limits
 
 - **Works on my machine™.** It was built and tested on one PC: Windows with WSL2, an
-  RTX 4080 and FM27 build 27.0.0. Other GPUs, plain Linux and macOS are untested. The
-  check for a running FM27 relies on Windows' `tasklist.exe`.
+  RTX 4080 and FM27 build 27.0.0, and since then on the same PC's native Windows, where a
+  picture takes about 8% longer than in WSL. Other GPUs, plain Linux and macOS are untested. The
+  check for a running FM27 relies on Windows' `tasklist.exe`. facegen finds FM27's folders in
+  the usual places only; the Epic and Game Pass versions are untested.
 - **Only one model is supported.** Animagine XL 4.0 is built in: its settings, its
   tag-style prompts, and the tagger checks that go with them. There's no setting to switch
   models yet. For a realistic style, **Z-Image-Turbo** looks like the best next step. It
@@ -439,7 +457,8 @@ UnityPy, and writes to `data/kit-colour-probe/`). Otherwise it gets a neutral ki
 ```
 config/          default settings and the kit colour table
 docs/images/     the sample pictures on this page
-scripts/spikes/  the throwaway experiments behind the numbers
+native/          the optional Rust extension, and its released wheels' checksums
+scripts/         the kit colour bundle's builder; spikes/: the experiments behind the numbers
 src/facegen/     the Python package
 tests/           unit tests (no GPU or save needed)
 ```

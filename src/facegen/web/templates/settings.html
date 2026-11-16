@@ -6,6 +6,16 @@
 
 {% if error %}<div class="flash bad">{{ error }}</div>{% endif %}
 
+<div class="card">
+  <h2>FM27's folders</h2>
+  <table class="kv">
+    <tr><th>Saves and graphics</th><td>{{ folders.user }}</td></tr>
+    <tr><th>Install</th><td>{{ folders.install }}</td></tr>
+  </table>
+  <p class="muted small">Found on this PC unless <code>config/local.toml</code> sets them (<code>[paths] fm_user_dir = '…'</code>, <code>fm_install_dir = '…'</code>; a Windows path in single quotes). A change there applies when facegen starts again.</p>
+  {% if folders.user_missing %}<p class="bad small">{{ folders.not_set }}</p>{% endif %}
+</div>
+
 <div class="bulk sticky savebar">
   <form method="post" action="/settings" class="inline" data-settings-action><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <button name="action" value="undo" data-undo {{ "disabled" if not can_undo }} title="Put back what the last change replaced">↶ Undo</button>

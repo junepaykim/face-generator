@@ -9,15 +9,17 @@ Rules:
 - A player in group A whose picture was drawn at B or C quality is re-drawn (upgrade).
 - A tracked player is re-drawn on a club change (new kit) or a new age band, i.e. a new
   age wording (age.py). A free agent has no kit to draw, so their re-draw waits until
-  they join a club.
+  they join a club. A journalist or press officer wears no kit: one pinned to A is tracked
+  (classify.py) and re-drawn on a new age band alone.
 - Queued automatic jobs for players who no longer need them are cancelled. Running jobs
   are left alone; manual requests retain their intent but refresh their targets.
   Pictures are never deleted here.
 - A job that failed its checks and went to review is not re-queued for the same target.
 - A re-draw that keeps the character sheet may use the existing picture as a reference
   (`reference_scale`); by default only for players at my club.
-- A tracked person whose picture shows the other gender (a member of staff now drawn as a
-  man, gender.py; the age band's wording says which) gets a new face, without a reference.
+- A person whose current picture shows a man (drawn 2026-11-13 with a men's age wording,
+  age.drawn_as_man) gets a new face, tracked or not: everyone is drawn as a woman since
+  2026-11-14.
 """
 
 from __future__ import annotations
@@ -26,7 +28,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
 
-from facegen.age import is_male
+from facegen.age import drawn_as_man
 from facegen.classify import Classification, Group
 from facegen.domain import JobKind, JobStatus
 from facegen.settings import ReferenceSettings
@@ -79,6 +81,8 @@ class PlayerPlanState:
     last_failed_job: JobState | None = None
     manual_allowed: bool = True
     manual_band: str | None = None
+    media: bool = False
+    """A journalist or press officer: no kit, so no club is needed to re-draw them."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,16 +181,15 @@ def desired_job(s: PlayerPlanState) -> DesiredJob | None:
     img = s.image
     if img is None:
         return job("initial", "first picture")
-    if s.club_id is None:
+    if s.club_id is None and not s.media:
         return None  # a re-draw needs a kit; wait for the next club
+    if drawn_as_man(img.age_band):
+        return job("reroll", "drawn as a woman")
     if group is Group.A and img.group is not Group.A:
         return job("upgrade", f"promoted to A from {img.group.label}")
     if not s.classification.tracked:
         return None
-    bands = s.age_band is not None and img.age_band is not None
-    if bands and is_male(s.age_band) != is_male(img.age_band):
-        return job("reroll", "drawn as a man" if is_male(s.age_band) else "drawn as a woman")
-    if s.club_id != img.club_id:
+    if s.club_id != img.club_id and not s.media:
         return job("kit", "changed club")
     if s.age_band is not None and img.age_band is not None and s.age_band != img.age_band:
         return job("age", f"age band {img.age_band} to {s.age_band}")

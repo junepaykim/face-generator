@@ -15,8 +15,9 @@ group B, or A when their CA or PA reaches group A's thresholds, while `youth` is
 2026-11-13); moving to the first team puts them in A. They are tracked while at my club.
 
 Journalists from my club's country and my club's press officers are in group B and not
-tracked (user, 2026-11-13); other journalists only by a pin. The player rules never apply to
-them.
+tracked (user, 2026-11-13); other journalists only by a pin. One pinned to A is a regular at
+my club: group A quality and tracked like any group A person (user, 2026-11-14). The player
+rules never apply to them.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Literal
 
+from facegen.datasource.records import is_first_team_manager
 from facegen.settings import Groups
 
 if TYPE_CHECKING:
@@ -74,6 +76,7 @@ class PlayerFacts:
     """"journalist" or "press officer" for those people; None for players and staff."""
     local_media: bool = False
     """A journalist from my club's country, or a press officer of my club."""
+    staff_job: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,6 +144,14 @@ def rule_matches(f: PlayerFacts, g: Groups, rules: Rules = ALL_RULES) -> list[tu
     if f.is_staff:
         if f.at_my_club and rules.staff:
             matches.append((Group.A, "on my club's staff"))
+        elif (
+            not f.at_my_club
+            and rules.staff
+            and f.in_my_league
+            and is_first_team_manager(f.staff_job)
+            and f.photo is False
+        ):
+            matches.append((Group.C, "manager in my league without a photo"))
         return matches
     if f.media == "journalist":
         if f.local_media and rules.journalists:
@@ -194,7 +205,8 @@ def classify(f: PlayerFacts, g: Groups, rules: Rules = ALL_RULES) -> Classificat
     - Pre-existing players without a photo follow the newgen thresholds while
       `rules.no_photo` is on.
     - Journalists and press officers are in group B (`rules.journalists`,
-      `rules.press_officers`) and never tracked: their picture is drawn once.
+      `rules.press_officers`) and not tracked: their picture is drawn once. One pinned to A
+      is tracked, as a regular at my club.
     """
     if not f.in_scope:
         return Classification(None, False, ("not in men's football",))
@@ -218,7 +230,10 @@ def classify(f: PlayerFacts, g: Groups, rules: Rules = ALL_RULES) -> Classificat
         return Classification(None, False, ())
 
     if f.media:
-        return Classification(group, False, tuple(reasons))
+        regular = group is Group.A
+        if regular:
+            reasons.append("tracked: a regular at my club")
+        return Classification(group, regular, tuple(reasons))
     youth_tracked = my_youth(f, rules)
     tracked = group is Group.A or academy_tracked or youth_tracked
     if academy_tracked and group is not Group.A:

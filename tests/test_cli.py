@@ -8,17 +8,14 @@ from pathlib import Path
 import pytest
 from factories import ABROAD, MY_CLUB, NEWGEN, player, snapshot
 
+from facegen import native
 from facegen.cli import main
 from facegen.datasource.base import UnsupportedSaveError
 from facegen.datasource.records import Snapshot
 from facegen.settings import DEFAULTS_PATH
 
-FM_USER_LINE = (
-    'fm_user_dir = "/mnt/c/Users/<Windows user>/Documents/Sports Interactive/Football Manager 27"'
-)
-FM_INSTALL_LINE = (
-    'fm_install_dir = "/mnt/c/Program Files (x86)/Steam/steamapps/common/Football Manager 27"'
-)
+FM_USER_LINE = 'fm_user_dir = ""'
+FM_INSTALL_LINE = 'fm_install_dir = ""'
 
 
 class FakeSource:
@@ -197,6 +194,13 @@ def test_status_marks_the_active_career(env: dict[str, Path]) -> None:
     run(env, "sync")
     _, status = run(env, "status")
     assert "(active: FM27 is shown this pack)" in status
+
+
+def test_status_says_whether_the_rust_extension_is_in_use(env: dict[str, Path]) -> None:
+    _, status = run(env, "status")
+    line = next(x for x in status.splitlines() if x.startswith("Rust code"))
+    assert ("in use (facegen-native" in line) == (native.ext is not None)
+    assert ("the Python versions run" in line) == (native.ext is None)
 
 
 def test_missing_saves(env: dict[str, Path]) -> None:

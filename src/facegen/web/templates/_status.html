@@ -13,6 +13,7 @@
       <p><span class="state state-{{ worker.state }}">{{ worker.state }}</span> {{ worker.detail }}</p>
       {% if worker.current %}<p>Drawing <a href="/players/{{ worker.current.unique_id }}">{{ worker.current.name }}</a>: {{ kind_name(worker.current.kind) }}, group {{ worker.current.group|upper }}</p>{% endif %}
       <p class="muted small">GPU model {{ "loaded" if worker.models_loaded else "not loaded" }} · this session {{ worker.done }} drawn, {{ worker.failed }} sent to review{% if worker.generate_now %} · <strong>generating now</strong> (FM27 check off until the queue is empty){% endif %}</p>
+      {% if native %}<p class="muted small" title="facegen-native: faster picture checks and publishing; the Python versions give the same pictures">Rust code {{ native.describe() }}{% if not native.in_use %}; <code>uv run facegen native --install</code> fetches it{% endif %}</p>{% endif %}
       {% if worker.last_error %}<p class="bad small">{{ worker.last_error }}</p>{% endif %}
       <div class="buttons">
         {% if worker.gpu_fault %}
@@ -46,7 +47,7 @@
       <p class="muted">Never synced.</p>
     {% endif %}
     {% if poller %}
-      <p class="small"><span class="state state-{{ {'syncing': 'running', 'settling': 'waiting', 'error': 'error', 'stopped': 'stopped'}.get(poller.state, 'idle') }}">watching saves</span> {{ poller.detail }}{% if poller.checked %} <span class="muted">· checked {{ poller.checked }}</span>{% endif %}</p>
+      <p class="small"><span class="state state-{{ {'syncing': 'running', 'settling': 'waiting', 'error': 'error', 'not set': 'error', 'stopped': 'stopped'}.get(poller.state, 'idle') }}">watching saves</span> {{ poller.detail }}{% if poller.checked %} <span class="muted">· checked {{ poller.checked }}</span>{% endif %}</p>
     {% else %}
       <p class="muted small">Not watching the saves folder (<code>--no-watch</code>): use Sync now after saving.</p>
     {% endif %}

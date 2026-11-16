@@ -1,11 +1,14 @@
 """The Rust extension (native/) against the Python versions it stands in for. No GPU.
 
-Skipped when the extension is not built (`uv sync --no-group native`).
+Skipped when the extension is not in use (`uv sync --no-group native`), unless
+FACEGEN_REQUIRE_NATIVE is set: then that fails, as when the wheels workflow tests a
+prebuilt wheel (.github/workflows/wheels.yml).
 """
 
 from __future__ import annotations
 
 import io
+import os
 import random
 from pathlib import Path
 
@@ -20,7 +23,9 @@ from facegen.publish import published_bytes, published_pictures
 from facegen.qc import head_top
 
 if native.ext is None:
-    pytest.skip("the Rust extension is not built", allow_module_level=True)
+    if os.environ.get("FACEGEN_REQUIRE_NATIVE"):
+        pytest.fail(f"the Rust extension is required here: {native.reason}", pytrace=False)
+    pytest.skip(f"the Rust extension is not in use: {native.reason}", allow_module_level=True)
 ext = native.ext
 
 

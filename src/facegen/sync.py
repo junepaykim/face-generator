@@ -21,7 +21,6 @@ from facegen.classify import Classification, Group, PlayerFacts, Rules, classify
 from facegen.datasource.records import Gender, Snapshot
 from facegen.db import transaction
 from facegen.domain import ACTIVE_JOB_STATUSES
-from facegen.gender import drawn_male
 from facegen.identity import (
     Person,
     best_career,
@@ -214,7 +213,6 @@ _PLAYER_COLUMNS = (
     "media_role",
     "local_media",
     "female",
-    "drawn_male",
 )
 _KEEP_ON_UPDATE = {"career_id", "unique_id", "first_seen_sync"}
 _UPSERT_PLAYER = (
@@ -341,7 +339,6 @@ def ingest(
                 None,
                 0,
                 None,
-                0,
             )
         )
     staff_rows = _staff_rows(
@@ -350,7 +347,9 @@ def ingest(
     staff_arrivals = sum(
         1
         for r in staff_rows
-        if not first_sync and not ((old := prev.get(r[1])) and old["present"] and old["at_my_club"])
+        if not first_sync
+        and r[_PLAYER_COLUMNS.index("at_my_club")]
+        and not ((old := prev.get(r[1])) and old["present"] and old["at_my_club"])
     )
     rows.extend(staff_rows)
     rows.extend(_media_rows(career, snapshot, sync_id, prev))
@@ -408,7 +407,7 @@ def _staff_rows(
     league_clubs: set[int],
     continental_clubs: set[int],
 ) -> list[tuple[Any, ...]]:
-    """Player-table rows for my club's staff, in _PLAYER_COLUMNS order."""
+    """Player-table rows for my staff and league managers, in _PLAYER_COLUMNS order."""
     my_club = snapshot.managed_club_id
     players = {p.unique_id for p in snapshot.players}
     rows = []
@@ -464,11 +463,6 @@ def _staff_rows(
                 None,
                 0,
                 None if female is None else int(female),
-                int(
-                    drawn_male(
-                        career.key, s.unique_id, staff=True, media=False, female=female, job=s.job
-                    )
-                ),
             )
         )
     return rows
@@ -494,7 +488,6 @@ def _media_rows(
         old = prev.get(m.unique_id)
         at_my_club = my_club is not None and m.club_id == my_club
         local = at_my_club if m.role == "press officer" else m.nation_id == my_nation
-        male = drawn_male(career.key, m.unique_id, staff=False, media=True, female=m.female)
         rows.append(
             (
                 career.id,
@@ -528,7 +521,6 @@ def _media_rows(
                 m.role,
                 int(local and my_nation is not None),
                 None if m.female is None else int(m.female),
-                int(male),
             )
         )
     return rows
@@ -644,6 +636,7 @@ def _classify(
                 academy=bool(r["academy"]),
                 pin=r["pin"],
                 is_staff=staff,
+                staff_job=r["staff_job"],
                 photo=bool(r["has_photo"]) if photos_known else None,
                 youth=bool(r["youth_team"]),
                 media=r["media_role"],
@@ -662,11 +655,7 @@ def _classify(
                 moved.append(Move(uid, r["group_name"], bool(r["tracked"]), group, c.tracked))
         if c.group is None and uid not in active:
             continue
-        who = {
-            "staff": staff,
-            "media": r["media_role"] is not None,
-            "male": bool(r["drawn_male"]),
-        }
+        who = {"staff": staff, "media": r["media_role"] is not None}
         states.append(
             PlayerPlanState(
                 unique_id=uid,
@@ -687,6 +676,7 @@ def _classify(
                     if uid in active
                     else None
                 ),
+                media=who["media"],
             )
         )
     return PlanResult(plan(states), classifications, tuple(moved)), changed
@@ -782,8 +772,7 @@ def _counts(conn: sqlite3.Connection, career_id: int, snapshot: Snapshot) -> dic
         " SUM(media_role = 'journalist') AS journalists,"
         " SUM(media_role = 'journalist' AND local_media) AS local_journalists,"
         " SUM(media_role = 'press officer') AS press_officers,"
-        " SUM(media_role IS NOT NULL AND group_name IS NOT NULL) AS media_picked,"
-        " SUM(drawn_male) AS drawn_male"
+        " SUM(media_role IS NOT NULL AND group_name IS NOT NULL) AS media_picked"
         " FROM players WHERE career_id = ? AND present = 1",
         (career_id,),
     ).fetchone()

@@ -19,10 +19,21 @@ in FM27 are picked like newgens (`no_photo.enabled`). Players' pictures are shoo
 from the in-game date; clubs outside the kit table take colours from FM27's own kit images.
 Since 2026-11-13 the plan's phases 7 to 13 turn the tool into a Windows program. Phase 7
 (GPU fault recovery) is done: `facegen serve` runs the GPU worker in a child process
-(`facegen worker`) that is started again after a GPU fault. Phase 8 waits for the user.
-Since 2026-11-13 my club's youth teams are group B, journalists and press officers get
-pictures (read from the save's bytes by `datasource/people.py`, as fmsave does not), and
-staff and media can be drawn as men (`gender.py`).
+(`facegen worker`) that is started again after a GPU fault. Phase 8 (native Windows: FM27's
+folders found on the PC, no console windows, PyTorch's CUDA wheels on Windows) is built and
+waits for the user's exit test. Phase 9 (kit colours bundled in the package, prebuilt wheels
+of the Rust extension with `facegen native --install`) is built. The `native-v0.1.0` release
+and checksums are published (2026-11-15); installation from its downloaded Windows wheel
+and all 53 native tests pass, and the CLI's download of both wheels from the release was
+checked from WSL. A native Windows run of `facegen native --install` (online, no `--from`)
+and the user's acceptance remain.
+Since 2026-11-13 my club's youth teams are group B, and journalists and press officers get
+pictures (read from the save's bytes by `datasource/people.py`, as fmsave does not). Since
+2026-11-14 everyone is drawn as a woman again (staff and media were drawn as men for a day),
+journalists start at band W04, and one pinned to A is tracked as a regular at my club.
+Since 2026-11-15 the first-team managers of the other clubs in my league are read too; those
+with no photo get one group C picture, untracked. Each published picture is listed under
+both of FM27's IDs for the person (the number and its `r-` form).
 Still open from Phase 0.1: the continental competition IDs.
 Build the rest phase by phase from `docs/implementation-plan.md`.
 
@@ -44,16 +55,32 @@ public repository's history (user, 2026-11-12). Never add them back to git.
 
 ## Environment
 
-- WSL2 on the Windows PC that runs FM27. Python 3.12, `uv`.
+- WSL2 on the Windows PC that runs FM27 (the development route), or native Windows (since
+  Phase 8). Python 3.12, `uv`. Every test runs on Linux; Windows-only parts sit behind
+  functions the tests replace (`platform_info`, `fm_paths`, `procs`).
 - Rust (stable, from rustup, with rustfmt and clippy) for the optional extension in
-  `native/`; `uv sync` builds it with maturin. `uv sync --no-group native` leaves it out
-  and the Python versions run instead.
+  `native/`; `uv sync` builds it with maturin, except on Windows. `uv sync --no-group
+  native` leaves it out and the Python versions run instead. Elsewhere (Windows, no Rust)
+  `facegen native --install` installs the prebuilt wheel from the GitHub Release
+  `native-v<version>`, only if its SHA-256 is listed in `native/wheels.sha256`; then use
+  `uv sync --inexact`, as a plain `uv sync` removes it. `native.VERSION` must equal
+  `native/pyproject.toml`'s version; bump both together, tag `native-v<version>`, and add
+  the release's `SHA256SUMS.txt` to `native/wheels.sha256`.
+- The kit colours for clubs outside `config/kits.toml` ship in
+  `src/facegen/data/kit_catalog.json` (club IDs and colour names only). Refresh after an
+  FM27 update: `scripts/spikes/kit_colour_probe.py --all-home`, then
+  `scripts/build_kit_catalog.py`. `.gitignore` ignores `/data/` at the root only.
+- On Windows `uv sync` takes torch from PyTorch's CUDA index (`pytorch-cu132`): PyPI's
+  Windows torch has no CUDA.
 - GPU: RTX 4080, 16 GB VRAM, visible from WSL.
-- FM27 user folder: `/mnt/c/Users/<Windows user>/Documents/Sports Interactive/Football Manager 27`.
-  This PC's real path is in `config/local.toml`, which is not in git. Never write the
-  Windows user name into a tracked file.
-- FM27 install: `/mnt/c/Program Files (x86)/Steam/steamapps/common/Football Manager 27`
+- FM27 user folder: `<Documents>/Sports Interactive/Football Manager 27`, found on the PC
+  (`fm_paths.py`), or set in `config/local.toml`, which is not in git (a Windows path there
+  works from WSL too). Never write the Windows user name into a tracked file.
+- FM27 install: Steam's `steamapps/common/Football Manager 27` in any Steam library, found
+  the same way.
 - File-change events do not work on `/mnt/c`. Poll instead.
+- Start other programs only through `procs.run_quiet` or `procs.popen_quiet`, so no console
+  window flashes on Windows.
 
 ## Commands
 
@@ -66,6 +93,8 @@ uv run facegen sync --dry-run   # read the newest save (via a snapshot copy), st
 uv run facegen serve            # web UI on http://127.0.0.1:8765/; the GPU worker in a child process
 uv run facegen serve --no-worker   # the UI only: no GPU work
 (cd native && cargo test && cargo clippy --all-targets && cargo fmt --check)   # the Rust side
+uv run facegen native [--install [--from DIR]]   # Rust extension in use? install its wheel
+uv run python scripts/build_kit_catalog.py       # probe report -> bundled kit colours
 ```
 
 `FACEGEN_TEST_SAVE=data/snapshots/<file>.fm uv run pytest` also runs the one test that
@@ -123,7 +152,10 @@ the two agree, and the geometry (crop boxes, sizes, thresholds) stays in Python.
 ```
 config/default.toml       defaults, including group thresholds
 src/facegen/
-  settings.py             defaults plus database overrides
+  settings.py             defaults plus database overrides; FM27's folders
+  platform_info.py        native Windows, WSL or Linux
+  fm_paths.py             where FM27's user and install folders are on this PC
+  procs.py                subprocesses without a console window; tasklist
   settings_history.py     the UI's settings saves, with undo and redo
   db.py                   SQLite schema and migrations
   datasource/             DataSource protocol, plain records, fmsave adapter;
@@ -131,11 +163,11 @@ src/facegen/
   identity.py             newgen boundary, career fingerprint
   leagues.py              my league and continental membership
   classify.py             group rules
-  gender.py               who is drawn as a man: staff by a share per job, media as the save
   photos.py               who FM27 shows a photo for: its catalog and facepacks, scanned per sync
   age.py                  real age to age wording (the age band)
   picture.py              the 3:4 shape, published sizes, the reference face crop
   traits.py               character sheet sampling
+  kits.py                 kit colours: config/kits.toml, a probe report or the bundle
   wardrobe.py             my club's staff's clothes, by job
   shoot.py                a player's picture: kit look, extra, arms and angle, backdrop
   prompt.py               prompt assembly
@@ -150,13 +182,20 @@ src/facegen/
   supervision.py          restart, give-up and review policy after a GPU fault
   qc.py                   quality and content checks
   figure.py               the figure scan behind qc.head_top and picture.face_box
-  native.py               loads the optional Rust extension, or None
+  native.py               loads the optional Rust extension at the wanted version, or None
+  native_wheel.py         the prebuilt extension: which wheel, its checksum, install
+  data/kit_catalog.json   bundled kit colours per club ID (scripts/build_kit_catalog.py)
   publish.py              pictures and config.xml into FM27
   poller.py               save-folder watcher
   web/                    FastAPI app, queries, templates, static CSS and JS
   cli.py                  command-line entry points
-native/                   optional Rust extension (PyO3, maturin): figure scan, PNG encoder
+native/                   optional Rust extension (PyO3, maturin): figure scan, PNG encoder;
+                          wheels.sha256: the released wheels' checksums
+scripts/build_kit_catalog.py   reduces a kit colour probe report to the bundled catalog
 scripts/spikes/           throwaway Phase 0 experiments
 tests/                    unit tests for the pure modules
+.github/workflows/ci.yml  ruff and pytest on Ubuntu and Windows, no GPU group
+.github/workflows/wheels.yml   the extension's wheels (Windows, manylinux), tested; a
+                          `native-v*` tag releases them with SHA-256 sums
 data/                     runtime state, not in git
 ```

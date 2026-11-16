@@ -16,7 +16,7 @@ from urllib.parse import urlencode
 
 from facegen import photos
 from facegen.manual import restorable
-from facegen.traits import CharacterSheet, male_look, personality_from_json, personality_leans
+from facegen.traits import CharacterSheet, personality_from_json, personality_leans
 
 PER_PAGE = 100
 
@@ -252,7 +252,7 @@ def players_page(
         "SELECT p.unique_id, p.name, p.age, p.ca, p.pa, p.is_newgen, p.academy, p.at_my_club,"
         " p.in_my_league, p.in_continental, p.in_scope, p.group_name, p.tracked, p.reasons,"
         " p.pin, p.club_id, p.is_goalkeeper, p.is_staff, p.staff_job, p.media_role,"
-        " p.youth_team, p.local_media, p.drawn_male, c.name AS club,"
+        " p.youth_team, p.local_media, c.name AS club,"
         " i.id AS image_id, ph.game AS photo_game, ph.facepack AS photo_facepack,"
         " i.published_path, i.group_name AS image_group, j.status AS job_status,"
         f" j.kind AS job_kind, j.manual AS job_manual, {_LATEST_JOB} AS latest_job"
@@ -312,7 +312,6 @@ def player_detail(
             "version": sheet_row["version"],
             "created_at": sheet_row["created_at"],
             "fields": {k: v for k, v in asdict(cs).items()},
-            "male": asdict(male_look(cs.base_seed)) if player["drawn_male"] else None,
         }
     jobs = [
         dict(j)

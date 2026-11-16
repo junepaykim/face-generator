@@ -376,8 +376,15 @@ def test_other_journalists_only_by_a_pin(groups: Groups) -> None:
     assert classify(media("journalist"), groups).group is None
     c = classify(media("journalist", pin="b"), groups)
     assert (c.group, c.tracked) == (Group.B, False)
-    # Not even a pin to A tracks them: their picture is drawn once.
-    assert classify(media("journalist", pin="a"), groups).tracked is False
+    # Pinned to A, a journalist or press officer is a regular at my club: A and tracked
+    # (user, 2026-11-14). Any other pin draws them once.
+    for role, local in (("journalist", False), ("journalist", True), ("press officer", True)):
+        c = classify(media(role, pin="a", local_media=local), groups)
+        assert (c.group, c.tracked) == (Group.A, True), role
+        assert c.reasons == ("pinned to A", "tracked: a regular at my club")
+    for pin in ("b", "c"):
+        assert classify(media("journalist", pin=pin, local_media=True), groups).tracked is False
+    assert classify(media("journalist", pin="never"), groups).group is None
 
 
 def test_media_never_follow_the_player_rules(groups: Groups) -> None:

@@ -222,23 +222,52 @@ def test_restore_sheet_controls_next_redraw_and_reroll_versions(env: Env) -> Non
         (0, b"INFO: No tasks are running", False),
     ],
 )
+@pytest.mark.parametrize("kind", ["windows", "wsl"])
 def test_fm_process_check_respects_command_result(
-    monkeypatch: pytest.MonkeyPatch, returncode: int, stdout: bytes, expected: bool | None
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
+    returncode: int,
+    stdout: bytes,
+    expected: bool | None,
 ) -> None:
     import subprocess
 
+    from facegen import platform_info, procs
     from facegen.worker import fm_running
 
-    monkeypatch.setattr(
-        subprocess,
-        "run",
-        lambda *a, **k: subprocess.CompletedProcess(
-            args=[],
-            returncode=returncode,
-            stdout=stdout,
-        ),
-    )
+    calls: list[tuple[list[str], dict]] = []
+
+    def run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        calls.append((args, kwargs))
+        return subprocess.CompletedProcess(args=args, returncode=returncode, stdout=stdout)
+
+    monkeypatch.setattr(platform_info, "current", lambda: kind)
+    monkeypatch.setattr(procs, "windows_tool", lambda name, k, env: f"/x/{name}")
+    monkeypatch.setattr(subprocess, "run", run)
     assert fm_running() is expected
+    assert calls[0][0] == procs.tasklist_command("/x/tasklist.exe")
+    assert calls[0][1]["timeout"] == 30
+
+
+def test_fm_process_check_without_tasklist_cannot_tell(monkeypatch: pytest.MonkeyPatch) -> None:
+    from facegen import platform_info, procs
+    from facegen.worker import fm_running
+
+    monkeypatch.setattr(platform_info, "current", lambda: "wsl")
+    monkeypatch.setattr(procs, "windows_tool", lambda name, k, env: None)
+    assert fm_running() is None
+
+
+def test_fm_process_check_on_linux_looks_for_wine_processes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from facegen import platform_info, worker
+
+    monkeypatch.setattr(platform_info, "current", lambda: "linux")
+    monkeypatch.setattr(worker, "_process_names", lambda: ["bash\n", "fm.exe\n"])
+    assert worker.fm_running() is True
+    monkeypatch.setattr(worker, "_process_names", lambda: ["bash\n"])
+    assert worker.fm_running() is False
 
 
 def test_my_club_run_generates_publishes_and_a_rerun_changes_nothing(env: Env) -> None:
@@ -454,17 +483,21 @@ def test_a_redraw_at_my_club_uses_the_current_picture_as_a_reference(env: Env) -
     assert (env.data / info["crop"]).is_file()
 
 
-def test_a_picture_of_the_other_gender_is_never_a_reference(env: Env) -> None:
+def test_a_picture_of_a_man_is_never_a_reference(env: Env) -> None:
     w, _, _ = env.worker()
     w.run(MINE)
-    # A re-draw asking for a man's wording, with a girl's picture current: no reference.
-    _queue_job(env, OLD_HAND, "redraw", MY_CLUB, "M2")
-    w2, r2, _ = env.worker(tagger=FakeTagger(["man"] * 9))
+    # The current picture was drawn as a man (2026-11-13): a new picture of her uses no
+    # reference, so no man's face carries over.
+    env.conn.execute(
+        "UPDATE images SET age_band = 'M2' WHERE unique_id = ? AND is_current = 1", (OLD_HAND,)
+    )
+    _queue_job(env, OLD_HAND, "redraw", MY_CLUB, "W08")
+    w2, r2, _ = env.worker()
     done = w2.run(MINE).done
     assert [o.job.unique_id for o in done] == [OLD_HAND]
     assert set(r2.references) == {None}
     info = json.loads(env.current(OLD_HAND)["render"])["reference"]
-    assert info["used"] is False and info["why"] == "the current picture is of the other gender"
+    assert info["used"] is False and info["why"] == "the current picture is of a man"
 
 
 def test_a_redraw_elsewhere_or_with_the_reference_off_uses_none(env: Env) -> None:
@@ -736,32 +769,28 @@ def _staff_env(
     return Env(conn, s, tmp_path / "fm", tmp_path / "data"), s
 
 
-def test_someone_drawn_as_a_man_is_drawn_and_checked_as_one(
+def test_a_man_on_the_staff_is_drawn_and_checked_as_a_woman(
     conn: sqlite3.Connection, settings: Settings, tmp_path: Path
 ) -> None:
+    """Everyone is drawn as a woman (user, 2026-11-14), whatever the save says."""
     from factories import staff_member
 
-    from facegen.prompt import COMPOSITION_NEGATIVE_MALE, SUBJECT_MALE
-    from facegen.sync import reclassify
+    from facegen.prompt import COMPOSITION_NEGATIVE, SUBJECT
 
     scout = NEWGEN + 100
-    env, s = _staff_env(
+    env, _ = _staff_env(
         conn, settings, tmp_path, staff=[staff_member(scout, age=50, job="scout", female=False)]
     )
-    conn.execute("UPDATE players SET drawn_male = 1 WHERE unique_id = ?", (scout,))
-    reclassify(conn, 1, s)
-    # A picture of one girl fails his check; one of a man passes.
-    w, _renderer, _tagger = env.worker(tagger=FakeTagger(["pass"] * 3 + ["man"] * 9))
+    w, _renderer, _tagger = env.worker()
     job = next(j for j in w.runnable(MINE) if j.unique_id == scout)
-    assert job.drawn_male and job.target_band == "M3"
+    assert job.target_band == "W06"
     w.run_job(job)
     image = env.current(scout)
-    assert image is not None and image["age_band"] == "M3"
-    assert image["prompt"].startswith(SUBJECT_MALE)
-    assert COMPOSITION_NEGATIVE_MALE in image["negative_prompt"]
-    check = json.loads(image["check_result"])
-    assert check["attempts"] == 2  # the first round was three girls
-    assert json.loads(image["render"])["male"] is True
+    assert image is not None and image["age_band"] == "W06"
+    assert image["prompt"].startswith(SUBJECT + ", ")
+    assert COMPOSITION_NEGATIVE in image["negative_prompt"]
+    assert json.loads(image["check_result"])["attempts"] == 1
+    assert "male" not in json.loads(image["render"])
 
 
 def test_a_journalist_is_dressed_for_work_on_the_grey_backdrop(
@@ -782,7 +811,7 @@ def test_a_journalist_is_dressed_for_work_on_the_grey_backdrop(
     image = env.current(reporter)
     render = json.loads(image["render"])
     assert render["media"] == "journalist" and render["outfit"] in ROLES["journalist"].looks
-    assert render["backdrop"] == "grey" and render["male"] is False
+    assert render["backdrop"] == "grey" and "male" not in render
     # Group B: one candidate, no detail pass.
     assert len([c for c in renderer.calls if c[0] == "render"]) == s.groups.b.candidates
     assert "soccer" not in image["prompt"]

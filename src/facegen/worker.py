@@ -12,8 +12,7 @@ and the master is cropped to exactly 3:4.
 A player's picture is a shoot (shoot.py): the kit in one of its looks, a pose of arms and
 angle, and a backdrop, with the season from the career's in-game date. My club's staff are
 dressed by wardrobe.py, with a pose from traits.POSE on the grey backdrop; journalists and
-press officers too, with a calm pose or none (a prop in hand). Someone whose age wording is
-a man's (gender.py) is drawn and checked as a man.
+press officers too, with a calm pose or none (a prop in hand).
 
 The model and the tagger sit behind the small `Renderer` and `Tagger` interfaces; the
 runner itself needs neither a GPU nor a save, so the tests drive it with fakes.
@@ -29,6 +28,7 @@ Rules carried from the spec:
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import subprocess
 import time
@@ -38,8 +38,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from facegen import jobs, qc
-from facegen.age import age_wording, is_male
+from facegen import jobs, platform_info, procs, qc
+from facegen.age import age_wording, drawn_as_man
+from facegen.datasource.records import is_first_team_manager
 from facegen.db import transaction
 from facegen.domain import FinishedStatus
 from facegen.image_store import ImageStore, master_dir
@@ -111,19 +112,35 @@ if TYPE_CHECKING:
 
 
 def fm_running() -> bool | None:
-    """Whether FM27 (fm.exe) runs on Windows; None if it cannot be told."""
+    """Whether FM27 (fm.exe) runs; None if it cannot be told.
+
+    On Windows and WSL Windows's `tasklist.exe` is asked (from System32 when it is not on
+    PATH), with no console window. On another Linux FM27 can only run under Wine or Proton,
+    where its process keeps its name.
+    """
+    kind = platform_info.current()
+    if kind == "linux":
+        return procs.linux_process_running(_process_names())
+    tasklist = procs.windows_tool("tasklist.exe", kind, os.environ)
+    if tasklist is None:
+        return None
     try:
-        out = subprocess.run(
-            ["tasklist.exe", "/FI", "IMAGENAME eq fm.exe", "/FO", "CSV", "/NH"],
-            capture_output=True,
-            timeout=30,
-            check=False,
-        )
+        out = procs.run_quiet(procs.tasklist_command(tasklist), capture_output=True, timeout=30)
     except (OSError, subprocess.TimeoutExpired):
         return None
     if out.returncode != 0:
         return None
-    return b'"fm.exe"' in out.stdout.lower()
+    return procs.tasklist_says_running(out.stdout)
+
+
+def _process_names() -> list[str]:
+    names = []
+    for comm in Path("/proc").glob("[0-9]*/comm"):
+        try:
+            names.append(comm.read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            continue
+    return names
 
 
 class WorkerBusy(RuntimeError):
@@ -178,7 +195,8 @@ class Setup:
     pose: str | Pose
     backdrop: Backdrop
     kit_source: KitSource
-    """Where the kit's colours came from: config/kits.toml, the kit catalog or the fallback."""
+    """Where the kit's colours came from: config/kits.toml, the kit catalog, the bundled
+    catalog or the fallback."""
     shoot: Shoot | None = None
     """A player's shoot; None for staff."""
 
@@ -316,6 +334,7 @@ class Worker:
                 body=self.settings.body,
                 personality=job.personality,
                 personality_weight=self.settings.personality.weight,
+                manager=job.staff and is_first_team_manager(job.staff_job),
             )
         else:
             sheet_version, sheet = found
@@ -434,14 +453,14 @@ class Worker:
         if wording is None:
             return self._finish_failed(job, version, sheet_version, None, [], t0, "age unknown")
         prompt = self._prompt(sheet, wording, setup, my_club)
-        expect = qc.expectation(sheet, wear, my_club, male=is_male(wording))
+        expect = qc.expectation(sheet, wear, my_club)
         self._pre_encode(prompt, upcoming)
 
         folder = master_dir(self.data_dir, self.career.key, job.unique_id)
         reference, reference_info = None, None
         scale = self.reference_scale(job)
         if scale is not None:
-            reference, reference_info = self._reference(job, scale, folder, version, wording)
+            reference, reference_info = self._reference(job, scale, folder, version)
         cand_dir = folder / f"v{version:03d}-candidates"
         candidates: list[Candidate] = []
         winner: Candidate | None = None
@@ -476,7 +495,6 @@ class Worker:
             "goalkeeper": job.goalkeeper,
             "staff": job.staff,
             "media": job.media_role,
-            "male": is_male(wording),
             "outfit": wear.look if isinstance(wear, Outfit) else None,
             "my_club": job.at_my_club,
             "sheet_version": sheet_version,
@@ -560,7 +578,11 @@ class Worker:
         if job.staff:
             home, source = self.kits.kit_for(job.target_club_id, False)
             outfit = outfit_for(home, job.staff_job, job.age, sheet.base_seed, version)
-            pose = pick_pose(sheet.base_seed, version)
+            pose = (
+                media_pose(outfit, sheet.base_seed, version)
+                if is_first_team_manager(job.staff_job)
+                else pick_pose(sheet.base_seed, version)
+            )
             return Setup(outfit, pose, DEFAULT_BACKDROP, source)
         kit, source = self.kits.kit_for(job.target_club_id, job.goalkeeper)
         home: Kit = kit
@@ -688,14 +710,14 @@ class Worker:
     # -- storage --
 
     def _reference(
-        self, job: Job, scale: float, folder: Path, version: int, wording: str
+        self, job: Job, scale: float, folder: Path, version: int
     ) -> tuple[Reference | None, dict[str, Any]]:
         """The player's current picture as a reference, and what to record about it.
 
         The face is cropped from the current master (`picture.face_box`) and kept next to the
         new picture as vNNN-reference.webp. With no current picture or its file gone, or a
-        current picture of the other gender than `wording`'s, the job is drawn without a
-        reference and the record says why.
+        current picture of a man (`age.drawn_as_man`), the job is drawn without a reference
+        and the record says why.
         """
         info: dict[str, Any] = {"scale": scale, **_reference_settings(self.renderer)}
         row = self.conn.execute(
@@ -705,8 +727,8 @@ class Worker:
         ).fetchone()
         if row is None or not row["master_path"]:
             return None, {"used": False, "why": "no current picture", **info}
-        if row["band"] is not None and is_male(row["band"]) != is_male(wording):
-            why = "the current picture is of the other gender"
+        if drawn_as_man(row["band"]):
+            why = "the current picture is of a man"
             self.log(f"  drawn without a reference: {why}")
             return None, {"used": False, "why": why, **info}
         master = self.data_dir / row["master_path"]
@@ -734,8 +756,8 @@ class Worker:
 
 
 def _audience(job: Job) -> dict[str, bool]:
-    """`age_wording`'s staff, media and male flags for a job's person."""
-    return {"staff": job.staff, "media": job.media_role is not None, "male": job.drawn_male}
+    """`age_wording`'s staff and media flags for a job's person."""
+    return {"staff": job.staff, "media": job.media_role is not None}
 
 
 def _model_extras(renderer: Renderer, prompt: Prompt) -> dict[str, Any]:

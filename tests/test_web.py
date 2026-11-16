@@ -14,7 +14,7 @@ from factories import ABROAD, NEWGEN, PLAIN_PERSONALITY, RIVAL, WOMENS, player, 
 from fakes import FakeRenderer, FakeTagger
 from fastapi.testclient import TestClient
 
-from facegen import db
+from facegen import db, native
 from facegen.datasource.records import Snapshot
 from facegen.kits import load_kits
 from facegen.photos import PhotoIndex, PhotoScan
@@ -138,6 +138,7 @@ def test_dashboard(env: Env) -> None:
     assert 'data-refresh="/status"' in text
     status = env.client.get("/status").text
     assert "<html" not in status and "Worker" in status
+    assert "Rust code " + ("in use" if native.ext is not None else "not in use") in status
     env.drain()
     text = env.client.get("/status").text
     # Group A, then group B: both drawn without a request since Phase 4.
@@ -341,6 +342,10 @@ def test_settings_are_saved_as_they_change(env: Env) -> None:
     page = env.client.get("/settings").text
     assert 'name="groups.a.ca_above"' in page and 'name="ui.host"' not in page
     assert 'name="paths.fm_user_dir"' not in page
+    # FM27's folders are shown, with where each came from, but not as fields.
+    assert "FM27&#39;s folders" in page or "FM27's folders" in page
+    assert f"{env.settings.paths.fm_user_dir} (from " in page
+    assert "Install</th><td>" in page
     assert "data-autosave" in page and 'value="preview"' not in page
     # The Save button is there only for a browser with JavaScript off.
     assert re.search(r"<noscript>.*value=\"apply\".*</noscript>", page, re.DOTALL)
@@ -477,9 +482,11 @@ def test_youth_and_media_on_the_players_pages(env: Env) -> None:
     assert "Journalist 2002097912" not in env.client.get("/players?role=players").text
     detail = env.client.get("/players/2002097912").text
     assert "journalist from my club&#39;s country, dressed for their work" in detail
-    assert "a man in the save, drawn as a man" in detail
+    assert "a man in the save, drawn as a woman" in detail
+    assert "Pin a regular at my club to A" in detail
     coach = env.client.get(f"/players/{NEWGEN + 100}").text
-    assert "a man in the save, drawn as a" in coach
+    assert "a man in the save, drawn as a woman" in coach
+    assert "Pin a regular at my club to A" not in coach
     status = env.client.get("/status").text
     assert "1 in my youth teams" in status and "1 journalists and press officers" in status
 

@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 
-from facegen.age import TABLES, WORDINGS, age_wording, audience, is_male, table_name
+from facegen.age import TABLES, WORDINGS, age_wording, audience, drawn_as_man, table_name
 from facegen.classify import Group
 from facegen.settings import Settings
 
@@ -76,15 +76,13 @@ def test_table_names() -> None:
     assert table_name(Group.B, True, staff=True) == "staff"
     assert table_name(None, True, staff=True) is None
     assert table_name(Group.B, False, media=True) == "media"
-    assert table_name(Group.A, True, staff=True, male=True) == "male"
-    assert table_name(Group.B, False, media=True, male=True) == "male"
+    assert table_name(Group.A, True, media=True) == "media"
     assert {
-        table_name(g, m, staff, media=media, male=male)
+        table_name(g, m, staff, media=media)
         for g in Group
         for m in (True, False)
         for staff in (True, False)
         for media in (True, False)
-        for male in (True, False)
     } == set(TABLES)
 
 
@@ -114,57 +112,55 @@ def test_staff_ages_up_to_100_are_allowed_in_the_tables(settings: Settings) -> N
 
 
 def test_wordings_run_from_youngest_to_oldest() -> None:
-    women = [k for k, w in WORDINGS.items() if not w.male]
-    men = [k for k, w in WORDINGS.items() if w.male]
-    assert women == [f"W{n:02d}" for n in range(1, 11)]
-    assert men == ["M1", "M2", "M3", "M4"]
-    # The under-18 looks carry the content rule's extra negative terms; adults do not. Every
-    # man's wording is an adult look.
+    assert list(WORDINGS) == [f"W{n:02d}" for n in range(1, 11)]
+    # The under-18 looks carry the content rule's extra negative terms; adults do not.
     assert [k for k, w in WORDINGS.items() if w.young] == [f"W0{n}" for n in range(1, 7)]
-    assert is_male("M2") and not is_male("W07") and not is_male(None)
 
 
-# Women in the media (user, 2026-11-13): the staff bands, from W05 up.
+def test_the_mens_wordings_are_gone_but_still_recognised() -> None:
+    """Everyone is drawn as a woman since 2026-11-14; a stored M1 to M4 band shows a man."""
+    assert not any(k.startswith("M") for k in WORDINGS)
+    assert all(drawn_as_man(b) for b in ("M1", "M2", "M3", "M4"))
+    assert not any(drawn_as_man(b) for b in ("W01", "W07", "W10", None))
+
+
+# Journalists and press officers (user, 2026-11-14): the staff bands, from W04 up.
 MEDIA = {
-    "W05": range(16, 46), "W06": range(46, 53), "W07": range(53, 61), "W08": range(61, 68),
-    "W09": range(68, 75), "W10": range(75, 95),
+    "W04": range(16, 39), "W05": range(39, 46), "W06": range(46, 53), "W07": range(53, 61),
+    "W08": range(61, 68), "W09": range(68, 75), "W10": range(75, 95),
 }  # fmt: skip
-# People drawn as men follow real age more closely.
-MALE = {"M1": range(16, 30), "M2": range(30, 45), "M3": range(45, 60), "M4": range(60, 95)}
 
 
-def test_women_in_the_media_are_band_5_or_older(settings: Settings) -> None:
+def test_journalists_and_press_officers_are_band_4_or_older(settings: Settings) -> None:
     for wording, ages in MEDIA.items():
         for real in ages:
             assert age_wording(real, Group.B, False, settings.age, media=True) == wording, real
-    assert age_wording(20, Group.B, False, settings.age, media=True) == "W05"
+            # Pinned to A as a regular at my club: the same table.
+            assert age_wording(real, Group.A, False, settings.age, media=True) == wording, real
+    assert age_wording(20, Group.B, False, settings.age, media=True) == "W04"
 
 
-def test_people_drawn_as_men_take_the_mens_table(settings: Settings) -> None:
-    for wording, ages in MALE.items():
-        for real in ages:
-            for who in ({"staff": True}, {"media": True}):
-                got = age_wording(real, Group.A, True, settings.age, male=True, **who)
-                assert got == wording, (real, who)
+def test_media_bands_are_the_staff_bands_from_w04_up(settings: Settings) -> None:
+    staff = {w: a for a, w in settings.age.staff}
+    media = {w: a for a, w in settings.age.media}
+    assert list(media) == [f"W{n:02d}" for n in range(4, 11)]
+    assert {w: a for w, a in media.items() if w != "W04"} == {
+        w: a for w, a in staff.items() if w in media and w != "W04"
+    }
 
 
 def test_audience_reads_a_players_row() -> None:
-    row = {"is_staff": 1, "media_role": None, "drawn_male": 1}
-    assert audience(row) == {"staff": True, "media": False, "male": True}
-    row = {"is_staff": 0, "media_role": "journalist", "drawn_male": 0}
-    assert audience(row) == {"staff": False, "media": True, "male": False}
+    assert audience({"is_staff": 1, "media_role": None}) == {"staff": True, "media": False}
+    row = {"is_staff": 0, "media_role": "journalist"}
+    assert audience(row) == {"staff": False, "media": True}
 
 
-def test_a_table_holds_one_genders_wordings(settings: Settings) -> None:
+def test_mens_wordings_are_refused_in_a_table(settings: Settings) -> None:
     from facegen.settings import SettingsError, build_settings
 
     values = dict(settings.values)
-    values["age.male.W07"] = 50
-    with pytest.raises(SettingsError, match="men's"):
-        build_settings(values)
-    values = dict(settings.values)
-    values["age.b.M2"] = 40
-    with pytest.raises(SettingsError, match="women's"):
+    values["age.staff.M2"] = 40
+    with pytest.raises(SettingsError, match="unknown age wording"):
         build_settings(values)
 
 

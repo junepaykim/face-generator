@@ -11,12 +11,13 @@ import sqlite3
 import tomllib
 import warnings
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from facegen.age import MALE_TABLES, TABLES, WORDINGS
+from facegen import fm_paths, platform_info
+from facegen.age import TABLES, WORDINGS
 from facegen.traits import BANNABLE, BodyThresholds
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -31,25 +32,60 @@ _FIXED_PREFIXES = ("paths.", "ui.")
 
 GROUP_NAMES = ("a", "b", "c")
 
+DETECTED_KEYS = ("paths.fm_user_dir", "paths.fm_install_dir")
+"""Folders that are looked for on this PC (fm_paths.py) when no file sets them."""
+FOUND = "found on this PC"
+NOT_SET = "not set"
+
 
 class SettingsError(ValueError):
     """A setting is unknown, has the wrong type, or is out of range."""
 
 
+def folder_not_set_message(kind: platform_info.Kind | None = None) -> str:
+    """What to tell the user when FM27's user folder is neither set nor found."""
+    kind = kind or platform_info.current()
+    example = (
+        "/home/you/Football Manager 27"
+        if kind == "linux"
+        else r"C:\Users\you\Documents\Sports Interactive\Football Manager 27"
+    )
+    return (
+        "FM27's folder is not set and was not found on this PC (it is the folder that holds"
+        " FM27's games and graphics folders). Put it in config/local.toml as"
+        f" [paths] fm_user_dir = '{example}', in single quotes, then start facegen again."
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class Paths:
-    fm_user_dir: Path
+    fm_user_dir: Path | None
+    """FM27's user folder (saves, graphics); None when it is neither set nor found."""
     data_dir: Path
-    fm_install_dir: Path
-    """FM27's install folder: read only for the list of photos the game ships."""
+    fm_install_dir: Path | None
+    """FM27's install folder: read only for the list of photos the game ships. None when it
+    is neither set nor found: then no one counts as without a photo."""
+    origins: Mapping[str, str] = field(default_factory=dict)
+    """Where each folder came from, by key: the file that set it, `FOUND` or `NOT_SET`."""
 
     @property
-    def games_dir(self) -> Path:
-        return self.fm_user_dir / "games"
+    def games_dir(self) -> Path | None:
+        return self.fm_user_dir / "games" if self.fm_user_dir is not None else None
 
     @property
-    def graphics_dir(self) -> Path:
-        return self.fm_user_dir / "graphics"
+    def graphics_dir(self) -> Path | None:
+        return self.fm_user_dir / "graphics" if self.fm_user_dir is not None else None
+
+    def describe(self, key: str) -> str:
+        """A folder and where it came from, for the CLI and the UI."""
+        origin = self.origins.get(key)
+        value = {"paths.fm_user_dir": self.fm_user_dir, "paths.fm_install_dir": self.fm_install_dir}
+        path = value.get(key)
+        if path is None:
+            return "not set, and not found on this PC"
+        if origin == FOUND:
+            return f"{path} (found on this PC)"
+        return f"{path} (from {origin})" if origin else str(path)
 
     @property
     def db_path(self) -> Path:
@@ -128,9 +164,7 @@ class AgeSettings:
     staff: tuple[tuple[int, str], ...]
     """My club's staff, whatever their group: wide bands, W02 the youngest (user, 2026-11-12)."""
     media: tuple[tuple[int, str], ...]
-    """Women in the media (journalists, press officers): the staff bands from W05 up."""
-    male: tuple[tuple[int, str], ...]
-    """Staff and media drawn as men (gender.py): the male wordings M1 to M4."""
+    """Journalists and press officers: the staff bands from W04 up (user, 2026-11-14)."""
 
     def table(self, name: str) -> tuple[tuple[int, str], ...]:
         return getattr(self, name)
@@ -249,17 +283,55 @@ def flatten(tree: Mapping[str, Any], prefix: str = "") -> dict[str, Any]:
     return flat
 
 
+def detect_folder(key: str) -> Path | None:
+    """FM27's user or install folder on this PC (fm_paths.py), by setting key; the tests
+    replace it."""
+    if key == "paths.fm_user_dir":
+        return fm_paths.detect_user_dir()
+    return fm_paths.detect_install_dir()
+
+
 def load_defaults(path: Path | None = None) -> dict[str, Any]:
     """The defaults file as dotted keys.
 
     With the standard defaults file, config/local.toml (if present) is laid over it. A
-    defaults file given explicitly is read alone.
+    defaults file given explicitly is read alone. FM27's folders that neither sets (an empty
+    value) are looked for on this PC (fm_paths.py); one not found stays empty, "not set".
     """
-    with (path or DEFAULTS_PATH).open("rb") as f:
+    return _load_defaults(path)[0]
+
+
+def _load_defaults(path: Path | None) -> tuple[dict[str, Any], dict[str, str]]:
+    """The defaults as dotted keys, and where each folder in `[paths]` came from."""
+    source = path or DEFAULTS_PATH
+    with source.open("rb") as f:
         values = flatten(tomllib.load(f))
+    named = f"config/{source.name}" if path is None else str(source)
+    origins = {k: named for k in values if k.startswith("paths.") and values[k]}
     if path is None:
-        values.update(load_local(values))
-    return values
+        local = load_local(values, LOCAL_PATH)
+        values.update(local)
+        origins.update({k: f"config/{LOCAL_PATH.name}" for k, v in local.items() if v})
+    kind = platform_info.current()
+    for key in [k for k in values if k.startswith("paths.")]:
+        if not isinstance(values[key], str):
+            raise SettingsError(f"{key} needs a str, got {type(values[key]).__name__}")
+        try:
+            values[key] = fm_paths.native_path(values[key], kind)
+        except fm_paths.PathStyleError as exc:
+            raise SettingsError(f"{origins.get(key, source.name)}, {key}: {exc}") from exc
+    for key in DETECTED_KEYS:
+        if key in values and not values[key]:
+            folder = detect_folder(key)
+            values[key] = str(folder) if folder is not None else ""
+            origins[key] = FOUND if folder is not None else NOT_SET
+    return values, origins
+
+
+TOML_PATH_HINT = (
+    "Write a Windows path in single quotes, which keep backslashes as they are:"
+    " fm_user_dir = 'C:\\Users\\you\\Documents\\Sports Interactive\\Football Manager 27'"
+)
 
 
 def load_local(defaults: Mapping[str, Any], path: Path = LOCAL_PATH) -> dict[str, Any]:
@@ -270,7 +342,10 @@ def load_local(defaults: Mapping[str, Any], path: Path = LOCAL_PATH) -> dict[str
     if not path.is_file():
         return {}
     with path.open("rb") as f:
-        local = flatten(tomllib.load(f))
+        try:
+            local = flatten(tomllib.load(f))
+        except tomllib.TOMLDecodeError as exc:
+            raise SettingsError(f"{path.name} cannot be read: {exc}. {TOML_PATH_HINT}") from exc
     for key, value in local.items():
         if not key.startswith("paths.") or key not in defaults:
             raise SettingsError(f"{path.name} may only set the defaults' [paths] keys, not {key!r}")
@@ -322,8 +397,13 @@ def _range(key: str, value: int, low: int, high: int) -> int:
     return value
 
 
-def build_settings(values: Mapping[str, Any], overridden: frozenset[str] = frozenset()) -> Settings:
-    """Build and range-check a Settings from dotted keys."""
+def build_settings(
+    values: Mapping[str, Any],
+    overridden: frozenset[str] = frozenset(),
+    origins: Mapping[str, str] | None = None,
+) -> Settings:
+    """Build and range-check a Settings from dotted keys. `origins` says where each folder in
+    `[paths]` came from (`_load_defaults`)."""
     v = values
 
     def threshold(key: str) -> int:
@@ -344,13 +424,9 @@ def build_settings(values: Mapping[str, Any], overridden: frozenset[str] = froze
         rows = sorted((k.removeprefix(prefix), v[k]) for k in v if k.startswith(prefix))
         if not rows:
             raise SettingsError(f"age.{name} needs at least one wording")
-        male_table = name in MALE_TABLES
         for wording, first_age in rows:
             if wording not in WORDINGS:
                 raise SettingsError(f"unknown age wording {prefix}{wording}")
-            if WORDINGS[wording].male != male_table:
-                kind = "men's (M1 to M4)" if male_table else "women's (W01 to W10)"
-                raise SettingsError(f"age.{name} holds {kind} wordings only, not {wording}")
             if not _is_int(first_age):
                 raise SettingsError(f"setting {prefix}{wording!r} needs an int")
             _range(prefix + wording, first_age, 0, 100)
@@ -403,9 +479,10 @@ def build_settings(values: Mapping[str, Any], overridden: frozenset[str] = froze
 
     return Settings(
         paths=Paths(
-            fm_user_dir=Path(v["paths.fm_user_dir"]),
+            fm_user_dir=Path(v["paths.fm_user_dir"]) if v["paths.fm_user_dir"] else None,
             data_dir=data_dir,
-            fm_install_dir=Path(v["paths.fm_install_dir"]),
+            fm_install_dir=Path(v["paths.fm_install_dir"]) if v["paths.fm_install_dir"] else None,
+            origins=dict(origins or {}),
         ),
         eligibility=Eligibility(
             mens_football_only=v["eligibility.mens_football_only"],
@@ -486,7 +563,7 @@ def load_settings(
     A stored override that no longer fits (its key was removed from the defaults, or its type
     changed) is skipped with a warning rather than stopping the tool.
     """
-    defaults = load_defaults(defaults_path)
+    defaults, origins = _load_defaults(defaults_path)
     merged = dict(defaults)
     overridden: set[str] = set()
     if conn is not None:
@@ -497,7 +574,7 @@ def load_settings(
                 warnings.warn(f"ignoring stored setting: {exc}", stacklevel=2)
                 continue
             overridden.add(key)
-    return build_settings(merged, frozenset(overridden))
+    return build_settings(merged, frozenset(overridden), origins)
 
 
 def set_override(
@@ -513,7 +590,7 @@ def set_override(
     current = load_settings(conn, defaults_path)
     merged = dict(current.values)
     merged[key] = value
-    result = build_settings(merged, current.overridden | {key})
+    result = build_settings(merged, current.overridden | {key}, current.paths.origins)
     now = datetime.now(UTC).isoformat()
     conn.execute(
         "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) "
@@ -546,7 +623,7 @@ def merge_overrides(
     overridden -= {
         k for k, v in changes.items() if v == defaults[k] and type(v) is type(defaults[k])
     }
-    return build_settings(merged, frozenset(overridden))
+    return build_settings(merged, frozenset(overridden), current.paths.origins)
 
 
 def set_overrides(

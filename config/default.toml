@@ -4,14 +4,20 @@
 # point and the "reset to defaults" target. Rules are described in docs/spec.md.
 
 [paths]
-# FM27's user folder (saves and graphics) as WSL sees it. Put this PC's real folder in
-# config/local.toml, which is not in git, so the repository holds no Windows user name:
+# Empty: found on this PC (src/facegen/fm_paths.py). To set a folder yourself, put it in
+# config/local.toml, which is not in git, so the repository holds no Windows user name. A
+# Windows path works on Windows and from WSL; write it in single quotes:
 #   [paths]
-#   fm_user_dir = "/mnt/c/Users/<you>/Documents/Sports Interactive/Football Manager 27"
-fm_user_dir = "/mnt/c/Users/<Windows user>/Documents/Sports Interactive/Football Manager 27"
+#   fm_user_dir = 'C:\Users\<you>\Documents\Sports Interactive\Football Manager 27'
+#
+# FM27's user folder (saves and graphics), looked for in Windows's Documents folder
+# (wherever it was moved, OneDrive included), then %OneDrive%\Documents and
+# %USERPROFILE%\Documents. Not found: facegen says so and reads no save.
+fm_user_dir = ""
 # FM27's install folder, read only for its list of the photos it ships (docs/research.md
-# section 4). Steam's default; put another in config/local.toml.
-fm_install_dir = "/mnt/c/Program Files (x86)/Steam/steamapps/common/Football Manager 27"
+# section 4). Looked for in every Steam library, then Epic's and the Xbox app's installs. Not
+# found: no pre-existing player counts as without a photo.
+fm_install_dir = ""
 data_dir = "data"
 
 [eligibility]
@@ -79,8 +85,7 @@ detail_pass = false
 # suits, coats, training wear, lab coats) with the club's colours on one piece, not the
 # playing kit, and their age wording comes from [age.staff]. Staff at other clubs are not
 # read. Pin a person to "never" on their page to leave them out. Requested by the user,
-# 2026-11-12 (docs/spec.md section 2). A woman on the staff is drawn as a woman; a man is
-# drawn as a man or a woman, by a share that depends on the job (src/facegen/gender.py).
+# 2026-11-12 (docs/spec.md section 2). Everyone is drawn as a woman (user, 2026-11-14).
 enabled = true
 
 [youth]
@@ -92,10 +97,11 @@ enabled = true
 
 [media]
 # Journalists and press officers (user, 2026-11-13), read from the save by
-# src/facegen/datasource/people.py. They are drawn once at group B quality, as the gender the
-# save gives them, in clothes for their work, and not tracked. Journalists from my club's
-# country and my club's press officers are drawn without a request; any other journalist can
-# be picked on the Players page.
+# src/facegen/datasource/people.py. They are drawn once at group B quality, as women (user,
+# 2026-11-14), in clothes for their work, and not tracked. Journalists from my club's country
+# and my club's press officers are drawn without a request; any other journalist can be
+# picked on the Players page. Pin a regular at my club to A on their page: group A quality,
+# and tracked like any group A person, so re-drawn when their age wording changes.
 journalists = true
 press_officers = true
 
@@ -157,21 +163,15 @@ W08 = 61                            # 61-67
 W09 = 68                            # 68-74
 W10 = 75                            # 75 and older
 
-[age.media]                         # journalists and press officers drawn as women
-# The staff bands from W05 up (user, 2026-11-13).
-W05 = 18                            # under 46
+[age.media]                         # journalists and press officers
+# The staff bands from W04 up (user, 2026-11-14; W05 up before).
+W04 = 18                            # under 39
+W05 = 39                            # 39-45
 W06 = 46                            # 46-52
 W07 = 53                            # 53-60
 W08 = 61                            # 61-67
 W09 = 68                            # 68-74
 W10 = 75                            # 75 and older
-
-[age.male]                          # staff and media drawn as men
-# Men's wordings follow real age more closely; every one is an adult look.
-M1 = 18                             # under 30: young man
-M2 = 30                             # 30-44: mature male
-M3 = 45                             # 45-59: mature, middle-aged
-M4 = 60                             # 60 and older: old man
 
 [reference]
 # A re-draw of a player who already has a picture (new kit, new age wording, promotion to

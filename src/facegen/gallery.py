@@ -56,6 +56,8 @@ def _kit_note(render: dict[str, Any]) -> str:
     """Where the kit's colours came from, when it was not the hand-written table."""
     if render.get("kit_source") == "catalog":
         return " <i>(colours from FM27's kit image)</i>"
+    if render.get("kit_source") == "bundled":
+        return " <i>(bundled colours from FM27's kit image)</i>"
     return "" if render.get("kit_known", True) else " <i>(fallback kit)</i>"
 
 

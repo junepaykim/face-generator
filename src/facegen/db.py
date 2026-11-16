@@ -336,7 +336,7 @@ CREATE TABLE photo_scan (
 #   NULL for players and staff. players.local_media: a journalist from my club's country, or a
 #   press officer of my club: the ones drawn without a request.
 # - players.female: the person is a woman, by their first name (NULL: unknown; players are not
-#   read). players.drawn_male: drawn as a man (staff and media only; gender.py).
+#   read). players.drawn_male: drawn as a man (staff and media only; dropped in _V11).
 _V10 = """
 ALTER TABLE players ADD COLUMN youth_team INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE players ADD COLUMN media_role TEXT CHECK (media_role IN ('journalist', 'press officer'));
@@ -345,7 +345,16 @@ ALTER TABLE players ADD COLUMN female INTEGER;
 ALTER TABLE players ADD COLUMN drawn_male INTEGER NOT NULL DEFAULT 0;
 """
 
-MIGRATIONS: tuple[str, ...] = (_V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10)
+# Everyone is drawn as a woman again (user, 2026-11-14): players.drawn_male goes. Queued jobs
+# still aimed at a men's age wording (M1 to M4) lose that target; the next plan sets the
+# woman's wording, and a current picture of a man gets a new face (planner.py).
+_V11 = """
+ALTER TABLE players DROP COLUMN drawn_male;
+UPDATE jobs SET target_band = NULL
+    WHERE status IN ('queued', 'running') AND target_band IN ('M1', 'M2', 'M3', 'M4');
+"""
+
+MIGRATIONS: tuple[str, ...] = (_V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10, _V11)
 
 # The active career: the one whose save was written last (spec section 8). A career synced
 # without a save time (tests, old rows) falls back to when it was synced.

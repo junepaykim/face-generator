@@ -3,10 +3,15 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+from facegen import settings as settings_module
 from facegen.settings import (
+    DEFAULTS_PATH,
+    FOUND,
+    NOT_SET,
     PROJECT_ROOT,
     SettingsError,
     build_settings,
@@ -43,7 +48,91 @@ def test_relative_data_dir_resolves_against_the_project() -> None:
     s = load_settings()
     assert s.paths.data_dir == PROJECT_ROOT / "data"
     assert s.paths.db_path == PROJECT_ROOT / "data" / "facegen.db"
-    assert s.paths.games_dir.name == "games"
+    games = s.paths.games_dir
+    assert games is None or games.name == "games"
+
+
+# --- FM27's folders: config/local.toml, then found on this PC, then not set (Phase 8) ---------
+
+
+@pytest.fixture
+def pc(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """The standard defaults file and a local.toml of our own, on a system of our choice, with
+    whatever detection finds in `found`."""
+    defaults = tmp_path / "default.toml"
+    defaults.write_text(DEFAULTS_PATH.read_text(encoding="utf-8"), encoding="utf-8")
+    local = tmp_path / "local.toml"
+    found: dict[str, Path | None] = {}
+    asked: list[str] = []
+
+    def detect(key: str) -> Path | None:
+        asked.append(key)
+        return found.get(key)
+
+    monkeypatch.setattr(settings_module, "DEFAULTS_PATH", defaults)
+    monkeypatch.setattr(settings_module, "LOCAL_PATH", local)
+    monkeypatch.setattr(settings_module, "detect_folder", detect)
+    monkeypatch.setattr(settings_module.platform_info, "current", lambda: "windows")
+    return {"local": local, "found": found, "asked": asked, "monkeypatch": monkeypatch}
+
+
+def test_no_local_file_and_nothing_found_leaves_the_folders_not_set(pc: dict[str, Any]) -> None:
+    s = load_settings()
+    assert s.paths.fm_user_dir is None and s.paths.fm_install_dir is None
+    assert s.paths.games_dir is None and s.paths.graphics_dir is None
+    assert s.paths.origins["paths.fm_user_dir"] == NOT_SET
+    assert s.paths.describe("paths.fm_user_dir") == "not set, and not found on this PC"
+    assert s.values["paths.fm_user_dir"] == ""
+    assert pc["asked"] == ["paths.fm_user_dir", "paths.fm_install_dir"]
+
+
+def test_folders_found_on_this_pc(pc: dict[str, Any]) -> None:
+    pc["found"].update(
+        {"paths.fm_user_dir": Path("/found/FM27"), "paths.fm_install_dir": Path("/steam/FM27")}
+    )
+    s = load_settings()
+    assert s.paths.fm_user_dir == Path("/found/FM27")
+    assert s.paths.games_dir == Path("/found/FM27/games")
+    assert s.paths.fm_install_dir == Path("/steam/FM27")
+    assert s.paths.origins["paths.fm_user_dir"] == FOUND
+    assert s.paths.describe("paths.fm_user_dir") == f"{Path('/found/FM27')} (found on this PC)"
+
+
+def test_a_folder_in_local_toml_is_not_looked_for(pc: dict[str, Any]) -> None:
+    pc["local"].write_text("[paths]\nfm_user_dir = 'D:\\FM27'\n", encoding="utf-8")
+    pc["found"]["paths.fm_user_dir"] = Path("/elsewhere")
+    s = load_settings()
+    assert s.paths.fm_user_dir == Path("D:\\FM27")
+    assert s.paths.origins["paths.fm_user_dir"] == "config/local.toml"
+    assert pc["asked"] == ["paths.fm_install_dir"]
+
+
+def test_a_windows_path_in_local_toml_works_from_wsl(pc: dict[str, Any]) -> None:
+    pc["monkeypatch"].setattr(settings_module.platform_info, "current", lambda: "wsl")
+    pc["local"].write_text(
+        "[paths]\nfm_user_dir = 'C:\\Users\\me\\Documents\\Sports Interactive\\Football"
+        " Manager 27'\n",
+        encoding="utf-8",
+    )
+    s = load_settings()
+    assert s.paths.fm_user_dir == Path(
+        "/mnt/c/Users/me/Documents/Sports Interactive/Football Manager 27"
+    )
+
+
+def test_a_wsl_path_in_local_toml_on_windows_is_an_error_that_says_what_to_write(
+    pc: dict[str, Any],
+) -> None:
+    pc["local"].write_text('[paths]\nfm_user_dir = "/mnt/c/Users/me/FM27"\n', encoding="utf-8")
+    with pytest.raises(SettingsError, match=r"config/local.toml.*write it as 'C:\\Users"):
+        load_settings()
+
+
+def test_a_windows_path_in_double_quotes_gets_a_hint(pc: dict[str, Any]) -> None:
+    """TOML reads \\U in double quotes as an escape: the file cannot be read."""
+    pc["local"].write_text('[paths]\nfm_user_dir = "C:\\Users\\me"\n', encoding="utf-8")
+    with pytest.raises(SettingsError, match="single quotes"):
+        load_settings()
 
 
 def test_local_file_sets_this_pcs_paths(tmp_path: Path) -> None:

@@ -35,7 +35,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import FormData
 
-from facegen import db, manual, photos, settings_history
+from facegen import db, manual, native, photos, settings_history
 from facegen.age import audience, table_name
 from facegen.classify import Group
 from facegen.manual import ManualError
@@ -49,7 +49,13 @@ from facegen.service import (
     SyncService,
     WorkerControl,
 )
-from facegen.settings import Settings, SettingsError, load_defaults, load_settings
+from facegen.settings import (
+    Settings,
+    SettingsError,
+    folder_not_set_message,
+    load_defaults,
+    load_settings,
+)
 from facegen.settings_history import Outcome
 from facegen.traits import TRAIT_TABLES, eyes_drawn_round
 from facegen.web import queries
@@ -250,6 +256,7 @@ def create_app(ctx: AppContext) -> FastAPI:
             "settings": settings,
             "auto_groups": sorted(settings.schedule.auto_groups),
             "photo_status": photos.status(conn),
+            "native": native.status(),
         }
 
     @app.get("/", response_class=HTMLResponse)
@@ -539,10 +546,17 @@ def create_app(ctx: AppContext) -> FastAPI:
         defaults = load_defaults(ctx.defaults_path)
         current = settings_now(conn)
         shown = dict(current.values) | (values or {})
+        folders = {
+            "user": current.paths.describe("paths.fm_user_dir"),
+            "install": current.paths.describe("paths.fm_install_dir"),
+            "user_missing": current.paths.fm_user_dir is None,
+            "not_set": folder_not_set_message(),
+        }
         return page(
             request,
             "settings.html",
             conn,
+            folders=folders,
             sections=settings_sections(shown, defaults),
             errors=errors or {},
             error=error,

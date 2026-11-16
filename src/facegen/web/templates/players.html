@@ -55,7 +55,7 @@
       <tr>
         <td><input type="checkbox" name="uid" value="{{ r.unique_id }}" aria-label="Tick {{ r.name }}"></td>
         <td>{% if r.image_id %}<img class="face" src="/pictures/{{ r.image_id }}?size=96" loading="lazy" alt="">{% else %}<span class="face none"></span>{% endif %}</td>
-        <td><a href="/players/{{ r.unique_id }}">{{ r.name }}</a>{% if r.is_goalkeeper %} <span class="tag">GK</span>{% endif %}{% if r.is_staff %} <span class="tag">{{ r.staff_job or "staff" }}</span>{% endif %}{% if r.media_role %} <span class="tag">{{ r.media_role }}</span>{% endif %}{% if r.youth_team %} <span class="tag">youth team</span>{% endif %}{% if (r.is_staff or r.media_role) and r.drawn_male %} <span class="tag" title="Drawn as a man">man</span>{% endif %}</td>
+        <td><a href="/players/{{ r.unique_id }}">{{ r.name }}</a>{% if r.is_goalkeeper %} <span class="tag">GK</span>{% endif %}{% if r.is_staff %} <span class="tag">{{ r.staff_job or "staff" }}</span>{% endif %}{% if r.media_role %} <span class="tag">{{ r.media_role }}</span>{% endif %}{% if r.youth_team %} <span class="tag">youth team</span>{% endif %}</td>
         <td>{{ r.age if r.age is not none else "?" }}</td>
         <td>{% if r.club_id is not none %}<a href="/players?{{ f.query(club_id=r.club_id, club='', page=1) }}">{{ r.club or r.club_id }}</a>{% elif r.media_role %}<span class="muted">{{ "my club's country" if r.local_media else "elsewhere" }}</span>{% else %}<span class="muted">free agent</span>{% endif %}
           {% if r.at_my_club %}<span class="tag mine">my club</span>{% elif r.in_my_league %}<span class="tag">my league</span>{% endif %}{% if r.in_continental %}<span class="tag">continental</span>{% endif %}

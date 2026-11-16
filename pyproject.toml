@@ -39,8 +39,10 @@ gpu = [
 ]
 # The optional Rust extension (native/, built with maturin; needs a Rust toolchain). It
 # speeds up the figure scan and the published-picture encoder; every part of it has a
-# Python fallback. `uv sync --no-group native` leaves it out.
-native = ["facegen-native"]
+# Python fallback. `uv sync --no-group native` leaves it out. Not built on Windows, where
+# few players have Rust and the MSVC build tools: `facegen native --install` installs the
+# prebuilt wheel there (native_wheel.py), and `uv sync --inexact` keeps it.
+native = ["facegen-native; sys_platform != 'win32'"]
 
 [tool.uv]
 default-groups = ["dev", "gpu", "native"]
@@ -50,6 +52,15 @@ members = ["native"]
 
 [tool.uv.sources]
 facegen-native = { workspace = true, editable = false }
+# PyPI's torch for Windows has no CUDA, so on Windows torch comes from PyTorch's own index,
+# built for CUDA 13.2 like Linux's torch from PyPI. Elsewhere: PyPI. (torchvision, which timm
+# needs, stays PyPI's: the tagger uses none of its CUDA parts.)
+torch = [{ index = "pytorch-cu132", marker = "sys_platform == 'win32'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu132"
+url = "https://download.pytorch.org/whl/cu132"
+explicit = true
 
 [build-system]
 requires = ["hatchling"]

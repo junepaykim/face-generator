@@ -10,12 +10,8 @@ from facegen import db
 from facegen.settings import DEFAULTS_PATH, Settings, load_settings
 
 ROOT = Path(__file__).resolve().parents[1]
-FM_USER_LINE = (
-    'fm_user_dir = "/mnt/c/Users/<Windows user>/Documents/Sports Interactive/Football Manager 27"'
-)
-FM_INSTALL_LINE = (
-    'fm_install_dir = "/mnt/c/Program Files (x86)/Steam/steamapps/common/Football Manager 27"'
-)
+FM_USER_LINE = 'fm_user_dir = ""'
+FM_INSTALL_LINE = 'fm_install_dir = ""'
 
 
 def write_config(tmp_path: Path) -> Path:
@@ -30,6 +26,13 @@ def write_config(tmp_path: Path) -> Path:
     config = tmp_path / "test.toml"
     config.write_text(text, encoding="utf-8")
     return config
+
+
+@pytest.fixture(autouse=True)
+def no_folder_detection(monkeypatch: pytest.MonkeyPatch) -> None:
+    """FM27's folders are not looked for on the PC running the tests: a folder that no file
+    sets is "not set". Tests of detection replace this or call fm_paths directly."""
+    monkeypatch.setattr("facegen.settings.detect_folder", lambda key: None)
 
 
 @pytest.fixture

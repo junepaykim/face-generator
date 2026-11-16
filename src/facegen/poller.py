@@ -29,7 +29,7 @@ from facegen.datasource.base import (
     SaveReadError,
     UnsupportedSaveError,
 )
-from facegen.settings import Settings
+from facegen.settings import Settings, folder_not_set_message
 from facegen.sync import SyncReport, record_failed_sync, run_sync
 
 SETTLE_SECONDS = 10.0
@@ -106,6 +106,13 @@ class NoSaveError(LookupError):
     """There is no save to read."""
 
 
+class FolderNotSetError(NoSaveError):
+    """FM27's user folder is neither set nor found, so there is no saves folder to look in."""
+
+    def __init__(self) -> None:
+        super().__init__(folder_not_set_message())
+
+
 class SaveUnreadableError(RuntimeError):
     """The save could not be copied or parsed; existing pictures and the queue are unchanged."""
 
@@ -139,9 +146,12 @@ def sync_save(
     """
     snapshots = settings.paths.snapshots_dir
     if save is None:
-        save = find_latest_save(settings.paths.games_dir)
+        games = settings.paths.games_dir
+        if games is None:
+            raise FolderNotSetError()
+        save = find_latest_save(games)
         if save is None:
-            raise NoSaveError(f"No save found in {settings.paths.games_dir}")
+            raise NoSaveError(f"No save found in {games}")
     if not save.is_file():
         raise NoSaveError(f"No such save: {save}")
     save_mtime: float | None = None
