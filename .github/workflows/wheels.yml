@@ -1,0 +1,192 @@
+name: Native wheels
+
+# The Rust extension (native/) as prebuilt wheels, so a PC with no Rust or MSVC still gets
+# it: Windows x86-64 and manylinux x86-64. The crate builds with abi3-py312, so one wheel per
+# platform serves Python 3.12 and later. Every run checks the crate (fmt, clippy, cargo test)
+# and runs tests/test_native.py against each built wheel, with the build from native/ left
+# out. A `native-v<version>` tag, <version> being native/pyproject.toml's, attaches the
+# wheels and SHA256SUMS.txt to a GitHub Release. Then copy those sums into
+# native/wheels.sha256: `facegen native --install` takes only a wheel listed there.
+
+on:
+  push:
+    branches: [main]
+    tags: ["native-v*"] # path filters do not apply to tags
+    paths:
+      - "native/**"
+      - "tests/test_native.py"
+      - ".github/workflows/wheels.yml"
+  pull_request:
+    paths:
+      - "native/**"
+      - "tests/test_native.py"
+      - ".github/workflows/wheels.yml"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing native-v tag to build and release (blank: build only)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  source:
+    name: Resolve source
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+      tag: ${{ steps.source.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
+      - name: Validate the release tag and pin the source commit
+        id: source
+        env:
+          REQUESTED_TAG: ${{ inputs.release_tag }}
+        run: |
+          tag="$REQUESTED_TAG"
+          if [[ "$GITHUB_REF" == refs/tags/native-v* ]]; then
+            tag="$GITHUB_REF_NAME"
+          fi
+          if [ -n "$tag" ]; then
+            version=$(python3 -c "import tomllib; print(tomllib.load(open('native/pyproject.toml', 'rb'))['project']['version'])")
+            if [ "$tag" != "native-v$version" ]; then
+              echo "::error::the tag must be native-v$version"
+              exit 1
+            fi
+            git fetch --depth=1 origin "refs/tags/$tag:refs/tags/$tag"
+            test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$tag^{commit}")"
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  crate:
+    name: Rust checks
+    needs: source
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: native
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+      - uses: actions/setup-python@v5 # PyO3 links the unit tests against Python
+        with:
+          python-version: "3.12"
+      - name: Toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy,rustfmt
+          rustup default stable
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+
+  build:
+    name: Wheel (${{ matrix.platform }})
+    needs: source
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            manylinux: ""
+          - platform: linux
+            os: ubuntu-latest
+            target: x86_64
+            manylinux: auto
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: PyO3/maturin-action@v1
+        with:
+          working-directory: native
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          args: --locked --out dist # the release profile is set in native/pyproject.toml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.platform }}
+          path: native/dist/*.whl
+          if-no-files-found: error
+
+  test:
+    name: Tests on the wheel (${{ matrix.platform }})
+    needs: [source, build]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            os: windows-latest
+          - platform: linux
+            os: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.0"
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheel-${{ matrix.platform }}
+          path: wheels
+      - name: Install, without building the extension
+        run: uv sync --locked --no-group gpu --no-group native
+      - name: Install the wheel
+        shell: bash
+        run: uv pip install wheels/*.whl
+      - name: The extension against the Python versions
+        env:
+          FACEGEN_REQUIRE_NATIVE: "1" # fail, not skip, if the wheel does not load
+        run: |
+          uv run --no-sync python -c "from facegen import native; assert native.ext is not None, 'The installed wheel must load'"
+          uv run --no-sync pytest tests/test_native.py
+
+  release:
+    name: GitHub Release
+    if: needs.source.outputs.tag != ''
+    needs: [source, crate, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+      - name: The tag still points to the tested source
+        env:
+          RELEASE_TAG: ${{ needs.source.outputs.tag }}
+        run: |
+          git fetch --depth=1 origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheel-*
+          merge-multiple: true
+          path: dist
+      - name: SHA-256 sums
+        working-directory: dist
+        run: sha256sum *.whl | tee SHA256SUMS.txt
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.source.outputs.tag }}
+        run: |
+          gh release create "$RELEASE_TAG" dist/*.whl dist/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "facegen-native ${RELEASE_TAG#native-v}" \
+            --notes "Prebuilt wheels of facegen's optional Rust extension (abi3, Python 3.12 and later). Add SHA256SUMS.txt to native/wheels.sha256 so that \`facegen native --install\` takes them."
