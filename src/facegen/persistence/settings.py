@@ -20,9 +20,12 @@ from facegen.core.settings_values import (
     DETAIL_SIZES,
     FOUND,
     GROUP_NAMES,
+    LANGUAGE_CHOICES,
     NOT_SET,
+    THEME_CHOICES,
     UI,
     AgeSettings,
+    DisplaySettings,
     Eligibility,
     GroupA,
     GroupB,
@@ -55,6 +58,9 @@ LOCAL_NAME = "local.toml"
 # Keys the UI may not override: where things live on disk, and where the web UI listens (a
 # browser must not be able to open the tool to the network; AGENTS.md hard rule 6).
 _FIXED_PREFIXES = ("paths.", "ui.")
+
+SKIP_WORDING = "-"
+"""An age table's value for a wording it does not use (Phase 12, user 2026-11-17)."""
 
 DETECTED_KEYS = ("paths.fm_user_dir", "paths.fm_install_dir")
 """Folders that are looked for on this PC (fm_paths.py) when no file sets them."""
@@ -187,7 +193,9 @@ def check_override(key: str, value: Any, defaults: Mapping[str, Any]) -> Any:
     if key.startswith(_FIXED_PREFIXES):
         raise SettingsError(f"setting {key!r} can only be changed in the defaults file")
     default = defaults[key]
-    if isinstance(default, bool):
+    if is_age_wording(key):
+        ok = _is_int(value) or value == SKIP_WORDING
+    elif isinstance(default, bool):
         ok = isinstance(value, bool)
     elif _is_int(default):
         ok = _is_int(value)
@@ -240,20 +248,31 @@ def build_settings(
             )
         return DETAIL_SIZES[v[key]]
 
+    def one_of(key: str, choices: tuple[str, ...]) -> str:
+        if v[key] not in choices:
+            raise SettingsError(
+                f"setting {key!r} must be one of {', '.join(choices)}, got {v[key]!r}"
+            )
+        return v[key]
+
     data_dir = Path(v["paths.data_dir"])
     if not data_dir.is_absolute():
         data_dir = PROJECT_ROOT / data_dir
 
     def age_table(name: str) -> tuple[tuple[int, str], ...]:
         prefix = f"age.{name}."
-        rows = sorted((k.removeprefix(prefix), v[k]) for k in v if k.startswith(prefix))
+        rows = sorted(
+            (k.removeprefix(prefix), v[k])
+            for k in v
+            if k.startswith(prefix) and v[k] != SKIP_WORDING
+        )
         if not rows:
             raise SettingsError(f"age.{name} needs at least one wording")
         for wording, first_age in rows:
             if wording not in WORDINGS:
                 raise SettingsError(f"unknown age wording {prefix}{wording}")
             if not _is_int(first_age):
-                raise SettingsError(f"setting {prefix}{wording!r} needs an int")
+                raise SettingsError(f"setting {prefix}{wording!r} needs an int or {SKIP_WORDING!r}")
             _range(prefix + wording, first_age, 0, 100)
         firsts = [first_age for _, first_age in rows]
         if firsts != sorted(set(firsts)):
@@ -368,6 +387,10 @@ def build_settings(
             auto_groups=auto_groups,
         ),
         render=RenderSettings(vae_tiling=v["render.vae_tiling"]),
+        display=DisplaySettings(
+            language=one_of("display.language", LANGUAGE_CHOICES),
+            theme=one_of("display.theme", THEME_CHOICES),
+        ),
         ui=UI(host=v["ui.host"], port=_range("ui.port", v["ui.port"], 1, 65535)),
         values=dict(values),
         overridden=overridden,
@@ -420,6 +443,11 @@ def set_override(
     now = datetime.now(UTC).isoformat()
     write_overrides(conn, {key: value}, updated_at=now)
     return result
+
+
+def is_age_wording(key: str) -> bool:
+    """An age table's first age for a wording ("age.b.W04"): a whole number, or SKIP_WORDING."""
+    return key.startswith("age.") and key.rpartition(".")[2] in WORDINGS
 
 
 def is_fixed(key: str) -> bool:

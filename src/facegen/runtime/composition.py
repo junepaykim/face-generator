@@ -35,6 +35,9 @@ if TYPE_CHECKING:
 LOOPBACK = ("127.0.0.1", "localhost", "::1")
 SERVER_START_SECONDS = 30.0
 SERVER_STOP_SECONDS = 10.0
+GRACEFUL_SHUTDOWN_SECONDS = 2
+"""uvicorn waits this long for open responses, then ends them: a page's live event stream
+(Phase 12d) never ends by itself."""
 
 Browse = Callable[[str | None], str | None]
 DEFAULT_BROWSE: Any = object()
@@ -178,8 +181,16 @@ class ServerThread:
     def __init__(self, app: FastAPI, host: str, port: int) -> None:
         import uvicorn
 
-        self.host, self.port = host, port
-        self.server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="warning"))
+        self.app, self.host, self.port = app, host, port
+        self.server = uvicorn.Server(
+            uvicorn.Config(
+                app,
+                host=host,
+                port=port,
+                log_level="warning",
+                timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_SECONDS,
+            )
+        )
         self.error: str | None = None
         self._thread = threading.Thread(target=self._run, name="facegen-server", daemon=True)
 
@@ -206,6 +217,9 @@ class ServerThread:
             time.sleep(0.05)
 
     def stop(self, timeout: float = SERVER_STOP_SECONDS) -> None:
+        from facegen.web.app import close_streams
+
+        close_streams(self.app)  # an open page's live stream would hold the server
         self.server.should_exit = True
         self._thread.join(timeout)
         if self._thread.is_alive():  # an open connection holds it: close them

@@ -11,6 +11,11 @@ from facegen.core.traits import BodyThresholds
 
 GROUP_NAMES = ("a", "b", "c")
 
+LANGUAGE_CHOICES = ("auto", "en", "ko")
+"""`display.language`: auto follows the window's language (Phase 12a)."""
+THEME_CHOICES = ("auto", "light", "dark")
+"""`display.theme`: auto follows Windows's light or dark app mode (Phase 12b)."""
+
 DETAIL_SIZES: dict[str, tuple[int, int] | None] = {
     "1344x1728": (1344, 1728),
     "1152x1472": (1152, 1472),
@@ -222,6 +227,14 @@ class RenderSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class DisplaySettings:
+    """How the UI looks: its language and theme; "auto" follows Windows."""
+
+    language: str
+    theme: str
+
+
+@dataclass(frozen=True, slots=True)
 class UI:
     host: str
     port: int
@@ -244,6 +257,7 @@ class Settings:
     personality: PersonalitySettings
     schedule: Schedule
     render: RenderSettings
+    display: DisplaySettings
     ui: UI
     values: Mapping[str, Any]
     """Every effective value by dotted key, for display."""

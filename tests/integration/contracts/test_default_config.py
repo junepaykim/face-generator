@@ -48,11 +48,17 @@ def test_academy_newgens_fall_back_to_group_b():
 
 
 def test_age_tables_match_spec():
-    """Spec section 3: first real age per wording, per table (user, 2026-11-11)."""
-    age = load()["age"]
+    """Spec section 3: first real age per wording, per table (user, 2026-11-11). Every table
+    offers all ten wordings, "-" for one it leaves out; W06 back at my club at 26, W05 from 24
+    (user, 2026-11-17)."""
+    age = {
+        table: {w: first for w, first in rows.items() if first != "-"}
+        for table, rows in load()["age"].items()
+    }
+    assert all(len(rows) == 10 for rows in load()["age"].values())
     assert age == {
-        "a_my_club": {"W01": 15, "W02": 17, "W03": 19, "W04": 22, "W05": 25, "W07": 27,
-                      "W08": 29, "W09": 31, "W10": 34},
+        "a_my_club": {"W01": 15, "W02": 17, "W03": 19, "W04": 22, "W05": 24, "W06": 26,
+                      "W07": 27, "W08": 29, "W09": 31, "W10": 34},
         "a_other_club": {"W02": 15, "W03": 19, "W04": 22, "W07": 25, "W09": 29, "W10": 34},
         "b": {"W02": 15, "W04": 19, "W07": 25, "W09": 29},
         "c": {"W03": 15, "W06": 22, "W08": 28},

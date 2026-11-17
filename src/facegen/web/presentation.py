@@ -10,28 +10,29 @@ from typing import Any
 from fastapi import Request
 from fastapi.responses import Response
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup
 
 from facegen.core.planner import reference_scale
 from facegen.core.settings_values import Settings
 from facegen.core.traits import TRAIT_TABLES
+from facegen.i18n import GROUPS, LANGUAGES, Translator
 from facegen.persistence.settings import local_label
-from facegen.pipeline.publish import RELOAD_HINT
 from facegen.pipeline.worker import Career, load_career
 from facegen.setup.models import REPOS, gigabytes
 from facegen.web import queries
-from facegen.web.dependencies import AppDependencies
+from facegen.web.dependencies import AppDependencies, translator_for
+from facegen.web.messages import band_name, duration
 
 HERE = Path(__file__).resolve().parent
 
-TIER_NAMES = {0: "manual", 1: "A, my club", 2: "A", 3: "B", 4: "C"}
-KIND_NAMES = {
-    "initial": "first picture",
-    "kit": "new kit",
-    "age": "new age band",
-    "upgrade": "upgrade to A",
-    "reroll": "new face",
-    "redraw": "new picture",
-}
+JS_TEXTS = (
+    "js.saving",
+    "js.no_answer",
+    "js.unsaved_confirm",
+    "js.ticked",
+    "js.switch_failed",
+)
+"""Catalog texts the page's script uses, handed to it in the page."""
 
 
 def static_version(folder: Path) -> str:
@@ -45,13 +46,55 @@ def static_version(folder: Path) -> str:
     return digest.hexdigest()[:10]
 
 
-def describe_job(kind: str) -> str:
-    return KIND_NAMES.get(kind, kind)
-
-
 def uses_reference(kind: str, at_my_club: bool, settings: Settings) -> bool:
     """Whether a job would draw with the player's current picture as a reference."""
     return reference_scale(kind, at_my_club, settings.reference) is not None
+
+
+def group_chip(group: str, tr: Translator) -> Markup:
+    """A picture group as a coloured chip with its name: 정밀, 표준, 간편 (Detailed, Standard,
+    Light), so the name reads as facegen's group, not the word. Hovering it says what the group
+    is (data-tip, shown by app.js)."""
+    group = (group or "").lower()
+    if group not in GROUPS:
+        return Markup('<span class="grp">-</span>')
+    return Markup('<span class="grp grp-{0}" data-tip="{1}">{2}</span>').format(
+        group, tr(f"term.{group}"), tr(f"group.{group}")
+    )
+
+
+class HtmlText:
+    """Catalog texts for templates. The catalog is ours, so its own markup (a link, a code
+    span) stands; every value filled in is escaped. {a}, {b} and {c} become group chips."""
+
+    __slots__ = ("chips", "tr")
+
+    def __init__(self, tr: Translator) -> None:
+        self.tr = tr
+        self.chips = {g: group_chip(g, tr) for g in GROUPS}
+
+    def __call__(self, key: str, /, **values: Any) -> Markup:
+        template = Markup(self.tr.template(key, values.get("count")))
+        return template.format(**{**self.tr.values, **self.chips, **values})
+
+    @property
+    def lang(self) -> str:
+        return self.tr.lang
+
+
+def text_context(tr: Translator, settings: Settings) -> dict[str, Any]:
+    """What every template needs to speak the request's language and wear its theme."""
+    return {
+        "t": HtmlText(tr),
+        "tr": tr,
+        "lang": tr.lang,
+        "languages": LANGUAGES,
+        "display": settings.display,
+        "js_texts": {key: tr.template(key) for key in JS_TEXTS},
+        "dur": lambda seconds: duration(seconds, tr),
+        "grp": lambda group: group_chip(group, tr),
+        "band": lambda wording: band_name(wording, tr),
+    }
 
 
 def create_templates() -> Jinja2Templates:
@@ -60,14 +103,12 @@ def create_templates() -> Jinja2Templates:
     env.globals.update(
         gigabytes=gigabytes,
         model_repos=REPOS,
-        tier_name=lambda t: TIER_NAMES.get(t, str(t)),
-        kind_name=describe_job,
-        reload_hint=RELOAD_HINT,
         trait_tables=TRAIT_TABLES,
         uses_reference=uses_reference,
         static_version=static_version(HERE / "static"),
     )
     env.filters["upper_group"] = lambda g: (g or "-").upper()
+    env.filters["num"] = lambda n: f"{n:,}" if isinstance(n, int) else n
     return templates
 
 
@@ -77,6 +118,18 @@ class Presentation:
     def __init__(self, dependencies: AppDependencies, templates: Jinja2Templates) -> None:
         self.dependencies = dependencies
         self.templates = templates
+
+    def texts(self, request: Request, settings: Settings) -> dict[str, Any]:
+        return text_context(translator_for(request, settings), settings)
+
+    def fragment(
+        self, request: Request, name: str, conn: sqlite3.Connection, **context: Any
+    ) -> Response:
+        """A part of a page (the dashboard's status), in the request's language."""
+        settings = self.dependencies.settings_now(conn)
+        return self.templates.TemplateResponse(
+            request, name, {**self.texts(request, settings), **context}
+        )
 
     def page(
         self, request: Request, name: str, conn: sqlite3.Connection, **context: Any
@@ -88,20 +141,28 @@ class Presentation:
             request,
             name,
             {
+                **self.texts(request, settings),
                 "career": career,
                 "game_date": _game_date(conn, career),
                 "review_count": queries.review_count(conn, career.id) if career else 0,
                 "msg": request.query_params.get("msg"),
                 "err": request.query_params.get("err"),
                 "path": request.url.path,
+                "here": _here(request),
                 "setup": ctx.setup(settings),
                 "folder_text": request.query_params.get("folder"),
                 "folder_now": settings.paths.fm_user_dir,
                 "folder_origin": settings.paths.describe("paths.fm_user_dir"),
                 "local_file": local_label(ctx.defaults_path),
+                "worker_state": ctx.worker.status().state if ctx.worker else None,
                 **context,
             },
         )
+
+
+def _here(request: Request) -> str:
+    """This page's local address, to come back to after a form."""
+    return str(request.url.path) + ("?" + request.url.query if request.url.query else "")
 
 
 def _game_date(conn: sqlite3.Connection, career: Career | None) -> str | None:

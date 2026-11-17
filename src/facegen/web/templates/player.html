@@ -1,116 +1,116 @@
 {% extends "base.html" %}
+{% from "_icons.html" import info as tip %}
 {% block title %}{{ p.name }}{% endblock %}
 {% block content %}
 {% set cur = d.current %}
 <div class="player-head">
   <div class="portrait">
     {% if cur %}
-      <a href="/pictures/{{ cur.id }}" target="_blank"><img src="/pictures/{{ cur.id }}?size=384" alt="Current picture of {{ p.name }}"></a>
-      <p class="muted small">v{{ cur.version }} · {{ kind_name(cur.reason) }} · group {{ cur.group_name|upper }} · {{ cur.age_band }}{% if cur.restored_at %} · restored {{ cur.restored_at[:10] }}{% endif %} · {{ "published" if cur.published_path else "not published yet" }}</p>
+      <a href="/pictures/{{ cur.id }}" target="_blank"><img src="/pictures/{{ cur.id }}?size=384" alt="{{ t('player.current_alt', name=p.name) }}"></a>
+      <p class="muted small">v{{ cur.version }} · {{ t("kind." ~ cur.reason) }} · {{ grp(cur.group_name) }} · {{ band(cur.age_band) }}{% if cur.restored_at %} · {{ t("player.restored_on", date=cur.restored_at[:10]) }}{% endif %} · {{ t("status.published" if cur.published_path else "player.not_published") }}</p>
     {% else %}
-      <div class="portrait-none">no picture</div>
+      <div class="portrait-none">{{ t("player.no_picture") }}</div>
     {% endif %}
   </div>
 
   <div class="facts">
-    <h1>{{ p.name }}{% if p.is_goalkeeper %} <span class="tag">GK</span>{% endif %}{% if p.is_staff %} <span class="tag">{{ p.staff_job or "staff" }}</span>{% endif %}{% if p.media_role %} <span class="tag">{{ p.media_role }}</span>{% endif %}{% if p.youth_team %} <span class="tag">youth team</span>{% endif %}</h1>
-    <p class="muted">unique ID {{ p.unique_id }} · {% if p.is_staff %}{{ "on my club's staff" if p.present else "was on my club's staff" }}{% if p.staff_job %} ({{ p.staff_job }}){% endif %}, dressed for their job{% elif p.media_role == "journalist" %}journalist{{ " from my club's country" if p.local_media }}, dressed for their work{% elif p.media_role %}{{ "my club's press officer" if p.local_media else "press officer" }}, dressed for their work{% else %}{{ "newgen" if p.is_newgen else "pre-existing" }}{% if p.youth_team %} in one of my club's youth or reserve teams{% endif %}{% endif %}{% if p.academy %} from my academy{% endif %}{% if p.is_staff or p.media_role %} · {% if p.female is none %}gender unknown{% else %}{{ "a woman" if p.female else "a man" }} in the save{% endif %}, drawn as a woman{% endif %}{% if not p.present %} · <strong>{{ "no longer on my club's staff" if p.is_staff else "not in the latest save" }}</strong>{% endif %}</p>
+    <h1>{{ p.name }}{% if p.is_goalkeeper %} <span class="tag">GK</span>{% endif %}{% if p.is_staff %} <span class="tag">{{ p.staff_job or t("tag.staff") }}</span>{% endif %}{% if p.media_role %} <span class="tag">{{ t("tag.media." ~ p.media_role) if tr.has("tag.media." ~ p.media_role) else p.media_role }}</span>{% endif %}{% if p.youth_team %} <span class="tag">{{ t("tag.youth_team") }}</span>{% endif %}</h1>
+    <p class="muted">{{ t("player.unique_id", uid=p.unique_id) }} · {% if p.is_staff %}{{ t("player.staff_now" if p.present else "player.staff_was") }}{% if p.staff_job %} ({{ p.staff_job }}){% endif %}{% elif p.media_role == "journalist" %}{{ t("player.journalist_local" if p.local_media else "player.journalist") }}{% elif p.media_role %}{{ t("player.press_local" if p.local_media else "player.press") }}{% else %}{{ t("players.origin_newgen" if p.is_newgen else "players.origin_existing") }}{% if p.youth_team %}{{ t("player.in_youth") }}{% endif %}{% endif %}{% if p.academy %}{{ t("player.from_academy") }}{% endif %}{% if p.is_staff or p.media_role %} · {% if p.female is none %}{{ t("player.gender_unknown") }}{% else %}{{ t("player.woman_in_save" if p.female else "player.man_in_save") }}{% endif %}{{ t("player.drawn_woman") }}{% endif %}{% if not p.present %} · <strong>{{ t("player.left_staff" if p.is_staff else "player.not_in_save") }}</strong>{% endif %}</p>
     <table class="kv">
-      <tr><th>Club</th><td>{% if p.club_id is not none %}<a href="/players?club_id={{ p.club_id }}">{{ p.club or p.club_id }}</a>{% elif p.media_role %}<span class="muted">none</span>{% else %}free agent{% endif %}
-        {% if p.loan_parent_club %}<span class="muted">(on loan from {{ p.loan_parent_club }})</span>{% endif %}
-        {% if p.at_my_club %}<span class="tag mine">my club</span>{% elif p.in_my_league %}<span class="tag">my league</span>{% endif %}{% if p.in_continental %}<span class="tag">continental</span>{% endif %}
-        {% if not p.in_scope %}<span class="tag">not men's football</span>{% endif %}</td></tr>
-      <tr><th>Age</th><td>{{ p.age if p.age is not none else "?" }}{% if p.birth_date %} <span class="muted">(born {{ p.birth_date }})</span>{% endif %}</td></tr>
-      {% if not p.is_staff and not p.media_role %}<tr><th>Height</th><td>{{ p.height_cm or "?" }} cm · Strength {{ p.strength if p.strength is not none else "?" }}</td></tr>{% endif %}
-      <tr><th>Photo</th><td>
-        {% if p.photo_game and p.photo_facepack %}FM27 ships one, and a facepack maps one
-        {% elif p.photo_game %}FM27 ships one
-        {% elif p.photo_facepack %}a facepack maps one
-        {% elif photo_status and photo_status.game_known %}none: FM27 shows a silhouette
-        {% else %}<span class="muted">unknown until a sync reads FM27's photo list</span>{% endif %}</td></tr>
+      <tr><th>{{ t("col.club") }}</th><td>{% if p.club_id is not none %}<a href="/players?club_id={{ p.club_id }}">{{ p.club or p.club_id }}</a>{% elif p.media_role %}<span class="muted">{{ t("common.none") }}</span>{% else %}{{ t("common.free_agent") }}{% endif %}
+        {% if p.loan_parent_club %}<span class="muted">{{ t("player.on_loan", club=p.loan_parent_club) }}</span>{% endif %}
+        {% if p.at_my_club %}<span class="tag mine">{{ t("tag.my_club") }}</span>{% elif p.in_my_league %}<span class="tag">{{ t("tag.my_league") }}</span>{% endif %}{% if p.in_continental %}<span class="tag">{{ t("tag.continental") }}</span>{% endif %}
+        {% if not p.in_scope %}<span class="tag">{{ t("tag.not_mens_football") }}</span>{% endif %}</td></tr>
+      <tr><th>{{ t("col.age") }}</th><td>{{ p.age if p.age is not none else "?" }}{% if p.birth_date %} <span class="muted">{{ t("player.born", date=p.birth_date) }}</span>{% endif %}</td></tr>
+      {% if not p.is_staff and not p.media_role %}<tr><th>{{ t("player.height") }}</th><td>{{ t("player.height_value", cm=p.height_cm or "?", strength=p.strength if p.strength is not none else "?") }}</td></tr>{% endif %}
+      <tr><th>{{ t("player.photo") }}</th><td>
+        {% if p.photo_game and p.photo_facepack %}{{ t("player.photo_both") }}
+        {% elif p.photo_game %}{{ t("player.photo_game") }}
+        {% elif p.photo_facepack %}{{ t("player.photo_facepack") }}
+        {% elif photo_status and photo_status.game_known %}{{ t("player.photo_none") }}
+        {% else %}<span class="muted">{{ t("player.photo_unknown") }}</span>{% endif %}</td></tr>
       {% if not p.media_role %}<tr><th>CA / PA</th><td>{{ p.ca if p.ca or not p.is_staff else "?" }} / {{ p.pa if p.pa is not none else "?" }}</td></tr>{% endif %}
-      <tr><th>Personality</th><td>{% if p.personality %}{% for k, v in p.personality.items() %}{{ k|capitalize }} {{ v }}{{ " · " if not loop.last }}{% endfor %}{% else %}<span class="muted">unknown (read at the next sync)</span>{% endif %}</td></tr>
-      <tr><th>Group</th><td>{% if p.group_name %}<span class="grp grp-{{ p.group_name }}">{{ p.group_name|upper }}</span>{% else %}none{% endif %}
-        {% if p.tracked %}<span class="tag">tracked</span>{% endif %}{% if p.pin %}<span class="tag">pinned to {{ p.pin }}</span>{% endif %}</td></tr>
-      <tr><th>Why</th><td>{{ p.reasons|join("; ") or "no rule applies" }}</td></tr>
-      <tr><th>Now</th><td>
-        {% if p.job_status == "running" %}<span class="st run">drawing: {{ kind_name(p.job_kind) }}</span>
-        {% elif p.job_status == "queued" %}<span class="st q">queued: {{ kind_name(p.job_kind) }}{{ " (requested)" if p.job_manual }}</span>
-          {% if uses_reference(p.job_kind, p.at_my_club, settings) %}<span class="tag">with the current picture as a reference</span>{% endif %}
-        {% elif p.latest_job == "failed" %}<a class="st bad" href="/review">in review</a>
-        {% else %}<span class="muted">nothing queued</span>{% endif %}</td></tr>
+      <tr><th>{{ t("player.personality") }}</th><td>{% if p.personality %}{% for k, v in p.personality.items() %}{{ k|capitalize }} {{ v }}{{ " · " if not loop.last }}{% endfor %}{% else %}<span class="muted">{{ t("player.personality_unknown") }}</span>{% endif %}</td></tr>
+      <tr><th>{{ t("col.group") }}</th><td>{% if p.group_name %}{{ grp(p.group_name) }}{% else %}{{ t("common.none") }}{% endif %}
+        {% if p.tracked %}<span class="tag">{{ t("tag.tracked") }}</span>{% endif %}{% if p.pin %}<span class="tag">{{ t("tag.pinned_to", pin=tr("group." ~ p.pin) if p.pin in ("a", "b", "c") else tr("player.pin_never")) }}</span>{% endif %}</td></tr>
+      <tr><th>{{ t("col.why") }}</th><td>{{ p.reasons|join("; ") or t("player.no_rule") }}</td></tr>
+      <tr><th>{{ t("player.now") }}</th><td>
+        {% if p.job_status == "running" %}<span class="st run">{{ t("player.drawing", kind=t("kind." ~ p.job_kind)) }}</span>
+        {% elif p.job_status == "queued" %}<span class="st q">{{ t("status.queued", kind=t("kind." ~ p.job_kind)) }}{{ t("player.requested") if p.job_manual }}</span>
+          {% if uses_reference(p.job_kind, p.at_my_club, settings) %}<span class="tag">{{ t("player.with_reference") }}</span>{% endif %}
+        {% elif p.latest_job == "failed" %}<a class="st bad" href="/review">{{ t("status.in_review") }}</a>
+        {% else %}<span class="muted">{{ t("player.nothing_queued") }}</span>{% endif %}</td></tr>
     </table>
 
     <div class="actions">
       {% if p.present and p.in_scope and p.job_status != "running" %}
         {% if not cur %}
         <form method="post" action="/players/{{ p.unique_id }}/generate" class="inline"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <label>as group <select name="group">{% for g in groups %}<option value="{{ g }}" {{ "selected" if g == (p.group_name or "b") }}>{{ g|upper }}</option>{% endfor %}</select></label>
-          <button class="primary">Generate</button>
+          <label>{{ t("players.bulk.as_group") }} <select name="group">{% for g in groups %}<option value="{{ g }}" {{ "selected" if g == (p.group_name or "b") }}>{{ tr("group." ~ g) }}</option>{% endfor %}</select></label>
+          <button class="primary">{{ t("players.generate") }}</button>
         </form>
         {% endif %}
         {% if p.pin != "never" and (group_for_redraw or p.latest_job == "failed") %}
-        <form method="post" action="/players/{{ p.unique_id }}/new-face"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button title="Re-roll the character sheet and draw from the new one">New face</button></form>
+        <form method="post" action="/players/{{ p.unique_id }}/new-face"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button title="{{ t('player.new_face_title') }}">{{ t("player.new_face") }}</button></form>
         {% endif %}
         {% if cur and p.pin != "never" %}
-        <form method="post" action="/players/{{ p.unique_id }}/new-picture"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button title="Same character sheet, new picture{{ ', with the current one as a reference' if redraw_reference }}">New picture</button></form>
+        <form method="post" action="/players/{{ p.unique_id }}/new-picture"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button title="{{ t('player.new_picture_title_ref' if redraw_reference else 'player.new_picture_title') }}">{{ t("players.new_picture") }}</button></form>
         {% endif %}
         {% if p.latest_job == "failed" %}
-        <form method="post" action="/players/{{ p.unique_id }}/retry"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button>Retry</button></form>
+        <form method="post" action="/players/{{ p.unique_id }}/retry"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button>{{ t("player.retry") }}</button></form>
         {% endif %}
       {% endif %}
       {% if p.job_status == "queued" and p.job_manual %}
-        <form method="post" action="/players/{{ p.unique_id }}/cancel"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button>Cancel request</button></form>
+        <form method="post" action="/players/{{ p.unique_id }}/cancel"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button>{{ t("player.cancel_request") }}</button></form>
       {% endif %}
       {% if cur %}
-        <form method="post" action="/players/{{ p.unique_id }}/remove" data-confirm="Remove {{ p.name }}'s picture from FM27 and pin to never? The game's own photo comes back after Reload Skin."><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="danger">Remove picture</button></form>
+        <form method="post" action="/players/{{ p.unique_id }}/remove" data-confirm="{{ tr('player.remove_confirm', name=p.name) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="danger">{{ t("player.remove") }}</button></form>
       {% endif %}
     </div>
-    {% if redraw_reference and cur %}<p class="muted small">New picture keeps the character sheet and uses the current picture as a reference (settings: reference), so the face stays close.</p>{% endif %}
 
     <form method="post" action="/players/{{ p.unique_id }}/pin" class="inline pin"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <label>Pin
+      <label>{{ t("players.pin") }}
         <select name="pin">
-          <option value="" {{ "selected" if not p.pin }}>no pin (rules decide)</option>
-          {% for g in groups %}<option value="{{ g }}" {{ "selected" if p.pin == g }}>group {{ g|upper }}</option>{% endfor %}
-          <option value="never" {{ "selected" if p.pin == "never" }}>never</option>
+          <option value="" {{ "selected" if not p.pin }}>{{ tr("player.pin_none") }}</option>
+          {% for g in groups %}<option value="{{ g }}" {{ "selected" if p.pin == g }}>{{ tr("players.group." ~ g) }}</option>{% endfor %}
+          <option value="never" {{ "selected" if p.pin == "never" }}>{{ tr("player.pin_never") }}</option>
         </select>
       </label>
-      <button>Set</button>
-      <span class="muted small">A group pin is a hand-pick: it queues a picture, as Generate does.{% if p.media_role %} Pin a regular at my club to A: group A quality, and tracked, so re-drawn when their age wording changes.{% endif %}</span>
+      <button>{{ t("player.pin_set") }}</button>
+      {{ tip(t("player.pin_tip_media" if p.media_role else "player.pin_tip")) }}
     </form>
   </div>
 
   <div class="sheet">
-    <h2>Character sheet</h2>
+    <h2>{{ t("player.sheet") }}{% if p.at_my_club %} {{ tip(t("player.sheet_tip", steps=settings.my_club.soften_skin, percent=(settings.my_club.round_eyes * 100)|round|int)) }}{% endif %}</h2>
     {% if d.sheet %}
       <table class="kv">
         {% for k, v in d.sheet.fields.items() if k != "base_seed" %}
-          <tr><th>{{ k|replace("_", " ") }}</th><td>{{ v }}{% if k in trait_tables and trait_tables[k][v].words %} <span class="muted small">({{ trait_tables[k][v].words }})</span>{% endif %}</td></tr>
+          <tr><th>{{ t("trait." ~ k) if tr.has("trait." ~ k) else k|replace("_", " ") }}</th><td>{{ v }}{% if k in trait_tables and trait_tables[k][v].words %} <span class="muted small">({{ trait_tables[k][v].words }})</span>{% endif %}</td></tr>
         {% endfor %}
-        <tr><th>base seed</th><td>{{ d.sheet.fields.base_seed }}</td></tr>
-        <tr><th>version</th><td>{{ d.sheet.version }} <span class="muted small">({{ d.sheet.created_at[:10] }})</span></td></tr>
+        <tr><th>{{ t("player.base_seed") }}</th><td>{{ d.sheet.fields.base_seed }}</td></tr>
+        <tr><th>{{ t("player.version") }}</th><td>{{ d.sheet.version }} <span class="muted small">({{ d.sheet.created_at[:10] }})</span></td></tr>
       </table>
-      {% if p.at_my_club %}<p class="muted small">At my club, banned traits ({{ settings.my_club.banned_traits|sort|join(", ") or "none" }}) are left out, tan or dark skin is drawn {{ settings.my_club.soften_skin }} step(s) lighter, and {{ (settings.my_club.round_eyes * 100)|round|int }}% of sharp eyes are drawn round{% if eyes_round %}: this player's are{% endif %}.</p>{% endif %}
+      {% if p.at_my_club and eyes_round %}<p class="muted small">{{ t("player.eyes_round") }}</p>{% endif %}
     {% else %}
-      <p class="muted">Sampled when the first picture is drawn.</p>
+      <p class="muted">{{ t("player.sheet_later") }}</p>
     {% endif %}
-    {% if d.leans %}<p class="muted small">Personality weights the expression of a newly sampled sheet{% if settings.personality.weight == 0 %} (off in settings){% endif %}: {% for l in d.leans %}{{ l.reason }} favours {{ l.expression }}{{ "; " if not loop.last }}{% endfor %}.</p>{% endif %}
+    {% if d.leans %}<p class="muted small">{{ t("player.leans") }}{% if settings.personality.weight == 0 %}{{ t("player.leans_off") }}{% endif %} {% for l in d.leans %}{{ t("player.lean", reason=l.reason, expression=l.expression) }}{{ "; " if not loop.last }}{% endfor %}.</p>{% endif %}
   </div>
 </div>
 
 {% if cur %}
 <section class="card">
-  <h2>Current picture</h2>
-  <p class="small">Kit: {{ cur.render.kit }}{% if cur.render.kit_source == "catalog" %} <em>(colours from FM27's kit image)</em>{% elif cur.render.kit_source == "bundled" %} <em>(bundled colours from FM27's kit image)</em>{% elif cur.render.kit_known == false %} <em>(fallback kit)</em>{% endif %} · pose: {{ cur.render.pose }}{% if cur.render.backdrop %} · backdrop: {{ cur.render.backdrop }}{% endif %}{% if cur.render.shoot and cur.render.shoot.style != "none" %} · favourite style: {{ cur.render.shoot.style }}{% endif %}{% if cur.render.shoot and cur.render.shoot.season != "unknown" %} · {{ cur.render.shoot.season }}{% endif %} · seed {{ cur.seed }} · {{ cur.model }}{% if cur.render.detail %} · detail pass {{ "used" if cur.render.detail.used else "rejected by the check" }}{% endif %}</p>
+  <h2>{{ t("player.current") }}</h2>
+  <p class="small">{{ t("player.kit", kit=cur.render.kit) }}{% if cur.render.kit_source == "catalog" %} <em>{{ t("player.kit_catalog") }}</em>{% elif cur.render.kit_source == "bundled" %} <em>{{ t("player.kit_bundled") }}</em>{% elif cur.render.kit_known == false %} <em>{{ t("player.kit_fallback") }}</em>{% endif %} · {{ t("player.pose", pose=cur.render.pose) }}{% if cur.render.backdrop %} · {{ t("player.backdrop", backdrop=cur.render.backdrop) }}{% endif %}{% if cur.render.shoot and cur.render.shoot.style != "none" %} · {{ t("player.style", style=cur.render.shoot.style) }}{% endif %}{% if cur.render.shoot and cur.render.shoot.season != "unknown" %} · {{ cur.render.shoot.season }}{% endif %} · {{ t("player.seed", seed=cur.seed) }} · {{ cur.model }}{% if cur.render.seconds %} · {{ t("player.took", time=dur(cur.render.seconds)) }}{% endif %}{% if cur.render.detail %} · {{ t("player.detail_used" if cur.render.detail.used else "player.detail_rejected") }}{% endif %}</p>
   {% set ref = cur.render.reference %}
   {% if ref and ref.used %}
   <div class="ref">
-    <a href="/files?path={{ ref.crop|urlencode }}" target="_blank"><img src="/files?path={{ ref.crop|urlencode }}&amp;size=96" alt="The face the re-draw was given as a reference"></a>
-    <p class="small">Drawn with v{{ ref.version }}'s face as a reference, strength {{ ref.scale }}.</p>
+    <a href="/files?path={{ ref.crop|urlencode }}" target="_blank"><img src="/files?path={{ ref.crop|urlencode }}&amp;size=96" alt="{{ t('player.reference_alt') }}"></a>
+    <p class="small">{{ t("player.reference_used", version=ref.version, scale=ref.scale) }}</p>
   </div>
   {% elif ref %}
-  <p class="small muted">Drawn without a reference: {{ ref.why }}.</p>
+  <p class="small muted">{{ t("player.reference_unused", why=ref.why) }}</p>
   {% endif %}
   {% if cur.check.candidates %}
   <div class="cands">
@@ -119,16 +119,16 @@
       <figure class="cand {{ 'chosen' if chosen }}">
         <a href="/files?path={{ c.path|urlencode }}" target="_blank"><img src="/files?path={{ c.path|urlencode }}&amp;size=192" loading="lazy" alt=""></a>
         <figcaption>
-          {% if chosen %}<span class="b ok">chosen</span>{% endif %}
-          <span class="b {{ 'ok' if c.passed else 'bad' }}">{{ "passed" if c.passed else "failed" }}</span>
-          <span class="b">score {{ "%.2f"|format(c.score) }}</span>
+          {% if chosen %}<span class="b ok">{{ t("player.chosen") }}</span>{% endif %}
+          <span class="b {{ 'ok' if c.passed else 'bad' }}">{{ t("player.passed" if c.passed else "player.failed") }}</span>
+          <span class="b">{{ t("player.score", score="%.2f"|format(c.score)) }}</span>
           {% for fl in c.failures %}<span class="b bad">{{ fl }}</span>{% endfor %}
         </figcaption>
       </figure>
     {% endfor %}
   </div>
   {% endif %}
-  <details><summary>Prompt</summary><pre>{{ cur.prompt }}
+  <details><summary>{{ t("player.prompt") }}</summary><pre>{{ cur.prompt }}
 
 negative: {{ cur.negative_prompt }}</pre></details>
 </section>
@@ -136,40 +136,43 @@ negative: {{ cur.negative_prompt }}</pre></details>
 
 {% if d.images|length > (1 if cur else 0) %}
 <section class="card">
-  <h2>History</h2>
-  <p class="muted small">Restore shows an earlier picture in FM27 again. It counts as up to date for the player as they are now: it is re-drawn only after their next club or age band change, or a promotion to A.</p>
+  <h2>{{ t("player.history") }} {{ tip(t("player.history_tip")) }}</h2>
+  <div class="table-wrap">
   <table class="list">
-    <thead><tr><th></th><th>Version</th><th>Why</th><th>Group</th><th>Club</th><th>Age band</th><th>State</th><th>Drawn</th><th></th></tr></thead>
+    <thead><tr><th></th><th>{{ t("col.version") }}</th><th>{{ t("col.why") }}</th><th>{{ t("col.group") }}</th><th>{{ t("col.club") }}</th><th>{{ t("col.age_band") }}</th><th>{{ t("col.state") }}</th><th>{{ t("col.drawn") }}</th><th></th></tr></thead>
     <tbody>
     {% for im in d.images %}
       <tr>
         <td>{% if im.master_path %}<a href="/pictures/{{ im.id }}" target="_blank"><img class="thumb" src="/pictures/{{ im.id }}?size=96" loading="lazy" alt=""></a>{% endif %}</td>
-        <td>v{{ im.version }}</td><td>{{ kind_name(im.reason) }}{% if im.render.reference and im.render.reference.used %} <span class="muted small">(reference v{{ im.render.reference.version }})</span>{% endif %}</td><td>{{ im.group_name|upper }}</td>
-        <td>{{ im.club or "-" }}</td><td>{{ im.age_band }}</td>
-        <td>{% if im.is_current %}<span class="st ok">current{{ " (restored)" if im.restored_at }}</span>{% elif im.rejected %}<span class="st bad">failed the check</span>{% else %}<span class="muted">replaced or removed</span>{% endif %}</td>
+        <td>v{{ im.version }}</td><td>{{ t("kind." ~ im.reason) }}{% if im.render.reference and im.render.reference.used %} <span class="muted small">{{ t("player.reference_version", version=im.render.reference.version) }}</span>{% endif %}</td><td>{{ grp(im.group_name) }}</td>
+        <td>{{ im.club or "-" }}</td><td>{{ band(im.age_band) }}</td>
+        <td>{% if im.is_current %}<span class="st ok">{{ t("player.state_current_restored" if im.restored_at else "player.state_current") }}</span>{% elif im.rejected %}<span class="st bad">{{ t("player.state_failed") }}</span>{% else %}<span class="muted">{{ t("player.state_replaced") }}</span>{% endif %}</td>
         <td>{{ im.created_at[:16]|replace("T", " ") }}</td>
         <td>{% if im.restorable and p.job_status != "running" %}
-          <form method="post" action="/players/{{ p.unique_id }}/restore" data-confirm="Show v{{ im.version }} in FM27 again instead of the current picture?"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="image_id" value="{{ im.id }}"><button>Restore</button></form>
+          <form method="post" action="/players/{{ p.unique_id }}/restore" data-confirm="{{ tr('player.restore_confirm', version=im.version) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="image_id" value="{{ im.id }}"><button>{{ t("player.restore") }}</button></form>
         {% endif %}</td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
+  </div>
 </section>
 {% endif %}
 
 {% if d.jobs %}
 <section class="card">
-  <h2>Jobs</h2>
+  <h2>{{ t("player.jobs") }}</h2>
+  <div class="table-wrap">
   <table class="list">
-    <thead><tr><th>Job</th><th>Group</th><th>Status</th><th>Why</th><th>Updated</th></tr></thead>
+    <thead><tr><th>{{ t("col.job") }}</th><th>{{ t("col.group") }}</th><th>{{ t("col.status") }}</th><th>{{ t("col.why") }}</th><th>{{ t("col.updated") }}</th></tr></thead>
     <tbody>
     {% for j in d.jobs %}
-      <tr><td>{{ kind_name(j.kind) }}{{ " (requested)" if j.manual }}</td><td>{{ j.group_name|upper }}</td><td>{{ j.status }}</td>
+      <tr><td>{{ t("kind." ~ j.kind) }}{{ t("player.requested") if j.manual }}</td><td>{{ grp(j.group_name) }}</td><td>{{ t("job_status." ~ j.status) }}</td>
         <td class="why">{{ j.reason }}{% if j.error %} <span class="muted">· {{ j.error }}</span>{% endif %}</td><td>{{ j.updated_at[:16]|replace("T", " ") }}</td></tr>
     {% endfor %}
     </tbody>
   </table>
+  </div>
 </section>
 {% endif %}
 {% endblock %}

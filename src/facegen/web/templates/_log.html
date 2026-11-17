@@ -1,0 +1,23 @@
+<span hidden data-career="{{ career.id if career else '' }}"></span>
+<section class="card">
+  <h2>{{ t("log.sync") }}</h2>
+  {% if last_sync %}
+    <table class="kv">
+      <tr><th>{{ t("dash.sync.save") }}</th><td>{{ last_sync.save_file }}</td></tr>
+      <tr><th>{{ t("dash.sync.when") }}</th><td><time datetime="{{ last_sync.finished_at or last_sync.started_at }}">{{ (last_sync.finished_at or last_sync.started_at)[:16]|replace("T", " ") }}</time></td></tr>
+      <tr><th>{{ t("log.build") }}</th><td>{{ last_sync.build or t("common.unknown") }}</td></tr>
+      {% if last_sync.trigger %}<tr><th>{{ t("log.started_by") }}</th><td>{{ t("dash.sync.trigger." ~ last_sync.trigger) if tr.has("dash.sync.trigger." ~ last_sync.trigger) else last_sync.trigger }}</td></tr>{% endif %}
+      <tr><th>{{ t("log.watching") }}</th><td>{% if poller %}{{ poller.state }}{% if poller.detail %} · {{ poller.detail }}{% endif %}{% if poller.checked %} <span class="muted">· {{ t("log.checked", time=poller.checked) }}</span>{% endif %}{% else %}{{ t("log.not_watching") }}{% endif %}</td></tr>
+    </table>
+    {% if last_sync.error %}<p class="bad small">{{ t("dash.sync.failed", error=last_sync.error) }}</p>{% endif %}
+  {% else %}
+    <p class="muted">{{ t("dash.sync.never") }}</p>
+  {% endif %}
+</section>
+{% if worker %}
+<section class="card">
+  <h2>{{ t("log.worker") }}</h2>
+  <pre class="log">{% for line in worker.log|reverse %}{{ line }}
+{% else %}{{ t("log.empty") }}{% endfor %}</pre>
+</section>
+{% endif %}

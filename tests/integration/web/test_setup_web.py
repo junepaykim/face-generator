@@ -177,9 +177,9 @@ def env(tmp_path: Path) -> Env:
 def test_without_a_folder_every_page_says_so_and_the_dashboard_asks(env: Env) -> None:
     text = env.client.get("/").text
     assert "Set up: FM27's folder" in text and 'action="/setup/folder"' in text
-    assert "Browse…" not in text and "Browse is not offered here" in text  # no dialog here
+    assert "Browse…" not in text and "Browse cannot open a window from here" in text
     for url in ("/players", "/review", "/settings"):
-        assert "FM27's folder is not set and was not found" in env.client.get(url).text, url
+        assert "FM27's folder was not found." in env.client.get(url).text, url
 
 
 def test_a_wrong_folder_is_refused_and_named(env: Env) -> None:
@@ -375,7 +375,7 @@ def test_auto_configure_on_an_8_gb_card_and_one_undo(tmp_path: Path) -> None:
     before = env.settings()
     text = env.client.get("/hardware").text
     assert "under 10 GB" in text and "Apply these 3 changes" in text
-    assert "Group A · Candidates per picture" in text
+    assert "Detailed group · Candidates per picture" in text
     text = env.follow(env.client.post("/settings/auto-configure"))
     assert "Auto-configured for the Fake 8 GB (under 10 GB)" in text
     c = env.conn()
@@ -414,7 +414,7 @@ def test_auto_configure_without_a_cuda_card_changes_nothing(tmp_path: Path) -> N
     env = make_env(tmp_path, card=Hardware(reason="torch finds no CUDA device"))
     text = env.client.get("/hardware").text
     assert "no CUDA graphics card" in text and "torch finds no CUDA device" in text
-    assert "pictures cannot be drawn on this PC" in text and "Apply" not in text
+    assert "needs an NVIDIA card with CUDA, and none was found" in text and "Apply" not in text
     text = env.follow(env.client.post("/settings/auto-configure"))
     assert "Nothing changed: no CUDA graphics card" in text
     assert env.one("SELECT COUNT(*) FROM settings_history") == 0

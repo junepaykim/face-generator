@@ -10,6 +10,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
+from facegen.datasource import photos
+from facegen.i18n import Translator
 from facegen.persistence.settings import SettingsError, folder_not_set_message, load_defaults
 from facegen.pipeline import settings_history
 from facegen.pipeline.settings_history import Outcome
@@ -24,7 +26,9 @@ from facegen.web.forms import (
     parse_settings_changes,
     parse_settings_form,
     settings_sections,
+    value_text,
 )
+from facegen.web.messages import report_summary
 from facegen.web.presentation import Presentation
 from facegen.web.responses import _redirect
 
@@ -42,15 +46,15 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
     # be undone; settings_history.py keeps the history. Without the script, the page's Save
     # button posts the whole form.
 
-    def history_context(conn: sqlite3.Connection) -> dict[str, Any]:
+    def history_context(conn: sqlite3.Connection, t: Translator) -> dict[str, Any]:
         defaults = load_defaults(ctx.defaults_path)
         entries = settings_history.entries(conn)
         return {
             "history": [
                 {
                     "entry": e,
-                    "lines": change_lines(e.before, e.after, defaults),
-                    "summary": e.report.summary() if e.report else "",
+                    "lines": change_lines(e.before, e.after, defaults, t),
+                    "summary": report_summary(e.report, t) if e.report else "",
                 }
                 for e in entries
             ],
@@ -59,24 +63,25 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             "can_redo": settings_history.can_redo(conn),
         }
 
-    def outcome_message(verb: str, outcome: Outcome) -> str:
-        """ "Saved: Group A · CA above 155 → 150. A 52 → 60; queue: 8 queued." and the like."""
+    def outcome_message(verb: str, outcome: Outcome, t: Translator) -> str:
+        """ "Saved: Group A · CA above 155 → 150. A 52 → 60; queue: 8 queued." and the like.
+        `verb` is saved, undone or redone."""
         defaults = load_defaults(ctx.defaults_path)
         what = "; ".join(
             f"{line.label} {line.before} → {line.after}"
-            if verb != "Undone"
+            if verb != "undone"
             else f"{line.label} {line.after} → {line.before}"
             for e in outcome.entries
-            for line in change_lines(e.before, e.after, defaults)
+            for line in change_lines(e.before, e.after, defaults, t)
         )
         if any(e.label == "defaults" for e in outcome.entries):
-            what = f"every setting back to its default ({what})"
-        note = f"{verb}: {what}."
+            what = t("msg.settings.all_defaults", what=what)
+        note = t(f"msg.settings.{verb}", what=what)
         if outcome.report is not None:
-            summary = outcome.report.summary()
+            summary = report_summary(outcome.report, t)
             note += f" {summary[:1].upper()}{summary[1:]}."
         if any(k.startswith("eligibility.") for e in outcome.entries for k in e.after):
-            note += " Eligibility changes take effect at the next sync."
+            note += " " + t("msg.settings.eligibility")
         return note
 
     def settings_page(
@@ -89,6 +94,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
     ) -> Response:
         defaults = load_defaults(ctx.defaults_path)
         current = settings_now(conn)
+        t = deps.translator(request, conn)
         shown = dict(current.values) | (values or {})
         folders = {
             "user": current.paths.describe("paths.fm_user_dir"),
@@ -101,11 +107,17 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             request,
             "settings.html",
             conn,
+            info={
+                # Moved here from the dashboard (Phase 12): about this run, not the pictures.
+                "worker": ctx.worker.status() if ctx.worker else None,
+                "watching": ctx.poller is not None,
+                "photos": photos.status(conn),
+            },
             folders=folders,
-            sections=settings_sections(shown, defaults),
+            sections=settings_sections(shown, defaults, t),
             errors=errors or {},
             error=error,
-            **history_context(conn),
+            **history_context(conn, t),
         )
 
     @router.get("/settings", response_class=HTMLResponse)
@@ -132,14 +144,15 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             conn = deps.connect()
             try:
                 current = settings_now(conn)
+                t = deps.translator(request, conn)
                 defaults = load_defaults(ctx.defaults_path)
                 preset = hardware.recommend(found.vram_gib if found else None)
                 lines = [
                     {
-                        "label": describe_key(c.key),
-                        "before": input_text(c.before),
-                        "after": input_text(c.after),
-                        "default": input_text(defaults[c.key]),
+                        "label": describe_key(c.key, t),
+                        "before": value_text(c.before, t, c.key),
+                        "after": value_text(c.after, t, c.key),
+                        "default": value_text(defaults[c.key], t, c.key),
                     }
                     for c in hardware.changes(preset, current.values)
                 ]
@@ -154,13 +167,12 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
         """The preset for this PC's card, as one settings change that one Undo reverts. Only
         picture settings: never the group thresholds (user, 2026-11-13)."""
         found = await run_in_threadpool(graphics_card)
+        t = await run_in_threadpool(deps.translator, request)
 
         def run() -> Response:
             if found is None or not found.has_gpu:
-                why = found.reason if found else "the card cannot be asked in this process"
-                return _redirect(
-                    "/hardware", err=f"Nothing changed: no CUDA graphics card ({why})."
-                )
+                why = found.reason if found else t("hardware.cannot_ask")
+                return _redirect("/hardware", err=t("msg.hardware.no_card", why=why))
             preset = hardware.recommend(found.vram_gib)
             conn = deps.connect()
             try:
@@ -168,20 +180,20 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                     conn, preset.changes, label="auto-configure", defaults_path=ctx.defaults_path
                 )
             except SettingsError as exc:
-                return _redirect("/hardware", err=f"Not done: {exc}")
+                return _redirect("/hardware", err=t("msg.settings.not_done", error=exc))
             finally:
                 conn.close()
             if not outcome.changed:
-                return _redirect(
-                    "/settings",
-                    msg=f"Nothing to change: the settings already suit the {found.name}.",
-                )
+                return _redirect("/settings", msg=t("msg.hardware.suits", card=found.name))
             wake()
             return _redirect(
                 "/settings",
-                msg=f"Auto-configured for the {found.name} ({preset.title}). "
-                + outcome_message("Saved", outcome)
-                + " Pictures already drawn are not drawn again. Undo puts it all back.",
+                msg=t(
+                    "msg.hardware.configured",
+                    card=found.name,
+                    preset=t(f"hardware.preset.{preset.name}.title"),
+                    outcome=outcome_message("saved", outcome, t),
+                ),
             )
 
         return await run_in_threadpool(run)
@@ -196,44 +208,46 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             conn = deps.connect()
             try:
                 defaults = load_defaults(ctx.defaults_path)
+                t = deps.translator(request, conn)
                 values: dict[str, Any] = {}
                 try:
                     match action:
                         case "apply":
-                            values, errors = parse_settings_form(form, defaults)
+                            values, errors = parse_settings_form(form, defaults, t)
                             if errors:
                                 return settings_page(request, conn, values, errors=errors)
-                            verb = "Saved"
+                            verb = "saved"
                             outcome = settings_history.save(
                                 conn, values, defaults_path=ctx.defaults_path
                             )
                         case "defaults":
-                            verb = "Saved"
+                            verb = "saved"
                             outcome = settings_history.save_defaults(
                                 conn, defaults_path=ctx.defaults_path
                             )
                         case "undo":
                             through = str(form.get("through") or "")
-                            verb = "Undone"
+                            verb = "undone"
                             outcome = settings_history.undo(
                                 conn,
                                 through=int(through) if through.isdigit() else None,
                                 defaults_path=ctx.defaults_path,
                             )
                         case "redo":
-                            verb = "Redone"
+                            verb = "redone"
                             outcome = settings_history.redo(conn, defaults_path=ctx.defaults_path)
                         case _:
                             raise HTTPException(400, "unknown action")
                 except SettingsError as exc:
                     if action == "apply":
                         return settings_page(request, conn, values, error=str(exc))
-                    return _redirect("/settings", err=f"Not done: {exc}")
+                    return _redirect("/settings", err=t("msg.settings.not_done", error=exc))
                 if not outcome.changed:
-                    nothing = {"undo": "Nothing to undo.", "redo": "Nothing to redo."}
-                    return _redirect("/settings", msg=nothing.get(str(action), "Nothing changed."))
+                    nothing = {"undo": "msg.settings.no_undo", "redo": "msg.settings.no_redo"}
+                    key = nothing.get(str(action), "msg.settings.nothing")
+                    return _redirect("/settings", msg=t(key))
                 wake()
-                return _redirect("/settings", msg=outcome_message(verb, outcome))
+                return _redirect("/settings", msg=outcome_message(verb, outcome, t))
             finally:
                 conn.close()
 
@@ -248,10 +262,11 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             conn = deps.connect()
             try:
                 defaults = load_defaults(ctx.defaults_path)
-                values, errors = parse_settings_changes(form, defaults)
+                t = deps.translator(request, conn)
+                values, errors = parse_settings_changes(form, defaults, t)
                 if errors:
                     return JSONResponse(
-                        {"ok": False, "errors": errors, "error": "Not saved: check the field."}
+                        {"ok": False, "errors": errors, "error": t("msg.settings.check_field")}
                     )
                 try:
                     outcome = settings_history.save(conn, values, defaults_path=ctx.defaults_path)
@@ -262,9 +277,12 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                         {
                             "ok": False,
                             "errors": {k: message for k in blamed},
-                            "error": f"Not saved: {message}",
+                            "error": t("msg.settings.not_saved", error=message),
                         }
                     )
+                # A new language or theme: the page shows it once it loads again. The texts
+                # below are already in the language as saved.
+                t = deps.translator(request, conn)
                 if outcome.changed:
                     wake()
                 # The values as stored (lists lower-cased, numbers tidied), for the page to show.
@@ -277,15 +295,18 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                     }
                     for key in values
                 }
-                history = history_context(conn)
-                history_html = templates.get_template("_settings_history.html").render(**history)
+                history = history_context(conn, t)
+                history_html = templates.get_template("_settings_history.html").render(
+                    **presentation.texts(request, outcome.settings), **history
+                )
                 return JSONResponse(
                     {
                         "ok": True,
                         "changed": outcome.changed,
-                        "message": outcome_message("Saved", outcome)
+                        "reload": any(k.startswith("display.") for k in values) and outcome.changed,
+                        "message": outcome_message("saved", outcome, t)
                         if outcome.changed
-                        else "Nothing changed.",
+                        else t("msg.settings.nothing"),
                         "fields": fields,
                         "history_html": history_html,
                         "can_undo": history["can_undo"],

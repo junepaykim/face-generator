@@ -88,3 +88,31 @@ def test_a_taken_port_is_a_clear_error(config_file: Path) -> None:
         server = ServerThread(rt.app, "127.0.0.1", port)
         with pytest.raises(ServerStartError, match=f"could not listen on 127.0.0.1:{port}"):
             server.start(timeout=10)
+
+
+def test_an_open_page_does_not_hold_the_server_when_it_stops(config_file: Path) -> None:
+    """Phase 12d: a page's live event stream never ends by itself. Stopping the server ends it
+    first (web.app.close_streams), so Quit does not wait for the window's stream."""
+    import http.client
+    import time
+
+    settings = load_settings(defaults_path=config_file)
+    rt = build_runtime(settings, NoSource, fake_gpu(), worker=False, watch=False, browse=None)
+    port = free_port()
+    server = ServerThread(rt.app, "127.0.0.1", port)
+    server.start()
+    page = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+    try:
+        page.request("GET", "/events", headers={"Accept": "text/event-stream"})
+        response = page.getresponse()
+        assert response.status == 200
+        assert response.getheader("content-type", "").startswith("text/event-stream")
+        assert response.readline().startswith(b"retry: ")  # the stream is open
+        started = time.monotonic()
+        server.stop()
+        # Well inside GRACEFUL_SHUTDOWN_SECONDS (2 s), uvicorn's own fallback, and far from
+        # SERVER_STOP_SECONDS: the stream noticed the server stopping.
+        assert time.monotonic() - started < 1.5
+        assert not server.running
+    finally:
+        page.close()

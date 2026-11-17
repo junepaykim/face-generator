@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
+from facegen.core.estimate import Drawn
 from facegen.core.traits import CharacterSheet, personality_from_json, personality_leans
 from facegen.datasource import photos
 from facegen.pipeline.manual import restorable
@@ -404,6 +405,64 @@ def queue(conn: sqlite3.Connection, career_id: int, limit: int = 15) -> list[dic
             (career_id, limit),
         )
     ]
+
+
+TIMING_PICTURES = 400
+"""The latest pictures the estimate reads (core.estimate keeps 30 per group of them)."""
+
+
+def drawn_times(conn: sqlite3.Connection, limit: int = TIMING_PICTURES) -> list[Drawn]:
+    """The latest pictures of every career with their drawing times: how fast this PC draws
+    does not depend on the career."""
+    out = []
+    for group, at, render in conn.execute(
+        "SELECT group_name, created_at, render FROM images ORDER BY id DESC LIMIT ?", (limit,)
+    ):
+        try:
+            seconds = json.loads(render).get("seconds") if render else None
+        except (ValueError, AttributeError):
+            seconds = None
+        out.append(Drawn(group, at, float(seconds) if seconds is not None else None))
+    return out
+
+
+def queued_by_group(conn: sqlite3.Connection, career_id: int) -> dict[str, tuple[int, int]]:
+    """Group -> (queued jobs, of them requested by hand)."""
+    return {
+        group: (n, manual or 0)
+        for group, n, manual in conn.execute(
+            "SELECT group_name, COUNT(*), SUM(manual) FROM jobs"
+            " WHERE career_id = ? AND status = 'queued' GROUP BY group_name",
+            (career_id,),
+        )
+    }
+
+
+def recent_pictures(
+    conn: sqlite3.Connection, career_id: int, limit: int = 8
+) -> list[dict[str, Any]]:
+    """The latest pictures that passed their checks, newest first."""
+    return [
+        dict(r)
+        for r in conn.execute(
+            "SELECT i.id, i.unique_id, i.group_name, i.reason, i.created_at, i.is_current, p.name"
+            " FROM images i JOIN players p"
+            " ON p.career_id = i.career_id AND p.unique_id = i.unique_id"
+            " WHERE i.career_id = ? AND i.master_path IS NOT NULL"
+            " AND i.master_path NOT LIKE '%-rejected.png'"
+            " ORDER BY i.id DESC LIMIT ?",
+            (career_id, limit),
+        )
+    ]
+
+
+def current_picture_id(conn: sqlite3.Connection, career_id: int, unique_id: int) -> int | None:
+    row = conn.execute(
+        "SELECT id FROM images WHERE career_id = ? AND unique_id = ? AND is_current = 1"
+        " AND master_path IS NOT NULL",
+        (career_id, unique_id),
+    ).fetchone()
+    return row[0] if row else None
 
 
 def careers(conn: sqlite3.Connection) -> list[dict[str, Any]]:

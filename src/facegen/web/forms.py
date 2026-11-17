@@ -4,159 +4,102 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from fastapi import Request
 from starlette.datastructures import FormData
 
-from facegen.core.age import WORDINGS
-from facegen.core.settings_values import DETAIL_SIZES
-from facegen.persistence.settings import is_fixed
+from facegen.core.settings_values import DETAIL_SIZES, LANGUAGE_CHOICES, THEME_CHOICES
+from facegen.i18n import ENGLISH, Translator
+from facegen.persistence.settings import SKIP_WORDING, is_age_wording, is_fixed
+from facegen.web.messages import band_name
 
-SECTION_NOTES = {
-    "groups": "Thresholds re-classify the stored save at once. Sizes, candidates and the "
-    "detail pass size apply to pictures drawn from now on: pictures already drawn are not "
-    "drawn again.",
-    "eligibility": "Applies at the next sync: these decide, when a save is read, who is in "
-    "men's football, at my club and in a continental competition.",
-    "newgen": "Used only when a new career is first synced.",
-    "staff": "Re-classifies at once. Staff are drawn at group A quality in club wear for their "
-    "job (suits for the board, training wear for coaches, lab coats for doctors) in the "
-    "club's colours; turning this off cancels their queued pictures and keeps the drawn ones.",
-    "youth": "Re-classifies at once. My club's teams other than the first team are the "
-    "reserves, under-23s and under-18s. A player moved to the first team rises to group A and "
-    "is re-drawn at A quality.",
-    "media": "Re-classifies at once. Journalists and press officers are read from the save at "
-    "each sync and drawn once, as women, at group B quality; one pinned to A on their page is "
-    "drawn at A quality and tracked. Turning this off cancels their queued pictures and keeps "
-    "the drawn ones.",
-    "no_photo": "Re-classifies at once. Without a photo means FM27 ships none for them and no "
-    "facepack in the graphics folder maps them; facegen's own pictures do not count. Both are "
-    "read again at each sync. The group thresholds apply as for newgens, the academy rules do "
-    "not. Turning this off cancels their queued pictures and keeps the drawn ones.",
-    "age": "Re-classifies at once. Tracked players whose age wording changes are queued for a "
-    "re-draw.",
-    "reference": "Applies to re-draws from now on.",
-    "my_club": "Applies to pictures drawn from now on.",
-    "body": "Applies to character sheets sampled from now on; stored sheets keep their class.",
-    "personality": "Applies to character sheets sampled from now on (a first picture or New "
-    "face); stored sheets keep their expression.",
-    "schedule": "The worker and the save watcher use it at once.",
-    "render": "Applies from the next picture; pictures already drawn are not drawn again. "
-    "Auto-configure for my GPU (above) sets it with the candidates and the detail pass size.",
-}
-# The thresholds first: they are what the page is mostly for (spec section 7).
+# The thresholds first: they are what the page is mostly for (spec section 7). Each section's
+# title is the catalog's "settings.title.<section>", its note "settings.note.<top section>"
+# (most sections have none: Phase 12 keeps the page short), its ⓘ tip "settings.tip.<top>".
 SECTION_ORDER = (
-    "groups", "staff", "youth", "media", "no_photo", "age", "schedule", "eligibility",
-    "my_club", "body", "personality", "reference", "render", "newgen",
+    "groups", "staff", "youth", "media", "no_photo", "age", "schedule", "display",
+    "eligibility", "my_club", "body", "personality", "reference", "render", "newgen",
 )  # fmt: skip
-SECTION_TITLES = {
-    "groups.a": "Group A",
-    "groups.b": "Group B",
-    "groups.c": "Group C",
-    "staff": "Staff at my club",
-    "youth": "My club's youth teams",
-    "media": "Journalists and press officers",
-    "no_photo": "Pre-existing players without a photo",
-    "eligibility": "Who counts",
-    "newgen": "Newgens",
-    "age.a_my_club": "Age wordings: group A at my club",
-    "age.a_other_club": "Age wordings: group A elsewhere",
-    "age.b": "Age wordings: group B",
-    "age.c": "Age wordings: group C",
-    "age.staff": "Age wordings: staff at my club",
-    "age.media": "Age wordings: journalists and press officers",
-    "reference": "Reference picture",
-    "my_club": "Players at my club",
-    "body": "Height and build",
-    "personality": "Personality",
-    "schedule": "Worker",
-    "render": "Rendering",
+LABELLED_IN_FULL = frozenset(
+    {
+        "groups.b.league_ca_above",
+        "groups.b.league_pa_above",
+        "groups.b.any_ca_above",
+        "groups.b.any_pa_above",
+        "groups.c.league_ca_above",
+        "groups.c.league_pa_above",
+        "staff.enabled",
+        "no_photo.enabled",
+        "youth.enabled",
+        "media.journalists",
+        "media.press_officers",
+        "reference.enabled",
+        "display.language",
+        "display.theme",
+    }
+)
+"""Keys labelled by the whole key ("settings.label_in.<key>"); the others by their last part
+("settings.label.<name>"), as the same name means the same in every section."""
+
+CHOICES: dict[str, tuple[str, ...]] = {
+    "detail_size": tuple(DETAIL_SIZES),
+    "language": LANGUAGE_CHOICES,
+    "theme": THEME_CHOICES,
 }
-LABELS = {
-    "ca_above": "CA above",
-    "pa_above": "PA above",
-    "published_long_edge": "Published height (px; pictures are 3:4)",
-    "candidates": "Candidates per picture",
-    "detail_size": "Detail pass size (width x height)",
-    "vae_tiling": "Decode in tiles to save graphics memory (VAE tiling)",
-    "my_academy": "Academy newgens stay in B and tracked after they leave",
-    "league_ca_above": "In my league or a continental competition: CA above",
-    "league_pa_above": "In my league or a continental competition: PA above",
-    "any_ca_above": "Anywhere: CA above",
-    "any_pa_above": "Anywhere: PA above",
-    "mens_football_only": "Men's football only",
-    "continental_competition_ids": "Continental competition IDs (editor database IDs)",
-    "loaned_out_at_my_club": "Players I loaned out count as at my club",
-    "fallback_min_unique_id": "Fallback newgen boundary (unique ID)",
-    "enabled": "Use the existing picture as a reference on re-draws",
-    "scale": "Reference strength (0 to 1)",
-    "other_clubs": "Also for players outside my club",
-    "banned_traits": "Banned traits (comma-separated)",
-    "soften_skin": "Draw tan and dark skin lighter by (steps, 0 to 2)",
-    "round_eyes": "Share of sharp eyes drawn round (0 to 1)",
-    "short_below_cm": "Petite below (cm)",
-    "tall_from_cm": "Tall from (cm)",
-    "slim_strength_at_most": "Skinny at Strength at most",
-    "muscular_strength_from": "Muscular from Strength",
-    "weight": "Expression weight of each notable personality attribute (0 is off)",
-    "poll_seconds": "Check the saves folder every (seconds)",
-    "generate_while_fm_running": "Generate while FM27 is running",
-    "auto_groups": "Groups drawn without a request (comma-separated)",
+"""Text settings with a fixed set of values, by the key's last part, shown as a drop-down list;
+each value's label is the catalog's "settings.choice.<name>.<value>"."""
+
+GROUP_LIST_KEYS = frozenset({"schedule.auto_groups"})
+"""Lists of picture groups, shown as one tick box per group."""
+
+BAND_TAGS = {
+    "W01": "child",
+    "W02": "young girl",
+    "W03": "youthful face",
+    "W04": "young teenage girl, round face",
+    "W05": "young teenage girl",
+    "W06": "teenage girl",
+    "W07": "young adult woman",
+    "W08": "young woman, adult",
+    "W09": "adult woman, mature face",
+    "W10": "mature female",
 }
-LABELS_IN = {
-    "groups.c.league_ca_above": "In my league: CA above",
-    "groups.c.league_pa_above": "In my league: PA above",
-    "staff.enabled": "Draw my club's staff (coaches, physios, scouts, the board and you)",
-    "no_photo.enabled": "Pick them by the newgen thresholds for groups A, B and C",
-    "youth.enabled": "Draw my club's reserve, under-23 and under-18 players at group B "
-    "(group A once they reach A's CA or PA, or join the first team)",
-    "media.journalists": "Draw journalists from my club's country",
-    "media.press_officers": "Draw my club's press officers",
-}
+"""One or two words of each age wording's prompt, shown after its name (core.age.WORDINGS)."""
+ADULT_WORDED_TABLES = frozenset({"age.staff", "age.media"})
+"""Staff and media prompts use adult professional wording in every band (decisions.md,
+2026-11-14), so their tables show the band names without the players' prompt words."""
 
 
-CHOICES: dict[str, tuple[tuple[str, str], ...]] = {
-    "detail_size": tuple(
-        (
-            value,
-            {
-                "1344x1728": "1344 x 1728 (1.5 times the render; best)",
-                "1152x1472": "1152 x 1472 (less graphics memory)",
-                "off": "off (no detail pass)",
-            }[value],
-        )
-        for value in DETAIL_SIZES
-    ),
-}
-"""Text settings with a fixed set of values, by the key's last part: (value, label) each,
-shown as a drop-down list."""
-
-
-def choices_of(key: str) -> tuple[tuple[str, str], ...] | None:
-    return CHOICES.get(key.rpartition(".")[2])
+def choices_of(key: str, t: Translator = ENGLISH) -> tuple[tuple[str, str], ...] | None:
+    name = key.rpartition(".")[2]
+    values = CHOICES.get(name)
+    if values is None:
+        return None
+    return tuple((value, t(f"settings.choice.{name}.{value}")) for value in values)
 
 
 @dataclass(frozen=True, slots=True)
 class Field:
     key: str
     label: str
-    kind: str  # bool, int, float, list, choice, text
+    kind: str  # bool, int, float, list, groups, band, choice, text
     value: Any
     default: Any
     changed: bool
     """Differs from the default."""
     choices: tuple[tuple[str, str], ...] = ()
     """For a choice: (value, label) each."""
+    default_text: str = ""
+    """The default for people to read."""
+    label_key: str = ""
+    """The label's catalog key, for a page to word it with group chips; `label` is plain."""
+    label_values: dict[str, Any] = field(default_factory=dict)
 
     @property
     def text(self) -> str:
         return input_text(self.value)
-
-    @property
-    def default_text(self) -> str:
-        return value_text(self.default)
 
     @property
     def default_input(self) -> str:
@@ -175,16 +118,27 @@ def input_text(value: Any) -> str:
     return str(value)
 
 
-def value_text(value: Any) -> str:
-    """A setting's value for people to read."""
+def value_text(value: Any, t: Translator = ENGLISH, key: str = "") -> str:
+    """A setting's value for people to read; a choice by its label, groups by their names."""
+    if key in GROUP_LIST_KEYS and isinstance(value, list):
+        return ", ".join(t(f"group.{g}") for g in value) or t("settings.value.none")
     if isinstance(value, list):
-        return ", ".join(str(v) for v in value) or "none"
+        return ", ".join(str(v) for v in value) or t("settings.value.none")
     if isinstance(value, bool):
-        return "on" if value else "off"
+        return t("settings.value.on") if value else t("settings.value.off")
+    if is_age_wording(key) and value == SKIP_WORDING:
+        return t("settings.value.skip")
+    name = key.rpartition(".")[2]
+    if name in CHOICES and value in CHOICES[name]:
+        return t(f"settings.choice.{name}.{value}")
     return str(value)
 
 
 def _kind(default: Any, key: str = "") -> str:
+    if is_age_wording(key):
+        return "band"
+    if key in GROUP_LIST_KEYS:
+        return "groups"
     if isinstance(default, bool):
         return "bool"
     if isinstance(default, int):
@@ -196,21 +150,35 @@ def _kind(default: Any, key: str = "") -> str:
     return "list"
 
 
-def _label(key: str) -> str:
-    if key in LABELS_IN:
-        return LABELS_IN[key]
+def label_parts(key: str, t: Translator = ENGLISH) -> tuple[str, dict[str, Any]]:
+    """A setting's label as a catalog key and its values; "" for a key the catalog lacks."""
+    if key in LABELLED_IN_FULL:
+        return f"settings.label_in.{key}", {}
     section, _, name = key.rpartition(".")
+    if section in ADULT_WORDED_TABLES:
+        return "settings.age_label_plain", {"band": band_name(name, t)}
     if section.startswith("age."):
-        return f"{name} from age ({WORDINGS[name].text})"
-    return LABELS.get(name, name.replace("_", " "))
+        return "settings.age_label", {"band": band_name(name, t), "tags": BAND_TAGS[name]}
+    label = f"settings.label.{name}"
+    return (label, {}) if t.has(label) else ("", {})
 
 
-def describe_key(key: str) -> str:
-    """A setting's section and label, short enough for one line: "Group A · CA above"."""
+def _label(key: str, t: Translator = ENGLISH) -> str:
+    label_key, values = label_parts(key, t)
+    return t(label_key, **values) if label_key else key.rpartition(".")[2].replace("_", " ")
+
+
+def section_title(section: str, t: Translator = ENGLISH) -> str:
+    key = f"settings.title.{section}"
+    return t(key) if t.has(key) else section
+
+
+def describe_key(key: str, t: Translator = ENGLISH) -> str:
+    """A setting's section and label, short enough for one line: "Detailed group · CA above"."""
     section, _, name = key.rpartition(".")
     if section.startswith("age."):
-        return f"{SECTION_TITLES.get(section, section)} · {name} from age"
-    return f"{SECTION_TITLES.get(section, section)} · {_label(key)}"
+        return f"{section_title(section, t)} · {band_name(name, t)}"
+    return f"{section_title(section, t)} · {_label(key, t)}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,7 +190,10 @@ class ChangeLine:
 
 
 def change_lines(
-    before: Mapping[str, Any], after: Mapping[str, Any], defaults: Mapping[str, Any]
+    before: Mapping[str, Any],
+    after: Mapping[str, Any],
+    defaults: Mapping[str, Any],
+    t: Translator = ENGLISH,
 ) -> list[ChangeLine]:
     """Each key a history entry touched, with its value before and after.
 
@@ -236,9 +207,9 @@ def change_lines(
         lines.append(
             ChangeLine(
                 key,
-                describe_key(key),
-                value_text(default if old is None else old),
-                value_text(default if new is None else new),
+                describe_key(key, t),
+                value_text(default if old is None else old, t, key),
+                value_text(default if new is None else new, t, key),
             )
         )
     return lines
@@ -249,21 +220,25 @@ def editable_keys(defaults: dict[str, Any]) -> list[str]:
 
 
 def settings_sections(
-    values: dict[str, Any], defaults: dict[str, Any]
+    values: dict[str, Any], defaults: dict[str, Any], t: Translator = ENGLISH
 ) -> list[tuple[str, str, str, list[Field]]]:
     """(section key, title, note, fields) in the order of the defaults file."""
     sections: dict[str, list[Field]] = {}
     for key in editable_keys(defaults):
         section = key.rpartition(".")[0]
+        label_key, label_values = label_parts(key, t)
         sections.setdefault(section, []).append(
             Field(
                 key=key,
-                label=_label(key),
+                label=_label(key, t),
                 kind=_kind(defaults[key], key),
                 value=values[key],
                 default=defaults[key],
                 changed=values[key] != defaults[key],
-                choices=choices_of(key) or (),
+                choices=choices_of(key, t) or (),
+                default_text=value_text(defaults[key], t, key),
+                label_key=label_key,
+                label_values=label_values,
             )
         )
 
@@ -271,38 +246,44 @@ def settings_sections(
         top = section.split(".")[0]
         return SECTION_ORDER.index(top) if top in SECTION_ORDER else len(SECTION_ORDER)
 
+    def note(section: str) -> str:
+        key = f"settings.note.{section.split('.')[0]}"
+        return t(key) if t.has(key) else ""
+
     return [
-        (
-            section,
-            SECTION_TITLES.get(section, section),
-            SECTION_NOTES.get(section.split(".")[0], ""),
-            fields,
-        )
+        (section, section_title(section, t), note(section), fields)
         for section, fields in sorted(sections.items(), key=lambda kv: order(kv[0]))
     ]
 
 
-def _typed(default: Any, text: str) -> Any:
+def _typed(default: Any, text: str, key: str = "") -> Any:
     """Text from a field, typed as the default. ValueError if it does not fit."""
-    kind = _kind(default)
+    kind = _kind(default, key)
+    if kind == "band":  # a whole number, or "-" (or nothing) for a wording left out
+        return SKIP_WORDING if text in ("", SKIP_WORDING) else int(text)
+    if kind == "groups":
+        return [x.lower() for x in re.split(r"[,\s]+", text) if x]
+    if kind in ("choice", "text"):  # a choice's value is checked with the settings
+        return text
     if kind == "int":
         return int(text)
     if kind == "float":
         return float(text)
-    if kind == "text":  # a choice's value is checked with the settings (settings.py)
-        return text
     items = [x for x in re.split(r"[,\s]+", text) if x]
     if default and isinstance(default[0], str):
         return [x.lower() for x in items]
     return [int(x) for x in items]
 
 
-def _error(default: Any) -> str:
-    return "needs whole numbers" if _kind(default) == "list" else "needs a number"
+def _error(default: Any, t: Translator = ENGLISH, key: str = "") -> str:
+    kind = _kind(default, key)
+    if kind == "band":
+        return t("settings.error.band")
+    return t("settings.error.whole_numbers" if kind == "list" else "settings.error.number")
 
 
 def parse_settings_form(
-    form: FormData, defaults: dict[str, Any]
+    form: FormData, defaults: dict[str, Any], t: Translator = ENGLISH
 ) -> tuple[dict[str, Any], dict[str, str]]:
     """Every editable key's posted value, typed as its default; and errors per key.
 
@@ -318,9 +299,9 @@ def parse_settings_form(
             continue
         text = raw.strip() if isinstance(raw, str) else ""
         try:
-            values[key] = _typed(default, text)
+            values[key] = _typed(default, text, key)
         except ValueError:
-            errors[key] = _error(default)
+            errors[key] = _error(default, t, key)
             values[key] = text
     return values, errors
 
@@ -330,7 +311,7 @@ _FALSE = frozenset({"", "off", "false", "0"})
 
 
 def parse_settings_changes(
-    form: FormData, defaults: dict[str, Any]
+    form: FormData, defaults: dict[str, Any], t: Translator = ENGLISH
 ) -> tuple[dict[str, Any], dict[str, str]]:
     """Only the editable keys posted (the page's autosave), typed; and errors per key.
 
@@ -349,12 +330,12 @@ def parse_settings_changes(
             if text.lower() in _TRUE | _FALSE:
                 values[key] = text.lower() in _TRUE
             else:
-                errors[key] = "needs on or off"
+                errors[key] = t("settings.error.on_off")
             continue
         try:
-            values[key] = _typed(default, text)
+            values[key] = _typed(default, text, key)
         except ValueError:
-            errors[key] = _error(default)
+            errors[key] = _error(default, t, key)
     return values, errors
 
 

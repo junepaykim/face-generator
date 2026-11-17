@@ -1,7 +1,7 @@
 """The application log and local timestamps used by its status feeds."""
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -27,3 +27,8 @@ def log_to_file(data_dir: Path) -> Path:
 
 def stamp() -> str:
     return datetime.now().strftime("%H:%M:%S")
+
+
+def utc_now() -> str:
+    """Now in UTC, ISO 8601 to the second: when a worker state began (WorkerStatus.since)."""
+    return datetime.now(UTC).isoformat(timespec="seconds")

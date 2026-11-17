@@ -57,6 +57,8 @@ def test_http_surface_and_slash_redirects(config_file: Path) -> None:
     assert surface == [
         (("GET",), "/", "dashboard", "HTMLResponse"),
         (("GET",), "/status", "status", "HTMLResponse"),
+        (("GET",), "/log", "log", "HTMLResponse"),
+        (("GET",), "/log/part", "log_part", "HTMLResponse"),
         (("POST",), "/worker/{action}", "worker_action", "JSONResponse"),
         (("POST",), "/sync", "sync_now", "JSONResponse"),
         (("POST",), "/setup/folder", "setup_folder", "JSONResponse"),
@@ -74,6 +76,7 @@ def test_http_surface_and_slash_redirects(config_file: Path) -> None:
         (("POST",), "/settings/save", "settings_save", "JSONResponse"),
         (("GET",), "/pictures/{image_id}", "picture", "JSONResponse"),
         (("GET",), "/files", "files", "JSONResponse"),
+        (("GET",), "/events", "events", "JSONResponse"),
     ]
     with TestClient(app, base_url=BASE, follow_redirects=False) as client:
         client.headers["X-CSRF-Token"] = token(client)

@@ -15,11 +15,12 @@ from facegen.core.traits import eyes_drawn_round
 from facegen.datasource import photos
 from facegen.pipeline import manual
 from facegen.pipeline.manual import ManualError
-from facegen.pipeline.publish import RELOAD_HINT, PublishError
+from facegen.pipeline.publish import PublishError
 from facegen.pipeline.worker import load_career
 from facegen.web import queries
 from facegen.web.dependencies import AppDependencies, need_career
 from facegen.web.forms import form_of
+from facegen.web.messages import manual_summary
 from facegen.web.presentation import Presentation, uses_reference
 from facegen.web.queries import PlayerFilter
 from facegen.web.responses import _redirect, _safe_next
@@ -71,33 +72,38 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
     async def players_action(request: Request) -> Response:
         form = await form_of(request)
         back = _safe_next(str(form.get("next") or ""), "/players")
+        t = await run_in_threadpool(deps.translator, request)
         try:
             uids = [int(x) for x in form.getlist("uid")]
         except ValueError:
-            return _redirect(back, err="Bad player ID.")
+            return _redirect(back, err=t("msg.player.bad_id"))
         if not uids:
-            return _redirect(back, err="Tick at least one player first.")
+            return _redirect(back, err=t("msg.player.tick_first"))
         action = form.get("action")
 
         def run() -> str:
             conn = deps.connect()
             try:
-                career = need_career(conn)
+                career = need_career(conn, t)
                 settings = settings_now(conn)
                 if action == "generate":
                     group = str(form.get("group") or manual.DEFAULT_GROUP)
                     r = manual.generate(conn, career.id, uids, settings, group)
-                    return f"Generate as group {group.upper()}: {r.summary()}."
+                    return t(
+                        "msg.bulk.generate", group=t(f"group.{group}"), summary=manual_summary(r, t)
+                    )
                 if action == "new-picture":
                     r = manual.new_pictures(conn, career.id, uids, settings)
-                    return f"New picture, same character sheet: {r.summary()}."
+                    return t("msg.bulk.new_picture", summary=manual_summary(r, t))
                 if action == "pin":
                     pin = str(form.get("pin") or "")
                     r = manual.set_pin(conn, career.id, uids, pin or None, settings)
                     if pin in ("a", "b", "c"):
-                        return f"Pin to {pin.upper()} (a hand-pick, as Generate): {r.summary()}."
-                    what = "pinned to never" if pin == "never" else "unpinned"
-                    return f"{len(r.pinned)} player(s) {what}."
+                        return t(
+                            "msg.bulk.pin", group=t(f"group.{pin}"), summary=manual_summary(r, t)
+                        )
+                    what = "msg.bulk.pinned_never" if pin == "never" else "msg.bulk.unpinned"
+                    return t(what, count=len(r.pinned))
                 raise ManualError(f"unknown action {action!r}")
             finally:
                 conn.close()
@@ -111,10 +117,11 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
 
     @router.get("/players/{uid}", response_class=HTMLResponse)
     def player(uid: int, request: Request, conn: sqlite3.Connection = Conn) -> Response:
-        career = need_career(conn)
+        t = deps.translator(request, conn)
+        career = need_career(conn, t)
         detail = queries.player_detail(conn, career.id, uid, data_dir)
         if detail is None:
-            raise HTTPException(404, f"No player {uid} in this career.")
+            raise HTTPException(404, t("msg.player.none", uid=uid))
         settings = settings_now(conn)
         p = detail["player"]
         group_for_redraw = p["group_name"] or (
@@ -145,11 +152,12 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
     async def player_action(uid: int, action: str, request: Request) -> Response:
         form = await form_of(request)
         back = f"/players/{uid}"
+        t = await run_in_threadpool(deps.translator, request)
 
         def run() -> str:
             conn = deps.connect()
             try:
-                career = need_career(conn)
+                career = need_career(conn, t)
                 settings = settings_now(conn)
                 match action:
                     case "generate":
@@ -158,56 +166,52 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                         if r.skipped:
                             raise ManualError(r.skipped[0][1])
                         if r.pinned:
-                            return f"Pinned to {group.upper()}; the picture is already good enough."
-                        return f"Queued as group {group.upper()}."
+                            return t("msg.player.pinned_good", group=t(f"group.{group}"))
+                        return t("msg.player.queued_as", group=t(f"group.{group}"))
                     case "new-face":
                         manual.new_face(conn, career.id, uid, settings)
-                        return "New face queued: a new character sheet, drawn next."
+                        return t("msg.player.new_face")
                     case "new-picture":
                         manual.new_picture(conn, career.id, uid, settings)
-                        return "New picture queued with the same character sheet."
+                        return t("msg.player.new_picture")
                     case "pin":
                         pin = str(form.get("pin") or "")
                         r = manual.set_pin(conn, career.id, [uid], pin or None, settings)
                         if r.skipped:
                             raise ManualError(r.skipped[0][1])
                         if r.queued:
-                            return f"Pinned to {pin.upper()} and queued as a request."
+                            return t("msg.player.pinned_queued", group=t(f"group.{pin}"))
                         if pin in ("a", "b", "c"):
-                            return f"Pinned to {pin.upper()}; the picture is already good enough."
+                            return t("msg.player.pinned_good", group=t(f"group.{pin}"))
                         if pin == "never":
-                            return "Pinned to never; queued jobs cancelled."
-                        return "Pin cleared; the rules decide."
+                            return t("msg.player.pinned_never")
+                        return t("msg.player.pin_cleared")
                     case "remove":
                         removed = manual.remove_picture(conn, career.id, career.key, uid, settings)
                         return (
-                            "Picture removed and pinned to never. " + RELOAD_HINT
+                            t("msg.player.removed", reload=t("msg.reload_hint"))
                             if removed
-                            else "Pinned to never; there was no published picture."
+                            else t("msg.player.nothing_published")
                         )
                     case "retry":
                         manual.retry(conn, career.id, uid, settings)
-                        return "Queued again with new seeds."
+                        return t("msg.player.retry")
                     case "restore":
                         try:
                             image_id = int(str(form.get("image_id") or ""))
                         except ValueError:
-                            raise ManualError("Bad picture ID.") from None
+                            raise ManualError(t("msg.player.bad_picture")) from None
                         r = manual.restore_picture(
                             conn, career.id, career.key, uid, image_id, settings
                         )
-                        where = (
-                            RELOAD_HINT
-                            if r.publish.active
-                            else "Not shown in FM27: another career's save is newer."
+                        where = t(
+                            "msg.reload_hint" if r.publish.active else "msg.player.other_career"
                         )
-                        note = (
-                            " Still pinned to never: it is not updated." if r.pinned_never else ""
-                        )
-                        return f"v{r.version} is the current picture again.{note} {where}"
+                        note = t("msg.player.still_never") if r.pinned_never else ""
+                        return t("msg.player.restored", version=r.version, note=note, where=where)
                     case "cancel":
                         done = manual.cancel(conn, career.id, uid, settings)
-                        return "Request cancelled." if done else "Nothing to cancel."
+                        return t("msg.player.cancelled" if done else "msg.player.nothing_to_cancel")
                 raise ManualError(f"unknown action {action!r}")
             finally:
                 conn.close()
@@ -218,7 +222,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             target = _safe_next(str(form.get("next") or ""), back)
             return _redirect(target, err=getattr(exc, "detail", None) or str(exc))
         except PublishError as exc:
-            return _redirect(back, err=f"Publishing failed: {exc}")
+            return _redirect(back, err=t("msg.player.publish_failed", error=exc))
         wake()
         return _redirect(_safe_next(str(form.get("next") or ""), back), msg=message)
 

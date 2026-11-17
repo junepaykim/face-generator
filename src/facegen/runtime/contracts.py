@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from facegen.core.job_records import Job
 
@@ -41,6 +41,22 @@ class WorkerStatus:
     failed: int
     last_error: str | None
     log: tuple[str, ...]
+    reason: str = ""
+    """Why the worker is in this state, as a code the pages word in their language
+    ("fm_running", "drawing", "queue_empty"...; WORKER_REASONS); empty when unknown. `detail`
+    keeps the English line for the log and the tray."""
+    values: dict[str, Any] = field(default_factory=dict)
+    """The reason's values: counts, a name, a job kind, an error text."""
+    since: str | None = None
+    """When this state and reason began (UTC, ISO 8601): for a job, when it started."""
+
+
+WORKER_REASONS = (
+    "starting", "no_career", "queue_empty", "held", "paused", "paused_error", "models_missing",
+    "fm_running", "fm_unknown", "other_worker", "drawing", "next_job", "job_error", "retrying",
+    "crashed", "gpu_fault", "gpu_fault_child", "restarting", "gave_up", "stopped",
+)  # fmt: skip
+"""Every WorkerStatus.reason: a page words each one (message catalog "worker.reason.<code>")."""
 
 
 class Link(Protocol):

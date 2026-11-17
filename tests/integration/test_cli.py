@@ -295,6 +295,7 @@ def test_serve_starts_the_ui_and_the_worker_and_stops_cleanly(env: dict[str, Pat
         seen.update(host=host, port=port)
         with TestClient(app, base_url=f"http://{host}:{port}") as client:
             seen["page"] = client.get("/").text
+            seen["settings"] = client.get("/settings").text  # About this run (Phase 12)
 
     out = io.StringIO()
     gpu = Gpu(renderer=FakeRenderer, tagger=FakeTagger, fm_check=lambda: True)
@@ -308,7 +309,7 @@ def test_serve_starts_the_ui_and_the_worker_and_stops_cleanly(env: dict[str, Pat
     assert code == 0
     assert (seen["host"], seen["port"]) == ("127.0.0.1", 8799)
     assert "Old Hand" in str(seen["page"])
-    assert "watching saves" in str(seen["page"])
+    assert "watching the saves folder" in str(seen["settings"])
     assert "http://127.0.0.1:8799/" in out.getvalue()
     assert f"Watching {env['games']}" in out.getvalue()
     assert "Stopping the worker" in out.getvalue()
@@ -321,7 +322,7 @@ def test_serve_without_the_save_watcher(env: dict[str, Path]) -> None:
 
     def fake_server(app, host: str, port: int) -> None:  # type: ignore[no-untyped-def]
         with TestClient(app, base_url=f"http://{host}:{port}") as client:
-            seen["page"] = client.get("/").text
+            seen["page"] = client.get("/settings").text  # About this run (Phase 12)
 
     out = io.StringIO()
     code = main(
@@ -331,7 +332,7 @@ def test_serve_without_the_save_watcher(env: dict[str, Path]) -> None:
         run_server=fake_server,
     )
     assert code == 0 and "Watching" not in out.getvalue()
-    assert "Not watching the saves folder" in seen["page"]
+    assert "off (<code>--no-watch</code>)" in seen["page"]
 
 
 def test_sync_records_that_the_command_started_it(env: dict[str, Path]) -> None:

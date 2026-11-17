@@ -6,6 +6,7 @@ import re
 import sqlite3
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
+from html import unescape
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +22,6 @@ from facegen.persistence import db
 from facegen.persistence.settings import Settings, is_fixed, load_defaults, load_settings
 from facegen.pipeline.sync import run_sync
 from facegen.pipeline.worker import JobFilter, Worker, load_career
-from facegen.platform import native
 from facegen.service import SyncService, WorkerService
 from facegen.web.app import AppContext, create_app
 
@@ -148,15 +148,18 @@ def test_the_status_block_names_the_career_so_the_page_reloads_after_the_first_s
 
 def test_dashboard(env: Env) -> None:
     text = env.client.get("/").text
-    assert "Group A" in text and "Mine Player" in text  # in the queue
+    assert re.search(r'<span class="grp grp-a" data-tip="[^"]+">Detailed</span>', text)
+    assert "Mine Player" in text  # queued
     assert 'data-refresh="/status"' in text
     status = env.client.get("/status").text
-    assert "<html" not in status and "Worker" in status
-    assert "Rust code " + ("in use" if native.ext is not None else "not in use") in status
+    assert "<html" not in status and 'id="now"' in status
+    # The Rust code is part of every install now: no row about it (user, 2026-11-17).
+    assert "Rust code" not in env.client.get("/settings").text
     env.drain()
     text = env.client.get("/status").text
     # Group A, then group B: both drawn without a request since Phase 4.
-    assert "2 drawn" in text and "Mine Player" in text
+    assert "Mine Player" in text and "Latest pictures" in text
+    assert "2 made, 0 sent to review" in env.client.get("/settings").text
 
 
 def test_players_list_filters(env: Env) -> None:
@@ -193,7 +196,7 @@ def test_find_tick_and_generate_a_pre_existing_player(env: Env) -> None:
         data={"uid": [str(STAR)], "action": "generate", "group": "b", "next": "/players?q=famous"},
     )
     assert r.headers["location"].startswith("/players?q=famous&msg=")
-    assert "Generate as group B: 1 queued" in follow(env, r)
+    assert "Generate in the Standard group: 1 queued" in follow(env, r)
     env.worker.step()  # manual requests first
     image_id = env.one(
         "SELECT id FROM images WHERE unique_id = ? AND is_current = 1 AND published_path NOTNULL",
@@ -201,8 +204,8 @@ def test_find_tick_and_generate_a_pre_existing_player(env: Env) -> None:
     )
     assert image_id is not None
     page = env.client.get(f"/players/{STAR}").text
-    assert "pinned to b" in page and f"/pictures/{image_id}?size=384" in page
-    assert "published" in page
+    assert "pinned: Standard" in page and f"/pictures/{image_id}?size=384" in page
+    assert "in FM27" in page
     thumb = env.client.get(f"/pictures/{image_id}?size=96")
     assert thumb.status_code == 200 and thumb.headers["content-type"] == "image/webp"
     assert env.client.get(f"/pictures/{image_id}").headers["content-type"] == "image/png"
@@ -222,7 +225,7 @@ def test_bulk_pin(env: Env) -> None:
     r = env.client.post(
         "/players/action", data={"uid": [str(STAR), str(B_NEWGEN)], "action": "pin", "pin": "c"}
     )
-    assert "Pin to C (a hand-pick, as Generate): 2 queued" in follow(env, r)
+    assert "Pin to Light: 2 queued" in follow(env, r)
     assert env.one("SELECT COUNT(*) FROM players WHERE pin = 'c'") == 2
     assert env.one("SELECT COUNT(*) FROM jobs WHERE status = 'queued' AND manual = 1") == 2
     r = env.client.post(
@@ -247,7 +250,7 @@ def test_player_page_actions(env: Env) -> None:
     assert "Request cancelled" in text
 
     text = follow(env, env.client.post(f"/players/{STAR}/pin", data={"pin": "a"}))
-    assert "Pinned to A and queued as a request" in text
+    assert "Pinned to Detailed and queued" in text
     text = follow(env, env.client.post(f"/players/{STAR}/pin", data={"pin": ""}))
     assert "Pin cleared" in text
 
@@ -260,10 +263,10 @@ def test_player_page_actions(env: Env) -> None:
 def test_player_page_shows_personality_and_what_it_weights(env: Env) -> None:
     text = env.client.get(f"/players/{STAR}").text
     assert "Pressure 17" in text and "Temperament 4" in text
-    assert "high pressure favours confident." in text
-    assert "temperament favours" not in text  # low temperament weights nothing
+    assert "high pressure → confident" in unescape(text)
+    assert "temperament →" not in unescape(text)  # low temperament weights nothing
     mine = env.client.get(f"/players/{MINE}").text
-    assert "unknown (read at the next sync)" in mine and "Personality weights" not in mine
+    assert "unknown until the next sync" in mine and "Personality favours" not in mine
     env.drain()  # MINE gets a sheet; at my club the page states the round-eye share
     assert "20% of sharp eyes are drawn round" in env.client.get(f"/players/{MINE}").text
 
@@ -323,7 +326,7 @@ def test_review_page_and_retry(env: Env) -> None:
     assert '<span class="count">1</span>' in env.client.get("/").text
     r = env.client.post(f"/players/{B_NEWGEN}/retry", data={"next": "/review"})
     assert r.headers["location"].startswith("/review?msg=")
-    assert "Nothing to review" in follow(env, r)
+    assert "No players to review right now." in follow(env, r)
 
 
 def _settings_form(env: Env, **changes: Any) -> dict[str, Any]:
@@ -367,12 +370,17 @@ def test_settings_are_saved_as_they_change(env: Env) -> None:
 
     data = autosave(env, **{"groups.a.ca_above": "85"})
     assert data["ok"] and data["changed"]
-    assert data["message"].startswith("Saved: Group A · CA above 155 → 85.")
+    assert data["message"].startswith("Saved: Detailed group · CA above 155 → 85.")
     # Rival Kid's queued B job becomes an A job, and Abroad Kid (CA 120) is queued at A.
-    assert data["message"].endswith("A 1 → 3, B 1 → 0, tracked 1 → 3; queue: 1 queued, 1 updated.")
+    assert data["message"].endswith(
+        "Detailed 1 → 3, Standard 1 → 0, auto-update 1 → 3; queue: 1 queued, 1 updated."
+    )
     assert data["fields"] == {"groups.a.ca_above": {"value": 85, "text": "85", "changed": True}}
     assert data["can_undo"] and not data["can_redo"]
-    assert "Group A · CA above" in data["history_html"] and 'name="through"' in data["history_html"]
+    assert (
+        "Detailed group · CA above" in data["history_html"]
+        and 'name="through"' in data["history_html"]
+    )
     assert 'name="csrf_token"' in data["history_html"]
     assert env.one("SELECT group_name FROM players WHERE unique_id = ?", B_NEWGEN) == "a"
     assert env.one("SELECT group_name FROM jobs WHERE unique_id = ?", B_NEWGEN) == "a"
@@ -420,16 +428,16 @@ def test_undo_redo_and_undo_back_several_steps(env: Env) -> None:
     assert env.one("SELECT group_name FROM players WHERE unique_id = ?", ABROAD_KID) == "b"
 
     text = follow(env, env.client.post("/settings", data={"action": "undo"}))
-    assert "Undone: Group B · Anywhere: CA above 110 → 140." in text
+    assert "Undone: Standard group · CA above 110 → 140." in text
     assert env.one("SELECT group_name FROM players WHERE unique_id = ?", ABROAD_KID) is None
     text = follow(env, env.client.post("/settings", data={"action": "redo"}))
-    assert "Redone: Group B · Anywhere: CA above 140 → 110." in text
+    assert "Redone: Standard group · CA above 140 → 110." in text
     assert env.one("SELECT group_name FROM players WHERE unique_id = ?", ABROAD_KID) == "b"
 
     first = env.one("SELECT MIN(id) FROM settings_history")
     text = follow(env, env.client.post("/settings", data={"action": "undo", "through": first}))
-    assert "Group A · CA above 150 → 155" in text
-    assert "Group B · Anywhere: CA above 110 → 140" in text
+    assert "Detailed group · CA above 150 → 155" in text
+    assert "Standard group · CA above 110 → 140" in text
     assert env.one("SELECT COUNT(*) FROM settings") == 0
     assert env.one("SELECT group_name FROM players WHERE unique_id = ?", B_NEWGEN) == "b"
     assert "Nothing to undo." in follow(env, env.client.post("/settings", data={"action": "undo"}))
@@ -438,7 +446,7 @@ def test_undo_redo_and_undo_back_several_steps(env: Env) -> None:
 def test_reset_all_and_the_save_button_without_javascript(env: Env) -> None:
     form = _settings_form(env, **{"groups.a.ca_above": 85})
     text = follow(env, env.client.post("/settings", data={**form, "action": "apply"}))
-    assert "Saved: Group A · CA above 155 → 85." in text
+    assert "Saved: Detailed group · CA above 155 → 85." in text
     assert "Nothing changed" in follow(
         env, env.client.post("/settings", data={**form, "action": "apply"})
     )
@@ -474,7 +482,7 @@ def test_my_clubs_staff_on_the_players_pages(env: Env) -> None:
     assert '<span class="tag">coach</span>' in page
     assert "Coach Rowe" not in env.client.get("/players?role=players").text
     detail = env.client.get(f"/players/{NEWGEN + 100}").text
-    assert "on my club&#39;s staff (coach), dressed for their job" in detail
+    assert "on my club's staff (coach)" in unescape(detail)
     assert "1 staff" in env.client.get("/status").text
 
 
@@ -501,12 +509,12 @@ def test_youth_and_media_on_the_players_pages(env: Env) -> None:
     assert '<span class="tag">journalist</span>' in media
     assert "Journalist 2002097912" not in env.client.get("/players?role=players").text
     detail = env.client.get("/players/2002097912").text
-    assert "journalist from my club&#39;s country, dressed for their work" in detail
+    assert "journalist from my club's country" in unescape(detail)
     assert "a man in the save, drawn as a woman" in detail
-    assert "Pin a regular at my club to A" in detail
+    assert "Pin a regular at my club to" in detail
     coach = env.client.get(f"/players/{NEWGEN + 100}").text
     assert "a man in the save, drawn as a woman" in coach
-    assert "Pin a regular at my club to A" not in coach
+    assert "Pin a regular at my club to" not in coach
     status = env.client.get("/status").text
     assert "1 in my youth teams" in status and "1 journalists and press officers" in status
 
@@ -539,11 +547,12 @@ def test_photos_on_the_players_pages_and_the_dashboard(env: Env) -> None:
     detail = env.client.get(f"/players/{STAR}").text
     assert "none: FM27 shows a silhouette" in detail
     assert "no photo, CA 185 &gt; 155" in detail
-    assert "FM27 ships one" in env.client.get(f"/players/{MINE}").text
+    assert re.search(r"Photo</th><td>\s*FM27's\s*</td>", env.client.get(f"/players/{MINE}").text)
 
     status = env.client.get("/status").text
-    assert "FM27 ships 1 photos" in status
     assert "1 of them in a group" in status
+    # FM27's photo list itself is in Settings' About this run (Phase 12 feedback).
+    assert "FM27's photo list</th><td>1 photos" in unescape(env.client.get("/settings").text)
 
 
 def test_the_no_photo_setting_is_on_the_settings_page(env: Env) -> None:
@@ -681,7 +690,8 @@ def test_dashboard_reports_an_unsupported_build(env: Env) -> None:
     text = env.client.get("/status").text
     assert "The newest save cannot be read" in text
     assert "FM27 build <strong>27.2.0+999</strong>" in text
-    assert "bump the pin" in text and "the save watcher" in text
+    assert "bump the pin" in text
+    assert "Started by</th><td>the save watcher" in env.client.get("/log").text
 
 
 def test_dashboard_names_the_career_fm27_is_shown(env: Env) -> None:

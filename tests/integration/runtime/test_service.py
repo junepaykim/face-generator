@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 import time
 from collections.abc import Iterator
@@ -12,6 +13,7 @@ from pathlib import Path
 import pytest
 from factories import ABROAD, NEWGEN, RIVAL, player, snapshot
 from fakes import FakeRenderer, FakeTagger
+from support.paths import ROOT
 
 from facegen.core.records import Snapshot
 from facegen.datasource.kits import load_kits
@@ -21,6 +23,7 @@ from facegen.persistence.settings import Settings, load_settings, set_overrides
 from facegen.pipeline import manual
 from facegen.pipeline.sync import classify_and_plan, run_sync
 from facegen.pipeline.worker import load_career, worker_lock
+from facegen.runtime.contracts import WORKER_REASONS
 from facegen.service import (
     FM_POLL_SECONDS,
     IDLE_UNLOAD_SECONDS,
@@ -238,6 +241,8 @@ def test_an_error_pauses_the_worker_and_keeps_the_job(env: Env) -> None:
     status = svc.status()
     assert status.state == "error" and status.paused
     assert "CUDA out of memory" in (status.last_error or "")
+    assert status.reason == "job_error" and status.values["name"] == "Mine Two"
+    assert "CUDA out of memory" in status.values["error"]
     assert env.drawn() == [] and env.queued()[0][0] == MINE_2
     error = env.conn.execute("SELECT error FROM jobs WHERE unique_id = ?", (MINE_2,)).fetchone()[0]
     assert error.startswith("interrupted: RuntimeError")
@@ -258,6 +263,7 @@ def test_a_gpu_fault_stops_drawing_and_keeps_the_job(env: Env) -> None:
     status = svc.status()
     assert status.state == "gpu-fault" and status.gpu_fault and status.paused
     assert "start it again" in status.detail and "trying again" not in status.detail
+    assert status.reason == "gpu_fault" and "illegal memory access" in status.values["error"]
     assert "illegal memory access" in (status.last_error or "")
     assert not status.models_loaded
     assert env.drawn() == [] and env.queued()[0][0] == MINE_2  # back in the queue
@@ -495,11 +501,13 @@ def test_an_idle_worker_says_what_it_holds_back(env: Env) -> None:
     assert status.state == "idle"
     assert "1 job(s) in group B are not drawn automatically" in status.detail
     assert "Generate now" in status.detail
+    assert (status.reason, status.values) == ("held", {"count": 1, "groups": "B"})
     svc.generate_now()
     svc.step()
     assert env.drawn()[-1] == (B_NEWGEN, "initial")
     run_until_idle(svc)
     assert svc.status().detail == "the queue is empty"
+    assert svc.status().reason == "queue_empty"
 
 
 # --- Phase 7b: in a worker process, the loop ends wherever the GPU must be let go of -----------
@@ -981,6 +989,7 @@ def test_missing_models_are_a_setup_state_not_an_error(env: Env) -> None:
     status = svc.status()
     assert status.state == "setup" and "not downloaded" in status.detail
     assert "4 job(s) wait" in status.detail
+    assert (status.reason, status.values) == ("models_missing", {"count": 4})
     assert status.last_error is None and not status.paused
     assert env.gpu.renderers == [] and env.drawn() == []
     present[0] = True
@@ -995,3 +1004,46 @@ def test_an_empty_queue_does_not_ask_for_the_models(env: Env) -> None:
     n = len(asked)
     assert svc.step() > 0 and svc.status().state == "idle"
     assert len(asked) == n  # nothing to draw: nothing asked
+
+
+# --- Phase 12c: the state as a reason code the pages word in their language ----------------
+
+
+def test_each_state_says_why_as_a_code_with_its_values_and_since_when(env: Env) -> None:
+    env.fm[0] = True
+    svc = env.service()
+    svc.step()
+    first = svc.status()
+    assert (first.state, first.reason, first.values) == ("waiting", "fm_running", {"count": 4})
+    assert first.since is not None and first.since.endswith("+00:00")
+    svc.step()
+    assert svc.status().since == first.since  # the same wait goes on: the same start
+    env.fm[0] = None
+    svc.step()
+    assert svc.status().reason == "fm_unknown"
+    svc.pause()
+    svc.step()
+    assert (svc.status().state, svc.status().reason) == ("paused", "paused")
+
+
+def test_a_job_is_drawing_with_its_name_kind_and_group_then_next_job(env: Env) -> None:
+    link = RecordingLink()
+    svc = env.service(link=link)
+    svc.step()
+    drawing = [s for s in link.statuses if s.reason == "drawing"]
+    assert drawing and drawing[0].values == {"name": "Mine Two", "kind": "initial", "group": "A"}
+    assert drawing[0].current is not None and drawing[0].since is not None
+    assert svc.status().reason == "next_job"
+
+
+def test_every_reason_the_worker_gives_is_known() -> None:
+    """Each `reason="..."` the worker and its process proxy set is in WORKER_REASONS, which the
+    message catalog's contract test words in both languages."""
+    used: set[str] = set()
+    for name in ("worker_service.py", "worker_process.py"):
+        source = (ROOT / "src" / "facegen" / "runtime" / name).read_text(encoding="utf-8")
+        used |= set(re.findall(r'reason="([a-z_]+)"', source))
+        used |= set(re.findall(r'_mark\(\s*"[a-z-]+",\s*[^,]+,\s*"([a-z_]+)"', source))
+        used |= set(re.findall(r'"fm_running" if running else "([a-z_]+)"', source))
+    assert used and used <= set(WORKER_REASONS), sorted(used - set(WORKER_REASONS))
+    assert {"fm_running", "fm_unknown", "starting", "restarting", "gave_up"} <= used

@@ -1,46 +1,46 @@
-<h2>Recent changes</h2>
+<h2>{{ t("history.title") }}</h2>
 {% if history %}
 <ol class="history">
 {% for h in history %}{% set e = h.entry %}
   <li class="{{ 'undone' if e.undone }}">
     <div class="when small muted">
       <time datetime="{{ e.at }}">{{ e.at[:16]|replace("T", " ") }} UTC</time>
-      {% if e.label == "defaults" %}· reset to defaults{% elif e.label == "auto-configure" %}· auto-configured for the graphics card{% endif %}
-      {% if e.undone %}<span class="tag">undone</span>{% endif %}
+      {% if e.label == "defaults" %}· {{ t("history.defaults") }}{% elif e.label == "auto-configure" %}· {{ t("history.auto_configure") }}{% endif %}
+      {% if e.undone %}<span class="tag">{{ t("history.undone") }}</span>{% endif %}
     </div>
     {% set lines = h.lines %}
     <ul class="what">
       {% for l in lines[:4] %}<li>{{ l.label }}: {{ l.before }} → <strong>{{ l.after }}</strong></li>{% endfor %}
     </ul>
     {% if lines|length > 4 %}
-    <details><summary>{{ lines|length - 4 }} more</summary>
+    <details><summary>{{ t("history.more", count=lines|length - 4) }}</summary>
       <ul class="what">{% for l in lines[4:] %}<li>{{ l.label }}: {{ l.before }} → <strong>{{ l.after }}</strong></li>{% endfor %}</ul>
     </details>
     {% endif %}
     {% if h.summary %}<div class="small muted">{{ h.summary }}</div>{% endif %}
     {% if e.report and e.report.changes %}
-    <details><summary>{{ e.report.changed_total }} player(s) changed group or tracking{% if e.report.changed_total > e.report.changes|length %}; the {{ e.report.changes|length }} with the highest PA{% endif %}</summary>
-      <table class="list compact">
-        <thead><tr><th>Player</th><th class="num">PA</th><th>Group</th></tr></thead>
+    <details><summary>{{ t("history.changed", count=e.report.changed_total) }}{% if e.report.changed_total > e.report.changes|length %}{{ t("history.highest", count=e.report.changes|length) }}{% endif %}</summary>
+      <div class="table-wrap"><table class="list compact">
+        <thead><tr><th>{{ t("col.player") }}</th><th class="num">PA</th><th>{{ t("col.group") }}</th></tr></thead>
         <tbody>
         {% for c in e.report.changes %}
           <tr><td><a href="/players/{{ c.unique_id }}">{{ c.name }}</a></td>
             <td class="num">{{ c.pa if c.pa is not none else "?" }}</td>
-            <td>{{ (c.before or "-")|upper }}{{ "+t" if c.tracked_before }} → <strong>{{ (c.after or "-")|upper }}{{ "+t" if c.tracked_after }}</strong></td></tr>
+            <td>{{ grp(c.before) if c.before else "-" }} → {{ grp(c.after) if c.after else "-" }}</td></tr>
         {% endfor %}
         </tbody>
-      </table>
+      </table></div>
     </details>
     {% endif %}
     {% if not e.undone %}
     <form method="post" action="/settings" class="inline" data-settings-action><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="through" value="{{ e.id }}">
-      <button class="link small" name="action" value="undo">{{ "undo" if e.id == latest_done else "undo this and every later change" }}</button>
+      <button class="link small" name="action" value="undo">{{ t("history.undo" if e.id == latest_done else "history.undo_later") }}</button>
     </form>
     {% endif %}
   </li>
 {% endfor %}
 </ol>
 {% else %}
-<p class="muted small">No changes yet. Each change you make is listed here and can be undone.</p>
+<p class="muted small">{{ t("history.none") }}</p>
 {% endif %}

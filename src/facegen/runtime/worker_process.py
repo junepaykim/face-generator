@@ -58,7 +58,7 @@ from facegen.platform.pipes import (  # noqa: F401 - also used from here by the 
 )
 from facegen.render.renderer import Renderer, Tagger
 from facegen.runtime.contracts import Exit, WorkerStatus
-from facegen.runtime.logging import LOG_LINES, stamp
+from facegen.runtime.logging import LOG_LINES, stamp, utc_now
 from facegen.runtime.policy import BUSY_TIMEOUT_MS
 from facegen.runtime.supervision import DEFAULT_POLICY, FailureHistory, RestartPolicy
 from facegen.runtime.worker_service import WorkerService
@@ -110,11 +110,13 @@ _STATUS_FIELDS = (
     "failed",
     "last_error",
 )
+_STATUS_EXTRAS = ("reason", "values", "since")
+"""Phase 12c's reason code, its values and the time the state began; optional on reading."""
 
 
 def status_to_json(status: WorkerStatus) -> dict[str, Any]:
     """The status without its log: log lines travel one by one."""
-    data = {name: getattr(status, name) for name in _STATUS_FIELDS}
+    data = {name: getattr(status, name) for name in (*_STATUS_FIELDS, *_STATUS_EXTRAS)}
     data["current"] = job_to_json(status.current)
     return data
 
@@ -123,6 +125,9 @@ def status_from_json(data: dict[str, Any]) -> WorkerStatus:
     return WorkerStatus(
         current=job_from_json(data.get("current")),
         log=(),
+        reason=str(data.get("reason") or ""),
+        values=dict(data.get("values") or {}),
+        since=data.get("since"),
         **{name: data[name] for name in _STATUS_FIELDS},
     )
 
@@ -311,6 +316,9 @@ class WorkerProxy:
         self._paused = start_paused
         self._state = "paused" if start_paused else "starting"
         self._detail = ""
+        self._reason = self._state
+        self._values: dict[str, Any] = {}
+        self._since: str | None = utc_now()
         self._restart_at: float | None = None
         self._generate_now = False
         self._generate_now_seen = False
@@ -327,7 +335,7 @@ class WorkerProxy:
             self._paused = True
             self._restart_at = None
             if self._child is None and self._state != "gpu-fault":
-                self._state, self._detail = "paused", ""
+                self._mark("paused", "", "paused")
         if not self._send("pause"):
             self.log("Paused.")
         self._wake.set()
@@ -367,7 +375,7 @@ class WorkerProxy:
         if self._state == "gpu-fault":
             self._failures.clear()
         if self._child is None:
-            self._state, self._detail = "starting", "starting the worker process"
+            self._mark("starting", "starting the worker process", "starting")
 
     def status(self) -> WorkerStatus:
         with self._lock:
@@ -376,9 +384,13 @@ class WorkerProxy:
                 state, detail, current = child.state, child.detail, child.current
                 models, done, failed = child.models_loaded, child.done, child.failed
                 last_error = self._last_error or child.last_error
+                reason, values, since = child.reason, child.values, child.since
             else:
                 state, detail, current = self._state, self._detail_now(), None
                 models, done, failed, last_error = False, 0, 0, self._last_error
+                reason, values, since = self._reason, dict(self._values), self._since
+                if self._state == "restarting" and self._restart_at is not None:
+                    values["seconds"] = round(max(0.0, self._restart_at - self._clock()))
             return WorkerStatus(
                 state=state,
                 detail=detail,
@@ -391,6 +403,9 @@ class WorkerProxy:
                 failed=self._failed + failed,
                 last_error=last_error,
                 log=tuple(self._log),
+                reason=reason,
+                values=values,
+                since=since,
             )
 
     def log(self, line: str) -> None:
@@ -460,7 +475,7 @@ class WorkerProxy:
                 self._last_error = f"the worker supervisor crashed: {type(exc).__name__}: {exc}"
         finally:
             with self._lock:
-                self._state, self._detail = "stopped", "the worker has stopped"
+                self._mark("stopped", "the worker has stopped", "stopped")
 
     def _until_start(self) -> float:
         """Seconds until a child should start; 0: now."""
@@ -492,12 +507,12 @@ class WorkerProxy:
                 self._child, self._child_status = child, None
                 self._restart_at = None
                 self._generate_now_seen = False
-                self._state, self._detail = "starting", "starting the worker process"
+                self._mark("starting", "starting the worker process", "starting")
                 self.starts += 1
         if failed is not None:
             logger.error("could not start the worker process", exc_info=failed)
             text = f"could not start the worker process: {failed}"
-            self._failed_child(text, None, text)
+            self._failed_child(text, None, text, "spawn")
             return
         logger.info("worker process %d started: %s", child.pid, " ".join(child.args))
         reader = threading.Thread(
@@ -578,18 +593,18 @@ class WorkerProxy:
         match reason:
             case "fault":
                 self._failed_child(
-                    message or "GPU fault", job, "the graphics driver reported an error"
+                    message or "GPU fault", job, "the graphics driver reported an error", "gpu"
                 )
             case "error" | "crashed":
                 text = message or reason
                 with self._lock:
                     self._paused = True
                     self._last_error = text
-                    self._state, self._detail = "error", text
+                    self._mark("error", text, "paused_error", error=text)
             case "paused":
                 with self._lock:
                     if self._paused:
-                        self._state, self._detail = "paused", ""
+                        self._mark("paused", "", "paused")
                     else:  # resumed while the child was ending: start a new one
                         self._respawn_soon()
             case "freed" | "stopped":
@@ -600,14 +615,20 @@ class WorkerProxy:
                 self.log(text[0].upper() + text[1:] + ".")
                 if self._stderr_tail:
                     logger.error("worker process's last output:\n%s", "\n".join(self._stderr_tail))
-                self._failed_child(text, job, "the worker process ended unexpectedly")
+                self._failed_child(text, job, "the worker process ended unexpectedly", "crash")
 
     def _respawn_soon(self) -> None:
         """Caller holds the lock."""
-        self._state, self._detail = "starting", "starting the worker process"
+        self._mark("starting", "starting the worker process", "starting")
         self._restart_at = self._clock() + RESPAWN_SECONDS
 
-    def _failed_child(self, message: str, job: Job | None, what: str) -> None:
+    def _mark(self, state: str, detail: str, reason: str, **values: Any) -> None:
+        """Caller holds the lock: this process's own state while no child reports one."""
+        if (state, reason) != (self._state, self._reason):
+            self._since = utc_now()
+        self._state, self._detail, self._reason, self._values = state, detail, reason, values
+
+    def _failed_child(self, message: str, job: Job | None, what: str, cause: str) -> None:
         """A GPU fault or a crash: wait and start again, send the job to review, or give up.
 
         `message` is the error, `what` the plain words for the dashboard."""
@@ -632,19 +653,34 @@ class WorkerProxy:
                 self._paused = True
                 self._restart_at = None
                 self._last_error = message
-                self._state, self._detail = "gpu-fault", advice
+                self._mark(
+                    "gpu-fault",
+                    advice,
+                    "gave_up",
+                    count=decision.recent,
+                    minutes=round(minutes),
+                    error=message,
+                )
             self.log(f"Drawing stopped after {decision.recent} failures; Resume tries again.")
             return
         delay = decision.restart_in
         with self._lock:
             self._restart_at = self._clock() + delay
-            self._state = "restarting"
             if job is None:
-                self._detail = what
+                detail = what
             elif reviewed:
-                self._detail = f"{what}; {job.name} went to review"
+                detail = f"{what}; {job.name} went to review"
             else:
-                self._detail = f"{what}; {job.name} is back in the queue"
+                detail = f"{what}; {job.name} is back in the queue"
+            self._mark(
+                "restarting",
+                detail,
+                "restarting",
+                cause=cause,
+                name=job.name if job else "",
+                review=bool(reviewed),
+                error=message,
+            )
         self.log(f"Starting a new worker process in {delay:.0f} s.")
 
     def _send_to_review(self, job: Job, message: str) -> bool:

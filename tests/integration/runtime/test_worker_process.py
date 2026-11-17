@@ -4,6 +4,7 @@ with a worker process whose renderer fails on its third job (gpu_child.py)."""
 
 from __future__ import annotations
 
+import dataclasses
 import io
 import logging
 import os
@@ -75,17 +76,31 @@ def test_a_status_survives_the_pipe() -> None:
     status = WorkerStatus(
         "running", "drawing", job(personality=personality, staff=True, staff_job="Coach"),
         False, False, True, True, 3, 1, None, ("a line",),
+        reason="drawing", values={"name": "James Rodríguez", "kind": "initial", "group": "A"},
+        since="2026-11-17T10:00:00+00:00",
     )  # fmt: skip
     line = encode({"type": "status", "status": status_to_json(status)})
     assert line.isascii() and line.endswith("\n") and line.count("\n") == 1
     message = decode(line)
     assert message is not None
     back = status_from_json(message["status"])
-    assert back == WorkerStatus(*[*vars_of(status)[:-1], ()])  # the log travels line by line
+    assert back == dataclasses.replace(status, log=())  # the log travels line by line
 
 
-def vars_of(status: WorkerStatus) -> list[object]:
-    return [getattr(status, name) for name in WorkerStatus.__slots__]
+def test_a_status_from_a_child_without_reasons_still_reads() -> None:
+    """A status line written before Phase 12c has no reason, values or since."""
+    data = status_to_json(
+        WorkerStatus("idle", "the queue is empty", None, *[False] * 4, 0, 0, None, ())
+    )
+    for name in ("reason", "values", "since"):
+        del data[name]
+    back = status_from_json(data)
+    assert (back.reason, back.values, back.since, back.detail) == (
+        "",
+        {},
+        None,
+        "the queue is empty",
+    )
 
 
 def test_commands_are_read_from_the_descriptor_line_by_line() -> None:
@@ -243,6 +258,10 @@ def test_three_failures_give_up_and_resume_tries_again(fake: Fake) -> None:
     status = p.status()
     assert status.paused and not status.gpu_fault  # Resume is offered: a new process can start
     assert "failed 3 times within 30 minutes" in status.detail and "Resume" in status.detail
+    assert status.reason == "gave_up" and (status.values["count"], status.values["minutes"]) == (
+        3,
+        30,
+    )
     assert "illegal memory access" in (status.last_error or "")
     assert "ended unexpectedly (exit code 3)" in log_text(p)
     time.sleep(0.3)
@@ -388,10 +407,11 @@ def test_exit_test_a_fault_on_the_third_job_is_shown_once_and_drawn_after_a_rest
 
             def all_drawn() -> bool:
                 seen["status"] = client.get("/status").text
-                return "this session 3 drawn" in seen["status"] and "idle" in seen["status"]
+                about = client.get("/settings").text  # the run's counts are here (Phase 12)
+                return "3 made, 0 sent to review" in about and "state-idle" in seen["status"]
 
             wait_for(all_drawn, timeout=60)
-            seen["page"] = client.get("/").text
+            seen["page"] = client.get("/log").text  # the worker's log has a page (Phase 12)
 
     log = logging.getLogger("facegen")
     out = io.StringIO()

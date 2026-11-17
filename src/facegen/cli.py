@@ -475,7 +475,11 @@ def cmd_serve(
 ) -> int:
     """The web UI with the save watcher in the background and the GPU worker in a process of
     its own (`facegen worker`, supervised by worker_process.WorkerProxy), until Ctrl+C."""
-    from facegen.runtime.composition import CannotStart, build_runtime
+    from facegen.runtime.composition import (
+        GRACEFUL_SHUTDOWN_SECONDS,
+        CannotStart,
+        build_runtime,
+    )
     from facegen.runtime.logging import log_to_file
     from facegen.runtime.worker_process import STOP_TIMEOUT
 
@@ -505,7 +509,13 @@ def cmd_serve(
         if run_server is None:
             import uvicorn
 
-            uvicorn.run(rt.app, host=rt.host, port=rt.port, log_level="warning")
+            uvicorn.run(
+                rt.app,
+                host=rt.host,
+                port=rt.port,
+                log_level="warning",
+                timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_SECONDS,
+            )
         else:
             run_server(rt.app, host=rt.host, port=rt.port)
     finally:

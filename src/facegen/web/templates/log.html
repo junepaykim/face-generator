@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}{{ t("nav.log") }}{% endblock %}
+{% block content %}
+<h1>{{ t("log.title") }}</h1>
+<div data-refresh="/log/part" data-topic="log" data-rev="{{ rev }}">{% include "_log.html" %}</div>
+{% endblock %}

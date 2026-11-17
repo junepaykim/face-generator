@@ -1,36 +1,54 @@
-<!doctype html>
-<html lang="en">
+{% from "_icons.html" import icon %}<!doctype html>
+<html lang="{{ lang }}" data-theme="{{ display.theme }}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>{% block title %}facegen{% endblock %} · facegen</title>
 <link rel="stylesheet" href="/static/style.css?v={{ static_version }}">
 <script src="/static/app.js?v={{ static_version }}" defer></script>
+<script type="application/json" id="texts">{{ js_texts|tojson }}</script>
 </head>
 <body>
-<header class="top">
-  <a class="brand" href="/">facegen</a>
-  <nav>
-    <a href="/" class="{{ 'on' if path == '/' }}">Dashboard</a>
-    <a href="/players" class="{{ 'on' if path.startswith('/players') }}">Players</a>
-    <a href="/review" class="{{ 'on' if path == '/review' }}">Review{% if review_count %} <span class="count">{{ review_count }}</span>{% endif %}</a>
-    <a href="/settings" class="{{ 'on' if path == '/settings' }}">Settings</a>
+<div class="shell">
+<aside class="side">
+  <a class="brand" href="/" title="facegen"><span class="logo" aria-hidden="true">fg</span><span class="label">facegen</span></a>
+  <nav aria-label="{{ t('nav.label') }}">
+    <a href="/" class="{{ 'on' if path == '/' }}" title="{{ t('nav.dashboard') }}">{{ icon("dashboard") }}<span class="label">{{ t("nav.dashboard") }}</span>{% if worker_state %}<span class="dot-state state-{{ worker_state }}" title="{{ t('worker.state.' ~ worker_state) }}"></span>{% endif %}</a>
+    <a href="/players" class="{{ 'on' if path.startswith('/players') }}" title="{{ t('nav.players') }}">{{ icon("players") }}<span class="label">{{ t("nav.players") }}</span></a>
+    <a href="/review" class="{{ 'on' if path == '/review' }}" title="{{ t('nav.review') }}">{{ icon("review") }}<span class="label">{{ t("nav.review") }}</span>{% if review_count %} <span class="count">{{ review_count }}</span>{% endif %}</a>
+    <a href="/log" class="{{ 'on' if path == '/log' }}" title="{{ t('nav.log') }}">{{ icon("log") }}<span class="label">{{ t("nav.log") }}</span></a>
+    <a href="/settings" class="{{ 'on' if path.startswith('/settings') or path == '/hardware' }}" title="{{ t('nav.settings') }}">{{ icon("settings") }}<span class="label">{{ t("nav.settings") }}</span></a>
   </nav>
-  <div class="career">
-    {% if career %}{{ career.display_name }} <span class="muted">· in-game {{ game_date or "unknown" }}</span>
-    {% else %}<span class="muted">no career yet</span>{% endif %}
+  <div class="side-foot">
+    <div class="career">
+      {% if career %}<strong>{{ career.display_name }}</strong><br><span class="muted small">{{ t("side.in_game", date=game_date or t("side.unknown")) }}</span>
+      {% else %}<span class="muted">{{ t("side.no_career") }}</span>{% endif %}
+    </div>
+    <div class="switches">
+      <label><span class="muted small">{{ t("side.language") }}</span>
+        <select data-display="display.language" aria-label="{{ t('side.language') }}">
+          {% for value in ("auto", "en", "ko") %}<option value="{{ value }}" {{ "selected" if display.language == value }}>{{ t("settings.choice.language." ~ value) }}</option>{% endfor %}
+        </select></label>
+      <label><span class="muted small">{{ t("side.theme") }}</span>
+        <select data-display="display.theme" aria-label="{{ t('side.theme') }}">
+          {% for value in ("auto", "light", "dark") %}<option value="{{ value }}" {{ "selected" if display.theme == value }}>{{ t("settings.choice.theme." ~ value) }}</option>{% endfor %}
+        </select></label>
+    </div>
   </div>
-</header>
+</aside>
 <main>
 {% if setup and setup.state != "ready" and path != "/" %}
 <div class="flash setup">
-  {% if setup.needs_folder %}<strong>Set up:</strong> {% if setup.folder_gone %}FM27's folder ({{ folder_now }}) is not there any more{% else %}FM27's folder is not set and was not found on this PC{% endif %}, so no save is read and nothing is published. <a href="/#setup">Choose it on the dashboard</a>{% if path == "/settings" %} or below{% endif %}.
-  {% else %}<strong>Set up:</strong> the models are not downloaded yet ({{ gigabytes(setup.models.missing_bytes) }}), so nothing can be drawn. <a href="/#setup">Download them on the dashboard</a>.{% endif %}
+  {% if setup.needs_folder %}<strong>{{ t("setup.banner.title") }}</strong> {% if setup.folder_gone %}{{ t("setup.banner.folder_gone", folder=folder_now) }}{% else %}{{ t("setup.banner.folder_missing") }}{% endif %} {{ t("setup.banner.choose") }}
+  {% else %}<strong>{{ t("setup.banner.title") }}</strong> {{ t("setup.banner.models", size=gigabytes(setup.models.missing_bytes)) }}{% endif %}
 </div>
 {% endif %}
-{% if msg %}<div class="flash ok">{{ msg }}</div>{% endif %}
-{% if err %}<div class="flash bad">{{ err }}</div>{% endif %}
+{% if msg %}<div class="flash ok" role="status">{{ msg }}</div>{% endif %}
+{% if err %}<div class="flash bad" role="alert">{{ err }}</div>{% endif %}
 {% block content %}{% endblock %}
 </main>
+</div>
+<input type="hidden" id="csrf" value="{{ csrf_token }}">
 </body>
 </html>

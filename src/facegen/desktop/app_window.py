@@ -37,7 +37,8 @@ logger = logging.getLogger("facegen")
 
 TITLE = "facegen"
 SIZE = (1280, 860)
-MIN_SIZE = (800, 560)
+MIN_SIZE = (640, 480)
+"""Phase 12b: below 960 px the sidebar keeps only its icons, so pages still fit at 640."""
 NO_WEBVIEW2 = "Microsoft Edge WebView2 is not installed"
 BROWSE_SECONDS = 600.0
 """How long Browse waits for the folder dialog (it waits for the user)."""

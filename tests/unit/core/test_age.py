@@ -12,8 +12,8 @@ from facegen.persistence.settings import Settings
 SPEC = {
     "a_my_club": {
         "W01": range(15, 17), "W02": range(17, 19), "W03": range(19, 22),
-        "W04": range(22, 25), "W05": range(25, 27), "W07": range(27, 29),
-        "W08": range(29, 31), "W09": range(31, 34), "W10": range(34, 46),
+        "W04": range(22, 24), "W05": range(24, 26), "W06": range(26, 27),
+        "W07": range(27, 29), "W08": range(29, 31), "W09": range(31, 34), "W10": range(34, 46),
     },
     "a_other_club": {
         "W02": range(15, 19), "W03": range(19, 22), "W04": range(22, 25),

@@ -6,6 +6,7 @@ Run from the repository root:
 
 ```bash
 uv run --no-sync pytest tests/integration/web -q
+uv run --no-sync pytest tests/integration/contracts/test_message_catalog.py tests/unit/i18n -q
 uv run --no-sync pytest tests/integration/web/test_web.py -k 'csrf or origin or host or token or pictures or redirects' -q
 uv run --no-sync ruff check src/facegen/web
 ```
@@ -34,7 +35,21 @@ uv run --no-sync ruff check src/facegen/web
   Redirect targets must pass `_safe_next`.
 - Settings autosaves are serialized and send only dirty fields. Preserve edits made while
   a save is in flight; undo/redo/reset wait for pending saves.
-- Keep template `data-*` attributes aligned with `static/app.js`; status polling uses
-  the career marker to reload after the first sync. Asset URLs include `static_version`.
+- Keep template `data-*` attributes aligned with `static/app.js`; a live part has
+  `data-refresh`, `data-topic` and `data-rev` (`web/live.py`), and the career marker reloads
+  the page after the first sync. Asset URLs include `static_version`.
+- `/events` never ends by itself: the test client reads to the end, so tests shorten
+  `live.STREAM_SECONDS`; a server must call `close_streams` before stopping.
 - Tests cover HTML/HTTP contracts, not browser behavior; inspect JS/CSS interactions
   when those change.
+- No words in templates or routes: use catalog keys (`t("…")` in templates, `tr("…")` for
+  attributes, a request `Translator` in routes) and add each key to both
+  `facegen/i18n/en.toml` and `ko.toml`. Keep English wording stable; tests match it.
+- Keys built from values (`"kind." ~ job.kind`) are listed in `test_message_catalog.py`;
+  add new vocabularies there. Catalog text may hold markup; values are always escaped.
+- Name groups as {a}/{b}/{c} in catalog text (chips on pages, names elsewhere). Keep page text
+  minimal: no notes for obvious features; longer help goes in `_icons.html`'s `info` tip.
+- The worker's state reaches pages as `WorkerStatus.reason` + `values`; word it with
+  `messages.worker_sentence`. A new reason goes in `contracts.WORKER_REASONS` and both catalogs.
+- Colours are `:root` custom properties with dark overrides for both `prefers-color-scheme`
+  and `html[data-theme=dark]`; add new colours to all three blocks.

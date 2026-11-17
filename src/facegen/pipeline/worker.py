@@ -499,6 +499,7 @@ class Worker:
         render = {**self.renderer.settings(), **_model_extras(self.renderer, prompt)}
         render["detail"] = detail_info
         render.update({k: v for k, v in context.items() if k != "prompt"})
+        render["seconds"] = round(self.clock() - t0, 2)  # the dashboard's estimate (Phase 12c)
         check_result = {
             "passed": True,
             "attempts": winner.attempt + 1,
@@ -671,6 +672,7 @@ class Worker:
                 )
                 render = {**self.renderer.settings(), **_model_extras(self.renderer, prompt)}
                 render.update({k: v for k, v in context.items() if k != "prompt"})
+                render["seconds"] = round(self.clock() - t0, 2)
                 image_id = self.images.insert_image(
                     job,
                     version,

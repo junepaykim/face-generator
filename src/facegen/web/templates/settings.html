@@ -1,75 +1,97 @@
 {% extends "base.html" %}
-{% block title %}Settings{% endblock %}
+{% from "_icons.html" import info as tip %}
+{% block title %}{{ t("nav.settings") }}{% endblock %}
 {% block content %}
-<h1>Settings</h1>
-<p class="muted">Each change is saved as soon as you leave the field, press Enter or tick a box, and applies without a restart. Undo puts back what the last change replaced; Recent changes can take you back several steps at once. Existing pictures are never deleted by a settings change. The content rule is not a setting.</p>
+<h1>{{ t("nav.settings") }} {{ tip(t("settings.intro_tip")) }}</h1>
 
 {% if error %}<div class="flash bad">{{ error }}</div>{% endif %}
 
 <div class="cards">
 <div class="card" id="folders">
-  <h2>FM27's folders</h2>
+  <h2>{{ t("settings.folders.title") }}</h2>
   <table class="kv">
-    <tr><th>Saves and graphics</th><td>{{ folders.user }}</td></tr>
-    <tr><th>Install</th><td>{{ folders.install }}</td></tr>
+    <tr><th>{{ t("settings.folders.user") }}</th><td>{{ folders.user }}</td></tr>
+    <tr><th>{{ t("settings.folders.install") }}</th><td>{{ folders.install }}</td></tr>
   </table>
   <form method="post" action="/setup/folder" class="folder-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="/settings">
-    <input type="text" name="folder" value="{{ folders.value }}" placeholder="C:\Users\you\Documents\Sports Interactive\Football Manager 27" aria-label="FM27's folder" required>
-    <button>Change</button>
-    {% if setup.browse %}<button formaction="/setup/browse" formnovalidate title="Opens a folder window on this PC">Browse…</button>{% endif %}
+    <input type="text" name="folder" value="{{ folders.value }}" placeholder="C:\Users\you\Documents\Sports Interactive\Football Manager 27" aria-label="{{ t('setup.folder.aria') }}" required>
+    <button>{{ t("settings.folders.change") }}</button>
+    {% if setup.browse %}<button formaction="/setup/browse" formnovalidate title="{{ t('setup.folder.browse_title') }}">{{ t("setup.folder.browse") }}</button>{% endif %}
   </form>
-  <p class="muted small">FM27's folder holds its <code>games</code> and <code>graphics</code> folders. A change is saved in <code>{{ local_file }}</code> and applies at once: the newest save is read again. The install folder is found on this PC unless that file sets <code>fm_install_dir = '…'</code> (a Windows path in single quotes); a change to it applies when facegen starts again.</p>
   {% if folders.user_missing %}<p class="bad small">{{ folders.not_set }}</p>{% endif %}
 </div>
 
 <div class="card" id="graphics-card">
-  <h2>Graphics card</h2>
-  <p>Auto-configure picks group A's candidates, the detail pass size and VAE tiling for this PC's graphics card, as one change you can undo. Who gets a picture stays as it is.</p>
-  <div class="buttons"><a class="button" href="/hardware">Auto-configure for my GPU…</a></div>
-  <p class="muted small">The next page asks the card (a few seconds) and lists what would change before anything is.</p>
+  <h2>{{ t("settings.gpu.title") }} {{ tip(t("settings.gpu.tip")) }}</h2>
+  <div class="buttons"><a class="button" href="/hardware">{{ t("settings.gpu.button") }}</a></div>
+</div>
+
+<div class="card" id="about">
+  <h2>{{ t("settings.info.title") }}</h2>
+  <table class="kv">
+    {% if info.worker %}
+    <tr><th>{{ t("settings.info.model") }}</th><td>{{ t("settings.info.model_loaded" if info.worker.models_loaded else "settings.info.model_not_loaded") }}</td></tr>
+    <tr><th>{{ t("settings.info.session") }}</th><td>{{ t("settings.info.session_value", done=info.worker.done, failed=info.worker.failed) }}</td></tr>
+    {% else %}
+    <tr><th>{{ t("settings.info.model") }}</th><td class="muted">{{ t("settings.info.no_worker") }}</td></tr>
+    {% endif %}
+    <tr><th>{{ t("settings.info.watcher") }}</th><td>{{ t("settings.info.watching" if info.watching else "settings.info.not_watching") }}</td></tr>
+    {% if info.photos %}<tr><th>{{ t("settings.info.photos") }}</th><td>{% if info.photos.game_known %}{{ t("settings.info.photos_value", count=info.photos.game) }}{% if info.photos.facepack_files %}{{ t("settings.info.facepacks", count=info.photos.facepack_files, mapped=info.photos.facepack) }}{% endif %}{% else %}<span class="bad">{{ t("settings.info.photos_unknown") }}</span>{% endif %}</td></tr>{% endif %}
+  </table>
 </div>
 </div>
 
 <div class="bulk sticky savebar">
   <form method="post" action="/settings" class="inline" data-settings-action><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button name="action" value="undo" data-undo {{ "disabled" if not can_undo }} title="Put back what the last change replaced">↶ Undo</button>
-    <button name="action" value="redo" data-redo {{ "disabled" if not can_redo }} title="Make the change you undid last again">↷ Redo</button>
+    <button name="action" value="undo" data-undo {{ "disabled" if not can_undo }} title="{{ t('settings.undo_title') }}">↶ {{ t("settings.undo") }}</button>
+    <button name="action" value="redo" data-redo {{ "disabled" if not can_redo }} title="{{ t('settings.redo_title') }}">↷ {{ t("settings.redo") }}</button>
   </form>
-  <span class="save-status" data-save-status role="status" aria-live="polite">All changes are saved.</span>
-  <span class="muted small grow">Changed from the default: <span class="dot"></span></span>
+  <span class="save-status" data-save-status role="status" aria-live="polite">{{ t("settings.all_saved") }}</span>
+  <span class="muted small grow">{{ t("settings.changed_legend") }} <span class="dot"></span></span>
   <form method="post" action="/settings" class="inline" data-settings-action><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button name="action" value="defaults" title="Every setting back to its default, as one change you can undo">Reset all to defaults</button>
+    <button name="action" value="defaults" title="{{ t('settings.reset_title') }}">{{ t("settings.reset") }}</button>
   </form>
 </div>
 
 <div class="settings-layout">
   <form method="post" action="/settings" class="settings" data-autosave><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <noscript><div class="bulk"><button name="action" value="apply" class="primary">Save</button><span class="muted small">With JavaScript off, changes are saved with this button.</span></div></noscript>
+    <noscript><div class="bulk"><button name="action" value="apply" class="primary">{{ t("settings.save") }}</button><span class="muted small">{{ t("settings.noscript") }}</span></div></noscript>
     {% for section, title, note, fields in sections %}
-    <fieldset>
-      <legend>{{ title }}</legend>
-      {% if note and (loop.first or sections[loop.index0 - 1][0].split(".")[0] != section.split(".")[0]) %}<p class="muted small">{{ note }}</p>{% endif %}
+    {% set top = section.split(".")[0] %}
+    {% set first_of_top = loop.first or sections[loop.index0 - 1][0].split(".")[0] != top %}
+    <fieldset id="section-{{ section|replace('.', '-') }}">
+      <legend>{{ t("settings.title." ~ section) if tr.has("settings.title." ~ section) else title }}{% if first_of_top and tr.has("settings.tip." ~ top) %} {{ tip(t("settings.tip." ~ top)) }}{% endif %}</legend>
+      {% if note and first_of_top %}<p class="muted small">{{ t("settings.note." ~ top) }}</p>{% endif %}
       {% for fd in fields %}
-        <label class="field {{ 'changed' if fd.changed }} {{ 'error' if fd.key in errors }}" data-field>
-          <span class="name">{{ fd.label }} <span class="dot" data-dot title="default: {{ fd.default_text }}" {{ "hidden" if not fd.changed }}></span></span>
+        {% set box = "div" if fd.kind == "groups" else "label" %}
+        <{{ box }} class="field {{ 'changed' if fd.changed }} {{ 'error' if fd.key in errors }}" data-field>
+          {% set field_tip = "settings.field_tip." ~ fd.key.rsplit(".", 1)[-1] %}
+          <span class="name">{% if fd.label_key %}{{ t(fd.label_key, **fd.label_values) }}{% else %}{{ fd.label }}{% endif %}{% if tr.has(field_tip) %} {{ tip(t(field_tip)) }}{% endif %} <span class="dot" data-dot title="{{ t('settings.default', value=fd.default_text) }}" {{ "hidden" if not fd.changed }}></span></span>
           {% if fd.kind == "bool" %}
             <input type="checkbox" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" {{ "checked" if fd.value is sameas true }}>
           {% elif fd.kind == "int" %}
             <input type="number" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}" step="1">
           {% elif fd.kind == "float" %}
             <input type="number" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}" step="any">
+          {% elif fd.kind == "band" %}
+            <input type="text" class="band" inputmode="numeric" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}" aria-label="{{ fd.label }}">
+          {% elif fd.kind == "groups" %}
+            <span class="group-ticks">
+              <input type="hidden" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}">
+              {% for g in ("a", "b", "c") %}<label class="tick"><input type="checkbox" data-group-of="{{ fd.key }}" value="{{ g }}" {{ "checked" if g in fd.value }}> {{ grp(g) }}</label>{% endfor %}
+            </span>
           {% elif fd.kind == "choice" %}
-            <select name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}">
+            <select name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}"{% if fd.key.startswith("display.") %} data-reload{% endif %}>
               {% for value, label in fd.choices %}<option value="{{ value }}" {{ "selected" if fd.text == value }}>{{ label }}</option>{% endfor %}
               {% if fd.text not in fd.choices|map("first") %}<option value="{{ fd.text }}" selected>{{ fd.text }}</option>{% endif %}
             </select>
           {% else %}
             <input type="text" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}">
           {% endif %}
-          <span class="muted small">default {{ fd.default_text }}
-            <button type="button" class="link small" data-use-default {{ "hidden" if not fd.changed }}>use default</button>
+          <span class="muted small">{{ t("settings.default", value=fd.default_text) }}
+            <button type="button" class="link small" data-use-default {{ "hidden" if not fd.changed }}>{{ t("settings.use_default") }}</button>
             <span class="bad" data-error>{% if fd.key in errors %} · {{ errors[fd.key] }}{% endif %}</span></span>
-        </label>
+        </{{ box }}>
       {% endfor %}
     </fieldset>
     {% endfor %}

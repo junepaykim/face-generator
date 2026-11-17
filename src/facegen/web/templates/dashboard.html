@@ -1,21 +1,21 @@
 {% extends "base.html" %}
-{% block title %}Dashboard{% endblock %}
+{% block title %}{{ t("nav.dashboard") }}{% endblock %}
 {% block content %}
 {% if setup.needs_folder %}
 <section class="card setup-panel" id="setup">
-  <h2>Set up: FM27's folder</h2>
+  <h2>{{ t("setup.folder.title") }}</h2>
   {% if setup.folder_gone %}
-  <p>FM27's folder was <code>{{ folder_now }}</code> ({{ folder_origin }}), and it is not there any more. Choose where it is now.</p>
+  <p>{{ t("setup.folder.gone", folder=folder_now) }}</p>
   {% else %}
-  <p>facegen looked for FM27's folder in your Documents folder (OneDrive included) and did not find it. It is the folder that holds FM27's <code>games</code> and <code>graphics</code> folders, usually <code>Documents\Sports Interactive\Football Manager 27</code>.</p>
+  <p>{{ t("setup.folder.missing") }}</p>
   {% endif %}
   <form method="post" action="/setup/folder" class="folder-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="/">
-    <input type="text" name="folder" value="{{ folder_text or '' }}" placeholder="C:\Users\you\Documents\Sports Interactive\Football Manager 27" aria-label="FM27's folder" required>
-    <button class="primary">Use this folder</button>
-    {% if setup.browse %}<button formaction="/setup/browse" formnovalidate title="Opens a folder window on this PC">Browse…</button>{% endif %}
+    <input type="text" name="folder" value="{{ folder_text or '' }}" placeholder="C:\Users\you\Documents\Sports Interactive\Football Manager 27" aria-label="{{ t('setup.folder.aria') }}" required>
+    <button class="primary">{{ t("setup.folder.use") }}</button>
+    {% if setup.browse %}<button formaction="/setup/browse" formnovalidate title="{{ t('setup.folder.browse_title') }}">{{ t("setup.folder.browse") }}</button>{% endif %}
   </form>
-  <p class="muted small">A save from its <code>games</code> folder works too. The folder is saved in <code>{{ local_file }}</code> and used at once: facegen reads the newest save straight away.{% if not setup.browse %} Browse is not offered here, as this process cannot open a window on the screen; type or paste the folder.{% endif %}</p>
+  {% if not setup.browse %}<p class="muted small">{{ t("setup.folder.no_browse") }}</p>{% endif %}
 </section>
 {% endif %}
-<div id="status" data-refresh="/status">{% include "_status.html" %}</div>
+<div id="status" data-refresh="/status" data-topic="status" data-rev="{{ rev }}">{% include "_status.html" %}</div>
 {% endblock %}

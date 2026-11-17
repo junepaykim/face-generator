@@ -119,44 +119,65 @@ enabled = true
 
 [age]
 # Real age (whole years) picks an age wording, W01 (youngest look) to W10 (oldest); the
-# wording text is fixed in src/facegen/age.py. Each table lists, per wording it uses, the
-# first real age that gets it; it applies until the next wording's first age. Ages below a
-# table's first row use that row. First ages must rise from W01 to W10. A tracked player
-# is re-drawn when their wording changes. Chosen by the user, 2026-11-11 (docs/spec.md).
+# wording text is fixed in src/facegen/core/age.py. Each table gives, per wording, the first
+# real age that gets it; it applies until the next used wording's first age. "-" leaves a
+# wording out of that table (Phase 12, user 2026-11-17: every table offers all ten). Ages
+# below a table's first used wording use that wording. First ages must rise from W01 to W10.
+# A tracked player is re-drawn when their wording changes. Chosen by the user, 2026-11-11;
+# W06 back in my club's table at 26, W05 from 24 (user, 2026-11-17).
 
 [age.a_my_club]                     # group A at my club, the most visible players
 W01 = 15                            # 15-16
 W02 = 17                            # 17-18
 W03 = 19                            # 19-21
-W04 = 22                            # 22-24
-W05 = 25                            # 25-26
+W04 = 22                            # 22-23
+W05 = 24                            # 24-25
+W06 = 26                            # 26
 W07 = 27                            # 27-28
 W08 = 29                            # 29-30
 W09 = 31                            # 31-33
 W10 = 34                            # 34 and older
 
 [age.a_other_club]                  # group A elsewhere
+W01 = "-"
 W02 = 15                            # 15-18
 W03 = 19                            # 19-21
 W04 = 22                            # 22-24
+W05 = "-"
+W06 = "-"
 W07 = 25                            # 25-28
+W08 = "-"
 W09 = 29                            # 29-33
 W10 = 34                            # 34 and older
 
 [age.b]                             # group B
+W01 = "-"
 W02 = 15                            # 15-18
+W03 = "-"
 W04 = 19                            # 19-24
+W05 = "-"
+W06 = "-"
 W07 = 25                            # 25-28
+W08 = "-"
 W09 = 29                            # 29 and older
+W10 = "-"
 
 [age.c]                             # group C
+W01 = "-"
+W02 = "-"
 W03 = 15                            # 15-21
+W04 = "-"
+W05 = "-"
 W06 = 22                            # 22-27
+W07 = "-"
 W08 = 28                            # 28 and older
+W09 = "-"
+W10 = "-"
 
 [age.staff]                         # my club's staff, whatever their group (user, 2026-11-12)
 # Very wide bands, and never W01: most staff fall in W03-W07. Across the Telford save's
 # 71,000 staff, 90% are 25-60, about 4% under 25 and 6% over 60 (docs/research.md).
+W01 = "-"
 W02 = 18                            # under 25
 W03 = 25                            # 25-31
 W04 = 32                            # 32-38
@@ -169,6 +190,9 @@ W10 = 75                            # 75 and older
 
 [age.media]                         # journalists and press officers
 # The staff bands from W04 up (user, 2026-11-14; W05 up before).
+W01 = "-"
+W02 = "-"
+W03 = "-"
 W04 = 18                            # under 39
 W05 = 39                            # 39-45
 W06 = 46                            # 46-52
@@ -233,6 +257,13 @@ auto_groups = ["a", "b", "c"]
 # and the blended tiles can change a picture slightly. "Auto-configure for my GPU" on the
 # Settings page turns it on for such a card. Applies from the next picture.
 vae_tiling = false
+
+[display]
+# How the window looks (Phase 12). "auto" follows Windows: the display language the window
+# reports, and Windows's light or dark app mode. The switches at the foot of the window's
+# sidebar change these too, as one change you can undo.
+language = "auto"                   # auto, en (English) or ko (한국어)
+theme = "auto"                      # auto, light or dark
 
 [ui]
 # Local only: there is no login, so `facegen serve` refuses any address but loopback. These

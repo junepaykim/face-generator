@@ -1,0 +1,800 @@
+# facegen's English UI text (Phase 12). Keys are used by the templates and the web routes;
+# ko.toml holds the same keys in Korean. Values in braces are filled in; a table with "one"
+# and "other" picks by the number in {count}. {a}, {b} and {c} name the picture groups (a
+# coloured chip on a page). A text may hold simple HTML (a link, a code span): the catalog is
+# trusted, the values filled in are escaped. Keep explanations short: what one or two uses
+# make obvious needs none; the rest goes in an ⓘ tip (keys ending in "tip").
+
+[group]
+a = "Detailed"
+b = "Standard"
+c = "Light"
+
+[term]
+a = "The most careful pictures: the best of several candidates, then a detail pass. My club's players and the very best."
+b = "One picture each at standard quality: strong and promising players in my league, continental competitions and my youth teams, and the press."
+c = "Quick, smaller pictures for the other useful players in my league."
+tracked = "Drawn again when they change club or look older, so the picture stays up to date."
+pinned = "Set by hand to a group, or to never draw, instead of following the rules."
+
+[band]
+W01 = "Child face"
+W02 = "Young face"
+W03 = "Late teens"
+W04 = "Early twenties"
+W05 = "Youthful"
+W06 = "Late youthful"
+W07 = "Young adult"
+W08 = "Grown adult"
+W09 = "Mature look"
+W10 = "Veteran look"
+
+[nav]
+label = "Pages"
+dashboard = "Dashboard"
+players = "Players"
+review = "Review"
+log = "Log"
+settings = "Settings"
+
+[side]
+in_game = "in-game {date}"
+unknown = "unknown"
+no_career = "no career yet"
+language = "Language"
+theme = "Theme"
+
+[common]
+group = "{group} group"
+unknown = "unknown"
+none = "none"
+free_agent = "free agent"
+info = "More about this"
+
+[col]
+player = "Player"
+name = "Name"
+age = "Age"
+club = "Club"
+job = "Job"
+group = "Group"
+order = "Order"
+why = "Why"
+origin = "Origin"
+picture = "Picture"
+version = "Version"
+age_band = "Age look"
+state = "State"
+drawn = "Made"
+status = "Status"
+updated = "Updated"
+
+[kind]
+initial = "first picture"
+kit = "new kit"
+age = "older look"
+upgrade = "upgrade to {a}"
+reroll = "new face"
+redraw = "new picture"
+
+[tier]
+0 = "requested"
+1 = "{a}, my club"
+2 = "{a}"
+3 = "{b}"
+4 = "{c}"
+
+[status]
+drawing = "generating"
+queued = "queued: {kind}"
+in_review = "in review"
+published = "in FM27"
+drawn = "made"
+
+[job_status]
+queued = "queued"
+running = "generating"
+done = "done"
+failed = "failed"
+cancelled = "cancelled"
+
+[worker.state]
+starting = "Starting"
+idle = "Idle"
+paused = "Paused"
+waiting = "Waiting"
+setup = "Setup needed"
+running = "Generating"
+error = "Error"
+gpu-fault = "Graphics error"
+stopped = "Stopped"
+restarting = "Restarting"
+
+[tag]
+staff = "staff"
+youth_team = "youth team"
+my_club = "my club"
+my_league = "my league"
+continental = "continental"
+not_mens = "not men's"
+not_mens_football = "not men's football"
+academy = "academy"
+fm_photo = "FM27 photo"
+fm_photo_title = "FM27 ships a photo"
+facepack = "facepack"
+facepack_title = "A facepack in the graphics folder has a picture"
+no_photo = "no photo"
+no_photo_title = "FM27 shows a silhouette"
+pin = "pinned: {pin}"
+pinned_to = "pinned: {pin}"
+tracked = "auto-update"
+reference = "reference picture"
+
+[tag.media]
+journalist = "journalist"
+"press officer" = "press officer"
+
+[trait]
+hair_colour = "hair colour"
+hair_style = "hair style"
+fringe = "fringe"
+eye_colour = "eye colour"
+eye_shape = "eye shape"
+skin = "skin"
+accessory = "accessory"
+mark = "mark"
+expression = "expression"
+height = "height"
+build = "build"
+
+[setup.banner]
+title = "Set up:"
+folder_gone = "FM27's folder ({folder}) is not there any more."
+folder_missing = "FM27's folder was not found."
+choose = "<a href=\"/#setup\">Choose it on the dashboard</a>."
+models = "the models are not downloaded yet ({size}). <a href=\"/#setup\">Download them on the dashboard</a>."
+
+[setup.folder]
+title = "Set up: FM27's folder"
+gone = "FM27's folder was <code>{folder}</code>, and it is not there any more. Choose where it is now."
+missing = "facegen could not find FM27's folder. It holds the <code>games</code> and <code>graphics</code> folders, usually <code>Documents\\Sports Interactive\\Football Manager 27</code>."
+aria = "FM27's folder"
+use = "Use this folder"
+browse = "Browse…"
+browse_title = "Opens a folder window on this PC"
+no_browse = "Type or paste the folder: Browse cannot open a window from here."
+
+[setup.models]
+title = "Set up: the models"
+file = "Downloading file {index} of {files}: <code>{name}</code>"
+starting = "Downloading: starting"
+progress = "{percent}% · {done} of {total}"
+stop_note = "Closing facegen stops it; the next Download goes on where it stopped."
+stopped = "The download stopped: {error}"
+intro = "facegen needs three models from Hugging Face: {size}, downloaded once."
+rest_here = " The rest is here already."
+saved_in = "Saved in"
+free = "Free space there"
+no_space = "Not enough free space: {size} and 1 GB to spare are needed there."
+download = "Download {size}"
+done = "The models are downloaded."
+
+[dash.unsupported]
+title = "The newest save cannot be read"
+build = "<strong>{file}</strong> was saved by FM27 build <strong>{build}</strong>, which the save reader does not support."
+unknown = "<strong>{file}</strong>: the save reader does not support its game or build."
+advice = "Existing pictures and the queue are kept, and nothing new is queued from this save. When an fmsave release supports the build: bump the pin, re-run the Phase 0.1 checks and note the result in docs/research.md (AGENTS.md rule 5)."
+
+[dash.worker]
+title = "Status"
+drawing = "Generating <a href=\"{url}\">{name}</a> · {kind} · {group}"
+restart = "Close facegen and start it again to go on."
+resume = "Resume"
+pause = "Pause"
+generate_now = "Generate now"
+generate_now_title = "Generate the whole queue now, every group, even while FM27 is running"
+absent = "Pictures are not generated in this process (<code>facegen serve --no-worker</code>)."
+
+[dash.now]
+current_alt = "{name}'s current picture"
+each = "About {each} per picture"
+
+[dash.recent]
+title = "Latest pictures"
+all = "Gallery"
+
+[dash.sync]
+careers = "FM27 is shown the pack of <strong>{newest}</strong>, whose save is the newest. Other careers: {others}."
+title = "Last sync"
+save = "Save"
+when = "When"
+in_game = "In-game"
+failed = "Failed: {error}"
+never = "Never synced."
+syncing = "syncing"
+running = "Started {started}; this takes about half a minute."
+nothing_new = "Nothing new in the save."
+warning = "Warning: {warning}"
+now = "Sync now"
+now_title = "Read the newest save and update the queue"
+
+[dash.sync.trigger]
+poller = "the save watcher"
+"sync now" = "Sync now"
+command = "facegen sync"
+
+[dash.counts]
+title = "Players"
+my_club = "{count} at my club"
+staff = ", <a href=\"/players?role=staff\">{count} staff</a>"
+youth = "<a href=\"/players?role=youth\">{count} in my youth teams</a>"
+media = "<a href=\"/players?role=media&amp;group=grouped\">{count} journalists and press officers</a>"
+tracked = "Auto-update"
+pinned = "Pinned"
+pictures = "Pictures"
+pictures_value = "<a href=\"/players?picture=yes\">{current}</a> ({published} in FM27)"
+no_photo = "No photo"
+no_photo_value = "<a href=\"/players?origin=existing&amp;role=players&amp;photo=none\">{count:,}</a> pre-existing players, {picked:,} of them in a group"
+off_in_settings = "(off in Settings)"
+photos_unknown = "unknown: FM27's photo list could not be read"
+no_career = "No career yet. Sync a save to begin."
+
+[dash.queue]
+title = "Queue"
+left = { one = "{count} picture left", other = "{count} pictures left" }
+eta = "about {time}"
+eta_unknown = "the time shows after a few pictures"
+held = { one = "{count} of them waits for Generate now", other = "{count} of them wait for Generate now" }
+empty = "The queue is empty."
+list = "Show the list"
+first = "The first {count}"
+reference = "reference picture"
+cancel = "cancel"
+
+[log]
+title = "Log"
+worker = "Generating"
+empty = "Nothing yet."
+sync = "Saves"
+build = "Build"
+started_by = "Started by"
+watching = "Save watcher"
+checked = "checked {time}"
+not_watching = "not watching (<code>--no-watch</code>): press Sync now after saving"
+
+[players]
+generate = "Generate"
+new_picture = "New picture"
+pin = "Pin"
+total = "{count:,} players"
+page = "page {page} of {pages}"
+tick_all = "Tick every player on this page"
+tick = "Tick {name}"
+none = "No players match."
+first = "« first"
+previous = "‹ previous"
+next = "next ›"
+last = "last »"
+photos_unknown_sync = "Who has a photo is not known: the last sync could not read FM27's photo list."
+photos_unknown_next = "Who has a photo is not known yet: it is read at the next sync."
+media_local = "my club's country"
+media_elsewhere = "elsewhere"
+origin_staff = "staff"
+origin_media = "media"
+origin_newgen = "newgen"
+origin_existing = "pre-existing"
+
+[players.filter]
+name = "Name or unique ID"
+club_chip = "club: {club}"
+any_club = "any club"
+league = "League"
+min = "min"
+max = "max"
+ca_min = "CA at least"
+ca_max = "CA at most"
+pa_min = "PA at least"
+pa_max = "PA at most"
+origin = "Newgen or pre-existing"
+role = "Players, staff or media"
+photo = "Photo in FM27"
+photo_title = "The photo FM27 shows without a facegen picture: its own, or a facepack's"
+scope = "Scope"
+sort = "Sort"
+apply = "Filter"
+clear = "clear"
+
+[players.bulk]
+as_group = "as"
+generate_title = "Queue a picture in this group, before the automatic ones"
+new_picture_title = "A new picture of the same character"
+pin_never = "never draw"
+pin_clear = "clear pin"
+
+[players.league]
+any = "any league"
+mine = "my league"
+continental = "continental competition"
+other = "elsewhere"
+
+[players.origin]
+any = "newgen or pre-existing"
+newgen = "newgens"
+existing = "pre-existing"
+
+[players.role]
+any = "everyone"
+players = "players"
+youth = "my club's youth teams"
+staff = "my club's staff"
+media = "journalists and press officers"
+
+[players.group]
+any = "any group"
+grouped = "in a group"
+a = "{a} group"
+b = "{b} group"
+c = "{c} group"
+none = "no group"
+pinned = "pinned"
+
+[players.picture]
+any = "any picture state"
+yes = "has a picture"
+no = "no picture"
+queued = "queued or generating"
+review = "in review"
+
+[players.photo]
+any = "any photo"
+game = "FM27 photo"
+facepack = "facepack picture"
+none = "no photo or facepack"
+
+[players.scope]
+mens = "men's football"
+all = "all players"
+
+[players.sort]
+ca = "sort by CA"
+pa = "sort by PA"
+name = "sort by name"
+age = "sort by age"
+club = "sort by club"
+
+[player]
+current_alt = "Current picture of {name}"
+restored_on = "restored {date}"
+not_published = "not in FM27 yet"
+no_picture = "no picture"
+unique_id = "unique ID {uid}"
+staff_now = "on my club's staff"
+staff_was = "was on my club's staff"
+journalist = "journalist"
+journalist_local = "journalist from my club's country"
+press = "press officer"
+press_local = "my club's press officer"
+in_youth = " in my club's youth or reserve teams"
+from_academy = " from my academy"
+gender_unknown = "gender unknown"
+woman_in_save = "a woman in the save"
+man_in_save = "a man in the save"
+drawn_woman = ", drawn as a woman"
+left_staff = "no longer on my club's staff"
+not_in_save = "not in the latest save"
+on_loan = "(on loan from {club})"
+born = "(born {date})"
+height = "Height"
+height_value = "{cm} cm · Strength {strength}"
+photo = "Photo"
+photo_both = "FM27's and a facepack's"
+photo_game = "FM27's"
+photo_facepack = "a facepack's"
+photo_none = "none: FM27 shows a silhouette"
+photo_unknown = "unknown until the next sync"
+personality = "Personality"
+personality_unknown = "unknown until the next sync"
+no_rule = "no rule applies"
+now = "Now"
+drawing = "generating: {kind}"
+requested = " (requested)"
+with_reference = "with the current face as a reference"
+nothing_queued = "nothing queued"
+new_face = "New face"
+new_face_title = "A new character, then a picture of it"
+new_picture_title = "A new picture of the same character"
+new_picture_title_ref = "A new picture of the same character, keeping the current face"
+retry = "Retry"
+cancel_request = "Cancel request"
+remove = "Remove picture"
+remove_confirm = "Remove {name}'s picture from FM27 and never draw them? The game's own photo comes back after Reload Skin."
+pin_none = "no pin (rules decide)"
+pin_never = "never draw"
+pin_set = "Set"
+pin_tip = "Pinning to a group generates a picture in that group, whatever the rules say. Never draw leaves this person out."
+pin_tip_media = "Pin a regular at my club to {a}: drawn at {a} quality, and updated when their age look changes."
+sheet = "Character"
+sheet_tip = "At my club, banned words are left out, tan or dark skin is drawn {steps} step(s) lighter, and {percent}% of sharp eyes are drawn round."
+eyes_round = "This player's eyes are drawn round."
+base_seed = "base seed"
+version = "version"
+sheet_later = "Made with the first picture."
+leans = "Personality favours:"
+leans_off = " (off in Settings)"
+lean = "{reason} → {expression}"
+current = "Current picture"
+kit = "Kit: {kit}"
+kit_catalog = "(colours from FM27's kit image)"
+kit_bundled = "(colours from FM27's kit image, bundled)"
+kit_fallback = "(fallback kit)"
+pose = "pose: {pose}"
+backdrop = "backdrop: {backdrop}"
+style = "style: {style}"
+seed = "seed {seed}"
+took = "made in {time}"
+detail_used = "detail pass used"
+detail_rejected = "detail pass rejected by the check"
+reference_alt = "The face given as a reference"
+reference_used = "Drawn with v{version}'s face as a reference, strength {scale}."
+reference_unused = "Drawn without a reference: {why}."
+chosen = "chosen"
+passed = "passed"
+failed = "failed"
+score = "score {score}"
+prompt = "Prompt"
+history = "History"
+history_tip = "Restore shows an earlier picture in FM27 again. It stays until the player's next club or age change, or a move up to {a}."
+reference_version = "(reference v{version})"
+state_current = "current"
+state_current_restored = "current (restored)"
+state_failed = "failed the check"
+state_replaced = "replaced or removed"
+restore = "Restore"
+restore_confirm = "Show v{version} in FM27 again instead of the current picture?"
+jobs = "Jobs"
+
+[review]
+tip = "Pictures that failed the quality check three times; none of them is in FM27. Retry generates again with new seeds; New face makes a new character first."
+age = "age {age}"
+give_up = "Never draw this player"
+pin_never = "Never draw"
+nothing = "No players to review right now."
+
+[settings]
+intro_tip = "Settings save automatically and apply at once. Undo, or an entry in Recent changes, puts earlier values back. Pictures already made are never deleted."
+undo = "Undo"
+undo_title = "Put back what the last change replaced"
+redo = "Redo"
+redo_title = "Make the change you undid last again"
+all_saved = "All changes are saved."
+changed_legend = "Changed from the default:"
+reset = "Reset all to defaults"
+reset_title = "Every setting back to its default, as one change you can undo"
+save = "Save"
+noscript = "With JavaScript off, changes are saved with this button."
+default = "default {value}"
+use_default = "use default"
+age_label = "{band} ({tags})"
+age_label_plain = "{band}"
+
+[settings.info]
+title = "About this run"
+model = "Image model"
+model_loaded = "loaded"
+model_not_loaded = "not loaded"
+session = "This run"
+session_value = "{done} made, {failed} sent to review"
+watcher = "Save watcher"
+watching = "watching the saves folder"
+not_watching = "off (<code>--no-watch</code>): press Sync now after saving"
+photos = "FM27's photo list"
+photos_value = "{count:,} photos"
+facepacks = { one = "; {count} facepack with {mapped:,}", other = "; {count} facepacks with {mapped:,}" }
+photos_unknown = "could not be read"
+no_worker = "not generated in this process"
+
+[settings.folders]
+title = "FM27's folders"
+user = "Saves and graphics"
+install = "Install"
+change = "Change"
+
+[settings.gpu]
+title = "Graphics card"
+tip = "Auto-configure sets the {a} group's candidates, the detail pass and VAE tiling for this PC's graphics card."
+button = "Auto-configure for my GPU…"
+
+[settings.value]
+on = "on"
+off = "off"
+none = "none"
+skip = "not used"
+
+[settings.error]
+number = "needs a number"
+whole_numbers = "needs whole numbers"
+on_off = "needs on or off"
+band = "needs a whole number, or - to leave it out"
+
+[settings.title]
+"groups.a" = "{a} group"
+"groups.b" = "{b} group"
+"groups.c" = "{c} group"
+staff = "My club's staff"
+youth = "My club's youth teams"
+media = "Journalists and press officers"
+no_photo = "Pre-existing players without a photo"
+eligibility = "Who counts"
+newgen = "Newgens"
+"age.a_my_club" = "Age looks: {a} at my club"
+"age.a_other_club" = "Age looks: {a} elsewhere"
+"age.b" = "Age looks: {b}"
+"age.c" = "Age looks: {c}"
+"age.staff" = "Age looks: my club's staff"
+"age.media" = "Age looks: journalists and press officers"
+reference = "Reference picture"
+my_club = "Players at my club"
+body = "Height and build"
+personality = "Personality"
+schedule = "Running"
+render = "Rendering"
+display = "Language and look"
+
+[settings.note]
+eligibility = "Applies from the next sync."
+staff = "Staff are drawn at {a} quality."
+youth = "Players outside the first team are drawn in the {b} group, and in {a} once they join it."
+media = "Journalists and press officers are drawn as women in the {b} group."
+my_club = "Applies to new pictures."
+body = "Applies to new characters."
+
+[settings.tip]
+age = "The age each look starts at; it lasts until the next one used. - leaves a look out of this table."
+personality = "How much a new character's expression follows their personality. 0: not at all. 1: a fitting expression is twice as likely. 2: three times as likely."
+reference = "When a picture is drawn again (a new kit, an older look, a new picture), the current face guides the new one so the player still looks the same. A stronger reference keeps the face closer but can blur the kit."
+newgen = "Used only for a career's first sync, if facegen cannot tell newgens apart by their IDs."
+
+[settings.field_tip]
+banned_traits = "Pictures with these words become much less likely."
+
+[settings.label]
+ca_above = "CA above"
+pa_above = "PA above"
+published_long_edge = "Picture height (px)"
+candidates = "Candidates per picture"
+detail_size = "Detail pass"
+vae_tiling = "VAE tiling (decode in tiles to save graphics memory)"
+my_academy = "Academy players stay in the {b} group after they leave"
+mens_football_only = "Men's football only"
+continental_competition_ids = "Continental competition IDs (editor database IDs)"
+loaned_out_at_my_club = "Count players I loaned out as my club's"
+fallback_min_unique_id = "Newgen IDs start at"
+scale = "Reference strength (0 to 1)"
+other_clubs = "Also for players outside my club"
+banned_traits = "Banned words (comma-separated)"
+soften_skin = "Draw tan and dark skin lighter (0 to 2 steps)"
+round_eyes = "Share of sharp eyes drawn round (0 to 1)"
+short_below_cm = "Petite below (cm)"
+tall_from_cm = "Tall from (cm)"
+slim_strength_at_most = "Skinny at Strength at most"
+muscular_strength_from = "Muscular from Strength"
+weight = "Personality in the expression"
+poll_seconds = "Check the saves folder every (seconds)"
+generate_while_fm_running = "Generate pictures while FM27 is running"
+auto_groups = "Groups drawn automatically"
+
+[settings.label_in]
+"groups.b.league_ca_above" = "My league or continental: CA above"
+"groups.b.league_pa_above" = "My league or continental: PA above"
+"groups.b.any_ca_above" = "CA above"
+"groups.b.any_pa_above" = "PA above"
+"groups.c.league_ca_above" = "My league: CA above"
+"groups.c.league_pa_above" = "My league: PA above"
+"staff.enabled" = "Draw my club's staff"
+"no_photo.enabled" = "Make their pictures by the {a}, {b} and {c} thresholds"
+"youth.enabled" = "Draw my club's reserve, U-23 and U-18 players"
+"media.journalists" = "Draw journalists from my club's country"
+"media.press_officers" = "Draw my club's press officers"
+"reference.enabled" = "Use the current face when drawing again"
+"display.language" = "Language"
+"display.theme" = "Theme"
+
+[settings.choice.detail_size]
+1344x1728 = "1344 x 1728 (best)"
+1152x1472 = "1152 x 1472 (less graphics memory)"
+off = "off"
+
+[settings.choice.language]
+auto = "Auto (Windows)"
+en = "English"
+ko = "한국어"
+
+[settings.choice.theme]
+auto = "Auto (Windows)"
+light = "Light"
+dark = "Dark"
+
+[history]
+title = "Recent changes"
+defaults = "reset to defaults"
+auto_configure = "auto-configured for the graphics card"
+undone = "undone"
+more = "{count} more"
+changed = { one = "{count} player changed group", other = "{count} players changed group" }
+highest = "; the {count} with the highest PA"
+undo = "undo"
+undo_later = "undo this and every later change"
+none = "No changes yet."
+
+[hardware]
+page_title = "Graphics card"
+heading = "Auto-configure for my GPU"
+back = "← Settings"
+card_title = "This PC's graphics card"
+cannot_ask = "the card cannot be asked in this process"
+cannot_ask_here = "The card cannot be asked in this process."
+card = "Card"
+no_cuda = "no CUDA graphics card"
+why = "Why"
+ask_again = "Ask the card again"
+preset_heading = "Preset: {title}"
+tip = "Who gets a picture never changes here: a smaller card is slower, it does not draw fewer people. Pictures already made stay as they are."
+apply = { one = "Apply this {count} change", other = "Apply these {count} changes" }
+nothing = "Nothing to change: the settings already suit this card."
+
+[hardware.col]
+setting = "Setting"
+now = "Now"
+after = "After"
+default = "Default"
+
+[hardware.preset.high]
+title = "12 GB or more"
+note = "The defaults: {a} is the best of 3 candidates, with the detail pass at 1344x1728."
+
+[hardware.preset.medium]
+title = "10 to under 12 GB"
+note = "{a} is the best of 3, with a smaller detail pass (1152x1472)."
+
+[hardware.preset.low]
+title = "under 10 GB"
+note = "{a} is the best of 2 with no detail pass, decoded in tiles to save memory. Slower; who gets a picture does not change."
+
+[hardware.preset.none]
+title = "no CUDA graphics card"
+note = "Nothing changes: facegen needs an NVIDIA card with CUDA, and none was found."
+
+[manual]
+queued = "{count} queued"
+pinned = "{count} pinned (already have a picture)"
+skipped = "{count} skipped ({why})"
+join = ", "
+nothing = "nothing to do"
+
+[report]
+count = "{name} {before} → {after}"
+tracked = "auto-update"
+queued = "{count} queued"
+updated = "{count} updated"
+cancelled = "{count} cancelled"
+queue = "queue: {what}"
+unchanged = "no player moved; the queue is unchanged"
+
+[msg]
+no_career = "No career yet: sync a save first."
+worker_absent = "Pictures are not generated in this process."
+gpu_fault_advice = "The graphics driver reported an error. Close facegen and start it again to go on; the queue is kept."
+sync_absent = "Syncing is not available in this process."
+sync_running = "A sync is already running."
+sync_started = "Sync started: reading the newest save."
+reload_hint = "In FM27: Settings -> Reload Skin (스킨 다시 불러오기) to see the pictures."
+
+[msg.folder]
+not_fm = "Not FM27's folder: {why}"
+not_saved = "Not saved: {file} {error}"
+no_effect = "Not saved: the folder did not take effect."
+reading = "Reading the newest save now."
+press_sync = "Press Sync now to read the newest save."
+next_sync = "It is used from the next sync."
+saved = "FM27's folder is {folder}. {then}"
+no_browse = "Browse is not available here: type or paste the folder."
+none_chosen = "No folder chosen."
+
+[msg.models]
+absent = "The models are not downloaded by this process."
+confirm = "Not downloaded: confirm with the Download button."
+here = "The models are here already."
+space = "Not enough free space: {size} and 1 GB to spare are needed in {folder}."
+running = "The download is running already."
+started = "Downloading the models ({size})."
+
+[msg.player]
+bad_id = "Bad player ID."
+tick_first = "Tick at least one player first."
+none = "No player {uid} in this career."
+pinned_good = "Pinned to {group}; the picture is already good enough."
+queued_as = "Queued in the {group} group."
+new_face = "New face queued: a new character, generated next."
+new_picture = "New picture queued."
+pinned_queued = "Pinned to {group} and queued."
+pinned_never = "Never drawn from now on; queued jobs cancelled."
+pin_cleared = "Pin cleared; the rules decide."
+removed = "Picture removed; this person is never drawn again. {reload}"
+nothing_published = "Never drawn from now on; there was no picture in FM27."
+retry = "Queued again with new seeds."
+bad_picture = "Bad picture ID."
+other_career = "Not shown in FM27: another career's save is newer."
+still_never = " It is still set to never draw, so it is not updated."
+restored = "v{version} is the current picture again.{note} {where}"
+cancelled = "Request cancelled."
+nothing_to_cancel = "Nothing to cancel."
+publish_failed = "Publishing failed: {error}"
+
+[msg.bulk]
+generate = "Generate in the {group} group: {summary}."
+new_picture = "New picture: {summary}."
+pin = "Pin to {group}: {summary}."
+pinned_never = "{count} player(s) pinned to never."
+unpinned = "{count} player(s) unpinned."
+
+[msg.settings]
+saved = "Saved: {what}."
+undone = "Undone: {what}."
+redone = "Redone: {what}."
+all_defaults = "every setting back to its default ({what})"
+eligibility = "Applies from the next sync."
+not_done = "Not done: {error}"
+no_undo = "Nothing to undo."
+no_redo = "Nothing to redo."
+nothing = "Nothing changed."
+check_field = "Not saved: check the field."
+not_saved = "Not saved: {error}"
+
+[msg.hardware]
+no_card = "Nothing changed: no CUDA graphics card ({why})."
+suits = "Nothing to change: the settings already suit the {card}."
+configured = "Auto-configured for the {card} ({preset}). {outcome} Undo puts it all back."
+
+[worker.reason]
+starting = "Starting…"
+no_career = "No career yet: generating starts once facegen has read a save."
+queue_empty = "Every picture is up to date. New ones are queued when FM27 saves."
+held = { one = "{count} picture in {groups} is not drawn automatically. Generate now draws it.", other = "{count} pictures in {groups} are not drawn automatically. Generate now draws them." }
+paused = "Paused."
+paused_error = "Paused after an error: {error}"
+models_missing = { one = "{count} picture waits for the models to be downloaded.", other = "{count} pictures wait for the models to be downloaded." }
+fm_running = { one = "Waiting for FM27 to close, so the game keeps the graphics card. {count} picture waits.", other = "Waiting for FM27 to close, so the game keeps the graphics card. {count} pictures wait." }
+fm_unknown = { one = "facegen cannot tell whether FM27 is open, so it waits to be safe. {count} picture waits.", other = "facegen cannot tell whether FM27 is open, so it waits to be safe. {count} pictures wait." }
+other_worker = "Another facegen is generating; this one waits for it."
+drawing = "Generating {name} · {kind} · {group}"
+next_job = "Picture done; on to the next."
+job_error = "Paused: {name} could not be generated ({error})."
+retrying = "Something went wrong ({error}); trying again shortly."
+crashed = "Stopped after an error ({error}). Close facegen and start it again."
+gpu_fault = "The graphics driver reported an error. Close facegen and start it again to go on; the queue is kept."
+gpu_fault_child = "The graphics driver reported an error; starting again by itself."
+restarting = "{cause}{then}. Starting again in {seconds} s."
+gave_up = "Stopped: the graphics card or its driver failed {count} times within {minutes} minutes. The queue is kept. Resume tries again; if it keeps happening, close other programs that use the graphics card, or restart the PC."
+stopped = "Stopped."
+
+[worker.cause]
+gpu = "The graphics driver reported an error"
+crash = "The generating process ended unexpectedly"
+spawn = "The generating process could not start"
+
+[worker.then]
+review = "; {name} went to review"
+queue = "; {name} is back in the queue"
+
+[dur]
+seconds = "{count} s"
+minutes = "{count} min"
+hours = "{count} h"
+hours_minutes = "{hours} h {minutes} min"
+
+[js]
+saving = "Saving…"
+no_answer = "Not saved: facegen did not answer. Is it still running?"
+unsaved_confirm = "Some changes could not be saved (see the fields marked in red). Leave them unsaved?"
+ticked = "{count} ticked"
+switch_failed = "Not changed: facegen did not answer."

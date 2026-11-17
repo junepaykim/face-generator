@@ -1,155 +1,175 @@
 <span hidden data-career="{{ career.id if career else '' }}"></span>
 {% set d = setup.download if setup else none %}
 {% if setup and setup.models is not none and (setup.needs_models or (d and (d.running or d.finished))) %}
-<section class="card setup-panel" {% if not setup.needs_folder %}id="setup"{% endif %}>
-  <h2>Set up: the models</h2>
+<section class="card setup-panel" id="{{ 'setup' if not setup.needs_folder else 'models' }}">
+  <h2>{{ t("setup.models.title") }}</h2>
   {% if d and d.running %}
-    <p>Downloading{% if d.current %} file {{ d.index }} of {{ d.files }}: <code>{{ d.current }}</code>{% else %}: starting{% endif %}</p>
-    <p><progress max="100" value="{{ d.percent }}">{{ d.percent }}%</progress> {{ d.percent }}% · {{ gigabytes(d.done_bytes) }} of {{ gigabytes(d.total_bytes) }}</p>
-    <p class="muted small">Closing facegen stops it; the next Download goes on where it stopped.</p>
+    <p>{% if d.current %}{{ t("setup.models.file", index=d.index, files=d.files, name=d.current) }}{% else %}{{ t("setup.models.starting") }}{% endif %}</p>
+    <p><progress max="100" value="{{ d.percent }}">{{ d.percent }}%</progress> {{ t("setup.models.progress", percent=d.percent, done=gigabytes(d.done_bytes), total=gigabytes(d.total_bytes)) }}</p>
+    <p class="muted small">{{ t("setup.models.stop_note") }}</p>
   {% elif setup.needs_models %}
     {% set m = setup.models %}
-    {% if d and d.error %}<p class="bad small">The download stopped: {{ d.error }}</p>{% endif %}
-    <p>facegen draws with three models from Hugging Face: {{ gigabytes(m.missing_bytes) }} to download once{% if m.missing_bytes < m.total_bytes %} (the rest is here already){% endif %}. After that it works without the internet.</p>
-    <table class="kv">
+    {% if d and d.error %}<p class="bad small">{{ t("setup.models.stopped", error=d.error) }}</p>{% endif %}
+    <p>{{ t("setup.models.intro", size=gigabytes(m.missing_bytes)) }}{% if m.missing_bytes < m.total_bytes %}{{ t("setup.models.rest_here") }}{% endif %}</p>
+    <div class="table-wrap"><table class="kv">
       {% for repo in m.missing_repos() %}<tr><th>{{ model_repos[repo] }}</th><td><code>{{ repo }}</code></td></tr>{% endfor %}
-      <tr><th>Saved in</th><td><code>{{ m.cache }}</code></td></tr>
-      <tr><th>Free space there</th><td>{{ gigabytes(m.free_bytes) if m.free_bytes is not none else "unknown" }}</td></tr>
-    </table>
-    {% if not m.enough_space %}<p class="bad small">Not enough free space: {{ gigabytes(m.missing_bytes) }} and 1 GB to spare are needed there.</p>{% endif %}
+      <tr><th>{{ t("setup.models.saved_in") }}</th><td><code>{{ m.cache }}</code></td></tr>
+      <tr><th>{{ t("setup.models.free") }}</th><td>{{ gigabytes(m.free_bytes) if m.free_bytes is not none else t("common.unknown") }}</td></tr>
+    </table></div>
+    {% if not m.enough_space %}<p class="bad small">{{ t("setup.models.no_space", size=gigabytes(m.missing_bytes)) }}</p>{% endif %}
     <form method="post" action="/setup/models"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="confirm" value="download">
-      <div class="buttons"><button class="primary" {{ "disabled" if not m.enough_space }}>Download {{ gigabytes(m.missing_bytes) }}</button></div>
+      <div class="buttons"><button class="primary" {{ "disabled" if not m.enough_space }}>{{ t("setup.models.download", size=gigabytes(m.missing_bytes)) }}</button></div>
     </form>
-    <p class="muted small">Nothing is downloaded until you press the button. Queued pictures wait meanwhile.</p>
   {% else %}
-    <p class="ok">The models are downloaded. Queued pictures are drawn now.</p>
+    <p class="ok">{{ t("setup.models.done") }}</p>
   {% endif %}
 </section>
 {% endif %}
 {% if last_sync and last_sync.unsupported %}
-<section class="card alert">
-  <h2>The newest save cannot be read</h2>
-  <p><strong>{{ last_sync.save_file }}</strong>{% if last_sync.build %} was saved by FM27 build <strong>{{ last_sync.build }}</strong>, which{% else %}: its game or build{% endif %} the save reader does not support.</p>
+<section class="card alert" id="unsupported">
+  <h2>{{ t("dash.unsupported.title") }}</h2>
+  <p>{% if last_sync.build %}{{ t("dash.unsupported.build", file=last_sync.save_file, build=last_sync.build) }}{% else %}{{ t("dash.unsupported.unknown", file=last_sync.save_file) }}{% endif %}</p>
   <p class="small">{{ last_sync.error }}</p>
-  <p class="small">{{ unsupported_advice }}</p>
+  <p class="small">{{ t("dash.unsupported.advice") }}</p>
 </section>
 {% endif %}
-<section class="cards">
-  <div class="card">
-    <h2>Worker</h2>
-    {% if worker %}
-      <p><span class="state state-{{ worker.state }}">{{ worker.state }}</span> {{ worker.detail }}</p>
-      {% if worker.current %}<p>Drawing <a href="/players/{{ worker.current.unique_id }}">{{ worker.current.name }}</a>: {{ kind_name(worker.current.kind) }}, group {{ worker.current.group|upper }}</p>{% endif %}
-      <p class="muted small">GPU model {{ "loaded" if worker.models_loaded else "not loaded" }} · this session {{ worker.done }} drawn, {{ worker.failed }} sent to review{% if worker.generate_now %} · <strong>generating now</strong> (FM27 check off until the queue is empty){% endif %}</p>
-      {% if native %}<p class="muted small" title="facegen-native: faster picture checks and publishing; the Python versions give the same pictures">Rust code {{ native.describe() }}{% if not native.in_use %}; <code>uv run facegen native --install</code> fetches it{% endif %}</p>{% endif %}
-      {% if worker.last_error %}<p class="bad small">{{ worker.last_error }}</p>{% endif %}
-      <div class="buttons">
-        {% if worker.gpu_fault %}
-          <span class="muted small">Close facegen and start it again to go on drawing.</span>
-        {% elif worker.paused %}
-          <form method="post" action="/worker/resume"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="primary">Resume</button></form>
-        {% else %}
-          <form method="post" action="/worker/pause"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button>Pause</button></form>
-        {% endif %}
-        {% if not worker.generate_now and not worker.gpu_fault %}
-          <form method="post" action="/worker/generate-now"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button title="Draw the whole queue now, every group, even while FM27 is running">Generate now</button></form>
-        {% endif %}
+
+{% if worker %}
+<section class="card now" id="now">
+  <div class="now-pic">
+    {% if drawing and drawing.picture %}<a href="/players/{{ drawing.job.unique_id }}"><img src="/pictures/{{ drawing.picture }}?size=192" alt="{{ tr('dash.now.current_alt', name=drawing.job.name) }}"></a>
+    {% else %}<div class="now-pic-none{{ ' busy' if drawing }}" aria-hidden="true"><span>fg</span></div>{% endif %}
+  </div>
+  <div class="now-main">
+    <h2>{{ t("dash.worker.title") }} <span class="state state-{{ worker.state }}">{{ t("worker.state." ~ worker.state) }}</span></h2>
+    {% if drawing %}
+      <p class="now-text">{{ t("dash.worker.drawing", url="/players/" ~ drawing.job.unique_id, name=drawing.job.name, kind=tr("kind." ~ drawing.job.kind), group=grp(drawing.job.group)) }}</p>
+      <div class="now-progress">
+        {% if drawing.percent is not none %}<progress max="100" value="{{ drawing.percent }}" data-since="{{ worker.since }}" data-each="{{ drawing.each }}"></progress>{% else %}<progress></progress>{% endif %}
+        {% if drawing.each %}<span class="muted small">{{ t("dash.now.each", each=dur(drawing.each)) }}</span>{% endif %}
       </div>
     {% else %}
-      <p class="muted">The worker is not running in this process (<code>facegen serve --no-worker</code>).</p>
+      <p class="now-text">{{ worker_text }}</p>
     {% endif %}
+    {% if worker.last_error %}<p class="bad small">{{ worker.last_error }}</p>{% endif %}
+    <div class="buttons">
+      {% if worker.gpu_fault %}
+        <span class="muted small">{{ t("dash.worker.restart") }}</span>
+      {% elif worker.paused %}
+        <form method="post" action="/worker/resume"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="primary">{{ t("dash.worker.resume") }}</button></form>
+      {% else %}
+        <form method="post" action="/worker/pause"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button>{{ t("dash.worker.pause") }}</button></form>
+      {% endif %}
+      {% if not worker.generate_now and not worker.gpu_fault %}
+        <form method="post" action="/worker/generate-now"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button title="{{ t('dash.worker.generate_now_title') }}">{{ t("dash.worker.generate_now") }}</button></form>
+      {% endif %}
+    </div>
   </div>
+</section>
+{% else %}
+<section class="card now" id="now"><div class="now-main"><h2>{{ t("dash.worker.title") }}</h2><p class="muted">{{ t("dash.worker.absent") }}</p></div></section>
+{% endif %}
 
+{% if estimate %}
+<section class="card queue-card" id="queue">
+  <h2>{{ t("dash.queue.title") }}</h2>
+  {% if estimate.queued %}
+    {% set left = estimate.seconds() if estimate.will_draw else estimate.seconds(held=True) %}
+    <p class="queue-left"><strong class="big">{{ t("dash.queue.left", count=estimate.queued) }}</strong>
+      <span class="muted">{% if left is not none %}{{ t("dash.queue.eta", time=dur(left)) }}{% else %}{{ t("dash.queue.eta_unknown") }}{% endif %}</span></p>
+    <div class="qbar" role="img" aria-label="{% for g in estimate.groups if g.queued %}{{ tr('group.' ~ g.group) }} {{ g.queued }}{{ ', ' if not loop.last }}{% endfor %}">
+      {% for g in estimate.groups if g.queued %}<span class="qseg qseg-{{ g.group }}{{ ' held' if g.held == g.queued }}" style="flex-grow: {{ g.queued }}"></span>{% endfor %}
+    </div>
+    <p class="qlegend">{% for g in estimate.groups if g.queued %}<span>{{ grp(g.group) }} {{ g.queued }}</span>{% endfor %}</p>
+    {% if estimate.held %}<p class="muted small">{{ t("dash.queue.held", count=estimate.held) }}</p>{% endif %}
+    {% if queue %}
+    <details id="queue-list"><summary>{{ t("dash.queue.list") }}</summary>
+      <div class="table-wrap">
+      <table class="list">
+        <thead><tr><th>{{ t("col.player") }}</th><th>{{ t("col.club") }}</th><th>{{ t("col.job") }}</th><th>{{ t("col.group") }}</th><th></th></tr></thead>
+        <tbody>
+        {% for j in queue %}
+          <tr class="{{ 'running' if j.status == 'running' }}">
+            <td><a href="/players/{{ j.unique_id }}">{{ j.name }}</a></td>
+            <td>{{ j.club or t("common.free_agent") }}</td>
+            <td>{{ t("kind." ~ j.kind) }}{% if j.status == "running" %} <span class="st run">{{ t("status.drawing") }}</span>{% endif %}{% if uses_reference(j.kind, j.at_my_club, settings) %} <span class="tag">{{ t("dash.queue.reference") }}</span>{% endif %}</td>
+            <td>{{ grp(j.group_name) }}</td>
+            <td>{% if j.manual and j.status == "queued" %}<form method="post" action="/players/{{ j.unique_id }}/cancel"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="/"><button class="link">{{ t("dash.queue.cancel") }}</button></form>{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      {% if estimate.queued > queue|length %}<p class="muted small">{{ t("dash.queue.first", count=queue|length) }}</p>{% endif %}
+    </details>
+    {% endif %}
+  {% else %}
+    <p class="muted">{{ t("dash.queue.empty") }}</p>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if recent %}
+<section class="card" id="recent">
+  <h2>{{ t("dash.recent.title") }} <a class="small" href="/players?picture=yes">{{ t("dash.recent.all") }}</a></h2>
+  <div class="thumbs">
+    {% for r in recent %}
+    <a class="thumb-card" href="/players/{{ r.unique_id }}" data-id="{{ r.id }}">
+      <img src="/pictures/{{ r.id }}?size=192" loading="lazy" alt="">
+      <span class="thumb-name">{{ r.name }}</span>
+      <span class="thumb-meta">{{ grp(r.group_name) }} <time class="muted small" datetime="{{ r.created_at }}" data-short>{{ r.created_at[11:16] }}</time></span>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="cards" id="facts">
   <div class="card">
-    <h2>Last sync</h2>
+    <h2>{{ t("dash.sync.title") }}</h2>
     {% if last_sync %}
       <table class="kv">
-        <tr><th>Save</th><td>{{ last_sync.save_file }}</td></tr>
-        <tr><th>When</th><td>{{ (last_sync.finished_at or last_sync.started_at)[:19]|replace("T", " ") }} UTC</td></tr>
-        <tr><th>In-game</th><td>{{ last_sync.game_date or "unknown" }}</td></tr>
-        <tr><th>Build</th><td>{{ last_sync.build or "unknown" }}</td></tr>
-        {% if last_sync.trigger %}<tr><th>Started by</th><td>{{ {"poller": "the save watcher", "sync now": "Sync now", "command": "facegen sync"}.get(last_sync.trigger, last_sync.trigger) }}</td></tr>{% endif %}
+        <tr><th>{{ t("dash.sync.save") }}</th><td>{{ last_sync.save_file }}</td></tr>
+        <tr><th>{{ t("dash.sync.when") }}</th><td><time datetime="{{ last_sync.finished_at or last_sync.started_at }}">{{ (last_sync.finished_at or last_sync.started_at)[:16]|replace("T", " ") }}</time></td></tr>
+        <tr><th>{{ t("dash.sync.in_game") }}</th><td>{{ last_sync.game_date or t("common.unknown") }}</td></tr>
       </table>
-      {% if last_sync.error %}<p class="bad small">Failed: {{ last_sync.error }}</p>{% endif %}
+      {% if last_sync.error and not last_sync.unsupported %}<p class="bad small">{{ t("dash.sync.failed", error=last_sync.error) }}</p>{% endif %}
     {% else %}
-      <p class="muted">Never synced.</p>
-    {% endif %}
-    {% if poller %}
-      <p class="small"><span class="state state-{{ {'syncing': 'running', 'settling': 'waiting', 'error': 'error', 'not set': 'error', 'stopped': 'stopped'}.get(poller.state, 'idle') }}">watching saves</span> {{ poller.detail }}{% if poller.checked %} <span class="muted">· checked {{ poller.checked }}</span>{% endif %}</p>
-    {% else %}
-      <p class="muted small">Not watching the saves folder (<code>--no-watch</code>): use Sync now after saving.</p>
-    {% endif %}
-    {% if careers|length > 1 %}
-      <p class="muted small">FM27 is shown the pack of <strong>{{ careers[0].display_name }}</strong>, whose save is the newest. Other careers: {% for c in careers[1:] %}{{ c.display_name }}{{ ", " if not loop.last }}{% endfor %}.</p>
+      <p class="muted">{{ t("dash.sync.never") }}</p>
     {% endif %}
     {% if sync %}
-      {% if sync.running %}<p><span class="state state-running">syncing</span> started {{ sync.started }}; this takes about half a minute.</p>
+      {% if sync.running %}<p><span class="state state-running">{{ t("dash.sync.syncing") }}</span> {{ t("dash.sync.running", started=sync.started) }}</p>
       {% elif sync.message %}<p class="ok small">{{ sync.message }}</p>{% endif %}
-      {% if sync.notice and not sync.running %}<p class="small"><strong>Nothing new in the save.</strong> {{ sync.notice }}</p>{% endif %}
+      {% if sync.notice and not sync.running %}<p class="small"><strong>{{ t("dash.sync.nothing_new") }}</strong> {{ sync.notice }}</p>{% endif %}
       {% if sync.error %}<p class="bad small">{{ sync.error }}</p>{% endif %}
-      {% for w in sync.warnings %}<p class="muted small">Warning: {{ w }}</p>{% endfor %}
+      {% for w in sync.warnings %}<p class="muted small">{{ t("dash.sync.warning", warning=w) }}</p>{% endfor %}
+    {% endif %}
+    {% if careers|length > 1 %}
+      <p class="muted small">{{ t("dash.sync.careers", newest=careers[0].display_name, others=careers[1:]|map(attribute="display_name")|join(", ")) }}</p>
     {% endif %}
     <div class="buttons">
-      <form method="post" action="/sync"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button {% if not sync or sync.running %}disabled{% endif %} title="Copy the newest save, read the copy and update the queue">Sync now</button></form>
+      <form method="post" action="/sync"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button {% if not sync or sync.running %}disabled{% endif %} title="{{ t('dash.sync.now_title') }}">{{ t("dash.sync.now") }}</button></form>
     </div>
   </div>
 
   <div class="card">
-    <h2>Players</h2>
+    <h2>{{ t("dash.counts.title") }}</h2>
     {% if counts %}
       <table class="kv">
-        <tr><th>Group A</th><td><a href="/players?group=a">{{ counts.a }}</a> <span class="muted">({{ counts.a_my_club }} at my club{% if counts.a_staff %}, of them <a href="/players?role=staff">{{ counts.a_staff }} staff</a>{% endif %})</span></td></tr>
-        <tr><th>Group B</th><td><a href="/players?group=b">{{ counts.b }}</a>{% if counts.youth or counts.media %} <span class="muted">({% if counts.youth %}<a href="/players?role=youth">{{ counts.youth }} in my youth teams</a>{% endif %}{% if counts.youth and counts.media %}, {% endif %}{% if counts.media %}<a href="/players?role=media&amp;group=grouped">{{ counts.media }} journalists and press officers</a>{% endif %})</span>{% endif %}</td></tr>
-        <tr><th>Group C</th><td><a href="/players?group=c">{{ counts.c }}</a></td></tr>
-        <tr><th>Tracked</th><td>{{ counts.tracked }}</td></tr>
-        <tr><th>Pinned</th><td><a href="/players?group=pinned">{{ counts.pinned }}</a></td></tr>
-        <tr><th>Pictures</th><td><a href="/players?picture=yes">{{ counts.pictures }}</a> current, {{ counts.published }} published</td></tr>
+        <tr><th>{{ grp("a") }}</th><td><a href="/players?group=a">{{ counts.a }}</a> <span class="muted">({{ t("dash.counts.my_club", count=counts.a_my_club) }}{% if counts.a_staff %}{{ t("dash.counts.staff", count=counts.a_staff) }}{% endif %})</span></td></tr>
+        <tr><th>{{ grp("b") }}</th><td><a href="/players?group=b">{{ counts.b }}</a>{% if counts.youth or counts.media %} <span class="muted">({% if counts.youth %}{{ t("dash.counts.youth", count=counts.youth) }}{% endif %}{% if counts.youth and counts.media %}, {% endif %}{% if counts.media %}{{ t("dash.counts.media", count=counts.media) }}{% endif %})</span>{% endif %}</td></tr>
+        <tr><th>{{ grp("c") }}</th><td><a href="/players?group=c">{{ counts.c }}</a></td></tr>
+        <tr><th><span class="term" tabindex="0" data-tip="{{ tr('term.tracked') }}">{{ t("dash.counts.tracked") }}</span></th><td>{{ counts.tracked }}</td></tr>
+        <tr><th><span class="term" tabindex="0" data-tip="{{ tr('term.pinned') }}">{{ t("dash.counts.pinned") }}</span></th><td><a href="/players?group=pinned">{{ counts.pinned }}</a></td></tr>
+        <tr><th>{{ t("dash.counts.pictures") }}</th><td>{{ t("dash.counts.pictures_value", current=counts.pictures, published=counts.published) }}</td></tr>
         {% if photo_status %}
-        <tr><th>No photo</th><td>{% if photo_status.game_known %}<a href="/players?origin=existing&amp;role=players&amp;photo=none">{{ "{:,}".format(counts.without_photo) }}</a> pre-existing players, {{ "{:,}".format(counts.without_photo_picked) }} of them in a group{% if not settings.no_photo.enabled %} <span class="muted">(off in Settings)</span>{% endif %}
-          <span class="muted small">· FM27 ships {{ "{:,}".format(photo_status.game) }} photos{% if photo_status.facepack_files %}; {{ photo_status.facepack_files }} facepack{{ "s" if photo_status.facepack_files != 1 }} map {{ "{:,}".format(photo_status.facepack) }}{% endif %}</span>
-          {% else %}<span class="bad">unknown: FM27's photo list could not be read</span>{% endif %}</td></tr>
+        <tr><th>{{ t("dash.counts.no_photo") }}</th><td>{% if photo_status.game_known %}{{ t("dash.counts.no_photo_value", count=counts.without_photo, picked=counts.without_photo_picked) }}{% if not settings.no_photo.enabled %} <span class="muted">{{ t("dash.counts.off_in_settings") }}</span>{% endif %}
+          {% else %}<span class="bad">{{ t("dash.counts.photos_unknown") }}</span>{% endif %}</td></tr>
         {% endif %}
-        <tr><th>Review</th><td><a href="/review">{{ counts.review }}</a></td></tr>
+        <tr><th>{{ t("nav.review") }}</th><td><a href="/review">{{ counts.review }}</a></td></tr>
       </table>
     {% else %}
-      <p class="muted">No career yet. Sync a save to begin.</p>
+      <p class="muted">{{ t("dash.counts.no_career") }}</p>
     {% endif %}
   </div>
 </section>
-
-<section class="card">
-  <h2>Queue
-    <span class="muted small">{{ counts.queued if counts else 0 }} queued{% if counts and counts.manual %}, {{ counts.manual }} requested by hand{% endif %}</span>
-  </h2>
-  <p class="muted small">The worker draws manual requests first, then the automatic jobs of group {{ auto_groups|join(", ")|upper }}{% if not settings.schedule.generate_while_fm_running %}, only while FM27 is closed{% endif %}. Generate now draws the whole queue, every group{% if not settings.schedule.generate_while_fm_running %}, even while FM27 runs{% endif %}.</p>
-  {% if queue %}
-  <table class="list">
-    <thead><tr><th>Player</th><th>Club</th><th>Job</th><th>Group</th><th>Order</th><th>Why</th><th></th></tr></thead>
-    <tbody>
-    {% for j in queue %}
-      <tr class="{{ 'running' if j.status == 'running' }}">
-        <td><a href="/players/{{ j.unique_id }}">{{ j.name }}</a></td>
-        <td>{{ j.club or "free agent" }}</td>
-        <td>{{ kind_name(j.kind) }}{% if j.status == "running" %} <span class="st run">drawing</span>{% endif %}</td>
-        <td><span class="grp grp-{{ j.group_name }}">{{ j.group_name|upper }}</span></td>
-        <td>{{ tier_name(j.tier) }}</td>
-        <td class="why">{{ j.reason }}
-          {% if uses_reference(j.kind, j.at_my_club, settings) %}<span class="tag">reference picture</span>{% endif %}
-          {% if not j.manual and j.group_name not in auto_groups %}<span class="tag warn">not drawn automatically (Settings, Worker): Generate now draws it</span>{% endif %}</td>
-        <td>{% if j.manual and j.status == "queued" %}<form method="post" action="/players/{{ j.unique_id }}/cancel"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="/"><button class="link">cancel</button></form>{% endif %}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p class="muted">The queue is empty.</p>
-  {% endif %}
-</section>
-
-{% if worker %}
-<section class="card">
-  <h2>Log</h2>
-  <pre class="log">{% for line in worker.log[-20:]|reverse %}{{ line }}
-{% else %}Nothing yet.{% endfor %}</pre>
-</section>
-{% endif %}

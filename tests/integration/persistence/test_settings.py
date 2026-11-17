@@ -427,3 +427,33 @@ def test_an_explicit_defaults_file_takes_the_local_file_beside_it(tmp_path: Path
     assert (
         s.paths.origins["paths.fm_user_dir"] == local_label(config) == str(tmp_path / "local.toml")
     )
+
+
+# --- Phase 12: every age table offers all ten wordings; "-" leaves one out -------------------
+
+
+def test_a_left_out_wording_is_skipped_and_can_be_switched_on(conn: sqlite3.Connection) -> None:
+    before = load_settings(conn).age.b
+    assert [w for _, w in before] == ["W02", "W04", "W07", "W09"]
+    after = set_override(conn, "age.b.W03", 17).age.b  # between W02 (15) and W04 (19)
+    assert after[:3] == ((15, "W02"), (17, "W03"), (19, "W04"))
+    assert set_override(conn, "age.b.W03", "-").age.b == before  # left out again
+
+
+def test_my_clubs_table_has_w06_back(conn: sqlite3.Connection) -> None:
+    """User, 2026-11-17: W05 from 24 and W06 at 26 at my club; W06 was unused there."""
+    table = {w: first for first, w in load_settings(conn).age.a_my_club}
+    assert (table["W04"], table["W05"], table["W06"], table["W07"]) == (22, 24, 26, 27)
+
+
+@pytest.mark.parametrize("value", ["15", "skip", 15.0, None, True])
+def test_a_wording_takes_a_whole_number_or_a_dash_only(
+    conn: sqlite3.Connection, value: object
+) -> None:
+    with pytest.raises(SettingsError):
+        set_override(conn, "age.c.W02", value)
+
+
+def test_a_table_needs_one_wording(conn: sqlite3.Connection) -> None:
+    with pytest.raises(SettingsError, match="at least one wording"):
+        set_overrides(conn, {"age.c.W03": "-", "age.c.W06": "-", "age.c.W08": "-"})

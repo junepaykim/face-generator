@@ -10,6 +10,7 @@ import traceback
 from collections import deque
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from facegen.core.job_records import Job, JobFilter
 from facegen.core.kit_values import KitTable
@@ -23,7 +24,7 @@ from facegen.render.gpu import describe as describe_gpu
 from facegen.render.gpu import is_fatal
 from facegen.render.renderer import Renderer, Tagger
 from facegen.runtime.contracts import Exit, ExitReason, Link, WorkerStatus
-from facegen.runtime.logging import LOG_LINES, logger, stamp
+from facegen.runtime.logging import LOG_LINES, logger, stamp, utc_now
 from facegen.runtime.policy import BUSY_TIMEOUT_MS, FM_POLL_SECONDS
 
 IDLE_POLL_SECONDS = 15.0
@@ -78,6 +79,9 @@ class WorkerService:
         self._log: deque[str] = deque(maxlen=LOG_LINES)
         self._state = "starting"
         self._detail = ""
+        self._reason = "starting"
+        self._values: dict[str, Any] = {}
+        self._since: str | None = utc_now()
         self._current: Job | None = None
         self._paused = start_paused
         self._generate_now = generate_now
@@ -141,6 +145,9 @@ class WorkerService:
                 failed=self._failed,
                 last_error=self._last_error,
                 log=tuple(self._log),
+                reason=self._reason,
+                values=dict(self._values),
+                since=self._since,
             )
 
     def log(self, line: str) -> None:
@@ -152,9 +159,24 @@ class WorkerService:
             self._link.line(stamped)
             self._link.status(self.status)
 
-    def _set(self, state: str, detail: str = "", current: Job | None = None) -> None:
+    def _set(
+        self,
+        state: str,
+        detail: str = "",
+        current: Job | None = None,
+        *,
+        reason: str = "",
+        **values: Any,
+    ) -> None:
+        """A new state, with the English line for the log and the tray (`detail`) and the
+        reason code and values the pages word (contracts.WORKER_REASONS)."""
         with self._lock:
+            job_now = current.id if current else None
+            job_before = self._current.id if self._current else None
+            if (state, reason, job_now) != (self._state, self._reason, job_before):
+                self._since = utc_now()
             self._state, self._detail, self._current = state, detail, current
+            self._reason, self._values = reason, values
         if self._link is not None:
             self._link.status(self.status)
 
@@ -209,18 +231,22 @@ class WorkerService:
                         self._loop()
                     break
                 except WorkerBusy:
-                    self._set("waiting", "another facegen worker is running (facegen run?)")
+                    self._set(
+                        "waiting",
+                        "another facegen worker is running (facegen run?)",
+                        reason="other_worker",
+                    )
                     if not self._leave_if_paused():
                         self._wait(FM_POLL_SECONDS)
         except Exception as exc:  # noqa: BLE001 - never die silently: show it in the UI
-            self._set("error", f"worker crashed: {exc}")
+            self._set("error", f"worker crashed: {exc}", reason="crashed", error=str(exc))
             self.log("".join(traceback.format_exception_only(exc)).strip())
             logger.error("worker crashed", exc_info=exc)
             self._leave("crashed", f"worker crashed: {type(exc).__name__}: {exc}")
         finally:
             if self._worker is not None:
                 self._worker.unload()
-            self._set("stopped", "the worker has stopped")
+            self._set("stopped", "the worker has stopped", reason="stopped")
             if self._owns_conn:
                 conn.close()
                 self._conn = None
@@ -236,7 +262,12 @@ class WorkerService:
                     self._fault(message)
                     delay = IDLE_POLL_SECONDS
                 else:
-                    self._set("error", f"{message}; trying again shortly")
+                    self._set(
+                        "error",
+                        f"{message}; trying again shortly",
+                        reason="retrying",
+                        error=message,
+                    )
                     self.log(f"Worker error: {message}")
                     delay = FM_POLL_SECONDS
             if delay > 0:
@@ -261,7 +292,10 @@ class WorkerService:
             f"  GPU fault: {message}" if leaving else f"  GPU fault, drawing stopped: {message}"
         )
         logger.error("GPU fault (%s)", describe_gpu())
-        self._set("gpu-fault", CHILD_FAULT_DETAIL if leaving else GPU_FAULT_ADVICE)
+        if leaving:
+            self._set("gpu-fault", CHILD_FAULT_DETAIL, reason="gpu_fault_child", error=message)
+        else:
+            self._set("gpu-fault", GPU_FAULT_ADVICE, reason="gpu_fault", error=message)
 
     def _wait(self, seconds: float) -> None:
         self._wake.wait(seconds)
@@ -309,7 +343,7 @@ class WorkerService:
         conn = self._connection()
         worker = self._worker_for(conn)
         if worker is None:
-            self._set("idle", "no career yet: sync a save")
+            self._set("idle", "no career yet: sync a save", reason="no_career")
             self._leave_if_paused()
             return IDLE_POLL_SECONDS
         settings = worker.settings
@@ -319,13 +353,20 @@ class WorkerService:
 
         if gpu_fault:
             self._publish_pending(worker)  # needs no GPU: finished pictures still reach FM27
-            self._set("gpu-fault", GPU_FAULT_ADVICE)
+            with self._lock:
+                error = self._last_error or ""
+            self._set("gpu-fault", GPU_FAULT_ADVICE, reason="gpu_fault", error=error)
             return IDLE_POLL_SECONDS
         if paused:
             self._publish_pending(worker)
             if worker.unload():
                 self.log("Paused: the GPU is free.")
-            self._set("paused", self._last_error or "")
+            with self._lock:
+                error = self._last_error
+            if error:
+                self._set("paused", error, reason="paused_error", error=error)
+            else:
+                self._set("paused", "", reason="paused")
             self._leave("paused")
             return IDLE_POLL_SECONDS
 
@@ -344,13 +385,18 @@ class WorkerService:
             elif now - self._idle_since >= IDLE_UNLOAD_SECONDS and worker.unload():
                 self.log("Queue empty: the GPU is free.")
                 self._leave("freed")
-            self._set("idle", self._idle_detail(worker))
+            self._idle(worker)
             return IDLE_POLL_SECONDS
         self._idle_since = None
 
         if self._models_ready is not None and not self._models_ready():
             self._publish_pending(worker)
-            self._set("setup", MODELS_MISSING.format(n=len(ready)))
+            self._set(
+                "setup",
+                MODELS_MISSING.format(n=len(ready)),
+                reason="models_missing",
+                count=len(ready),
+            )
             return FM_POLL_SECONDS
 
         if not (generate_now or settings.schedule.generate_while_fm_running):
@@ -365,11 +411,24 @@ class WorkerService:
                     if running
                     else "cannot tell whether FM27 is running (tasklist.exe failed)"
                 )
-                self._set("waiting", f"{why}; {len(ready)} job(s) wait. Generate now overrides.")
+                self._set(
+                    "waiting",
+                    f"{why}; {len(ready)} job(s) wait. Generate now overrides.",
+                    reason="fm_running" if running else "fm_unknown",
+                    count=len(ready),
+                )
                 return FM_POLL_SECONDS
 
         job = ready[0]
-        self._set("running", f"{job.name}: {job.kind} {job.group.upper()}", job)
+        self._set(
+            "running",
+            f"{job.name}: {job.kind} {job.group.upper()}",
+            job,
+            reason="drawing",
+            name=job.name,
+            kind=job.kind,
+            group=job.group.upper(),
+        )
         self.log(f"{job.name} ({job.unique_id}), {job.kind} {job.group.upper()}")
         try:
             outcome = worker.run_job(job, ready[1:])
@@ -386,7 +445,9 @@ class WorkerService:
                 self._last_error = f"{job.name}: {message}"
             worker.unload()
             self.log(f"  error, worker paused: {message}")
-            self._set("error", self._last_error or message)
+            self._set(
+                "error", f"{job.name}: {message}", reason="job_error", name=job.name, error=message
+            )
             self._leave("error", self._last_error, job)
             return IDLE_POLL_SECONDS
         with self._lock:
@@ -397,19 +458,23 @@ class WorkerService:
         self.log(f"  {outcome.message} ({outcome.seconds:.1f} s)")
         self._unpublished = True
         self._publish_pending(worker)
-        self._set("running", "next job")
+        self._set("running", "next job", reason="next_job")
         return 0.0
 
-    @staticmethod
-    def _idle_detail(worker: Worker) -> str:
+    def _idle(self, worker: Worker) -> None:
         """Why nothing is drawn: the queue is empty, or what is held back."""
         held = worker.runnable(JobFilter())  # every group; none of them drawn now
         if not held:
-            return "the queue is empty"
+            self._set("idle", "the queue is empty", reason="queue_empty")
+            return
         groups = ", ".join(sorted({j.group.upper() for j in held}))
-        return (
+        self._set(
+            "idle",
             f"{len(held)} job(s) in group {groups} are not drawn automatically"
-            " (Settings, Worker); Generate now draws them"
+            " (Settings, Worker); Generate now draws them",
+            reason="held",
+            count=len(held),
+            groups=groups,
         )
 
     def _publish_pending(self, worker: Worker) -> None:
