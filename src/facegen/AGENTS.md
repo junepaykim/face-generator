@@ -18,8 +18,8 @@ Use the web/datasource guides for HTTP, adapters and bundled kit data; use
 ## Package boundaries
 
 - Implement in the domain packages. Top-level `db.py`, `manual.py`, `hardware.py`, etc.
-  are compatibility exports still used by the web UI; preserve their canonical object
-  identity until consumers move. Do not put new behavior in those facades.
+  are compatibility exports for remaining consumers; preserve their canonical object
+  identity until those consumers move. Do not put new behavior in those facades.
 - `persistence/` owns SQLite, settings loading and image/sheet storage; `pipeline/`
   orchestrates sync, manual actions, rendering jobs and publication. Keep UI/CLI imports
   out of those layers; runtime composition connects them to the front ends.

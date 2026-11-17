@@ -3,10 +3,13 @@
 
 from __future__ import annotations
 
+import ast
 import importlib
+import inspect
 import os
 import subprocess
 import sys
+from importlib.util import resolve_name
 from pathlib import Path
 
 import pytest
@@ -150,3 +153,68 @@ def test_web_compatibility_exports_keep_the_canonical_objects(
     implementation = importlib.import_module("facegen." + canonical)
     for name in names.split():
         assert getattr(facade, name) is getattr(implementation, name), name
+
+
+def test_app_context_reexport_preserves_positional_constructor() -> None:
+    from facegen.web.app import AppContext
+    from facegen.web.context import AppContext as CanonicalContext
+
+    assert AppContext is CanonicalContext
+    names = (
+        "db_path",
+        "defaults_path",
+        "worker",
+        "syncer",
+        "poller",
+        "models",
+        "download",
+        "hardware",
+        "browse",
+        "platform",
+    )
+    parameters = inspect.signature(AppContext).parameters
+    assert tuple(parameters) == names
+    assert all(p.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD for p in parameters.values())
+    assert parameters["db_path"].default is inspect.Parameter.empty
+    assert all(parameters[name].default is None for name in names[1:])
+    values = (Path("temporary.sqlite"), *(object() for _ in names[1:]))
+    positional = AppContext(*values)
+    assert all(
+        getattr(positional, name) is value for name, value in zip(names, values, strict=True)
+    )
+    minimal = AppContext(values[0])
+    assert all(getattr(minimal, name) is None for name in names[1:])
+
+
+def test_web_imports_canonical_modules_and_keeps_composition_out_of_handlers() -> None:
+    """Include imports inside functions and TYPE_CHECKING, including relative imports."""
+    web = ROOT / "src" / "facegen" / "web"
+    facades = {f"facegen.{legacy}" for legacy, _, _ in WEB_EXPORTS}
+    violations = []
+    for path in sorted(web.rglob("*.py")):
+        package = ".".join(path.parent.relative_to(ROOT / "src").parts)
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                base = node.module or ""
+                if node.level:
+                    base = resolve_name("." * node.level + base, package)
+                names = [base, *(f"{base}.{alias.name}" for alias in node.names)]
+            else:
+                continue
+            for name in names:
+                forbidden = any(
+                    name == facade or name.startswith(facade + ".") for facade in facades
+                )
+                if path != web / "app.py":
+                    forbidden |= name == "facegen.web.app" or name.startswith("facegen.web.app.")
+                    if "routes" not in path.relative_to(web).parts:
+                        forbidden |= name == "facegen.web.routes" or name.startswith(
+                            "facegen.web.routes."
+                        )
+                if forbidden:
+                    violations.append(f"{path.relative_to(ROOT)}:{node.lineno}: imports {name}")
+    assert not violations, "Web imports must follow the dependency boundaries:\n" + "\n".join(
+        violations
+    )

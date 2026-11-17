@@ -15,9 +15,9 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
-from facegen import photos
-from facegen.manual import restorable
-from facegen.traits import CharacterSheet, personality_from_json, personality_leans
+from facegen.core.traits import CharacterSheet, personality_from_json, personality_leans
+from facegen.datasource import photos
+from facegen.pipeline.manual import restorable
 
 PER_PAGE = 100
 
@@ -408,7 +408,7 @@ def queue(conn: sqlite3.Connection, career_id: int, limit: int = 15) -> list[dic
 
 def careers(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     """Every career, the active one (newest save) first."""
-    from facegen.db import ACTIVE_CAREER_ORDER
+    from facegen.persistence.db import ACTIVE_CAREER_ORDER
 
     return [
         dict(r)

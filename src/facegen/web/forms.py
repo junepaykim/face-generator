@@ -7,10 +7,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from fastapi import Request
 from starlette.datastructures import FormData
 
-from facegen.age import WORDINGS
-from facegen.settings import DETAIL_SIZES, is_fixed
+from facegen.core.age import WORDINGS
+from facegen.core.settings_values import DETAIL_SIZES
+from facegen.persistence.settings import is_fixed
 
 SECTION_NOTES = {
     "groups": "Thresholds re-classify the stored save at once. Sizes, candidates and the "
@@ -359,3 +361,7 @@ def parse_settings_changes(
 def blamed_keys(message: str, keys: list[str]) -> list[str]:
     """The posted keys a settings error names, by key or by its age table or section."""
     return [k for k in keys if k in message or f"{k.rpartition('.')[0]}:" in message]
+
+
+async def form_of(request: Request) -> FormData:
+    return await request.form()

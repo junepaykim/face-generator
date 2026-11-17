@@ -13,6 +13,8 @@ uv run --no-sync ruff check src/facegen/web
 ## Boundaries
 
 - FastAPI/Jinja pages, query read models, form parsing and plain JS/CSS; no Node build.
+- `app.py` composes fresh router factories and shared dependencies/presentation per app.
+  Routers never import `app.py`; shared helpers never import routers.
 - `AppContext` injects worker, sync, model status, download, hardware and folder browsing.
   Routes delegate to these services and pipeline operations; do not load models, import
   torch/fmsave, or render/parse saves in request handlers.

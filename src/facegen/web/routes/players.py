@@ -1,0 +1,225 @@
+"""Players routes and their app-local helpers."""
+
+from __future__ import annotations
+
+import sqlite3
+
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import HTMLResponse, Response
+from starlette.concurrency import run_in_threadpool
+
+from facegen.core.age import audience, table_name
+from facegen.core.classify import Group
+from facegen.core.planner import REFERENCE_KINDS
+from facegen.core.traits import eyes_drawn_round
+from facegen.datasource import photos
+from facegen.pipeline import manual
+from facegen.pipeline.manual import ManualError
+from facegen.pipeline.publish import RELOAD_HINT, PublishError
+from facegen.pipeline.worker import load_career
+from facegen.web import queries
+from facegen.web.dependencies import AppDependencies, need_career
+from facegen.web.forms import form_of
+from facegen.web.presentation import Presentation, uses_reference
+from facegen.web.queries import PlayerFilter
+from facegen.web.responses import _redirect, _safe_next
+
+
+def create_router(deps: AppDependencies, presentation: Presentation) -> APIRouter:
+    router = APIRouter()
+    settings_now = deps.settings_now
+    data_dir = deps.data_dir
+    Conn = deps.connection
+    page = presentation.page
+    wake = deps.wake
+
+    @router.get("/players", response_class=HTMLResponse)
+    def players(request: Request, conn: sqlite3.Connection = Conn) -> Response:
+        career = load_career(conn)
+        f = PlayerFilter.from_query(request.query_params)
+        rows, total = queries.players_page(conn, career.id, f) if career else ([], 0)
+        club_name = None
+        if f.club_id is not None and career is not None:
+            r = conn.execute(
+                "SELECT name FROM clubs WHERE career_id = ? AND club_id = ?",
+                (career.id, f.club_id),
+            ).fetchone()
+            club_name = r[0] if r else str(f.club_id)
+        pages = max(1, -(-total // queries.PER_PAGE))
+        return page(
+            request,
+            "players.html",
+            conn,
+            f=f,
+            rows=rows,
+            total=total,
+            pages=pages,
+            club_name=club_name,
+            leagues=queries.LEAGUES,
+            origins=queries.ORIGINS,
+            roles=queries.ROLES,
+            group_filters=queries.GROUP_FILTERS,
+            picture_filters=queries.PICTURE_FILTERS,
+            photo_filters=queries.PHOTO_FILTERS,
+            photo_status=photos.status(conn),
+            scopes=queries.SCOPES,
+            sorts=list(queries.SORTS),
+            here=str(request.url.path) + ("?" + request.url.query if request.url.query else ""),
+        )
+
+    @router.post("/players/action")
+    async def players_action(request: Request) -> Response:
+        form = await form_of(request)
+        back = _safe_next(str(form.get("next") or ""), "/players")
+        try:
+            uids = [int(x) for x in form.getlist("uid")]
+        except ValueError:
+            return _redirect(back, err="Bad player ID.")
+        if not uids:
+            return _redirect(back, err="Tick at least one player first.")
+        action = form.get("action")
+
+        def run() -> str:
+            conn = deps.connect()
+            try:
+                career = need_career(conn)
+                settings = settings_now(conn)
+                if action == "generate":
+                    group = str(form.get("group") or manual.DEFAULT_GROUP)
+                    r = manual.generate(conn, career.id, uids, settings, group)
+                    return f"Generate as group {group.upper()}: {r.summary()}."
+                if action == "new-picture":
+                    r = manual.new_pictures(conn, career.id, uids, settings)
+                    return f"New picture, same character sheet: {r.summary()}."
+                if action == "pin":
+                    pin = str(form.get("pin") or "")
+                    r = manual.set_pin(conn, career.id, uids, pin or None, settings)
+                    if pin in ("a", "b", "c"):
+                        return f"Pin to {pin.upper()} (a hand-pick, as Generate): {r.summary()}."
+                    what = "pinned to never" if pin == "never" else "unpinned"
+                    return f"{len(r.pinned)} player(s) {what}."
+                raise ManualError(f"unknown action {action!r}")
+            finally:
+                conn.close()
+
+        try:
+            message = await run_in_threadpool(run)
+        except (ManualError, HTTPException) as exc:
+            return _redirect(back, err=getattr(exc, "detail", None) or str(exc))
+        wake()
+        return _redirect(back, msg=message)
+
+    @router.get("/players/{uid}", response_class=HTMLResponse)
+    def player(uid: int, request: Request, conn: sqlite3.Connection = Conn) -> Response:
+        career = need_career(conn)
+        detail = queries.player_detail(conn, career.id, uid, data_dir)
+        if detail is None:
+            raise HTTPException(404, f"No player {uid} in this career.")
+        settings = settings_now(conn)
+        p = detail["player"]
+        group_for_redraw = p["group_name"] or (
+            detail["current"]["group_name"] if detail["current"] else None
+        )
+        return page(
+            request,
+            "player.html",
+            conn,
+            d=detail,
+            p=p,
+            settings=settings,
+            age_table=table_name(p["group_name"], bool(p["at_my_club"]), **audience(p)),
+            redraw_reference=uses_reference("redraw", bool(p["at_my_club"]), settings),
+            eyes_round=bool(detail["sheet"])
+            and eyes_drawn_round(
+                detail["sheet"]["fields"]["eye_shape"],
+                detail["sheet"]["fields"]["base_seed"],
+                settings.my_club.round_eyes,
+            ),
+            group_for_redraw=group_for_redraw,
+            photo_status=photos.status(conn),
+            reference_kinds=REFERENCE_KINDS,
+            groups=[g.value for g in Group],
+        )
+
+    @router.post("/players/{uid}/{action}")
+    async def player_action(uid: int, action: str, request: Request) -> Response:
+        form = await form_of(request)
+        back = f"/players/{uid}"
+
+        def run() -> str:
+            conn = deps.connect()
+            try:
+                career = need_career(conn)
+                settings = settings_now(conn)
+                match action:
+                    case "generate":
+                        group = str(form.get("group") or manual.DEFAULT_GROUP)
+                        r = manual.generate(conn, career.id, [uid], settings, group)
+                        if r.skipped:
+                            raise ManualError(r.skipped[0][1])
+                        if r.pinned:
+                            return f"Pinned to {group.upper()}; the picture is already good enough."
+                        return f"Queued as group {group.upper()}."
+                    case "new-face":
+                        manual.new_face(conn, career.id, uid, settings)
+                        return "New face queued: a new character sheet, drawn next."
+                    case "new-picture":
+                        manual.new_picture(conn, career.id, uid, settings)
+                        return "New picture queued with the same character sheet."
+                    case "pin":
+                        pin = str(form.get("pin") or "")
+                        r = manual.set_pin(conn, career.id, [uid], pin or None, settings)
+                        if r.skipped:
+                            raise ManualError(r.skipped[0][1])
+                        if r.queued:
+                            return f"Pinned to {pin.upper()} and queued as a request."
+                        if pin in ("a", "b", "c"):
+                            return f"Pinned to {pin.upper()}; the picture is already good enough."
+                        if pin == "never":
+                            return "Pinned to never; queued jobs cancelled."
+                        return "Pin cleared; the rules decide."
+                    case "remove":
+                        removed = manual.remove_picture(conn, career.id, career.key, uid, settings)
+                        return (
+                            "Picture removed and pinned to never. " + RELOAD_HINT
+                            if removed
+                            else "Pinned to never; there was no published picture."
+                        )
+                    case "retry":
+                        manual.retry(conn, career.id, uid, settings)
+                        return "Queued again with new seeds."
+                    case "restore":
+                        try:
+                            image_id = int(str(form.get("image_id") or ""))
+                        except ValueError:
+                            raise ManualError("Bad picture ID.") from None
+                        r = manual.restore_picture(
+                            conn, career.id, career.key, uid, image_id, settings
+                        )
+                        where = (
+                            RELOAD_HINT
+                            if r.publish.active
+                            else "Not shown in FM27: another career's save is newer."
+                        )
+                        note = (
+                            " Still pinned to never: it is not updated." if r.pinned_never else ""
+                        )
+                        return f"v{r.version} is the current picture again.{note} {where}"
+                    case "cancel":
+                        done = manual.cancel(conn, career.id, uid, settings)
+                        return "Request cancelled." if done else "Nothing to cancel."
+                raise ManualError(f"unknown action {action!r}")
+            finally:
+                conn.close()
+
+        try:
+            message = await run_in_threadpool(run)
+        except (ManualError, HTTPException) as exc:
+            target = _safe_next(str(form.get("next") or ""), back)
+            return _redirect(target, err=getattr(exc, "detail", None) or str(exc))
+        except PublishError as exc:
+            return _redirect(back, err=f"Publishing failed: {exc}")
+        wake()
+        return _redirect(_safe_next(str(form.get("next") or ""), back), msg=message)
+
+    return router
