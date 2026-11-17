@@ -360,8 +360,7 @@ class FmsaveDataSource:
             fixture_counts = convert_fixtures(save.fixtures(), uid_map, comp_keys)
         except fmsave.FmsaveError as exc:
             notes.append(f"competition data unavailable: {exc}")
-        # My club's staff get pictures too. The reader decodes every club's staff (about 8 s
-        # on a full save, docs/research.md); a failure there should not stop a sync either.
+        # Staff-reader failures must not prevent player syncs.
         staff: tuple[StaffRecord, ...] = ()
         staff_read = True
         first_names: dict[int, str | None] = {}
@@ -386,8 +385,7 @@ class FmsaveDataSource:
             except fmsave.FmsaveError as exc:
                 staff_read = False
                 notes.append(f"staff data unavailable, staff pictures left as they were: {exc}")
-        # Journalists, press officers and who is a woman: read from the game database's bytes
-        # (datasource/people.py), as fmsave does not. A failure here must not stop a sync.
+        # The byte reader fills gaps in fmsave; its failure must not stop a sync.
         media: tuple[MediaRecord, ...] = ()
         media_read = True
         try:

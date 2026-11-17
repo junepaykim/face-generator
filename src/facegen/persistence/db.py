@@ -156,23 +156,19 @@ CREATE TABLE sync_runs (
 );
 """
 
-# Phase 2: the render settings of each picture (steps, CFG, sampler, size, detail pass), so
-# any picture can be reproduced from its row. Paths in images are relative to the data dir.
+# Store render settings (steps, CFG, sampler, size, detail pass) to reproduce each picture.
+# Image paths are relative to the data directory.
 _V2 = """
 ALTER TABLE images ADD COLUMN render TEXT;     -- JSON
 """
 
-# Phase 3: the web UI's player list and detail page look up each player's jobs, the latest
-# first (queued, running, or failed and waiting in the review list).
 _V3 = """
 CREATE INDEX jobs_by_player ON jobs (career_id, unique_id, id);
 """
 
-# Phase 4: automation.
-# - careers.last_save_mtime: the newest save of the career a sync has read. The career with
-#   the newest is the active one, whose picture pack FM27 is shown (spec section 8).
-# - sync_runs.trigger: who started the sync ('poller', 'sync now', 'command').
-# - sync_runs.unsupported: the save's game or build cannot be read by the save reader.
+# last_save_mtime: newest save read for this career; the newest career's pack is active.
+# trigger: 'poller', 'sync now' or 'command'.
+# unsupported: the reader cannot read the save's game or build.
 _V4 = """
 ALTER TABLE careers ADD COLUMN last_save_mtime REAL;
 ALTER TABLE sync_runs ADD COLUMN trigger TEXT;
@@ -183,12 +179,9 @@ UPDATE careers SET last_save_mtime = (
 CREATE INDEX sync_runs_by_save ON sync_runs (save_file, save_mtime);
 """
 
-# Phase 5: updates for tracked players.
-# - images.restored_*: "restore previous" on the player page makes an older picture current
-#   again. It then stands for the player's group, club and age band at the time it was
-#   restored, so the planner does not re-draw it straight away; the next change does.
-# - Pictures are 3:4 portraits from now on (user, 2026-11-11). Every picture so far is square:
-#   forget where they were published, so the next publish writes them again, cropped to 3:4.
+# restored_* records the player's group, club and age band at restoration, preventing an
+# immediate redraw; only a later change makes the restored picture outdated.
+# Pre-V5 pictures were square. Clearing published_path republishes them cropped to 3:4.
 _V5 = """
 ALTER TABLE images ADD COLUMN restored_at TEXT;
 ALTER TABLE images ADD COLUMN restored_group TEXT CHECK (restored_group IN ('a', 'b', 'c'));
@@ -197,7 +190,6 @@ ALTER TABLE images ADD COLUMN restored_band TEXT;
 UPDATE images SET published_path = NULL;
 """
 
-# State coordination: explicit sheet selection, resumable jobs, and TEXT wording keys.
 _V6 = """
 CREATE TABLE images_new (
     id              INTEGER PRIMARY KEY,
@@ -281,18 +273,15 @@ UPDATE players SET active_traits_version = COALESCE(
 );
 """
 
-# Phase 6: personality weights the character sheet (spec section 4). The player's eight
-# personality attributes (1 to 20) as JSON; NULL until the next sync, or when the save has none.
+# Eight personality attributes (1 to 20), stored as JSON to weight character sheets.
+# NULL until the next sync, or when the save has none.
 _V7 = """
 ALTER TABLE players ADD COLUMN personality TEXT;
 """
 
-# My club's staff and the settings page's undo (user, 2026-11-12).
-# - players.is_staff, players.staff_job: my club's staff are stored beside the players, keyed
-#   on the same unique ID (FM27's config.xml maps both alike), so they are queued, drawn and
-#   published by the same code. staff_job is the job in words, NULL where the save has none.
-# - settings_history: each change saved on the settings page, undoable. `before` and `after`
-#   map each key the change touched to its stored override, or null for none (the default).
+# Staff share player IDs and portrait mappings, so they use the same generation queue.
+# staff_job is the job in words, NULL when absent from the save.
+# History's before/after maps each changed key to its stored override, or null for none.
 _V8 = """
 ALTER TABLE players ADD COLUMN is_staff INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE players ADD COLUMN staff_job TEXT;
@@ -307,11 +296,9 @@ CREATE TABLE settings_history (
 );
 """
 
-# Who already has a picture in FM27 other than ours (user, 2026-11-12; photos.py). Not per
-# career: FM27's photos and the user's facepacks are keyed on the unique ID in every save.
-# - photos: one row per unique ID that FM27 ships a photo for or a facepack maps.
-# - photo_scan: one row, the last look at FM27's folders: what was read (to skip it next time
-#   when unchanged), whether FM27's photo list could be read, and counts for the dashboard.
+# photos is keyed by unique ID across careers: FM27's photos and facepacks share that ID.
+# photo_scan holds the last inventory (to skip unchanged inputs), catalog readability,
+# and dashboard counts. Each photos row identifies a game or external facepack portrait.
 _V9 = """
 CREATE TABLE photos (
     unique_id INTEGER PRIMARY KEY,
@@ -332,14 +319,11 @@ CREATE TABLE photo_scan (
 );
 """
 
-# Youth teams, journalists and press officers, and drawing people as men (2026-11-13).
-# - players.youth_team: a player at my club in one of its teams other than the first team
-#   (reserves, under-23s, under-18s); they are drawn at group B unless they qualify for A.
-# - players.media_role: 'journalist' or 'press officer' for those people (datasource/people.py),
-#   NULL for players and staff. players.local_media: a journalist from my club's country, or a
-#   press officer of my club: the ones drawn without a request.
-# - players.female: the person is a woman, by their first name (NULL: unknown; players are not
-#   read). players.drawn_male: drawn as a man (staff and media only; dropped in _V11).
+# youth_team: my club's reserves/under-23s/under-18s, group B unless they qualify for A.
+# media_role: 'journalist' or 'press officer', NULL for players and staff.
+# local_media: a journalist from my club's country or its press officer, drawn automatically.
+# female: inferred from first name; NULL when unknown (players are not read).
+# drawn_male: historical male rendering for staff/media, removed in _V11.
 _V10 = """
 ALTER TABLE players ADD COLUMN youth_team INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE players ADD COLUMN media_role TEXT CHECK (media_role IN ('journalist', 'press officer'));
@@ -348,9 +332,8 @@ ALTER TABLE players ADD COLUMN female INTEGER;
 ALTER TABLE players ADD COLUMN drawn_male INTEGER NOT NULL DEFAULT 0;
 """
 
-# Everyone is drawn as a woman again (user, 2026-11-14): players.drawn_male goes. Queued jobs
-# still aimed at a men's age wording (M1 to M4) lose that target; the next plan sets the
-# woman's wording, and a current picture of a man gets a new face (planner.py).
+# Remove historical male rendering. Clear queued male age targets (M1-M4) so the next plan
+# chooses a female wording; current male pictures receive a new face through the planner.
 _V11 = """
 ALTER TABLE players DROP COLUMN drawn_male;
 UPDATE jobs SET target_band = NULL
@@ -386,17 +369,13 @@ def migrate(conn: sqlite3.Connection) -> int:
     return schema_version(conn)
 
 
-# A setting renamed after the database was made is put right at every connect, not by a
-# numbered migration: an older facegen may share the database, and a newer schema number
-# would lock it out. An older facegen skips a key it does not know, with a warning, as it
-# skips any.
-
+# Rename settings at every connect without raising the schema version: older installations
+# may share this database. They warn and skip unknown keys but reject newer schemas.
 RENAMED_SETTINGS = {
     f"groups.{g}.detail_pass": (f"groups.{g}.detail_size", {True: "1344x1728", False: "off"})
     for g in ("a", "b", "c")
 }
-"""Old key to (new key, old value to new value). Phase 10c: the detail pass's switch became its
-size; on was the size it drew at until then, 1344x1728."""
+"""Old key to (new key, value map). The old detail-pass switch used 1344x1728 when on."""
 
 
 def rename_settings(conn: sqlite3.Connection) -> int:

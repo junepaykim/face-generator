@@ -1,42 +1,16 @@
-"""One picture's shoot for a player: how the kit is worn, an extra, the pose and the backdrop
-(docs/spec.md section 3). Pure.
+"""Deterministic kit looks, poses and backdrops for player portraits (spec section 3).
 
-The character sheet is the character: face, hair and eyes are the same in every picture. The
-shoot is drawn per picture, seeded by the sheet's base seed and the picture version, so each
-picture is another photo of the same person on another day, and the same picture is always
-drawn the same way. My club's staff are dressed by wardrobe.py instead and keep the old pose
-library (traits.POSE) on the grey backdrop.
+Each shoot uses the sheet's base seed and image version; favourite style uses the base
+seed alone. Staff use the wardrobe and traits.POSE on the grey backdrop instead.
+Seasonal weights use the in-game date. Winter accessories are excluded so portraits fit
+any season; armbands favour older players because captaincy is unavailable in the save.
 
-Clothes (user, 2026-11-12). A player wears the club's kit, a goalkeeper the goalkeeper kit,
-in one of seven looks: four match-kit looks (short sleeves, long sleeves, layered sleeves, a
-collared shirt) and three training and warm-up looks (a track jacket in the kit's colours,
-the same jacket open over the shirt, a zipped top with a high collar). Winter wear (coats,
-beanies, scarves) is left out, so a picture fits any time of the season in the game. In the
-game's winter (November to February) long sleeves, layered sleeves and the track jacket are
-SEASON_FACTOR times as likely; in its summer (June to August) short sleeves are. Each player
-also has a favourite style, fixed by the sheet's base seed: some wear long sleeves more often,
-some a jacket, most have none.
+Poses that obscure the face or lower the head are rare to protect framing and QC. Backdrops
+avoid hair and clothing colour families so the figure scan can separate the subject, and
+favour unworn home-kit colours. Kit colour and look tags rank candidates only.
 
-Extras: now and then a wristband, or an armband, which goes mostly to players of
-SENIOR_FROM_AGE and over (the save does not say who the captain is). Only with the match-kit
-looks; a goalkeeper's gloves leave no wrist for a wristband.
-
-Pose: arms (crossed, hands on hips, behind the back, holding a ball, thumbs up, a V sign,
-hands in pockets, adjusting gloves) times an angle (front; turned, from the side while
-looking at the viewer; head tilt; contrapposto; from below). Hands in pockets need a jacket,
-adjusting gloves a goalkeeper. Front is the most common angle, and from below the rarest: it
-shrinks the face and moves the head down, which the quality check rejects. Poses and props
-that would hide the face are kept rare.
-
-Backdrop: a plain colour, a gradient, or two tones; never scenery, and no model beyond the
-image model. Colours come from a fixed palette, grey the most common, and never one in the
-same family as the clothes' colours or the hair colour, so the figure stands out from it
-(figure.py finds the figure against the backdrop). Colours of the club's home kit that the
-player is not wearing (a goalkeeper's club colours, a collar or shorts colour) are favoured.
-
-The vocabulary is part of the content rule (spec section 3) and has no setting. Every word is
-a tag of the quality check's tagger (docs/research.md); every look is a full football top,
-none cropped, sleeveless or open over skin (an open jacket is worn over the kit's shirt).
+This fixed vocabulary enforces fully clothed, non-sexual sports portraits: full football
+tops, never cropped, sleeveless or open over skin. Open jackets always cover a kit shirt.
 """
 
 from __future__ import annotations
@@ -51,9 +25,6 @@ from facegen.core.traits import Option, pick
 
 def _o(words: str, weight: int = 1, *tags: str) -> Option:
     return Option(words, weight, frozenset(tags))
-
-
-# --- clothes ---------------------------------------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,14 +47,12 @@ def _look(words: str, tag: str, *, jacket: bool = False, outfield: int, keeper: 
 
 
 LOOKS: dict[str, Look] = {
-    # Match kit.
     "short sleeves": _look("{shirt}, short sleeves", "short sleeves", outfield=6, keeper=2),
     "long sleeves": _look("{shirt}, long sleeves", "long sleeves", outfield=2, keeper=6),
     "layered sleeves": _look("{shirt}, layered sleeves", "layered sleeves", outfield=1, keeper=1),
     "collared shirt": _look(
         "{shirt}, collared shirt, {sleeves}", "collared shirt", outfield=1, keeper=1
     ),
-    # Training and warm-up.
     "track jacket": _look(
         "{jacket}, long sleeves", "track jacket", jacket=True, outfield=1, keeper=1
     ),
@@ -145,8 +114,6 @@ class KitLook:
         return f"{self.kit.describe()}; {self.look}{extra}"
 
 
-# --- pose --------------------------------------------------------------------------------------
-
 ARMS: dict[str, Option] = {
     "crossed": _o("crossed arms", 3, "crossed arms"),
     "hips": _o("hands on own hips", 3, "hands on own hips"),
@@ -181,9 +148,6 @@ class Pose:
 
     def describe(self) -> str:
         return f"{self.arms}, {self.angle}"
-
-
-# --- backdrop ----------------------------------------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
@@ -246,7 +210,7 @@ class Backdrop:
 
 
 DEFAULT_BACKDROP = Backdrop("plain", ("grey",))
-"""The grey studio backdrop every picture had before; staff are still drawn on it."""
+"""The fixed grey studio backdrop for staff, also used as the player fallback."""
 
 
 def pick_backdrop(
@@ -272,8 +236,6 @@ def pick_backdrop(
     second = pick(rest, "shoot", base_seed, image_version, "backdrop colour 2")
     return Backdrop(kind, (first, second))
 
-
-# --- season and favourite style ------------------------------------------------------------------
 
 SEASON_LOOKS: dict[str, frozenset[str]] = {
     "winter": frozenset({"long sleeves", "layered sleeves", "track jacket"}),
@@ -318,9 +280,6 @@ FAVOURITE_FACTOR = 3
 def favourite_style(base_seed: int) -> str:
     """A player's favourite style: the same in every picture of one character sheet."""
     return pick({n: Option("", s.weight) for n, s in STYLES.items()}, "style", base_seed)
-
-
-# --- the shoot ---------------------------------------------------------------------------------
 
 
 def look_weights(goalkeeper: bool, style: str, season: str) -> dict[str, Option]:

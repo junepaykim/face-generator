@@ -1,13 +1,8 @@
-"""Character sheets (docs/spec.md section 4) and the trait and pose vocabulary.
+"""Deterministic character sheets and fixed trait/pose vocabulary (spec section 4).
 
-A sheet is sampled once per player. Every choice is seeded from the career, the player's
-unique ID and the sheet version, so the same inputs always give the same sheet. Each field
-is drawn from its own hash, so adding a field later leaves the others unchanged.
-
-The vocabulary is the Phase 0.3 bake-off's (scripts/archive/bakeoff.py, docs/research.md
-section 5). Each value carries its prompt words and the tagger tags that confirm it was
-drawn: hair and eye colour tags are a pass condition of the quality check, the rest only
-help rank group A's candidates (qc.py).
+Choices are hashed separately by career, player ID, sheet version and field, so adding a
+field leaves existing choices unchanged. Hair and eye colour tags are QC pass conditions;
+other tags only rank group A candidates.
 """
 
 from __future__ import annotations
@@ -34,9 +29,7 @@ def _o(words: str, weight: int = 1, *tags: str) -> Option:
     return Option(words, weight, frozenset(tags))
 
 
-# Hair and eye colours include non-natural anime colours (decisions.md, proposed); natural
-# ones are drawn more often. The tag sets are what the tagger reports for each colour,
-# checked against the bake-off pictures.
+# Natural colours are weighted above anime colours; tag aliases match observed tagger output.
 HAIR_COLOUR = {
     "black": _o("black hair", 3, "black hair"),
     "brown": _o("brown hair", 3, "brown hair", "light brown hair"),
@@ -46,7 +39,6 @@ HAIR_COLOUR = {
     "pink": _o("pink hair", 1, "pink hair"),
     "blue": _o("blue hair", 1, "blue hair", "light blue hair"),
 }
-# Managers retain some anime variety, but pink and blue are each only 1%.
 MANAGER_HAIR_COLOUR = {
     name: replace(HAIR_COLOUR[name], weight=weight)
     for name, weight in {
@@ -148,10 +140,8 @@ def skin_words(skin: str, soften: int = 0) -> str:
     return SKIN_SCALE[step]
 
 
-# Derived from the player's facts, not random, and stored in the sheet when it is sampled.
-# Only the tallest and shortest tenth of men's players, and the strongest and weakest tenth
-# by Strength, get words (user, 2026-11-11). fmsave reads no weight, so Strength stands in
-# for build. Upper-body framing hides height, so the effect is small, and that is enough.
+# Height and build are stored from player facts. Defaults describe only the outer tenths
+# of men's players; Strength substitutes for weight, which fmsave does not expose.
 
 HEIGHT = {
     "short": _o("petite", 1, "petite"),
@@ -195,12 +185,8 @@ def build_class(strength: int | None, t: BodyThresholds = DEFAULT_BODY) -> str:
     return "muscular" if strength >= t.muscular_strength_from else "average"
 
 
-# Personality weights one sampled field, the default expression (spec section 4; the user
-# chose expression only, 2026-11-12: eye shape is drawn as before). Each lean below is one end
-# of one attribute: a player at or past its cut-off makes its expression more likely. The
-# cut-offs mark roughly the top and bottom tenth of men's players (7 to 12% each) in the
-# Colchester save's 21,834 (docs/research.md). Loyalty, low Ambition, low Controversy, low
-# Temperament and low Sportsmanship name nothing: no expression fits them.
+# Personality weights expression only. Cut-offs approximate the outer tenths of men's
+# players; attributes with no matching expression intentionally have no lean.
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,10 +248,7 @@ def weighted(
     }
 
 
-# The user prefers round eyes at my club, and sports portraits already lean sharp (2026-11-12).
-# A seeded share of sharp-eyed players there are drawn with round eyes instead (settings
-# `my_club.round_eyes`). Applied when the prompt is built, like the other my-club rules; the
-# stored sheet keeps its eye shape.
+# `my_club.round_eyes` adjusts prompts only; the stored eye shape remains unchanged.
 
 
 def eyes_drawn_round(eye_shape: str, base_seed: int, share: float) -> bool:
@@ -279,7 +262,6 @@ def eyes_drawn_round(eye_shape: str, base_seed: int, share: float) -> bool:
     return int.from_bytes(_digest("round eyes", base_seed)[:8], "big") < share * 2**64
 
 
-# Every stored trait, by sheet field: the sampled ones plus height and build.
 TRAIT_TABLES: dict[str, Mapping[str, Option]] = {**FIELDS, "height": HEIGHT, "build": BUILD}
 
 # Traits that `my_club.banned_traits` may name: accessories, marks, and the height and

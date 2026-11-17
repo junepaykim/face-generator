@@ -1,31 +1,15 @@
-"""Prompt assembly for Animagine XL 4.0 (docs/research.md section 5, Generation recipe). Pure.
+"""Animagine XL prompts with fixed content safeguards (spec section 3).
 
-The content rule (docs/spec.md section 3; AGENTS.md hard rule 3) is fixed here, in code:
-every prompt carries the rating `safe`; every negative prompt carries CONTENT_NEGATIVE; a
-wording flagged as under 18 adds YOUNG_NEGATIVE. A player's prompt carries the sportswear
-terms (CONTENT_POSITIVE), whichever kit look shoot.py draws. My club's staff are drawn in the wardrobe's club wear instead of the
-kit (wardrobe.py): their prompt carries STAFF_POSITIVE (long sleeves), plus `sportswear` for
-club sportswear, and their negative adds STAFF_NEGATIVE so the playing kit is not drawn, plus
-`sportswear` for smart wear (user, 2026-11-12). Nothing in the settings can remove or weaken
-these terms.
+Every prompt includes the safe rating; negatives include CONTENT_NEGATIVE and, for under-18
+wordings, YOUNG_NEGATIVE. Players receive sportswear terms. Staff and media receive long
+sleeves and negatives excluding playing kit; sportswear outfits add sportswear to the
+positive prompt, smart outfits to the negative. Settings cannot weaken these terms.
+Everyone is drawn as a woman or girl.
 
-Players at my club get three adjustments (spec section 3), applied here so the stored
-character sheet is unchanged: banned traits (by default freckles and the muscular build) are
-left out of the prompt and added to its negative, tan and dark skin are drawn `soften_skin`
-steps lighter, and a seeded share (`round_eyes`) of sharp eyes are drawn round.
-
-A player's picture takes its clothes, pose and backdrop from shoot.py (the kit in one of its
-looks, arms and an angle, a plain, gradient or two-tone backdrop). My club's staff keep a pose
-from traits.POSE on the grey backdrop, DEFAULT_BACKDROP.
-
-Height and build words (petite, tall female, skinny, muscular female) follow the skin, for
-the tenth of players at each end only (traits.py, settings `body`).
-
-Logos, brand marks, lettering and numbers on kits are accepted (decisions.md, 2026-11-10),
-so the negative prompt deliberately has no terms for them.
-
-Everyone is drawn as a woman or a girl (user, 2026-11-14): staff, journalists and press
-officers included.
+My-club adjustments omit banned traits and negate them, soften tan/dark skin, and draw a
+seeded share of sharp eyes round without changing the stored sheet. Players use shoots;
+staff use wardrobe outfits, traits.POSE and the grey backdrop. Height/build words come
+from the sheet's derived classes. Kits may carry logos, brands, lettering and numbers.
 """
 
 from __future__ import annotations

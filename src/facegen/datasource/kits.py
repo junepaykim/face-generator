@@ -1,34 +1,15 @@
-"""Load kit colours per club from config/kits.toml and the local or bundled catalog.
+"""Load fixed kit colours from configuration and local/bundled catalogs.
 
-A kit is described with a fixed vocabulary of colours and patterns, never free text, so the
-table cannot put arbitrary words into a prompt: the wardrobe stays football kit (content
-rule, spec section 3). Goalkeepers wear their club's goalkeeper kit. My club's staff do not
-wear the kit: wardrobe.py dresses them, with the home kit's colours on one piece. A player's
-picture wears the kit in one of shoot.py's looks.
+config/kits.toml wins; then the newer catalog estimate, the older catalog for missing
+clubs, and the neutral fallback. Unknown report dates put the bundle first. Probe reports
+come from scripts/spikes/kit_colour_probe.py; scripts/build_kit_catalog.py bundles only
+club IDs and colour names, never game images or asset names.
 
-Where a kit comes from, first match wins (`KitTable.kit_for`):
-
-1. config/kits.toml, written by hand: colours, pattern, shorts and goalkeeper kit.
-2. Kit colours estimated from FM27's own 2D home-shirt image of the club (user,
-   2026-11-12), from one of two places, the newer first:
-   - the kit catalog: `scripts/spikes/kit_colour_probe.py` reads the images from the game
-     install on this PC and writes its estimates to data/kit-colour-probe/report.json;
-   - the bundled catalog, src/facegen/data/kit_catalog.json, which ships with facegen so
-     that a PC that never ran the probe has the colours too (Phase 9).
-     `scripts/build_kit_catalog.py` makes it from a probe report: club IDs and colour names
-     only, never the game's images or asset names.
-   The report counts as newer when the probe ran after the bundle's report did (after an
-   FM27 update, say); the other one still covers the clubs the newer one lacks, so a probe
-   run for one club does not hide the bundle's other clubs.
-   An estimate gives one or two shirt colours, never a pattern: two colours are drawn as a
-   "mixed" shirt, with no layout asked for, because two colours alone do not say whether
-   they are stripes, hoops or sleeves. Its shorts are unknown and left out, and its
-   goalkeeper wears the first of KEEPER_COLOURS that is not like the home shirt (FM27's
-   goalkeeper colours are not known). A club FM27 has no image for is in neither.
-3. The neutral fallback kit.
-
-Stripes and hoops are drawn as well as the model manages (decisions.md); the quality check
-does not look at the kit. Its shirt colours only help rank group A's candidates.
+The vocabulary prevents free-text prompt injection and keeps player clothes football kit.
+Estimates contain shirt colours only: no known pattern or shorts. Goalkeeper colours
+contrast with the home shirt because the game's goalkeeper colours are unavailable.
+Staff use home colours through the wardrobe. Shirt-colour tags rank candidates only;
+they cannot fail QC.
 """
 
 from __future__ import annotations
@@ -154,7 +135,7 @@ def parse_bundle(data: Mapping[str, Any]) -> Bundle:
         if not isinstance(shirt, list) or not 1 <= len(shirt) <= 2 or len(set(shirt)) < len(shirt):
             raise KitError(f"{where}: needs one or two different colours")
         kits = estimated_kits(_colour(where, shirt[0]), *(_colour(where, c) for c in shirt[1:]))
-        assert kits is not None  # both names are known colours
+        assert kits is not None
         clubs[int(key)] = kits
     return Bundle(
         clubs=clubs,

@@ -1,21 +1,12 @@
-"""The prebuilt Rust extension (Phase 9b): which wheel this PC takes, its checksum, and
-installing it, so a PC with no Rust or MSVC still gets `facegen_native`.
+"""Select, verify and install the prebuilt Rust extension without a local compiler.
 
-.github/workflows/wheels.yml builds the wheels (Windows x86-64 and manylinux x86-64, abi3,
-so one wheel serves Python 3.12 and later) and attaches them, with their SHA-256 sums, to
-the GitHub Release `native-v<version>`, <version> being native/pyproject.toml's. Their sums
-are then added to native/wheels.sha256, in the repository: a wheel whose sum is not listed
-there is never installed, and one that does not match is deleted. Developers keep the build
-from native/ (`uv sync` with Rust); this is for everyone else, and is what the launcher
-runs (`facegen native --install`).
+Wheels come from `native-v<version>`, matching native/pyproject.toml. Only SHA-256 sums
+listed in native/wheels.sha256 are accepted; downloaded mismatches are deleted.
+Selection is pure; download and install adapters are injectable.
 
-uv installs it (`uv pip install`), next to what `uv sync` installed. A plain `uv sync`
-afterwards removes it again, since the lock does not have it for this PC; `uv sync
---inexact` and `uv run` leave it. Without it the Python versions run: a failed install is
-a warning, never a stop.
-
-The pure parts (wheel names, platform tags, the sums file) take plain values; the download
-and the install take their tools as arguments, so the tests need no network and no uv.
+Installation uses `uv pip install`. Keep the wheel with `uv sync --inexact`; plain
+`uv sync` removes it when absent from the lock's dependencies for this PC. A failed
+install leaves the Python fallbacks available.
 """
 
 from __future__ import annotations

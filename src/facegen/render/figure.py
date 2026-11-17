@@ -1,8 +1,6 @@
 """Finding the figure against the studio backdrop. Pure.
 
-`qc.head_top` and `picture.face_box` both look at a small copy of the picture (the heuristic
-of bake-off run r4, docs/research.md section 5), extended for the gradient and two-tone
-backdrops of shoot.py (2026-11-12):
+`quality_checks.head_top` and `picture.face_box` scan a small copy of the picture:
 
 - The backdrop is followed down the picture, row by row, at each side (`edges`). It starts
   as the per-channel median of the top `corner` x `corner` square on that side. In each
@@ -13,8 +11,7 @@ backdrops of shoot.py (2026-11-12):
   colour, or the colour between them at its place across (a sideways gradient) is at most
   `diff`; otherwise it is foreground. Two tones split down the picture are both backdrop.
 
-On a plain backdrop every row's colours are the corners' colour, so this finds what the
-scan of the two top corners found before (docs/research.md).
+On a plain backdrop, every row keeps the top corners' colour.
 
 When the extension is built (native.py), Rust makes the small copy and scans it; otherwise
 Pillow makes it and Python scans it. Both give the same answers (tests/test_native.py).

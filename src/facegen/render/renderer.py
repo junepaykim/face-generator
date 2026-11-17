@@ -26,13 +26,8 @@ STEPS = 28
 CFG = 5.5
 SAMPLER = "euler_a"
 
-# Group A's detail pass: the chosen picture upscaled and re-drawn lightly at a higher
-# resolution, then downscaled when published (decisions.md, proposed 2026-11-11). The size is
-# the setting `groups.<g>.detail_size` (Phase 10c): 1344x1728, 1.5 times the render, by default.
 DETAIL_STRENGTH = 0.35
 
-# The reference picture (spec section 5; bake-off run r4): IP-Adapter plus-face for SDXL with
-# its ViT-H image encoder, from the Hugging Face cache.
 IPA_REPO = "h94/IP-Adapter"
 IPA_SUBFOLDER = "sdxl_models"
 IPA_WEIGHT = "ip-adapter-plus-face_sdxl_vit-h.safetensors"
@@ -98,11 +93,9 @@ class TextEmbedding:
 def _encode_text(pipe: Any, text: str) -> TextEmbedding:
     """SDXL prompt embedding without the 77-token cut-off, copied to system memory.
 
-    Splits the text into 75-token chunks, encodes each through both text encoders and joins
-    them, as ComfyUI and A1111 do. The stock pipeline silently drops everything after token
-    77, which would cut the kit and the content terms from a long prompt. Each chunk is
-    encoded on its own, so a text's embedding does not depend on the text it is paired with:
-    `pair_embeddings` pads the shorter one with the empty text's chunk afterwards.
+    Encode 75-token chunks independently through both encoders to retain kit and content
+    terms beyond token 77. Embeddings do not depend on the paired text; `pair_embeddings`
+    pads the shorter prompt with empty-text chunks afterwards.
     """
     import torch
 
@@ -131,10 +124,8 @@ def pair_embeddings(
 ) -> tuple[Any, Any, Any, Any, int]:
     """A positive and a negative prompt as the pipeline takes them, with their chunk count.
 
-    Both are padded to the same number of chunks with `empty`, the empty text's embedding (one
-    chunk of nothing but start, end and padding tokens). That is exactly what encoding each
-    text with the pair's chunk count would give, chunk for chunk, so the result is the same
-    to the bit as encoding the pair together.
+    Pad both to the same chunk count using `empty` (start, end and padding tokens).
+    This is bit-identical to encoding each text with the pair's chunk count.
     """
     import torch
 
@@ -157,25 +148,15 @@ the full cache holds 80 to 120 MiB."""
 
 
 class AnimagineRenderer:
-    """Animagine XL 4.0 Opt in fp16 with its own fp16-fix VAE (docs/research.md section 5).
+    """Animagine XL 4.0 Opt in fp16 with its fp16-fix VAE; no compile warm-up.
 
-    Three speed and memory settings, all on by default (user, 2026-11-11; docs/research.md,
-    run `inference`), with no torch.compile and so no warm-up:
-    - `fp16_accumulation`: fp16 matmuls accumulate in fp16 while the pipeline runs.
-    - `int8_weights`: the UNet's transformer-block Linear layers are stored as INT8 and
-      rebuilt in fp16 per layer (`facegen.quantise`): the UNet's weights go from 4.8 to
-      2.8 GiB.
-    - `offload_text_encoders`: the text encoders (1.5 GiB) wait in system memory and come
-      onto the GPU only to encode prompts that are not cached yet. With the tagger doing the
-      same, a group A job's peak reserved memory stays under 8 GiB, so FM27 and a browser
-      fit beside it.
-    The first two change the pictures slightly; offloading does not. With the first two off
-    the renderer draws exactly as before; the spikes use that for their baseline.
+    Optional fp16 accumulation and INT8 transformer weights change pictures slightly;
+    disabling both gives the fp16 baseline. INT8 weights are rebuilt per layer. Text
+    encoders can wait in CPU memory between encoding sessions without changing output.
 
-    Prompt embeddings are kept in system memory, TEXT_CACHE_SIZE texts at most
-    (`facegen.prompt_cache`). The worker calls `prepare` with the next jobs' prompts, so one
-    trip of the text encoders serves many jobs; a prompt nobody prepared is encoded when it
-    is first drawn. The cache changes no pixel: the pipeline gets the same embeddings.
+    `prepare` batches upcoming prompts into one GPU visit. Up to TEXT_CACHE_SIZE texts
+    stay cached in CPU memory; unprepared prompts are encoded on first use. Cached and
+    uncached paths supply identical embeddings to the pipeline.
     """
 
     model = MODEL_REPO
@@ -220,9 +201,8 @@ class AnimagineRenderer:
             pipe.to("cuda")
         pipe.set_progress_bar_config(disable=True)
         self.pipe = pipe
-        # Share the loaded modules. Not `from_pipe`: in diffusers 0.42 it casts the shared
-        # UNet to float32 when no dtype is given, which doubles the weights to 12.9 GiB and
-        # pushes the card into system RAM (docs/research.md section 5).
+        # diffusers 0.42's from_pipe casts the shared UNet to float32 without an explicit
+        # dtype, doubling its weights and spilling into system RAM. Reuse fp16 components.
         self.img2img = StableDiffusionXLImg2ImgPipeline(**pipe.components)
         self.img2img.set_progress_bar_config(disable=True)
         if pipe.unet.dtype != torch.float16 or pipe.vae.dtype != torch.float16:
@@ -272,11 +252,11 @@ class AnimagineRenderer:
         """The prompt's embeddings on the GPU, from the cache; encoded first if not there."""
         key = (prompt.positive, prompt.negative)
         if key not in self._embeds:
-            self.prepare([prompt])  # nothing to do once the worker has prepared it
+            self.prepare([prompt])
             positive, negative, empty = (self._texts.get(t) for t in (*key, ""))
             *tensors, n = pair_embeddings(positive, negative, empty)
             on_card = tuple(t.to("cuda") for t in tensors)
-            self._embeds = {key: (*on_card, n)}  # one prompt per job
+            self._embeds = {key: (*on_card, n)}
         return self._embeds[key]
 
     def prompt_chunks(self, prompt: Prompt) -> int:
@@ -341,11 +321,11 @@ class AnimagineRenderer:
                     num_images_per_prompt=1,
                     do_classifier_free_guidance=True,
                 )
-            self._reference_embeds = {reference.key: embeds}  # one reference per job
+            self._reference_embeds = {reference.key: embeds}
         return {"ip_adapter_image_embeds": self._reference_embeds[reference.key]}
 
     def set_vae_tiling(self, on: bool) -> None:
-        """Decode in tiles and one picture at a time (`render.vae_tiling`, Phase 10d): less
+        """Decode in tiles and one picture at a time (`render.vae_tiling`): less
         graphics memory on a small card, a little slower. The worker sets it before each job
         from the settings, so a change applies to the next picture."""
         if on == self.vae_tiling:

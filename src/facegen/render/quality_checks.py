@@ -8,10 +8,9 @@ A picture passes only if all of these hold:
   the eye colour also shows a face is there;
 - `solo` and `1girl` are present and none of `multiple views`, `multiple girls`, `2girls`,
   `no humans`;
-- the figure's head starts in the top fifth of the picture (a stand-in for a face-size
-  check until a face detector is approved; decisions.md).
+- the figure's head starts in the top fifth of the picture, as a proxy for face size.
 
-Kit pattern and logos are not checked (user, 2026-11-10). Group A's candidates that pass
+Kit pattern and logos are not checked. Group A's candidates that pass
 are ranked by `score`: p(general), plus the tagger's mean confidence in the traits, the kit's
 colours and a player's look and extra (for staff, the outfit's look, colour and prop) the
 prompt asked for, plus 1 - p(cowboy shot), which prefers the tighter framing.
@@ -39,16 +38,14 @@ if TYPE_CHECKING:
 
 TAG_THRESHOLD = 0.35
 REQUIRED_TAGS = ("solo", "1girl")
-# Content rule: a picture tagged with any of these is rejected even if its top rating is
-# "general" (decisions.md, from the Z-Image test: a bare midriff rated general 0.66).
+# Reject these tags even when the top rating is "general"; ratings alone miss violations.
 CONTENT_TAGS = (
     "nude", "nipples", "underwear", "lingerie", "swimsuit", "bikini", "cleavage", "midriff",
     "navel", "see-through", "crop top", "revealing clothes",
 )  # fmt: skip
 FORBIDDEN_TAGS = ("multiple views", "multiple girls", "2girls", "no humans")
 HEAD_TOP_MAX = 0.20
-"""Highest allowed start of the figure, as a fraction of the picture height. Every one of
-the 426 Animagine bake-off pictures started at 0.10 or above it (docs/research.md)."""
+"""Maximum distance from the top edge to the figure, as a fraction of picture height."""
 
 # Kept in the stored check result, at any probability: a rough record of age and framing.
 PROBE_TAGS = ("child", "aged down", "mature female", "cowboy shot", "upper body")

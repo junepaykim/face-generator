@@ -1,9 +1,6 @@
-"""Sync: store a save snapshot in the state database, classify players, and plan jobs.
+"""Store a save snapshot, classify players and plan jobs in one transaction.
 
-This is the glue between the pure modules and the database. A sync runs in one transaction,
-so a dry run is the same work rolled back at the end.
-
-    resolve_career -> ingest -> classify_and_plan -> report
+A dry run performs the same work and rolls it back.
 """
 
 from __future__ import annotations
@@ -238,8 +235,7 @@ def ingest(
     settings: Settings,
     sync_id: int,
 ) -> IngestStats:
-    """Write the snapshot's clubs, players, my club's staff, journalists and press officers,
-    with the facts the rules need.
+    """Store the snapshot's clubs and people with the facts classification needs.
 
     Staff are stored as rows beside the players (`is_staff`), keyed on the same unique ID, and
     so are journalists and press officers (`media_role`). A person who is also a player (a
@@ -289,7 +285,7 @@ def ingest(
             first_seen_mid_career=old is None and not first_sync,
         )
         # "First seen at my club" only counts for players who appear after the first sync;
-        # before that, the home-grown data alone decides (decisions.md, open question 2).
+        # on the first sync, only home-grown data establishes academy membership.
         first_club = old["first_club_id"] if old else (None if first_sync else p.club_id)
         academy = bool(old and old["academy"]) or (
             newgen
@@ -303,7 +299,6 @@ def ingest(
         ):
             arrivals += 1
         club_since = _club_since(old, p.club_id, p.club_join_date, game_date)
-        # A team of my club's other than the first team: reserves, under-23s, under-18s.
         youth = p.club_id is not None and p.club_id == my_club and p.team_slot not in (None, 0)
         rows.append(
             _PlayerRow(
@@ -721,7 +716,7 @@ def queue_preview(conn: sqlite3.Connection, career_id: int, limit: int) -> list[
 
 
 def player_table(conn: sqlite3.Connection, career_id: int) -> list[dict[str, Any]]:
-    """One row per present player: the Phase 0.1 exit table plus group and reasons."""
+    """One row per present player with save facts, group and classification reasons."""
     rows = conn.execute(
         "SELECT p.unique_id, p.name, p.age, p.height_cm, p.ca, p.pa, c.name AS club,"
         " c.gender AS club_gender, p.in_my_league, p.in_continental, p.is_newgen,"

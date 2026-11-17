@@ -1,14 +1,9 @@
-"""Finding the save to read, copying it safely, syncing it, and watching for new saves.
+"""Save discovery, snapshot copying, sync execution and watcher policy.
 
-The tool never parses a save in the game's folder: it copies it to data/snapshots/ and
-reads the copy (AGENTS.md hard rule 1). A save that changes while it is copied is mid-write;
-the copy is retried after a pause.
-
-`SaveWatcher` decides when the newest save is due for a sync (spec section 6): it has
-changed since the last sync and then stayed the same for `settle_seconds`. File-change
-events do not cross from Windows into WSL, so `facegen serve` polls (service.py runs the
-loop). Which versions are already synced comes from the database, so a restart, "Sync now"
-or `facegen sync` never make the watcher read the same save twice.
+Parse only copies in data/snapshots/. Retry copies if the source changes during copying.
+`SaveWatcher` waits for an unsynced version to stay unchanged for `settle_seconds`;
+database sync records prevent duplicate reads across restarts and manual syncs.
+The watcher polls because Windows file-change events do not reach WSL.
 """
 
 from __future__ import annotations
@@ -243,7 +238,6 @@ class SaveWatcher:
             detail = f"newest save {name} (saved {newest.saved_at()}) is synced"
             return WatchDecision(None, interval, "synced", detail)
         if self._pending is None or self._pending[0] != newest:
-            # Changed since the last look: wait and see whether the game is done writing it.
             self._pending = (newest, now)
             return WatchDecision(
                 None,

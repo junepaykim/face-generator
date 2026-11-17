@@ -1,15 +1,9 @@
-"""Packages left half-installed by an interrupted `uv sync` (Start.bat, Phase 11).
+"""Detect incomplete distributions left by interrupted uv sync.
 
-Found 2026-11-16: the console was closed while the first `uv sync` was unpacking torch. Its
-`torch-<version>.dist-info` folder was there with neither METADATA nor RECORD, and some of its
-files were missing (`torchgen`). uv counts a package as installed by that folder's name, so
-every later `uv sync` said all was well, and torch could not be imported.
-
-`python -m facegen.venv_check` lists such packages: it prints the `uv sync` options that
-install them again (`--reinstall-package NAME ...`, one line) and exits 5, or prints nothing
-and exits 0. Start.bat then runs `uv sync` once more with those options, which puts back every
-file and completes the folder. Standard library only: a half-installed package must not stop
-this from running.
+uv may accept a .dist-info directory without METADATA or RECORD as installed, leaving
+imports broken. `python -m facegen.venv_check` prints `--reinstall-package NAME ...` on
+one line and exits 5 for these packages, or prints nothing and exits 0. Start.bat retries
+uv sync with those options. Standard library only, so broken packages cannot prevent repair.
 """
 
 from __future__ import annotations

@@ -76,8 +76,8 @@ class Kit:
     goalkeeper: bool = False
 
     def words(self) -> str:
-        """Prompt words for this kit as a plain match kit: short sleeves and shorts, or for a
-        goalkeeper long sleeves and gloves (as tested in the bake-off: no shorts)."""
+        """Match-kit words: short sleeves and shorts, or goalkeeper long sleeves and gloves
+        without shorts."""
         if self.goalkeeper:
             return f"goalkeeper, {self.shirt_words()}, long sleeves, {self.gloves_words()}"
         return ", ".join(p for p in (self.shirt_words(), "short sleeves", self.shorts_words()) if p)

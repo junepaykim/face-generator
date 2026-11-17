@@ -1,13 +1,8 @@
-"""INT8 weights for the UNet's Linear layers (docs/research.md, run `inference`).
+"""Weight-only INT8 storage for the UNet's Linear layers.
 
-GPU code only: this module imports torch, so import it after
-`facegen.gpu.prepare_environment`, as `AnimagineRenderer` does.
-
-Weight-only: each weight matrix is stored as INT8 with one scale per output channel and
-rebuilt in fp16 just before its matmul, so only the INT8 copy stays in memory. The
-activations stay in fp16 and the matmul is the ordinary fp16 one, so nothing needs
-torch.compile and nothing warms up. Quantising activations as well (INT8 matmul) was as fast
-as this only under torch.compile; run eagerly it was almost twice as slow as fp16.
+Import after `facegen.render.gpu.prepare_environment`: this module imports torch.
+Each matrix has one scale per output channel and is rebuilt in fp16 for its matmul.
+Activations and matmuls stay fp16, without torch.compile or warm-up.
 """
 
 from __future__ import annotations

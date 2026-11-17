@@ -1,23 +1,10 @@
-"""Group and tracking rules (docs/spec.md section 2).
+"""Pure group and tracking rules (spec section 2).
 
-Pure: takes a PlayerFacts record and the group thresholds, returns a Classification.
-Thresholds are strict ("above"), and CA and PA conditions are joined with OR.
-
-My club's staff are people, not players: they are in group A while on my club's staff
-(user, 2026-11-12), and the newgen rules never apply to them, whatever their ID or ability.
-
-A pre-existing player without a photo in FM27 (neither the game's own nor a facepack's) is
-picked by the newgen thresholds too, when `no_photo` is on (user, 2026-11-12). The academy
-rules stay newgens' own.
-
-Players in my club's teams other than the first team (reserves, under-23s, under-18s) are in
-group B, or A when their CA or PA reaches group A's thresholds, while `youth` is on (user,
-2026-11-13); moving to the first team puts them in A. They are tracked while at my club.
-
-Journalists from my club's country and my club's press officers are in group B and not
-tracked (user, 2026-11-13); other journalists only by a pin. One pinned to A is a regular at
-my club: group A quality and tracked like any group A person (user, 2026-11-14). The player
-rules never apply to them.
+Thresholds are strict and CA/PA conditions use OR. My-club staff are group A; newgen
+thresholds never apply to staff or media. They also cover known photo-less players when
+enabled, but academy rules remain newgen-only. With youth enabled, my-club youth players
+use group B unless they reach A, and are tracked while at my club. Eligible media are
+group B and untracked unless pinned to A.
 """
 
 from __future__ import annotations

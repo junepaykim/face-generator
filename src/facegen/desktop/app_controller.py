@@ -1,25 +1,10 @@
-"""The desktop app's state and actions (Phase 11), with no GUI import.
+"""GUI-independent desktop state and actions for the tray and window.
 
-The tray icon (tray.py) and the window (app_window.py) are thin layers over `AppController`:
-they show what `view()` says and call its actions. It reads the status of the worker, the syncs
-and the save watcher that `facegen serve` already has (service.py, worker_process.py), and
-turns them into:
-
-- the tray's menu: a status line, Open Dashboard, Pause or Resume, Sync Latest Save Now,
-  Start with Windows (on Windows only) and Quit, each with its label and whether it can be
-  used now;
-- a state dot for the icon: running, paused or fault;
-- a tooltip (Windows keeps 127 characters of it);
-- notifications, each said once: new pictures once a run of drawing has ended, a graphics
-  driver fault, drawing paused by an error, a save whose game build cannot be read, and the
-  result of a sync started from the tray.
-
-Quit runs its steps in a thread of its own, in the order given (desktop.py: the model
-download, the save watcher, the worker process, which frees the graphics card's memory when it
-exits, then the web server), and then `on_quit_done` closes the tray and the window. A step
-that fails is logged and the next one still runs.
-
-Everything here takes plain values and callables, so the tests drive it with fakes.
+`view()` provides menu availability, the running/paused/fault dot and a tooltip clipped to
+Windows's 127-character buffer. Notifications are emitted once for completed drawing runs,
+GPU faults, job errors, unsupported saves and syncs requested from the tray.
+Quit runs supplied cleanup steps in order on a thread, continuing after errors, then calls
+`on_quit_done` to close the shell. Dependencies are plain values and callables.
 """
 
 from __future__ import annotations

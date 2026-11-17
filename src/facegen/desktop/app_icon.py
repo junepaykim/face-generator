@@ -1,12 +1,7 @@
-"""facegen's icon, drawn with Pillow (Phase 11): for the tray, with a state dot, and as an
-.ico file for the shortcuts.
+"""Draw the portrait-outline icon for the tray and Windows shortcuts.
 
-No image file is kept in the repository (AGENTS.md rule 7): the icon is drawn from these few
-shapes when it is needed, and the .ico is written into the data folder.
-
-The picture is a portrait's outline (a head and shoulders) on a rounded square. The tray's
-copy has a dot in its lower right corner: green while facegen draws or is ready to, amber
-when paused, red after a fault (app_controller.dot_for).
+Icons are generated locally; the .ico goes in the data folder. The tray dot is green while
+ready or drawing, amber while paused and red after a fault (app_controller.dot_for).
 """
 
 from __future__ import annotations

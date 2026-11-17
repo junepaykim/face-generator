@@ -48,7 +48,7 @@ from facegen.pipeline.sync import classify_and_plan
 
 PINS = ("a", "b", "c", "never")
 DEFAULT_GROUP = "b"
-"""A hand-picked player's group unless the user picks another (decisions.md, proposed)."""
+"""A hand-picked player's group unless the user picks another."""
 
 
 class ManualError(ValueError):

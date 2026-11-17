@@ -1,29 +1,13 @@
-"""What my club's staff wear (docs/spec.md section 3). Pure.
+"""Deterministic role-based outfits for staff and media (spec section 3).
 
-Staff do not wear the playing kit. Each picture draws one outfit, a look and a prop, from a
-fixed library for the person's role (user, 2026-11-12): directors and the board in suits and
-overcoats, the manager in a suit or a bench coat, coaches in training wear with a whistle,
-analysts in shirt and knit, scouts in trench coats and field jackets, doctors in lab coats
-with a stethoscope, physios and sports scientists in club training wear with an ID lanyard.
-A job the save does not name gets a general mix. Older or senior people (head, chief,
-director, chair, or 50 and over) lean to the formal looks; under 35, to the casual ones.
+Each outfit uses the sheet's base seed and image version. Role and seniority weight the
+fixed looks and props; unknown jobs use the general staff mix. Home-kit colours accent
+staff and press-officer outfits; journalists wear neutral smart casual clothes. Media
+holding a prop take no arm pose, otherwise a calm one.
 
-The club's home colours go on one piece of each look: the track jacket, a polo or hoodie, a
-necktie or a scarf. A necktie or scarf takes the first colour that is not white, so it shows
-against a white shirt.
-
-The outfit is seeded by the sheet's base seed and the picture version, like the pose: the
-same picture is always drawn in the same clothes, and a new picture may change them.
-
-Journalists and press officers are dressed from the same library (user, 2026-11-13):
-journalists in smart casual wear with no club colours, often holding a notebook or a
-microphone or wearing a press pass; press officers in club smart wear with a lanyard or a
-clipboard. With a prop in hand they take no arm pose; otherwise a calm one (`media_pose`).
-
-The library is part of the content rule (spec section 3) and has no setting. Every look is
-long-sleeved and layered, and none is cropped, sleeveless or open over skin. Headwear is
-left out (it would hide the hair the quality check looks for), and so are glasses, which are
-the character sheet's to give.
+This fixed content-rule library contains long-sleeved, layered clothing, never cropped,
+sleeveless or open over skin. Headwear would hide hair checked by QC; glasses belong to
+the character sheet, so neither is added here.
 """
 
 from __future__ import annotations
@@ -68,7 +52,6 @@ def _look(
 SUIT_TONES = ("black", "grey", "navy blue")
 
 LOOKS: dict[str, Look] = {
-    # Club sportswear.
     "track jacket": _look("{jacket}", ("track jacket",), sporty=True),
     "half-zip": _look(
         "{club} sweater, high collar, zipper",
@@ -108,7 +91,6 @@ LOOKS: dict[str, Look] = {
         colour_on="jacket",
         tones=("black", "navy blue", "grey"),
     ),
-    # Smart wear.
     "suit and tie": _look(
         "{tone} suit, white collared shirt, {accent} necktie",
         ("suit", "business suit", "formal"),
@@ -193,7 +175,6 @@ LOOKS: dict[str, Look] = {
         sporty=False,
         tones=("navy blue", "grey", "black"),
     ),
-    # Journalists: smart casual, no club colours.
     "press trench coat": _look(
         "trench coat, {tone} turtleneck sweater",
         ("trench coat", "turtleneck"),
@@ -338,9 +319,8 @@ ROLES: dict[str, Role] = {
     ),
 }
 
-# Job words (fmsave's labels, lower case) to role, first match wins. Ordered so that "chief
-# scout" is a scout, "recruitment analyst" an analyst, "loan manager" a director and
-# "head of youth development" a coach. Labels fmsave does not name yet are covered by words.
+# First matching word in a lower-case job label wins: specific jobs must precede broad
+# titles ("loan manager" is a director, "head of youth development" a coach).
 _JOB_WORDS = (
     ("journalist", "journalist"),
     ("press", "press officer"),

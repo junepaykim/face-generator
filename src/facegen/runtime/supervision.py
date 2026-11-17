@@ -1,15 +1,9 @@
-"""When to start the GPU worker process again after it failed (Phase 7b). Pure: no
-processes, no files; the time is passed in.
+"""Pure GPU-worker restart and job-review policy; callers supply the time.
 
-A failure is a GPU fault the worker reported (gpu.is_fatal: a dead CUDA context) or the
-worker process ending without saying why (a crash in the driver or in native code).
-
-- Backoff: the first failure of a run of failures waits 5 s, the second 30 s, the third and
-  later 2 min. A failure more than `window` after the previous one starts a new run.
-- Giving up: `max_failures` failures within `window` (three in 30 minutes) stop the
-  restarts; the user's Resume clears the count and tries again.
-- Review: a job that was being drawn during `review_after` failures (two) goes to review
-  instead of being tried again. This count is kept across Resume.
+Failures include reported fatal CUDA faults and exits without a reason. Backoff is 5 s,
+30 s, then 2 min; a gap longer than `window` starts a new run. `max_failures` failures
+within `window` (three in 30 minutes) stop restarts until Resume clears the count.
+A job affected by `review_after` failures (two) goes to review; that count survives Resume.
 """
 
 from __future__ import annotations

@@ -1,15 +1,9 @@
-"""One desktop app at a time (Phase 11): a lock in the data folder, and a way for a second
-start to ask the first one to open its window.
+"""Enforce one desktop app and forward second-launch activation through local files.
 
-The first `facegen app` (or `facegen tray`) holds `data/app.lock` for as long as it runs. The
-lock is the operating system's (locking.file_lock), so it goes with the process however that
-ends: a crash or Task Manager never leaves a stale lock behind.
-
-A second start finds the lock taken, writes `data/app.open` and ends. The first one looks for
-that file about once a second (desktop.py), deletes it and opens its window, or the dashboard
-in the browser when it has no window. The request is a file rather than a call to the web
-server: the server only takes state changes with the form token of its own pages
-(web/security.py), and a file in our own data folder needs no new way in.
+The first app holds data/app.lock using an OS lock, released even after a crash. A second
+start writes data/app.open and ends; the running shell checks about once a second, removes
+the request and opens its window or browser. This uses our data folder rather than adding
+an activation endpoint to the web server, whose mutations require a form token.
 """
 
 from __future__ import annotations

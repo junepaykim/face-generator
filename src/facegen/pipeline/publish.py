@@ -1,24 +1,13 @@
-"""Publishing pictures into FM27 (docs/research.md section 4, the recipe from Phase 0.2).
+"""Publish portraits only inside <FM27 user dir>/graphics/facegen/<career key>/.
 
-Each career has its own pack, `<FM27 user dir>/graphics/facegen/<career key>/`: one 3:4
-portrait PNG per player named `<unique_id>.png`, its height the group's published size, plus
-a classic facepack `config.xml` that maps both the numeric and `r-` person ID to its
-picture. FM27 uses the latter for generated people, including staff. It loads changes on
-Settings -> Reload Skin, or at its next start. A master that is not 3:4 (a square picture
-drawn before the change to 3:4) is cropped to 3:4 around its centre.
+Each pack has <unique_id>.png portraits and config.xml mappings for numeric and r- IDs.
+Portrait height is the group's published size; non-3:4 masters are cropped centrally.
+FM27 loads changes on Reload Skin or restart.
 
-**Active pack** (spec section 8). FM27 loads every folder under `graphics/`, and newgen IDs
-repeat between careers, so only one career's pack may map anything: the active career's,
-the one whose save was written last (`db.active_career_id`). Every other pack keeps its
-pictures but gets a `config.xml` that maps nothing, so switching back is only a rewrite of
-`config.xml`. `publish_pack` and `publish_active` keep this true; they hold `publish_lock`,
-so the worker and a sync never write the packs at the same time.
-
-AGENTS.md hard rule 2: under the FM27 user folder this module writes only inside
-`graphics/facegen/`. Every path is checked before anything is written or deleted.
-
-Writes are atomic (a temporary file, then a rename), and nothing is rewritten when it is
-already in place, so publishing twice changes nothing.
+Newgen IDs repeat across careers, so only the career with the newest save maps pictures.
+Other packs keep their PNGs with empty mappings. `publish_pack` and `publish_active` hold
+`publish_lock` to serialize worker/sync writes. Every path is checked before writing or
+deleting; atomic replacement and skipping unchanged files make publishing idempotent.
 """
 
 from __future__ import annotations
@@ -346,7 +335,7 @@ def unpublish(
     """Remove a player's published picture and mapping; FM27 then shows its own photo again.
 
     The picture stops being current; the master and the database history are kept. The
-    planner would queue an eligible player again, so the UI's "remove picture" (Phase 3)
+    planner would queue an eligible player again, so the UI's "remove picture"
     pairs this with a "never" pin. A pack that is not `active` keeps mapping nothing.
     Returns whether anything was removed. Callers hold `publish_lock`. Raises
     FolderNotSetError without FM27's folder, before anything changes.

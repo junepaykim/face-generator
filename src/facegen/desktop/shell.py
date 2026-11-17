@@ -1,25 +1,13 @@
-"""The desktop app (Phase 11): `facegen app`, the dashboard in a window of its own with a tray
-icon, and `facegen tray`, the tray icon alone (Open Dashboard opens the browser).
+"""Desktop entry points: `facegen app` with a window and tray, or `facegen tray` alone.
 
-Both run what `facegen serve` runs (runtime.py), with the web server in a thread of its own,
-and a tray icon over app_controller.AppController: Open Dashboard, Pause or Resume, Sync
-Latest Save Now, Start with Windows and Quit, a state dot, and notifications. Closing the
-window hides it; the worker carries on, and Quit is in the tray. Quit stops the model
-download, the save watcher, the worker process (the graphics card's memory is free once it
-has exited), the web server, then the tray and the window.
+Both share runtime.composition with `serve`, run the server in a thread and keep the tray
+on the main thread. Closing the window hides it; Quit stops downloads, the save watcher,
+the worker process (releasing the GPU), the server, then the tray and window.
 
-Started without a console, `pythonw.exe -m facegen.desktop app` (Start.bat, the shortcuts):
-
-- one at a time: the first holds data/app.lock, and a second start asks it to open its
-  window and ends (instance.py);
-- what would go to the console (stdout, stderr: uvicorn's lines, the worker process's
-  messages) goes to data/logs/facegen.log instead (`LogStream`);
-- a failure while starting is shown in a message box with the log's path, not nothing.
-  Its top-level dependencies use only the standard library, so even a broken installation
-  (a package missing after an update) reaches that message box.
-
-The window and the tray come from a `Shell`; the tests give fakes, so all of this runs on
-Linux without pystray or pywebview.
+Console-less starts (`pythonw.exe -m facegen.desktop app`) hold data/app.lock, forward a
+second launch to the running app and route stdout/stderr to data/logs/facegen.log.
+Startup failures show a message box naming the log. Top-level imports stay standard-library
+only so missing dependencies can reach that error boundary. `Shell` supplies GUI adapters.
 """
 
 from __future__ import annotations
@@ -323,7 +311,7 @@ def run(
     server: ServerThread | None = None
     controller: AppController | None = None
     try:
-        conn = db.connect(paths.db_path)  # migrated here, once, as every command does
+        conn = db.connect(paths.db_path)
         try:
             settings = load_settings(conn, defaults_path=config)
         finally:
@@ -331,7 +319,7 @@ def run(
         want_window = mode == "app"
         notices: list[Notice] = []
         holder: dict[str, WindowLike] = {}
-        window_gone = threading.Event()  # no window after all: the browser takes its place
+        window_gone = threading.Event()
 
         def browse_in_window(start: str | None) -> str | None:
             from facegen.setup import folder_setup
@@ -433,7 +421,7 @@ def run(
         started.notices = notices
         refresher.start()
         # The tray has this process's main thread; the window runs in a process of its own.
-        tray.run()  # until Quit stops it
+        tray.run()
         # The loop also ends without Quit (Windows logging off): stop everything the same way.
         controller.quit()
         if not controller.wait_quit(QUIT_WAIT_SECONDS):

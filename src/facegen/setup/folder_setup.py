@@ -1,19 +1,12 @@
-"""First-run setup of FM27's folder (Phase 10a).
+"""Validate FM27's user folder, save its local override and offer a native folder dialog.
 
-When FM27's user folder is neither in the local file nor found on this PC, the web UI asks for
-it. This module holds the three pieces behind that:
+Accept an existing folder with `games/`, or `Football Manager 27` inside `Sports
+Interactive`. Correct saves, games/graphics subfolders and recognized parent folders to
+that folder. Validation uses an injectable Disk; refusals explain what is missing.
 
-- `check_folder` (pure over a `Disk`): is the folder the user gave FM27's folder? It must
-  exist and be a folder that has `games/`, or be named `Football Manager 27` inside
-  `Sports Interactive` (a new install that has not saved yet). FM27's `games` or `graphics`
-  folder, a save file, or the Documents or Sports Interactive folder above it are corrected to
-  FM27's folder. A refusal names what was missing.
-- `write_local_path`: `[paths] fm_user_dir = '...'` in the local file (config/local.toml),
-  keeping its other lines and comments, written atomically. Nothing else is ever written there.
-- The Browse button: a browser never gives a page a real path, so the server opens a native
-  folder dialog on this PC (`browse`): tkinter's, in a process of its own so Tk never runs in
-  the server's threads. Not offered where there is no display (WSL, a Linux without one) or no
-  tkinter (`dialog_available`). Phase 11's window will bring its own dialog.
+Write only `[paths] fm_user_dir` atomically, preserving the local file's other text.
+The browser's Browse action runs Tk in a child so it never uses server threads; it is
+unavailable on WSL, without a display or without Tk. The desktop window has its own dialog.
 """
 
 from __future__ import annotations

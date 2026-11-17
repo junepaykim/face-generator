@@ -17,7 +17,7 @@ DETAIL_SIZES: dict[str, tuple[int, int] | None] = {
     "off": None,
 }
 """`groups.*.detail_size`: the detail pass's target size (width, height), or none. 1344x1728 is
-1.5 times the 896x1152 render; 1152x1472 needs less graphics memory (Phase 10c). Both sides
+1.5 times the 896x1152 render; 1152x1472 needs less graphics memory. Both sides
 are multiples of 64, as the model needs."""
 
 FOUND = "found on this PC"
@@ -132,9 +132,9 @@ class AgeSettings:
     b: tuple[tuple[int, str], ...]
     c: tuple[tuple[int, str], ...]
     staff: tuple[tuple[int, str], ...]
-    """My club's staff, whatever their group: wide bands, W02 the youngest (user, 2026-11-12)."""
+    """My club's staff, whatever their group: wide bands, W02 the youngest."""
     media: tuple[tuple[int, str], ...]
-    """Journalists and press officers: the staff bands from W04 up (user, 2026-11-14)."""
+    """Journalists and press officers: the staff bands from W04 up."""
 
     def table(self, name: str) -> tuple[tuple[int, str], ...]:
         return getattr(self, name)
@@ -142,7 +142,7 @@ class AgeSettings:
 
 @dataclass(frozen=True, slots=True)
 class StaffSettings:
-    """My club's staff get pictures like its players (user, 2026-11-12)."""
+    """My club's staff get pictures like its players."""
 
     enabled: bool
     """False: staff are in no group unless pinned; their pictures are kept."""
@@ -150,7 +150,7 @@ class StaffSettings:
 
 @dataclass(frozen=True, slots=True)
 class YouthSettings:
-    """My club's teams other than the first team (user, 2026-11-13)."""
+    """My club's teams other than the first team."""
 
     enabled: bool
     """True: players in my club's reserve, under-23 and under-18 teams are in group B, or A
@@ -160,7 +160,7 @@ class YouthSettings:
 
 @dataclass(frozen=True, slots=True)
 class MediaSettings:
-    """Journalists and press officers (user, 2026-11-13), drawn once at group B."""
+    """Journalists and press officers, drawn once at group B."""
 
     journalists: bool
     """Journalists from my club's country are drawn without a request."""
@@ -170,7 +170,7 @@ class MediaSettings:
 
 @dataclass(frozen=True, slots=True)
 class NoPhotoSettings:
-    """Pre-existing players without a photo are picked like newgens (user, 2026-11-12)."""
+    """Pre-existing players without a photo are picked like newgens."""
 
     enabled: bool
     """False: only newgens are picked outside my club; drawn pictures are kept."""
@@ -214,7 +214,7 @@ class Schedule:
 
 @dataclass(frozen=True, slots=True)
 class RenderSettings:
-    """How the model draws, for the graphics card it has (Phase 10d)."""
+    """Rendering options for the graphics card."""
 
     vae_tiling: bool
     """Decode in tiles and one picture at a time (diffusers' VAE tiling and slicing): less

@@ -1,9 +1,6 @@
-"""A local HTML page of a career's generated pictures, for the user to look at.
+"""Local gallery at data/masters/<career key>/index.html, opened from disk.
 
-Written to data/masters/<career key>/index.html and opened from disk: the pictures never
-leave this PC (AGENTS.md hard rule 6). It shows every picture with its candidates, their
-check results and the prompt, so the user can judge the pick and the quality check. The web
-UI (Phase 3) replaces it.
+Shows generated pictures, candidates, check results and prompts for review on this PC.
 """
 
 from __future__ import annotations
@@ -68,7 +65,7 @@ def _rel(path: str | None, career_key: str) -> str:
 
 
 def collect(conn: sqlite3.Connection, career_id: int) -> list[dict[str, Any]]:
-    """Every picture of the career, newest players first, current and rejected ones."""
+    """Current and rejected pictures for the career."""
     rows = conn.execute(
         "SELECT i.*, p.name, p.age, p.is_goalkeeper, c.name AS club, t.sheet, t.base_seed"
         " FROM images i"

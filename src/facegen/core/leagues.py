@@ -7,8 +7,7 @@ every round up front; cups and pre-season events have few), with the larger tabl
 tie-break. Every club in any table or fixture of that competition is in my league, so a
 league split into conferences counts as one.
 
-League tables alone are not enough: before a season starts the save may hold no table yet
-(the Phase 0.1 save, 2026-03-01, had none for its NWSL club; docs/research.md).
+League tables alone are not enough: before a season starts the save may hold no table yet.
 """
 
 from __future__ import annotations

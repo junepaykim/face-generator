@@ -1,8 +1,6 @@
-"""JSON lines over a child process's stdin and stdout: the worker process (worker_process.py)
-and the dashboard's window process (app_window.py) speak this way to their parent.
+"""ASCII JSON lines over child stdin/stdout for the worker and window protocols.
 
-One JSON object per line, in ASCII, so no console encoding can break it. Standard library
-only, so a child that imports this loads nothing else.
+Standard library only; importing this module must not load application dependencies.
 """
 
 from __future__ import annotations

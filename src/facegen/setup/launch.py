@@ -1,27 +1,14 @@
-"""What Start.bat asks of facegen once `uv sync` has installed it (Phase 11): `facegen launch`.
+"""Start.bat's activation and setup decisions, exposed as `facegen launch`.
 
-Start.bat stays thin: it finds or installs uv, runs `uv sync`, then this, then starts the
-desktop app with pythonw.exe. The decisions are made here, in Python, where they are tested:
+`--open-running` runs before uv sync to avoid replacing files in use: exit 0 means the
+running app accepted activation, 1 means no app, and 4 means an app did not answer.
+Normal launch installs the optional native wheel, then offers missing models after
+showing their size and obtaining consent. Either step may fail without blocking startup
+(exit 0); declining models leaves the dashboard's download option available.
 
-- `facegen launch --open-running`, run before `uv sync`: is a facegen app running already?
-  Then it is asked to open its window (instance.py) and Start.bat ends: nothing is synced
-  while facegen's own files are in use. Exit 0: it was running and took the request; 1: none
-  runs; 4: one runs but did not answer.
-- `facegen launch`: the prebuilt Rust extension (`facegen native --install`; a failure is a
-  warning, as the Python versions do the same work), then the model files: when some are
-  missing, their size is shown and the download starts only after one "y" (`facegen models
-  --download`, AGENTS.md rule 4); "no" is fine, the dashboard offers it again. Exit 0: the
-  app starts without either, so neither step's failure stops it (an unexpected error in a
-  step is shown as a warning too).
-
-Settings it cannot read are said in plain words, not as a traceback (exit 2). One case is put
-right after a question: a local file copied from WSL names a folder as WSL sees it
-(`/mnt/c/...`), which Windows refuses (fm_paths.native_path); with a "y" the line is written in
-Windows's form (folder_setup.write_local_path keeps the file's other lines), as facegen has
-written it since Phase 10, and that form works on WSL too.
-
-Everything it prints also goes to `--log` (Start.bat's data/logs/start.log), except the
-download's progress lines.
+Unreadable settings produce a plain error (exit 2). Converting a copied WSL folder path
+to Windows form requires confirmation and preserves the local file's other text.
+Output is also written to `--log`, except download progress.
 """
 
 from __future__ import annotations

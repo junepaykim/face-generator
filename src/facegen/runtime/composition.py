@@ -1,13 +1,10 @@
-"""What `facegen serve`, `facegen tray` and `facegen app` run: the web app, the GPU worker
-process, the syncs, the save watcher and the model download, built and stopped the same way
-by all three (Phase 11).
+"""Shared runtime composition for `serve`, `tray` and `app`.
 
-`build_runtime` makes the parts without starting anything; `Runtime.start` starts the save
-watcher and the worker; `Runtime.stop_steps` lists how they stop, in order: the model download,
-the save watcher, then the worker process (it finishes the picture it is drawing, at most
-`worker_process.STOP_TIMEOUT` seconds, and frees the graphics card's memory when it exits).
-`facegen serve` runs uvicorn in its main thread and the steps after it returns; the desktop
-app runs the server in a thread of its own (`ServerThread`) and stops it after the steps.
+`build_runtime` constructs without starting; `Runtime.start` starts the watcher and worker.
+`Runtime.stop_steps` stops downloads, the watcher, then the worker, allowing its current job
+up to `worker_process.STOP_TIMEOUT` seconds before releasing the GPU by ending the process.
+`serve` runs uvicorn in the main thread and cleans up afterward. The desktop shell runs
+`ServerThread` and stops it after the runtime steps.
 """
 
 from __future__ import annotations

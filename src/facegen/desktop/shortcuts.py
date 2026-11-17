@@ -1,18 +1,10 @@
-"""Windows shortcuts to the desktop app (Phase 11): the desktop and the Start Menu
-(`Start.bat --shortcut`, which runs `facegen shortcuts`), and Start with Windows.
+"""Windows desktop, Start Menu and Startup shortcuts for the desktop app.
 
-A shortcut starts `pythonw.exe -m facegen.desktop app` from the repository's `.venv`, so no
-console window opens (desktop.py). Start with Windows is the same shortcut in the Startup
-folder with `--minimized`: facegen starts in the tray, without its window. It is off by
-default and only ever changed from the tray's visible "Start with Windows" item, as it changes
-how the PC starts. Turning it off deletes our own `facegen.lnk` there and nothing else.
-
-The folders are Windows's Known Folders (Desktop, Programs, Startup), wherever they were moved
-(OneDrive's desktop included). The shortcuts are written by WScript.Shell in one PowerShell
-call, given as -EncodedCommand so that no path needs quoting on a command line.
-
-The pure parts (the command a shortcut runs, the PowerShell text) take plain values; the
-tests check them on any system.
+Shortcuts run `.venv`'s `pythonw.exe -m facegen.desktop app` without a console. Start with
+Windows adds `--minimized`; it is off until enabled in the tray, which creates or deletes
+only our facegen.lnk.
+Known Folders follow relocated directories, including OneDrive. WScript.Shell writes the
+shortcuts through PowerShell's -EncodedCommand so paths need no command-line quoting.
 """
 
 from __future__ import annotations

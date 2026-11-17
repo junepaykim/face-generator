@@ -1,12 +1,8 @@
-"""Running other programs without a console window flashing up on Windows.
+"""Run subprocesses without console windows on Windows.
 
-Every subprocess facegen starts goes through `run_quiet` or `popen_quiet`. On Windows they add
-CREATE_NO_WINDOW, so a console program (tasklist.exe, the worker's python.exe) started by a
-window-less facegen (pythonw.exe, Phase 11) opens no console of its own; elsewhere they are
-plain `subprocess.run` and `subprocess.Popen`.
-
-`windows_tool` finds a program in Windows's System32 when it is not on PATH: the folder named
-by %SystemRoot% on Windows, and the C: drive's from WSL (whose PATH may leave Windows out).
+All launches go through `run_quiet` or `popen_quiet`, which add CREATE_NO_WINDOW on Windows
+and use ordinary subprocess behavior elsewhere. `windows_tool` finds System32 tools when
+PATH omits them, using %SystemRoot% on Windows and the C: drive from WSL.
 """
 
 from __future__ import annotations
@@ -137,7 +133,7 @@ def windows_tool(
 
 
 FM_PROCESS = "fm.exe"
-"""FM27's process (user, 2026-11-13: it stays `fm.exe`)."""
+"""FM27's executable name for process detection."""
 
 
 def tasklist_command(tasklist: str, image: str = FM_PROCESS) -> list[str]:

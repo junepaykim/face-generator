@@ -86,7 +86,7 @@ class PollerService:
             return decision.wait
         self._set("syncing", decision.detail)
         outcome = self._syncer.run(decision.due.path, trigger="poller")
-        if outcome is None:  # "Sync now" is running; look again shortly
+        if outcome is None:
             self._set("settling", "waiting for a sync started by hand")
             return self._watcher.settle_seconds
         self._watcher.done()

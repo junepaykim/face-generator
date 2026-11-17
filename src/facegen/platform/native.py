@@ -1,15 +1,8 @@
-"""The optional Rust extension, `facegen_native` (built from native/ by maturin).
+"""Load the optional Rust figure scan and PNG encoder, or use Python fallbacks.
 
-It holds faster versions of two CPU-bound pieces: the figure scan (figure.py) and the
-published-picture encoder (publish.py). Each has a Python version that gives the same
-result, so the tool runs without the extension; `uv sync --no-group native` leaves it out.
-Callers check `ext is not None` and fall back to Python otherwise.
-
-Where it comes from: developers build it from native/ (`uv sync`, with Rust); elsewhere,
-Windows above all, it is the prebuilt wheel that `facegen native --install` fetches
-(native_wheel.py). Only the version this code was written for is used: a wheel left from
-an older facegen is not even loaded (on Windows a loaded extension could not be replaced),
-and the Python versions run until the matching one is installed.
+Callers test `ext is not None`. Only a matching installed version is loaded: Windows locks
+a loaded extension, preventing replacement of an outdated wheel. Developers build with
+maturin; other installations obtain the wheel through `facegen native --install`.
 """
 
 from __future__ import annotations

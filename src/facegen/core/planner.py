@@ -17,9 +17,8 @@ Rules:
 - A job that failed its checks and went to review is not re-queued for the same target.
 - A re-draw that keeps the character sheet may use the existing picture as a reference
   (`reference_scale`); by default only for players at my club.
-- A person whose current picture shows a man (drawn 2026-11-13 with a men's age wording,
-  age.drawn_as_man) gets a new face, tracked or not: everyone is drawn as a woman since
-  2026-11-14.
+- A picture with a legacy men's age wording gets a new face, tracked or not:
+  everyone is drawn as a woman or girl (age.drawn_as_man).
 """
 
 from __future__ import annotations

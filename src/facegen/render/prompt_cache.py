@@ -1,19 +1,8 @@
-"""Prompt embeddings kept in system memory, so the text encoders seldom visit the GPU. Pure.
+"""Pure LRU storage and batched preparation of prompt embeddings.
 
-The text encoders wait in system memory while the UNet runs (`gpu.on_gpu`). One trip onto
-the card and back costs about 0.65 s, while encoding a job's prompts there takes about 0.07 s
-(docs/research.md, run `encode-cache`). So the renderer keeps what the encoders produce for
-each prompt text in a small LRU cache, and encodes in two stages:
-
-1. `prepare` collects every text that the coming jobs need and that is not cached yet, and
-   encodes them all in one trip. The worker calls it with the next jobs' prompts.
-2. A render or detail pass finds its prompt cached and hands the embeddings to the pipeline,
-   so the encoders stay in system memory while the UNet, the tagger and the IP-Adapter run.
-
-A prompt nobody prepared (a single job, or one queued after the last trip) is prepared on
-its own when it is first drawn: the same path, with a trip for that prompt alone.
-
-Values are opaque here: the renderer stores torch tensors, the tests plain values.
+Preparing upcoming prompts together amortizes text-encoder transfers to the GPU. The
+renderer prepares any uncached prompt on first use. Values are opaque here: CPU tensors
+in the renderer, plain values in tests.
 """
 
 from __future__ import annotations

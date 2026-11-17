@@ -1,13 +1,9 @@
-"""The tray icon (Phase 11): pystray over app_controller.AppController.
+"""pystray adapter for app_controller.AppController.
 
-A thin layer: it shows the controller's view (the icon with its state dot, the tooltip and the
-menu) and calls the controller's actions. desktop.Refresher tells it when the view changes
-and what to announce. pystray is imported only here, and only on Windows does the `desktop`
-dependency group install it; the tests use a fake in its place.
-
-A left click on the icon opens the dashboard (the menu's default item); the right button
-shows the menu. Menu actions run in a thread of their own, so the icon's message loop never
-waits on them (Start with Windows writes its shortcut through PowerShell).
+Show the controller's menu, dot and tooltip; shell.Refresher supplies updates and notices.
+pystray loads only when the tray is created and is installed only on Windows. Left click
+opens the dashboard; right click shows the menu. Actions run on separate threads so slow
+operations such as writing a Startup shortcut cannot block the icon's message loop.
 """
 
 from __future__ import annotations
@@ -38,7 +34,7 @@ class TrayIcon:
 
     def __init__(self, controller: AppController, *, pystray: Any = None) -> None:
         if pystray is None:
-            import pystray  # the desktop dependency group, Windows only
+            import pystray
 
         self._pystray = pystray
         self._controller = controller

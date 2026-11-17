@@ -1,29 +1,21 @@
-"""The dashboard's window (Phase 11): pywebview on Microsoft Edge WebView2, which Windows 11
-has built in, showing the same web UI as the browser, in a process of its own.
+"""The WebView2 dashboard window and its parent proxy.
 
-Why a process of its own: pywebview hands every request the page makes to Python, on the
-window's UI thread (WebView2's WebResourceRequested and WebResourceResponseReceived, which it
-subscribes to for every URL). In the app's process those calls waited for Python's lock
-behind the web server and a sync (fmsave reads a save for about a minute), and the window
-stopped answering clicks (the user, 2026-11-16). Alone in its process the window answers as a
-browser does, and the app's process never loads .NET.
+pywebview handles page requests on its UI thread through Python. A separate process keeps
+those requests from waiting for the server or save parser's GIL and keeps .NET out of the
+app process. Only the child imports pywebview.
 
-The child, `python -m facegen.app_window --url URL [--hidden]`, runs the window (`AppWindow`).
-Its parent (`WindowProcess`) talks to it over stdin and stdout, one JSON object per line
-(pipes.py):
+`python -m facegen.app_window --url URL [--hidden]` runs `AppWindow`. `WindowProcess`
+exchanges one JSON object per line over stdin/stdout:
 
     parent to child   {"cmd": "show"}   {"cmd": "browse", "id": 1, "start": "C:\\..."|null}
-                      {"cmd": "close"}   (also the end of stdin: the parent went away)
-    child to parent   {"type": "ready"}   {"type": "hidden"}  (the user closed the window)
+                      {"cmd": "close"}   (also stdin EOF)
+    child to parent   {"type": "ready"}   {"type": "hidden"}  (user closed the window)
                       {"type": "browsed", "id": 1, "path": "C:\\..."|null}
-                      {"type": "unavailable", "reason": "..."}  (no WebView2; it then exits)
+                      {"type": "unavailable", "reason": "..."}  (then exits)
 
-Closing the window hides it: the tray keeps running and the worker carries on; Open Dashboard
-shows it again (and starts the process again if it ever ended), Quit closes it for good.
-Browse on the setup panel opens the window's own folder dialog. Without WebView2 pywebview
-would fall back to Internet Explorer's engine, which cannot run the dashboard: the child says
-so and the app opens the browser instead. pywebview is imported only in the child, and only on
-Windows does the `desktop` dependency group install it; the tests use stand-ins.
+Closing hides the window while the tray/worker continue; Open Dashboard shows or restarts
+it, and Quit destroys it. Browse opens its folder dialog. Without WebView2, the child
+reports unavailability so the app uses a browser; pywebview's IE fallback cannot run the UI.
 """
 
 from __future__ import annotations
@@ -81,7 +73,7 @@ class AppWindow:
         webview: Any = None,
     ) -> None:
         if webview is None:
-            import webview  # the desktop dependency group, Windows only
+            import webview
 
         self._webview = webview
         self._on_hide = on_hide
@@ -187,7 +179,7 @@ def child_main(
                     threading.Thread(target=browse, args=(message,), daemon=True).start()
                 case "close":
                     break
-        window.destroy()  # Quit, or the parent went away
+        window.destroy()
 
     threading.Thread(target=read, name="facegen-window-commands", daemon=True).start()
     send({"type": "ready"})
@@ -218,7 +210,7 @@ def window_command(url: str, hidden: bool) -> list[str]:
 
 
 class WindowProcess:
-    """The window in a process of its own, as desktop.py uses a window: show, browse, destroy.
+    """Window child proxy for the desktop shell: show, browse, destroy.
 
     `on_hide` is called when the user closes (hides) the window; `on_unavailable` with the
     reason when there can be no window (no WebView2, or it failed to start twice in a row),

@@ -1,29 +1,13 @@
-"""GPU job runner (docs/architecture.md section 6).
+"""Generate, check and store 3:4 portraits through injected Renderer/Tagger interfaces.
 
-For each queued job: load or sample the character sheet, build the prompt, render the
-group's candidates, check each one, keep the best that passed, run group A's detail pass,
-save the master under data/masters/<career key>/<unique_id>/, and record the picture. A job
-whose candidates all fail the check three times goes to review (status "failed") and
-nothing of it is published.
+Each job keeps the best passing candidate and optionally adds a checked detail pass.
+Masters live under data/masters/<career key>/<unique_id>/. After three failed attempts,
+the job goes to review and publishes nothing. Interrupted jobs retry with the same seeds.
 
-Pictures are 3:4 portraits (picture.py): the model renders at its portrait size near 3:4
-and the master is cropped to exactly 3:4.
-
-A player's picture is a shoot (shoot.py): the kit in one of its looks, a pose of arms and
-angle, and a backdrop, with the season from the career's in-game date. My club's staff are
-dressed by wardrobe.py, with a pose from traits.POSE on the grey backdrop; journalists and
-press officers too, with a calm pose or none (a prop in hand).
-
-The model and the tagger sit behind the small `Renderer` and `Tagger` interfaces; the
-runner itself needs neither a GPU nor a save, so the tests drive it with fakes.
-
-Rules carried from the spec:
-- the GPU works only while FM27 (fm.exe) is not running, unless told to generate now;
-- jobs are idempotent: an interrupted job goes back to the queue and is redone from the
-  same seeds;
-- a re-draw that keeps the character sheet uses the player's current picture as a reference
-  where `planner.reference_scale` says so (spec section 5): IP-Adapter's face model on a
-  crop of that picture's face. Without a picture file to use, it is drawn without one.
+Generation waits for FM27 to stop unless Generate now overrides it. Keep-face redraws use
+the current portrait's face crop when `reference_scale` permits and the file is available.
+Player shoots use the career's in-game season; staff and media use their role's wardrobe
+and poses on the grey backdrop. Fakes can run the orchestration without a GPU or save.
 """
 
 from __future__ import annotations
@@ -80,7 +64,7 @@ PRE_ENCODE_JOBS = 32
 """How many jobs' prompts one trip of the text encoders encodes: the job about to run and
 the next ones in the queue (`Renderer.prepare`, `prompt_cache`)."""
 
-# Keep existing CLI, tests and experiment imports working after the module split.
+# Compatibility exports for CLI, tests and experiments.
 __all__ = [
     "HEIGHT",
     "INT8_SCOPE",
@@ -264,8 +248,6 @@ class Worker:
         """Use the current career when the service reuses this worker's loaded models."""
         return ImageStore(self.conn, self.data_dir, self.career)
 
-    # -- models, loaded on first use --
-
     @property
     def renderer(self) -> Renderer:
         if self._renderer is None:
@@ -303,8 +285,6 @@ class Worker:
             except Exception as exc:  # noqa: BLE001 - report it; the model is gone either way
                 self.log(f"  could not free the GPU cleanly: {type(exc).__name__}: {exc}")
         return any(m is not None for m in models)
-
-    # -- queue --
 
     def runnable(self, f: JobFilter) -> list[Job]:
         """Queued jobs that match the filter, in queue order."""
@@ -420,8 +400,6 @@ class Worker:
     def publish(self) -> PublishReport:
         """Publish this career's pictures; FM27 is shown them only if it is the active career."""
         return publish_pack(self.conn, self.settings, self.career.id, self.career.key)
-
-    # -- one job --
 
     def run_job(self, job: Job, upcoming: Sequence[Job] = ()) -> JobOutcome:
         """Run one job. `upcoming` are the queued jobs expected next, in order: when this
@@ -569,9 +547,7 @@ class Worker:
         return JobOutcome(job, "done", image_id, version, self.clock() - t0, message)
 
     def _setup(self, job: Job, sheet: CharacterSheet, version: int) -> Setup:
-        """A player's shoot (shoot.py), or for my club's staff an outfit in the home colours
-        (wardrobe.py) with a pose from the old library on the grey backdrop; for a journalist
-        or press officer, clothes for their work with a calm pose or a prop in hand."""
+        """Select a player shoot or a staff/media outfit with its role's pose and backdrop."""
         if job.media_role:
             home, source = self.kits.kit_for(job.target_club_id, False)
             outfit = outfit_for(home, job.media_role, job.age, sheet.base_seed, version)
@@ -636,7 +612,7 @@ class Worker:
             self.log(f"  encoded the prompts of the next {len(prompts)} jobs ({texts} texts)")
 
     def _configure_renderer(self) -> None:
-        """Settings the renderer takes per job rather than at load: VAE tiling (Phase 10d)."""
+        """Apply VAE tiling per job rather than only when the renderer loads."""
         set_tiling = getattr(self.renderer, "set_vae_tiling", None)
         if set_tiling is not None:
             set_tiling(self.settings.render.vae_tiling)
@@ -717,8 +693,6 @@ class Worker:
         return JobOutcome(
             job, "failed", image_id, version, self.clock() - t0, f"to review: {error}"
         )
-
-    # -- storage --
 
     def _reference(
         self, job: Job, scale: float, folder: Path, version: int

@@ -1,24 +1,12 @@
-"""The model files facegen draws and checks with, and their one-time download (Phase 10b).
+"""Model cache inspection and resumable downloads, after explicit user consent.
 
-The files are those the README's three `hf download` commands fetch, as data (`FILES`): the
-image model, IP-Adapter's face model with its image encoder, and the tagger behind the quality
-check, about 11.6 GB together. They go into the Hugging Face cache, where the renderer and the
-tagger load them with no network (gpu.py sets `HF_HUB_OFFLINE`).
+FILES covers the image model, IP-Adapter and tagger. HubCache checks `refs/main` without
+importing huggingface_hub, accepting both symlinks and Windows copies. Rendering stays
+offline; only `facegen models --child` clears the offline flags. The child emits JSON
+lines on stdout: plan, current file, byte progress and completion or error.
 
-- `missing(files, has)` is pure: the files `has` does not find. `HubCache` answers `has` for
-  the cache on disk without importing huggingface_hub: a file is there when the snapshot that
-  the repository's `refs/main` names holds it (a symlink into `blobs/`, or a copy on Windows
-  without Developer Mode).
-- `status()` is what the CLI and the dashboard show: what is missing, its size, and the free
-  space where the cache is.
-- The download runs in a process of its own (`facegen models --child`), with `HF_HUB_OFFLINE`
-  unset only there, and reports on its stdout one JSON object per line: the plan, each file it
-  starts, the bytes so far about once a second, and the end. `ModelDownload` is the parent's
-  side, for the web UI and `facegen models --download`. A download that stops is taken up again
-  where it stopped: finished files are skipped and huggingface_hub resumes a partial one.
-
-AGENTS.md hard rule 4: nothing is downloaded until the user has confirmed it once, in the UI
-(`POST /setup/models`) or at `facegen models --download`'s question (or with `--yes`).
+The caller must obtain consent in the UI or CLI (including `--yes`) before starting a
+download. Finished files are skipped; huggingface_hub resumes partial files.
 """
 
 from __future__ import annotations
@@ -43,8 +31,7 @@ from facegen.platform.pipes import JsonWriter, drain_lines
 logger = logging.getLogger("facegen")
 
 REVISION = "main"
-"""The README's commands fetch each repository's main branch, and the renderer and the tagger
-load `refs/main` from the cache: the download must write that ref, so it asks for main too."""
+"""Downloads must populate `refs/main`, which the offline renderer and tagger load."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,8 +39,7 @@ class ModelFile:
     repo: str
     filename: str
     size: int
-    """Bytes, as fetched on this PC in November 2026: for the size shown before the download,
-    the disk space check and the progress bar. A later revision may differ a little."""
+    """Estimated bytes for consent, free-space checks and progress; revisions may differ."""
 
     @property
     def label(self) -> str:
@@ -71,9 +57,6 @@ REPOS = {
 }
 
 FILES: tuple[ModelFile, ...] = (
-    # uv run hf download cagliostrolab/animagine-xl-4.0 --include "model_index.json"
-    #   --include "scheduler/*" --include "text_encoder*/*" --include "tokenizer*/*"
-    #   --include "unet/*" --include "vae/*"
     ModelFile(ANIMAGINE, "model_index.json", 671),
     ModelFile(ANIMAGINE, "scheduler/scheduler_config.json", 613),
     ModelFile(ANIMAGINE, "text_encoder/config.json", 560),
@@ -92,13 +75,9 @@ FILES: tuple[ModelFile, ...] = (
     ModelFile(ANIMAGINE, "unet/diffusion_pytorch_model.safetensors", 5_135_149_760),
     ModelFile(ANIMAGINE, "vae/config.json", 782),
     ModelFile(ANIMAGINE, "vae/diffusion_pytorch_model.safetensors", 167_335_342),
-    # uv run hf download h94/IP-Adapter sdxl_models/ip-adapter-plus-face_sdxl_vit-h.safetensors
-    #   models/image_encoder/config.json models/image_encoder/model.safetensors
     ModelFile(IP_ADAPTER, "sdxl_models/ip-adapter-plus-face_sdxl_vit-h.safetensors", 847_517_512),
     ModelFile(IP_ADAPTER, "models/image_encoder/config.json", 560),
     ModelFile(IP_ADAPTER, "models/image_encoder/model.safetensors", 2_528_373_448),
-    # uv run hf download SmilingWolf/wd-eva02-large-tagger-v3 config.json model.safetensors
-    #   selected_tags.csv
     ModelFile(TAGGER, "config.json", 634),
     ModelFile(TAGGER, "model.safetensors", 1_260_796_004),
     ModelFile(TAGGER, "selected_tags.csv", 308_468),

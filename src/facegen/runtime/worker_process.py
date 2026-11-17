@@ -1,35 +1,27 @@
-"""The GPU worker in a process of its own (Phase 7b).
+"""Supervise the GPU worker in a child process with a replaceable CUDA context.
 
-`facegen serve` starts `facegen worker` as a child process and supervises it. Only a new
-process gets a new CUDA context, so after a GPU fault (gpu.is_fatal) the child exits and a
-new one carries on. A process that exits also gives back all of its GPU memory, so Pause,
-Quit, FM27 starting and a queue left empty for a while free the card for certain.
+After a fatal CUDA fault, restart the child: only a new process gets a fresh context.
+Exiting releases GPU memory on Pause, Quit, FM27 startup and idle timeout. The pipe carries
+one ASCII JSON object per line. Library stdout is redirected to stderr for parent logging.
 
-The pipe carries one JSON object per line, in ASCII, so no console encoding can break it.
+Child stdout messages:
 
-child to parent, on the child's stdout:
-
-    {"type": "status", "status": {...}}       WorkerStatus without the log, after a change
-    {"type": "line", "text": "..."}            a line for the dashboard's log, time-stamped
-    {"type": "log", "level": 40, "text": "..."}   a "facegen" logger record, with its traceback
+    {"type": "status", "status": {...}}       WorkerStatus without its log, after a change
+    {"type": "line", "text": "..."}            timestamped dashboard log line
+    {"type": "log", "level": 40, "text": "..."}   logger record, including traceback
     {"type": "exit", "reason": "...", "message": "..." | null, "job": {...} | null}
 
-    "exit" comes last; its reasons are service_contracts.ExitReason. Anything else the child's
-    libraries print goes to its stderr, which the parent writes to the log file.
+`exit` comes last; reasons are defined by runtime.contracts.ExitReason.
 
-parent to child, on the child's stdin:
+Commands from parent to child stdin:
 
     {"cmd": "pause" | "resume" | "generate-now" | "wake" | "stop"}
 
-    "stop", and the end of stdin (the parent went away), end the child after the job it is
-    drawing. Pause does the same once the pictures are published.
+`stop` and stdin EOF end the child after its current job. Pause exits after publication.
+The queue remains in SQLite, shared with the parent and web app.
 
-The queue itself is in SQLite: the parent and the web app change it, the child reads it.
-
-`WorkerProxy` is the parent's side. It has WorkerService's public methods
-(service_contracts.WorkerControl), so the web app does not know which one it has. It starts a child
-unless paused, keeps the dashboard's log and counts across children, and after a failure
-follows supervision.FailureHistory: start again after a wait, give up, send a job to review.
+`WorkerProxy` implements runtime.contracts.WorkerControl, starts children unless paused and
+retains log/counters across them. supervision.FailureHistory governs backoff and job review.
 """
 
 from __future__ import annotations
@@ -87,8 +79,7 @@ CHILD_ENV = {
     "TQDM_DISABLE": "1",
     "HF_HUB_DISABLE_PROGRESS_BARS": "1",
 }
-"""The worker process's stderr goes to the log file: no progress bars there (a model load
-drew about 30 lines of them, at each start of a worker process)."""
+"""Keep progress bars out of the log file that receives the child's stderr."""
 
 logger = logging.getLogger("facegen")
 child_logger = logging.getLogger("facegen.child")
@@ -137,7 +128,7 @@ def status_from_json(data: dict[str, Any]) -> WorkerStatus:
 
 
 class ChildLink:
-    """The child's end of the pipe (service_contracts.Link): messages to the parent."""
+    """The child's runtime.contracts.Link implementation: messages to the parent."""
 
     def __init__(self, out: TextIO) -> None:
         self._out = out
@@ -208,7 +199,7 @@ def _read_commands(commands: Iterable[str], svc: WorkerService) -> None:
                     logger.warning("worker process: not a command: %r", raw[:200])
     except (OSError, ValueError):
         pass  # the pipe broke: the parent is gone
-    svc.stop()  # asked to, or the parent went away
+    svc.stop()
 
 
 def serve_child(
@@ -462,7 +453,7 @@ class WorkerProxy:
                     self._wake.clear()
                     continue
                 self._run_child()
-        except Exception as exc:  # never die silently: show it in the UI
+        except Exception as exc:
             logger.error("worker supervisor crashed", exc_info=exc)
             with self._lock:
                 self._paused = True
@@ -547,7 +538,7 @@ class WorkerProxy:
                     self._child_status = status
                     if status.generate_now:
                         self._generate_now_seen = True
-                    elif self._generate_now_seen:  # the queue was drawn
+                    elif self._generate_now_seen:
                         self._generate_now = self._generate_now_seen = False
             case "line":
                 with self._lock:

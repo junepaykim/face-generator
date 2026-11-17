@@ -1,16 +1,12 @@
 """Picture geometry: the 3:4 portrait shape, published sizes and the face crop. Pure.
 
-Every picture is a 3:4 portrait, width to height (user, 2026-11-11; pictures were square
-before). The model renders at its own portrait size near 3:4 (renderer.WIDTH x renderer.HEIGHT)
-and the master is cropped to exactly 3:4. FM27 gets the master scaled down so that its
-height is the group's published size (`groups.<g>.published_long_edge`).
+The model renders near 3:4; the master is cropped to exactly that aspect. FM27 gets the
+master scaled down to the group's published height (`groups.<g>.published_long_edge`).
 
-Pictures drawn before the change are square. They are not re-drawn automatically: when
-published they are cropped to 3:4 around their centre, which keeps the face.
+Legacy square pictures are centre-cropped on publication, without automatic redraws.
 
-`face_box` finds the head for the reference picture of a re-draw (spec section 5), with the
-background-difference heuristic of bake-off run r4 (docs/research.md section 5), following a
-gradient or two-tone backdrop down the picture (figure.py).
+`face_box` locates a reference face using figure.py's background-difference heuristic,
+following plain, gradient or two-tone backdrops down the picture.
 """
 
 from __future__ import annotations
@@ -58,7 +54,7 @@ def published_size(long_edge: int, aspect: tuple[int, int] = ASPECT) -> tuple[in
 
 
 FACE_SHARE = 0.36
-"""Side of the face crop as a share of the picture height (run r4's crops)."""
+"""Side of the square face crop as a share of picture height."""
 _GRID = 128  # the mask is worked out on a picture this many cells wide
 _CORNER = 0.04  # share of the width sampled in each top corner for the backdrop colour
 _DIFF = 60  # summed RGB difference from the backdrop that counts as foreground

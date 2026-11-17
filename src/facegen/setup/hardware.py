@@ -1,31 +1,14 @@
-"""The graphics card, and the picture settings that suit it (Phase 10d).
+"""CUDA detection and pure recommendations for picture settings.
 
-- `detect()` asks torch for the CUDA card: its name and total memory, or why there is none
-  (torch without CUDA, no NVIDIA driver, no card). torch is imported inside the function and
-  any failure is an answer, not an error. The web process never imports torch: it runs
-  `facegen hardware --json` as a short child process (`probe`), as the worker runs in one
-  (Phase 7b), and keeps the answer for the process's life.
-- `recommend(vram_gib)` is pure: the preset for a card, as setting keys. Only picture
-  settings: group A's candidates, the detail pass size and VAE tiling. The group thresholds
-  are never touched: they decide who gets a picture, not whether the card copes, and changing
-  them would re-classify the save (user, 2026-11-13). A small card is slower, not different in
-  who is drawn.
+`detect` loads torch lazily and returns failures as reasons. The web process uses `probe`
+(`facegen hardware --json` in a child), keeping torch out of the server.
+Presets change candidates, detail size and VAE tiling; eligibility thresholds stay fixed.
 
-| Card memory            | Preset                                                     |
-|------------------------|------------------------------------------------------------|
-| 12 GB or more          | the defaults: A best of 3, detail pass 1344x1728           |
-| 10 to under 12 GB      | A best of 3, detail pass 1152x1472                         |
-| under 10 GB            | A best of 2, no detail pass, `render.vae_tiling` on        |
-| no CUDA card           | nothing changed: pictures cannot be drawn on this PC       |
-
-The boundaries come from the measurement on the RTX 4080 (docs/research.md section 12; the
-user, 2026-11-16): a group A re-draw with a reference picture peaks at 7.70 GiB with the
-defaults, 6.66 with the middle preset and 5.00 with the low one, and Windows keeps about 3 GB
-of the card. So the defaults fit a 12 GB card, the middle preset a 10 or 11 GB one.
-
-Cards are sold by whole gigabytes and torch reports a little less (a 16 GB card is 15.99 GiB),
-so the memory is rounded to whole GiB first: a 12 GB card that reports 11.99 GiB takes the
-defaults, a 10 GB card the middle preset, a 9 GB one the low preset.
+The RTX 4080 measurements (docs/research.md section 12) put reference redraws at 7.70,
+6.66 and 5.00 GiB for high, medium and low, with about 3 GB held by Windows. The defaults
+therefore target 12 GB or more; medium targets 10–11 GB; lower cards use low. No CUDA
+card means no changes. Round reported memory to whole GiB first: 11.99 GiB takes high,
+and a 9 GB card takes low.
 """
 
 from __future__ import annotations
