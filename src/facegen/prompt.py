@@ -34,7 +34,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from facegen.age import WORDINGS
-from facegen.kits import Kit
+from facegen.kit_values import Kit
 from facegen.shoot import DEFAULT_BACKDROP, Backdrop, KitLook, Pose
 from facegen.traits import (
     ACCESSORY,
@@ -56,7 +56,7 @@ from facegen.traits import (
 from facegen.wardrobe import Outfit
 
 if TYPE_CHECKING:
-    from facegen.settings import MyClubSettings
+    from facegen.settings_values import MyClubSettings
 
 SUBJECT = "1girl, solo"
 RATING = "safe"

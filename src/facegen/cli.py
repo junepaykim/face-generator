@@ -25,26 +25,29 @@ import os
 import sqlite3
 import sys
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import TextIO
 
-from facegen import db, hardware, models, native, native_wheel
+from facegen import db, hardware, models, native, native_wheel, setup_operations
 from facegen.datasource.base import DataSource
 from facegen.gallery import write_gallery
-from facegen.kits import KitError, load_kits
+from facegen.job_records import Career, JobFilter
+from facegen.kit_values import KitError
+from facegen.kits import load_kits
+from facegen.output import utf8_output
 from facegen.poller import UNSUPPORTED_ADVICE, NoSaveError, SaveUnreadableError, sync_save
 from facegen.publish import RELOAD_HINT, PublishError, PublishReport, publish_active
-from facegen.settings import Settings, folder_not_set_message, load_settings
+from facegen.runtime_dependencies import Gpu
+from facegen.runtime_dependencies import default_renderer as _default_renderer
+from facegen.runtime_dependencies import default_source as _default_source
+from facegen.runtime_dependencies import default_tagger as _default_tagger
+from facegen.settings import folder_not_set_message, load_settings
+from facegen.settings_values import Settings
 from facegen.sync import SyncReport
 from facegen.worker import (
-    Career,
-    JobFilter,
-    Renderer,
-    Tagger,
     Worker,
     WorkerBusy,
-    fm_running,
     load_career,
 )
 
@@ -55,44 +58,6 @@ KIT_SOURCE_NOTES = {
     "bundled": " (bundled colours from FM27's kit image)",
     "fallback": " (fallback kit)",
 }
-
-
-def _default_source() -> DataSource:
-    from facegen.datasource.fmsave_source import FmsaveDataSource
-
-    return FmsaveDataSource()
-
-
-def _default_renderer() -> Renderer:
-    from facegen.worker import AnimagineRenderer
-
-    return AnimagineRenderer()
-
-
-def _default_tagger() -> Tagger:
-    from facegen.qc import Eva02Tagger
-
-    return Eva02Tagger()
-
-
-@dataclass(frozen=True, slots=True)
-class Gpu:
-    """What `run` and `worker` use for the GPU and the FM27 check; the tests pass fakes."""
-
-    renderer: Callable[[], Renderer] = _default_renderer
-    tagger: Callable[[], Tagger] = _default_tagger
-    fm_check: Callable[[], bool | None] = fm_running
-    program: tuple[str, ...] | None = None
-    """How `serve` starts facegen for its worker process, before `[--config X] worker`;
-    None: this Python with `-m facegen.cli`. The tests give a script that passes fakes."""
-    models_ready: Callable[[], bool] | None = None
-    """Whether the model files are on this PC; None: asked of the Hugging Face cache when the
-    real renderer is used (models.ready_now), and not at all with the tests' fakes."""
-
-    def models_check(self) -> Callable[[], bool] | None:
-        if self.models_ready is not None:
-            return self.models_ready
-        return models.ready_now if self.renderer is _default_renderer else None
 
 
 def format_report(r: SyncReport) -> str:
@@ -293,35 +258,16 @@ def cmd_native(
     installer: Callable[[Path], None] = native_wheel.uv_install,
     loads: Callable[[], bool] = native_wheel.imports_cleanly,
 ) -> int:
-    """Whether the Rust extension is in use, and with --install the prebuilt wheel for this
-    PC (native_wheel.py). Exit 3 when it could not be installed: the launcher goes on with
-    the Python versions."""
-    now = native.status()
-    print(f"Rust code   {now.describe()}", file=out)
-    try:
-        chosen = native_wheel.plan(host, native_dir=native_dir)
-    except (OSError, native_wheel.WheelError) as exc:
-        print(f"Wheel       {exc}", file=out)
-        return 3 if args.install else 0
-    print(f"Wheel       {chosen.describe()}", file=out)
-    if not args.install:
-        if not now.in_use and chosen.wheel is not None:
-            print("Run `facegen native --install` to install it.", file=out)
-        return 0
-    if now.in_use:
-        print("Nothing to install.", file=out)
-        return 0
-    try:
-        name = native_wheel.install(chosen, source=args.wheel_dir, fetch=fetch, installer=installer)
-    except native_wheel.WheelError as exc:
-        print(f"Not installed: {exc}", file=out)
-        print("facegen goes on with the Python versions.", file=out)
-        return 3
-    if not loads():
-        print(f"Installed {name}, but it does not load here; the Python versions run.", file=out)
-        return 3
-    print(f"Installed {name} (SHA-256 checked): in use from facegen's next start.", file=out)
-    return 0
+    return setup_operations.prepare_native(
+        install=args.install,
+        source=args.wheel_dir,
+        report=partial(print, file=out),
+        host=host,
+        native_dir=native_dir,
+        fetch=fetch,
+        installer=installer,
+        loads=loads,
+    )
 
 
 def cmd_models(
@@ -333,47 +279,17 @@ def cmd_models(
     ask: Callable[[str], str] = input,
     interactive: Callable[[], bool] = lambda: sys.stdin is not None and sys.stdin.isatty(),
 ) -> int:
-    """The model files: which are missing, and with --download fetch them after one
-    confirmation (AGENTS.md hard rule 4); `--yes` is that confirmation, for the launcher.
-    Exit 0 when every file is there, 1 when some are missing (status), 3 when the download did
-    not finish or was not confirmed. --child is the download process itself."""
     if args.child:
         return models.run_child(out)
-    now = models.status(cache)
-    for repo, what in models.REPOS.items():
-        left = [f for f in now.missing if f.repo == repo]
-        size = models.total_size(f for f in models.FILES if f.repo == repo)
-        state = "ready" if not left else f"{len(left)} file(s) missing"
-        print(f"{repo:<38} {models.gigabytes(size):>8}  {state}  ({what})", file=out)
-    print(f"Cache        {now.cache}", file=out)
-    free = "unknown" if now.free_bytes is None else models.gigabytes(now.free_bytes)
-    print(f"Free space   {free}", file=out)
-    if now.ready:
-        print("All model files are here; nothing to download.", file=out)
-        return 0
-    size = models.gigabytes(now.missing_bytes)
-    if not args.download:
-        print(f"To download ({size}): facegen models --download", file=out)
-        return 1
-    if not now.enough_space:
-        print(f"Not enough free space for {size} (and 1 GB to spare) in {now.cache}.", file=out)
-        return 3
-    if not args.yes:
-        if not interactive():
-            print("Not downloaded: confirm with --yes, or run this in a console.", file=out)
-            return 3
-        answer = ask(f"Download {size} from Hugging Face into {now.cache}? [y/N] ")
-        if answer.strip().lower() not in ("y", "yes"):
-            print("Not downloaded.", file=out)
-            return 3
-    print(f"Downloading {size}; it can be stopped and started again.", file=out, flush=True)
-    result = models.wait_and_print(models.ModelDownload(command), out)
-    if result.error or not result.finished:
-        print(f"The download did not finish: {result.error or 'stopped'}", file=out)
-        print("Run the same command again to go on where it stopped.", file=out)
-        return 3
-    print("All model files are here.", file=out)
-    return 0
+    return setup_operations.prepare_models(
+        download=args.download,
+        confirmed=args.yes,
+        report=partial(print, file=out),
+        ask=ask,
+        interactive=interactive,
+        run_download=lambda: models.wait_and_print(models.ModelDownload(command), out),
+        cache=cache,
+    )
 
 
 def cmd_hardware(
@@ -557,7 +473,7 @@ def cmd_serve(
     """The web UI with the save watcher in the background and the GPU worker in a process of
     its own (`facegen worker`, supervised by worker_process.WorkerProxy), until Ctrl+C."""
     from facegen.runtime import CannotStart, build_runtime
-    from facegen.service import log_to_file
+    from facegen.service_logging import log_to_file
     from facegen.worker_process import STOP_TIMEOUT
 
     try:
@@ -744,20 +660,6 @@ def build_parser() -> argparse.ArgumentParser:
     la.add_argument("--log", type=Path, metavar="PATH", help="also append the output here")
     sub.add_parser("shortcuts", help="desktop and Start Menu shortcuts to the app (Windows)")
     return parser
-
-
-def utf8_output(*streams: TextIO) -> None:
-    """Write UTF-8 whatever the console's code page: names such as James Rodríguez cannot be
-    written in cp949 or cp1252, and a print would raise. Python already writes Unicode to a
-    Windows console window; this is for output sent to a pipe or a file."""
-    for stream in streams:
-        reconfigure = getattr(stream, "reconfigure", None)
-        if reconfigure is None:
-            continue
-        try:
-            reconfigure(encoding="utf-8", errors="replace")
-        except (ValueError, OSError):  # already written to, or a closed stream
-            continue
 
 
 def main(

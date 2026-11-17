@@ -136,21 +136,21 @@ def test_facegen_launch_open_running_from_the_command_line(config_file: Path) ->
 
 
 def test_facegen_launch_runs_the_wheel_and_the_models_steps(config_file: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    from facegen import cli
+    from facegen import setup_operations
 
     seen: list[tuple[str, object]] = []
 
-    def fake_native(args, out):  # type: ignore[no-untyped-def]
-        seen.append(("native", args.install))
-        print("Rust code   not in use", file=out)
+    def fake_native(*, install, report):  # type: ignore[no-untyped-def]
+        seen.append(("native", install))
+        report("Rust code   not in use")
         return 3
 
-    def fake_models(args, out, *, ask, interactive):  # type: ignore[no-untyped-def]
-        seen.append(("models", (args.download, args.yes)))
+    def fake_models(*, download, confirmed, report, ask, interactive, run_download):  # type: ignore[no-untyped-def]
+        seen.append(("models", (download, confirmed)))
         return 0
 
-    monkeypatch.setattr(cli, "cmd_native", fake_native)
-    monkeypatch.setattr(cli, "cmd_models", fake_models)
+    monkeypatch.setattr(setup_operations, "prepare_native", fake_native)
+    monkeypatch.setattr(setup_operations, "prepare_models", fake_models)
     log = config_file.parent / "start.log"
     out = io.StringIO()
     assert main(["--config", str(config_file), "launch", "--log", str(log)], out=out) == 0
@@ -176,11 +176,11 @@ class Console(io.StringIO):
 
 
 def on_windows_with_a_wsl_local_file(config_file: Path, monkeypatch) -> Path:  # type: ignore[no-untyped-def]
-    from facegen import cli
+    from facegen import setup_operations
 
     monkeypatch.setattr("facegen.platform_info.current", lambda: "windows")
-    monkeypatch.setattr(cli, "cmd_native", lambda args, out: 0)
-    monkeypatch.setattr(cli, "cmd_models", lambda args, out, *, ask, interactive: 0)
+    monkeypatch.setattr(setup_operations, "prepare_native", lambda **kwargs: 0)
+    monkeypatch.setattr(setup_operations, "prepare_models", lambda **kwargs: 0)
     local = config_file.with_name("local.toml")
     local.write_text(WSL_LOCAL, encoding="utf-8")
     return local

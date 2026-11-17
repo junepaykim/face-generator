@@ -42,9 +42,9 @@ from facegen.classify import GROUP_RANK, Group
 from facegen.db import active_career_id, transaction
 from facegen.jobs import queue_manual as _queue
 from facegen.publish import PublishReport, publish_lock, publish_pack, unpublish
-from facegen.settings import Settings
+from facegen.settings_values import Settings
+from facegen.sheet_store import select_sheet
 from facegen.sync import classify_and_plan
-from facegen.traits import select_sheet
 
 PINS = ("a", "b", "c", "never")
 DEFAULT_GROUP = "b"

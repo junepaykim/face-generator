@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from facegen.settings import AgeSettings
+    from facegen.settings_values import AgeSettings
 
 
 @dataclass(frozen=True, slots=True)

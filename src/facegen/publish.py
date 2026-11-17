@@ -37,7 +37,7 @@ from facegen.locking import file_lock
 from facegen.picture import Box, aspect_box, crop_to_aspect, published_size
 
 if TYPE_CHECKING:
-    from facegen.settings import Settings
+    from facegen.settings_values import Settings
 
 RELOAD_HINT = "In FM27: Settings -> Reload Skin (스킨 다시 불러오기) to load the pictures."
 

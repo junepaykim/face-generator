@@ -8,7 +8,8 @@ import sqlite3
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
-from facegen.jobs import Career, Job, now
+from facegen.job_records import Career, Job
+from facegen.jobs import now
 from facegen.picture import crop_to_aspect
 from facegen.prompt import Prompt
 

@@ -45,7 +45,7 @@ from dataclasses import dataclass, replace
 from datetime import date
 from typing import Any
 
-from facegen.kits import Kit, families
+from facegen.kit_values import Kit, families
 from facegen.traits import Option, pick
 
 

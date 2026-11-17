@@ -14,7 +14,7 @@ child to parent, on the child's stdout:
     {"type": "log", "level": 40, "text": "..."}   a "facegen" logger record, with its traceback
     {"type": "exit", "reason": "...", "message": "..." | null, "job": {...} | null}
 
-    "exit" comes last; its reasons are service.EXIT_REASONS. Anything else the child's
+    "exit" comes last; its reasons are service_contracts.ExitReason. Anything else the child's
     libraries print goes to its stderr, which the parent writes to the log file.
 
 parent to child, on the child's stdin:
@@ -27,7 +27,7 @@ parent to child, on the child's stdin:
 The queue itself is in SQLite: the parent and the web app change it, the child reads it.
 
 `WorkerProxy` is the parent's side. It has WorkerService's public methods
-(service.WorkerControl), so the web app does not know which one it has. It starts a child
+(service_contracts.WorkerControl), so the web app does not know which one it has. It starts a child
 unless paused, keeps the dashboard's log and counts across children, and after a failure
 follows supervision.FailureHistory: start again after a wait, give up, send a job to review.
 """
@@ -49,8 +49,9 @@ from typing import Any, TextIO
 
 from facegen import db, jobs, procs
 from facegen.datasource.records import Personality
-from facegen.jobs import Job
-from facegen.kits import KitError, KitTable, load_kits
+from facegen.job_records import Job
+from facegen.kit_values import KitError, KitTable
+from facegen.kits import load_kits
 from facegen.pipes import (  # noqa: F401 - also used from here by the tests and cli
     PIPE_POLL_SECONDS,
     JsonWriter,
@@ -62,16 +63,12 @@ from facegen.pipes import (  # noqa: F401 - also used from here by the tests and
     protocol_streams,
 )
 from facegen.renderer import Renderer, Tagger
-from facegen.service import (
-    BUSY_TIMEOUT_MS,
-    LOG_LINES,
-    Exit,
-    WorkerService,
-    WorkerStatus,
-    _stamp,
-)
-from facegen.settings import Settings
+from facegen.runtime_policy import BUSY_TIMEOUT_MS
+from facegen.service_contracts import Exit, WorkerStatus
+from facegen.service_logging import LOG_LINES, stamp
+from facegen.settings_values import Settings
 from facegen.supervision import DEFAULT_POLICY, FailureHistory, RestartPolicy
+from facegen.worker_service import WorkerService
 
 STOP_TIMEOUT = 60.0
 """Quit waits this long for the job being drawn, then ends the worker process."""
@@ -139,7 +136,7 @@ def status_from_json(data: dict[str, Any]) -> WorkerStatus:
 
 
 class ChildLink:
-    """The child's end of the pipe (service.Link): messages to the parent."""
+    """The child's end of the pipe (service_contracts.Link): messages to the parent."""
 
     def __init__(self, out: TextIO) -> None:
         self._out = out
@@ -406,7 +403,7 @@ class WorkerProxy:
 
     def log(self, line: str) -> None:
         with self._lock:
-            self._log.append(f"{_stamp()}  {line}")
+            self._log.append(f"{stamp()}  {line}")
         logger.info("%s", line)
 
     @property

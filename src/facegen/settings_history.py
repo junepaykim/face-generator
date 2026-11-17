@@ -22,8 +22,9 @@ from typing import Any
 
 from facegen.db import transaction
 from facegen.jobs import load_career
-from facegen.settings import Settings, load_defaults, load_settings, read_overrides, set_overrides
+from facegen.settings import load_defaults, load_settings, read_overrides, set_overrides
 from facegen.settings_store import write_overrides
+from facegen.settings_values import Settings
 from facegen.sync import ChangeReport, reclassify_with_report
 
 HISTORY_LIMIT = 20

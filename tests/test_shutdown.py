@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from facegen import cli, desktop, runtime, service
+from facegen import cli, desktop, runtime, service_logging
 from facegen.settings import load_settings
 
 
@@ -40,7 +40,7 @@ def test_serve_propagates_the_first_cleanup_failure(
         stop_steps=lambda: steps,
     )
     monkeypatch.setattr(runtime, "build_runtime", lambda *args, **kwargs: rt)
-    monkeypatch.setattr(service, "log_to_file", lambda data_dir: data_dir / "facegen.log")
+    monkeypatch.setattr(service_logging, "log_to_file", lambda data_dir: data_dir / "facegen.log")
 
     def server(*args: object, **kwargs: object) -> None:
         calls.append("server")

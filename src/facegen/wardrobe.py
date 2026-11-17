@@ -32,7 +32,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from facegen.datasource.records import is_first_team_manager
-from facegen.kits import COLOURS, Kit
+from facegen.kit_values import COLOURS, Kit
 from facegen.traits import POSE, Option, pick
 
 

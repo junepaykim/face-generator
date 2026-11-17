@@ -13,7 +13,7 @@ import sqlite3
 from collections import Counter
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, date, datetime
-from typing import Any
+from typing import Any, NamedTuple
 
 from facegen import photos as photo_index
 from facegen.age import age_wording
@@ -33,7 +33,7 @@ from facegen.identity import (
 from facegen.jobs import apply_plan
 from facegen.leagues import clubs_in_competitions, my_league_competitions
 from facegen.planner import ImageState, JobState, Plan, PlayerPlanState, plan
-from facegen.settings import Settings
+from facegen.settings_values import Settings
 from facegen.traits import personality_to_json
 
 
@@ -176,39 +176,43 @@ def resolve_career(
     return career, warnings
 
 
-_PLAYER_COLUMNS = (
-    "career_id",
-    "unique_id",
-    "name",
-    "birth_date",
-    "age",
-    "height_cm",
-    "ca",
-    "pa",
-    "is_goalkeeper",
-    "strength",
-    "personality",
-    "club_id",
-    "loan_parent_club_id",
-    "home_grown_club_ids",
-    "club_since",
-    "is_newgen",
-    "in_scope",
-    "at_my_club",
-    "in_my_league",
-    "in_continental",
-    "first_club_id",
-    "academy",
-    "present",
-    "first_seen_sync",
-    "last_seen_sync",
-    "is_staff",
-    "staff_job",
-    "youth_team",
-    "media_role",
-    "local_media",
-    "female",
-)
+class _PlayerRow(NamedTuple):
+    """Named snapshot facts in the players table; booleans use SQLite integers."""
+
+    career_id: int
+    unique_id: int
+    name: str
+    birth_date: str | None
+    age: int | None
+    height_cm: int | None
+    ca: int
+    pa: int | None
+    is_goalkeeper: int
+    strength: int | None
+    personality: str | None
+    club_id: int | None
+    loan_parent_club_id: int | None
+    home_grown_club_ids: str
+    club_since: str | None
+    is_newgen: int
+    in_scope: int
+    at_my_club: int
+    in_my_league: int
+    in_continental: int
+    first_club_id: int | None
+    academy: int
+    present: int
+    first_seen_sync: int
+    last_seen_sync: int
+    is_staff: int
+    staff_job: str | None
+    youth_team: int
+    media_role: str | None
+    local_media: int
+    female: int | None
+
+
+_PLAYER_COLUMNS = _PlayerRow._fields
 _KEEP_ON_UPDATE = {"career_id", "unique_id", "first_seen_sync"}
 _UPSERT_PLAYER = (
     f"INSERT INTO players ({', '.join(_PLAYER_COLUMNS)})"
@@ -302,38 +306,38 @@ def ingest(
         # A team of my club's other than the first team: reserves, under-23s, under-18s.
         youth = p.club_id is not None and p.club_id == my_club and p.team_slot not in (None, 0)
         rows.append(
-            (
-                cid,
-                p.unique_id,
-                p.name,
-                _iso(p.birth_date),
-                p.age,
-                p.height_cm,
-                p.ca,
-                p.pa,
-                int(p.is_goalkeeper),
-                p.strength,
-                personality_to_json(p.personality),
-                p.club_id,
-                p.loan_parent_club_id,
-                json.dumps(list(p.home_grown_club_ids)),
-                club_since,
-                int(newgen),
-                int(in_scope),
-                int(at_my_club),
-                int(p.club_id in league_clubs),
-                int(p.club_id in continental_clubs),
-                first_club,
-                int(academy),
-                1,
-                sync_id,
-                sync_id,
-                0,
-                None,
-                int(youth),
-                None,
-                0,
-                None,
+            _PlayerRow(
+                career_id=cid,
+                unique_id=p.unique_id,
+                name=p.name,
+                birth_date=_iso(p.birth_date),
+                age=p.age,
+                height_cm=p.height_cm,
+                ca=p.ca,
+                pa=p.pa,
+                is_goalkeeper=int(p.is_goalkeeper),
+                strength=p.strength,
+                personality=personality_to_json(p.personality),
+                club_id=p.club_id,
+                loan_parent_club_id=p.loan_parent_club_id,
+                home_grown_club_ids=json.dumps(list(p.home_grown_club_ids)),
+                club_since=club_since,
+                is_newgen=int(newgen),
+                in_scope=int(in_scope),
+                at_my_club=int(at_my_club),
+                in_my_league=int(p.club_id in league_clubs),
+                in_continental=int(p.club_id in continental_clubs),
+                first_club_id=first_club,
+                academy=int(academy),
+                present=1,
+                first_seen_sync=sync_id,
+                last_seen_sync=sync_id,
+                is_staff=0,
+                staff_job=None,
+                youth_team=int(youth),
+                media_role=None,
+                local_media=0,
+                female=None,
             )
         )
     staff_rows = _staff_rows(
@@ -343,8 +347,8 @@ def ingest(
         1
         for r in staff_rows
         if not first_sync
-        and r[_PLAYER_COLUMNS.index("at_my_club")]
-        and not ((old := prev.get(r[1])) and old["present"] and old["at_my_club"])
+        and r.at_my_club
+        and not ((old := prev.get(r.unique_id)) and old["present"] and old["at_my_club"])
     )
     rows.extend(staff_rows)
     rows.extend(_media_rows(career, snapshot, sync_id, prev))
@@ -401,8 +405,8 @@ def _staff_rows(
     first_sync: bool,
     league_clubs: set[int],
     continental_clubs: set[int],
-) -> list[tuple[Any, ...]]:
-    """Player-table rows for my staff and league managers, in _PLAYER_COLUMNS order."""
+) -> list[_PlayerRow]:
+    """Snapshot facts for my staff and league managers."""
     my_club = snapshot.managed_club_id
     players = {p.unique_id for p in snapshot.players}
     rows = []
@@ -426,38 +430,38 @@ def _staff_rows(
         if female is None and not snapshot.media_read and old and old["female"] is not None:
             female = bool(old["female"])
         rows.append(
-            (
-                career.id,
-                s.unique_id,
-                s.name,
-                _iso(s.birth_date),
-                s.age,
-                None,  # height: the save reads none for staff
-                s.ca or 0,
-                s.pa,
-                0,
-                None,  # Strength: a player attribute
-                personality_to_json(s.personality),
-                s.club_id,
-                None,
-                "[]",
-                _club_since(old, s.club_id, s.club_join_date, snapshot.meta.game_date),
-                int(newgen),
-                int(in_scope),
-                int(my_club is not None and s.club_id == my_club),
-                int(s.club_id in league_clubs),
-                int(s.club_id in continental_clubs),
-                old["first_club_id"] if old else (None if first_sync else s.club_id),
-                0,  # academy: players only
-                1,
-                sync_id,
-                sync_id,
-                1,
-                "manager (you)" if s.is_human_manager else s.job,
-                0,
-                None,
-                0,
-                None if female is None else int(female),
+            _PlayerRow(
+                career_id=career.id,
+                unique_id=s.unique_id,
+                name=s.name,
+                birth_date=_iso(s.birth_date),
+                age=s.age,
+                height_cm=None,
+                ca=s.ca or 0,
+                pa=s.pa,
+                is_goalkeeper=0,
+                strength=None,
+                personality=personality_to_json(s.personality),
+                club_id=s.club_id,
+                loan_parent_club_id=None,
+                home_grown_club_ids="[]",
+                club_since=_club_since(old, s.club_id, s.club_join_date, snapshot.meta.game_date),
+                is_newgen=int(newgen),
+                in_scope=int(in_scope),
+                at_my_club=int(my_club is not None and s.club_id == my_club),
+                in_my_league=int(s.club_id in league_clubs),
+                in_continental=int(s.club_id in continental_clubs),
+                first_club_id=old["first_club_id"] if old else (None if first_sync else s.club_id),
+                academy=0,
+                present=1,
+                first_seen_sync=sync_id,
+                last_seen_sync=sync_id,
+                is_staff=1,
+                staff_job="manager (you)" if s.is_human_manager else s.job,
+                youth_team=0,
+                media_role=None,
+                local_media=0,
+                female=None if female is None else int(female),
             )
         )
     return rows
@@ -465,8 +469,8 @@ def _staff_rows(
 
 def _media_rows(
     career: Career, snapshot: Snapshot, sync_id: int, prev: dict[int, sqlite3.Row]
-) -> list[tuple[Any, ...]]:
-    """Player-table rows for journalists and my club's press officers, in _PLAYER_COLUMNS order.
+) -> list[_PlayerRow]:
+    """Snapshot facts for journalists and my club's press officers.
 
     They are never newgens or players: CA 0, no club for a journalist. A journalist from my
     club's country, or a press officer of my club, is `local_media`. Someone who is also a
@@ -484,38 +488,38 @@ def _media_rows(
         at_my_club = my_club is not None and m.club_id == my_club
         local = at_my_club if m.role == "press officer" else m.nation_id == my_nation
         rows.append(
-            (
-                career.id,
-                m.unique_id,
-                m.name,
-                _iso(m.birth_date),
-                m.age,
-                None,  # height
-                0,  # CA: not a player
-                None,  # PA
-                0,  # goalkeeper
-                None,  # Strength
-                None,  # personality: not read for them
-                m.club_id,
-                None,  # loan parent
-                "[]",
-                _club_since(old, m.club_id, None, snapshot.meta.game_date),
-                0,  # newgen: players only
-                1,  # in scope
-                int(at_my_club),
-                0,  # in my league
-                0,  # continental
-                old["first_club_id"] if old else None,
-                0,  # academy
-                1,  # present
-                sync_id,
-                sync_id,
-                0,  # staff
-                None,  # staff job
-                0,  # youth team
-                m.role,
-                int(local and my_nation is not None),
-                None if m.female is None else int(m.female),
+            _PlayerRow(
+                career_id=career.id,
+                unique_id=m.unique_id,
+                name=m.name,
+                birth_date=_iso(m.birth_date),
+                age=m.age,
+                height_cm=None,
+                ca=0,
+                pa=None,
+                is_goalkeeper=0,
+                strength=None,
+                personality=None,
+                club_id=m.club_id,
+                loan_parent_club_id=None,
+                home_grown_club_ids="[]",
+                club_since=_club_since(old, m.club_id, None, snapshot.meta.game_date),
+                is_newgen=0,
+                in_scope=1,
+                at_my_club=int(at_my_club),
+                in_my_league=0,
+                in_continental=0,
+                first_club_id=old["first_club_id"] if old else None,
+                academy=0,
+                present=1,
+                first_seen_sync=sync_id,
+                last_seen_sync=sync_id,
+                is_staff=0,
+                staff_job=None,
+                youth_team=0,
+                media_role=m.role,
+                local_media=int(local and my_nation is not None),
+                female=None if m.female is None else int(m.female),
             )
         )
     return rows

@@ -31,7 +31,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
-from facegen.service import PollerStatus, SyncStatus, WorkerControl, WorkerStatus
+from facegen.service_contracts import PollerStatus, SyncStatus, WorkerControl, WorkerStatus
 
 logger = logging.getLogger("facegen")
 

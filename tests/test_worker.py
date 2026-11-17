@@ -16,8 +16,9 @@ from facegen.gallery import write_gallery
 from facegen.kits import load_kits
 from facegen.prompt import CONTENT_NEGATIVE, YOUNG_NEGATIVE
 from facegen.settings import Paths, PersonalitySettings, Settings
+from facegen.sheet_store import load_sheet
 from facegen.sync import run_sync
-from facegen.traits import load_sheet, personality_to_json, sample_sheet
+from facegen.traits import personality_to_json, sample_sheet
 from facegen.worker import (
     MAX_ATTEMPTS,
     JobFilter,
@@ -150,7 +151,8 @@ def test_claim_rechecks_player_eligibility(env: Env, column: str, value: object)
 
 def test_interrupted_reroll_reuses_allocated_sheet_seed_and_preview(env: Env) -> None:
     from facegen import manual
-    from facegen.traits import load_sheet, picture_seed
+    from facegen.sheet_store import load_sheet
+    from facegen.traits import picture_seed
 
     w, _, _ = env.worker()
     initial = next(j for j in w.runnable(MINE) if j.unique_id == OLD_HAND)
@@ -188,7 +190,7 @@ def test_interrupted_reroll_reuses_allocated_sheet_seed_and_preview(env: Env) ->
 
 def test_restore_sheet_controls_next_redraw_and_reroll_versions(env: Env) -> None:
     from facegen import manual
-    from facegen.traits import load_sheet
+    from facegen.sheet_store import load_sheet
     from facegen.web.queries import player_detail
 
     w, _, _ = env.worker()

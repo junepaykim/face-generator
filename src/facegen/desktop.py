@@ -41,8 +41,8 @@ from facegen.locations import PROJECT_ROOT
 
 if TYPE_CHECKING:
     from facegen.app_controller import AppController, Notice, StartupSwitch, View
-    from facegen.cli import Gpu
     from facegen.datasource.base import DataSource
+    from facegen.runtime_dependencies import Gpu
 
 FALLBACK_LOG = PROJECT_ROOT / "data" / "logs" / "facegen.log"
 """Where a failure is written when it happens before the settings say where the log is."""
@@ -283,7 +283,6 @@ def run(
     from facegen import db, instance
     from facegen.app_controller import AppController, Notice
     from facegen.app_window import NO_WEBVIEW2
-    from facegen.cli import Gpu, _default_source
     from facegen.runtime import (
         DEFAULT_BROWSE,
         CannotStart,
@@ -291,7 +290,8 @@ def run(
         build_runtime,
         port_answers,
     )
-    from facegen.service import log_to_file
+    from facegen.runtime_dependencies import Gpu, default_source
+    from facegen.service_logging import log_to_file
     from facegen.settings import load_settings
 
     shell = shell or Shell()
@@ -342,7 +342,7 @@ def run(
 
         rt = build_runtime(
             settings,
-            source_factory or _default_source,
+            source_factory or default_source,
             gpu or Gpu(),
             config=config,
             port=args.port,
@@ -544,7 +544,7 @@ def main(argv: Sequence[str] | None = None, *, shell: Shell | None = None) -> in
         return int(exc.code or 0)
     try:
         if has_console():
-            from facegen.cli import utf8_output
+            from facegen.output import utf8_output
 
             utf8_output(sys.stdout, sys.stderr)
         return run(args.mode, args, shell=shell)

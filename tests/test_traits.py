@@ -9,6 +9,7 @@ from factories import PLAIN_PERSONALITY
 
 from facegen import traits
 from facegen.datasource.records import Personality
+from facegen.sheet_store import load_sheet, sheet_for
 from facegen.traits import (
     BANNABLE,
     FIELDS,
@@ -19,14 +20,12 @@ from facegen.traits import (
     build_class,
     eyes_drawn_round,
     height_class,
-    load_sheet,
     personality_from_json,
     personality_leans,
     personality_to_json,
     pick_pose,
     picture_seed,
     sample_sheet,
-    sheet_for,
     skin_words,
     weighted,
 )

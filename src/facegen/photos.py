@@ -34,7 +34,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from facegen.settings import Paths
+from facegen.settings_values import Paths
 
 CATALOG_DIR = Path("fm_Data", "StreamingAssets", "AddrData")
 CATALOG_FILE = "catalog_info.bin"

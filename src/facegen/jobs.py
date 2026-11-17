@@ -1,18 +1,19 @@
-"""Queue records and transitions. Mutations are serialized by SQLite write transactions."""
+"""Queue persistence and transitions. Mutations are serialized by SQLite write transactions."""
 
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
 from facegen.age import age_wording, audience
-from facegen.datasource.records import Personality, is_first_team_manager
+from facegen.datasource.records import is_first_team_manager
 from facegen.db import ACTIVE_CAREER_ORDER, transaction
-from facegen.domain import FinishedStatus, GroupName, JobKind
+from facegen.domain import FinishedStatus, JobKind
+from facegen.job_records import Career, Job, JobFilter
 from facegen.planner import TIER_MANUAL, Plan
-from facegen.settings import BodyThresholds, Settings
-from facegen.traits import CharacterSheet, load_sheet, personality_from_json, sheet_for
+from facegen.settings_values import Settings
+from facegen.sheet_store import load_sheet, sheet_for
+from facegen.traits import BodyThresholds, CharacterSheet, personality_from_json
 
 
 def now() -> str:
@@ -21,57 +22,6 @@ def now() -> str:
 
 class JobGone(RuntimeError):
     """The selected job was changed, cancelled, or claimed before it could start."""
-
-
-@dataclass(frozen=True, slots=True)
-class Career:
-    id: int
-    key: str
-    display_name: str
-    game_date: date | None = None
-    """The in-game date of the last save synced; it sets the season of a player's clothes."""
-
-
-@dataclass(frozen=True, slots=True)
-class Job:
-    id: int
-    unique_id: int
-    kind: JobKind
-    group: GroupName
-    target_club_id: int | None
-    target_band: str | None
-    name: str
-    at_my_club: bool
-    goalkeeper: bool
-    height_cm: int | None
-    strength: int | None
-    age: int | None
-    manual: bool = False
-    traits_version: int | None = None
-    revision: int = 0
-    personality: Personality | None = None
-    staff: bool = False
-    """On my club's staff: dressed by the wardrobe, aged by the staff table."""
-    staff_job: str | None = None
-    """The staff job in words, None for a player or where the save names none."""
-    media_role: str | None = None
-    """"journalist" or "press officer": dressed for their work, aged by the media table."""
-
-
-@dataclass(frozen=True, slots=True)
-class JobFilter:
-    groups: frozenset[str] | None = None
-    """Only jobs in these groups; None for all."""
-    my_club_only: bool = False
-    manual_always: bool = False
-    """Manual requests from the UI pass whatever the other conditions say."""
-
-    def accepts(self, job: Job) -> bool:
-        if self.manual_always and job.manual:
-            return True
-        return (self.groups is None or job.group in self.groups) and (
-            job.at_my_club or not self.my_club_only
-        )
 
 
 def load_career(conn: sqlite3.Connection, key: str | None = None) -> Career | None:

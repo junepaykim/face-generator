@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
-from facegen import qc
+from facegen import quality_checks as qc
 from facegen.gpu import on_gpu
 from facegen.prompt import Prompt
 from facegen.prompt_cache import EmbeddingCache

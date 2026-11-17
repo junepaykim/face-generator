@@ -27,10 +27,10 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Literal
 
 from facegen.datasource.records import is_first_team_manager
-from facegen.settings import Groups
+from facegen.settings_values import Groups
 
 if TYPE_CHECKING:
-    from facegen.settings import Settings
+    from facegen.settings_values import Settings
 
 
 class Group(StrEnum):

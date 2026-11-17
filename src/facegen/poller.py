@@ -29,7 +29,8 @@ from facegen.datasource.base import (
     SaveReadError,
     UnsupportedSaveError,
 )
-from facegen.settings import Settings, folder_not_set_message
+from facegen.settings import folder_not_set_message
+from facegen.settings_values import Settings
 from facegen.sync import SyncReport, record_failed_sync, run_sync
 
 SETTLE_SECONDS = 10.0

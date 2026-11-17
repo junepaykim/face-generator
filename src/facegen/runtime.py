@@ -21,15 +21,17 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from facegen import hardware, models
-from facegen.kits import KitError, load_kits
-from facegen.settings import Settings
+from facegen.kit_values import KitError
+from facegen.kits import load_kits
+from facegen.settings_values import Settings
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
-    from facegen.cli import Gpu
     from facegen.datasource.base import DataSource
-    from facegen.service import PollerService, SyncService
+    from facegen.poller_service import PollerService
+    from facegen.runtime_dependencies import Gpu
+    from facegen.sync_service import SyncService
     from facegen.web.app import AppContext
     from facegen.worker_process import WorkerProxy
 
@@ -98,7 +100,8 @@ def build_runtime(
     """The parts of a running facegen, none started. Raises CannotStart when it cannot run
     as configured (an address beyond this PC, a broken kit table)."""
     from facegen import folder_setup
-    from facegen.service import PollerService, SyncService
+    from facegen.poller_service import PollerService
+    from facegen.sync_service import SyncService
     from facegen.web.app import AppContext, create_app
     from facegen.worker_process import WorkerProxy, worker_command
 

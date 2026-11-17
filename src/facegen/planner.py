@@ -31,7 +31,7 @@ from datetime import date
 from facegen.age import drawn_as_man
 from facegen.classify import Classification, Group
 from facegen.domain import JobKind, JobStatus
-from facegen.settings import ReferenceSettings
+from facegen.settings_values import ReferenceSettings
 
 # Queue order (spec section 2): manual requests; group A at my club, newest arrivals first;
 # the rest of group A; group B; group C. B, C and the rest of A go by PA, highest first.

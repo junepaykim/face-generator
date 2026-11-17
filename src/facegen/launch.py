@@ -32,6 +32,7 @@ import sys
 import time
 import tomllib
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from typing import TextIO
 
@@ -207,7 +208,7 @@ def data_dir_of(
 
 def cmd_launch(args: argparse.Namespace, out: TextIO) -> int:
     """`facegen launch` (module docstring)."""
-    from facegen import cli
+    from facegen import models, setup_operations
 
     log = open_log(args.log)
     tee = Tee(out, log)
@@ -235,13 +236,18 @@ def cmd_launch(args: argparse.Namespace, out: TextIO) -> int:
         )
         if data_dir is None:
             return 2
-        native_args = argparse.Namespace(install=True, wheel_dir=None)
-        model_args = argparse.Namespace(download=True, yes=False, child=False)
         return prepare(
             tee,
-            native_step=lambda o: cli.cmd_native(native_args, o),
-            models_step=lambda o: cli.cmd_models(
-                model_args, o, ask=asker(o), interactive=interactive
+            native_step=lambda o: setup_operations.prepare_native(
+                install=True, report=partial(print, file=o)
+            ),
+            models_step=lambda o: setup_operations.prepare_models(
+                download=True,
+                confirmed=False,
+                report=partial(print, file=o),
+                ask=asker(o),
+                interactive=interactive,
+                run_download=lambda: models.wait_and_print(models.ModelDownload(), o),
             ),
         )
     finally:
