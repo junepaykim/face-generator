@@ -1,4 +1,4 @@
-<span hidden data-career="{{ career.id if career else '' }}"></span>
+{% from "_problem.html" import problem %}<span hidden data-career="{{ career.id if career else '' }}"></span>
 {% set d = setup.download if setup else none %}
 {% if setup and setup.models is not none and (setup.needs_models or (d and (d.running or d.finished))) %}
 <section class="card setup-panel" id="{{ 'setup' if not setup.needs_folder else 'models' }}">
@@ -9,7 +9,7 @@
     <p class="muted small">{{ t("setup.models.stop_note") }}</p>
   {% elif setup.needs_models %}
     {% set m = setup.models %}
-    {% if d and d.error %}<p class="bad small">{{ t("setup.models.stopped", error=d.error) }}</p>{% endif %}
+    {% if download_problem %}{{ problem(download_problem) }}{% endif %}
     <p>{{ t("setup.models.intro", size=gigabytes(m.missing_bytes)) }}{% if m.missing_bytes < m.total_bytes %}{{ t("setup.models.rest_here") }}{% endif %}</p>
     <div class="table-wrap"><table class="kv">
       {% for repo in m.missing_repos() %}<tr><th>{{ model_repos[repo] }}</th><td><code>{{ repo }}</code></td></tr>{% endfor %}
@@ -29,8 +29,8 @@
 <section class="card alert" id="unsupported">
   <h2>{{ t("dash.unsupported.title") }}</h2>
   <p>{% if last_sync.build %}{{ t("dash.unsupported.build", file=last_sync.save_file, build=last_sync.build) }}{% else %}{{ t("dash.unsupported.unknown", file=last_sync.save_file) }}{% endif %}</p>
-  <p class="small">{{ last_sync.error }}</p>
   <p class="small">{{ t("dash.unsupported.advice") }}</p>
+  <details class="problem-detail" id="unsupported-detail"><summary>{{ t("problem.details") }}</summary><pre>{{ last_sync.error }}</pre></details>
 </section>
 {% endif %}
 
@@ -51,7 +51,7 @@
     {% else %}
       <p class="now-text">{{ worker_text }}</p>
     {% endif %}
-    {% if worker.last_error %}<p class="bad small">{{ worker.last_error }}</p>{% endif %}
+    {% if worker_problem %}{{ problem(worker_problem) }}{% endif %}
     <div class="buttons">
       {% if worker.gpu_fault %}
         <span class="muted small">{{ t("dash.worker.restart") }}</span>
@@ -133,7 +133,7 @@
         <tr><th>{{ t("dash.sync.when") }}</th><td><time datetime="{{ last_sync.finished_at or last_sync.started_at }}">{{ (last_sync.finished_at or last_sync.started_at)[:16]|replace("T", " ") }}</time></td></tr>
         <tr><th>{{ t("dash.sync.in_game") }}</th><td>{{ last_sync.game_date or t("common.unknown") }}</td></tr>
       </table>
-      {% if last_sync.error and not last_sync.unsupported %}<p class="bad small">{{ t("dash.sync.failed", error=last_sync.error) }}</p>{% endif %}
+
     {% else %}
       <p class="muted">{{ t("dash.sync.never") }}</p>
     {% endif %}
@@ -141,9 +141,9 @@
       {% if sync.running %}<p><span class="state state-running">{{ t("dash.sync.syncing") }}</span> {{ t("dash.sync.running", started=sync.started) }}</p>
       {% elif sync.message %}<p class="ok small">{{ sync.message }}</p>{% endif %}
       {% if sync.notice and not sync.running %}<p class="small"><strong>{{ t("dash.sync.nothing_new") }}</strong> {{ sync.notice }}</p>{% endif %}
-      {% if sync.error %}<p class="bad small">{{ sync.error }}</p>{% endif %}
-      {% for w in sync.warnings %}<p class="muted small">{{ t("dash.sync.warning", warning=w) }}</p>{% endfor %}
+      {% if sync.warnings %}<details class="problem-detail" id="sync-warnings"><summary>{{ t("dash.sync.warnings", count=sync.warnings|length) }}</summary><pre>{{ sync.warnings|join("\n") }}</pre></details>{% endif %}
     {% endif %}
+    {% if sync_problem %}{{ problem(sync_problem) }}{% endif %}
     {% if careers|length > 1 %}
       <p class="muted small">{{ t("dash.sync.careers", newest=careers[0].display_name, others=careers[1:]|map(attribute="display_name")|join(", ")) }}</p>
     {% endif %}

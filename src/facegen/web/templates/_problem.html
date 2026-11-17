@@ -1,0 +1,10 @@
+{# An error as "what happened, what to do" (Phase 12e): its kind in plain words, a way on,
+   and the error's own text folded away. `p` is web.messages.Problem. #}
+{% macro problem(p) -%}
+<div class="problem" role="alert">
+  {% if p.title %}<p class="problem-title">{{ p.title }}</p>{% endif %}
+  {% if p.cause or p.todo %}<p class="problem-text">{{ p.cause }} {{ p.todo }}</p>{% endif %}
+  {% if p.links %}<p class="problem-links">{% for href, label in p.links %}<a href="{{ href }}">{{ label }}</a>{% endfor %}</p>{% endif %}
+  <details class="problem-detail" id="{{ p.id }}-detail"><summary>{{ p.more }}</summary><pre>{{ p.detail }}</pre></details>
+</div>
+{%- endmacro %}

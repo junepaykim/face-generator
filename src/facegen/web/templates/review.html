@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_icons.html" import info as tip %}
+{% from "_problem.html" import problem %}
 {% block title %}{{ t("nav.review") }}{% endblock %}
 {% block content %}
 <h1>{{ t("nav.review") }} {{ tip(t("review.tip")) }}</h1>
@@ -15,7 +16,7 @@
       <form method="post" action="/players/{{ it.unique_id }}/pin"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="/review"><input type="hidden" name="pin" value="never"><button title="{{ t('review.give_up') }}">{{ t("review.pin_never") }}</button></form>
     </div>
   </div>
-  <p class="bad small">{{ it.error }}</p>
+  {% if it.problem %}{{ problem(it.problem) }}{% endif %}
   {% if it.image %}
     <div class="cands">
     {% for c in it.image.check.candidates %}

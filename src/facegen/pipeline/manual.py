@@ -36,6 +36,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from facegen.core.age import age_wording, audience
 from facegen.core.classify import GROUP_RANK, Group
@@ -52,7 +53,26 @@ DEFAULT_GROUP = "b"
 
 
 class ManualError(ValueError):
-    """A request that cannot be carried out; the message is for the user."""
+    """A request that cannot be carried out. The message is for the user in English (logs, the
+    command line); `code` and `values` let a page say it in its own language (Phase 12e)."""
+
+    def __init__(self, message: str, code: str = "", **values: Any) -> None:
+        super().__init__(message)
+        self.code = code
+        self.values = values
+
+
+REFUSALS: dict[str, str] = {
+    "absent": "not in the latest save",
+    "not_mens": "not in men's football",
+    "drawing": "being drawn right now",
+    "never": "pinned to never; unpin first",
+    "no_picture": "no picture to draw again; use Generate",
+    "no_group": "in no group; use Generate and choose one",
+}
+"""Why no job can be queued for a player, by code: the reasons ActionResult.skipped and
+ManualError carry."""
+REFUSAL_CODES = {text: code for code, text in REFUSALS.items()}
 
 
 @dataclass
@@ -101,19 +121,25 @@ def _player(conn: sqlite3.Connection, career_id: int, uid: int) -> sqlite3.Row:
         (career_id, uid),
     ).fetchone()
     if row is None:
-        raise ManualError(f"no player {uid} in this career")
+        raise ManualError(f"no player {uid} in this career", "no_player", uid=uid)
     return row
 
 
 def _refusal(p: sqlite3.Row) -> str | None:
-    """Why no job can be queued for this player now, or None."""
+    """Why no job can be queued for this player now (REFUSALS), or None."""
     if not p["present"]:
-        return "not in the latest save"
+        return REFUSALS["absent"]
     if not p["in_scope"]:
-        return "not in men's football"
+        return REFUSALS["not_mens"]
     if p["job_status"] == "running":
-        return "being drawn right now"
+        return REFUSALS["drawing"]
     return None
+
+
+def _refused(why: str, **values: Any) -> ManualError:
+    """A refusal as an error; with a name, the message names the player."""
+    name = values.get("name")
+    return ManualError(f"{name}: {why}" if name else why, REFUSAL_CODES.get(why, ""), **values)
 
 
 def _set_pin(conn: sqlite3.Connection, career_id: int, uid: int, pin: str | None) -> None:
@@ -167,11 +193,11 @@ def _redraw_group(conn: sqlite3.Connection, career_id: int, p: sqlite3.Row, kind
     """The group a re-draw is drawn at. Raises ManualError(reason) if there can be none; the
     reason leaves out the player's name, so many players' reasons can be summed up."""
     if why := _refusal(p):
-        raise ManualError(why)
+        raise _refused(why)
     if p["pin"] == "never":
-        raise ManualError("pinned to never; unpin first")
+        raise _refused(REFUSALS["never"])
     if kind == "redraw" and p["image_group"] is None:
-        raise ManualError("no picture to draw again; use Generate")
+        raise _refused(REFUSALS["no_picture"])
     last_failed = conn.execute(
         "SELECT group_name FROM jobs WHERE career_id = ? AND unique_id = ?"
         " AND status = 'failed' ORDER BY id DESC LIMIT 1",
@@ -179,7 +205,7 @@ def _redraw_group(conn: sqlite3.Connection, career_id: int, p: sqlite3.Row, kind
     ).fetchone()
     group = p["group_name"] or p["image_group"] or (last_failed[0] if last_failed else None)
     if group is None:
-        raise ManualError("in no group; use Generate and choose one")
+        raise _refused(REFUSALS["no_group"])
     return group
 
 
@@ -200,7 +226,7 @@ def _redraw(
         try:
             group = _redraw_group(conn, career_id, p, kind)
         except ManualError as exc:
-            raise ManualError(f"{p['name']}: {exc}") from None
+            raise _refused(str(exc), name=p["name"]) from None
         _queue(conn, career_id, p, kind, group, request_rank(now), _redraw_reason(kind), settings)
         classify_and_plan(conn, career_id, settings)
     return ActionResult(queued=[uid])
@@ -312,7 +338,11 @@ def remove_picture(
     with publish_lock(settings.paths.data_dir), transaction(conn):
         p = _player(conn, career_id, uid)
         if p["job_status"] == "running":
-            raise ManualError(f"{p['name']} is being drawn right now; try again in a moment")
+            raise ManualError(
+                f"{p['name']} is being drawn right now; try again in a moment",
+                "busy",
+                name=p["name"],
+            )
         conn.execute(
             "UPDATE jobs SET status = 'cancelled', error = 'picture removed', updated_at = ?"
             " WHERE career_id = ? AND unique_id = ? AND status = 'queued'",
@@ -337,14 +367,16 @@ def retry(
     with transaction(conn):
         p = _player(conn, career_id, uid)
         if why := _refusal(p):
-            raise ManualError(f"{p['name']}: {why}")
+            raise _refused(why, name=p["name"])
         failed = conn.execute(
             "SELECT kind, group_name FROM jobs WHERE career_id = ? AND unique_id = ?"
             " AND status = 'failed' ORDER BY id DESC LIMIT 1",
             (career_id, uid),
         ).fetchone()
         if failed is None:
-            raise ManualError(f"{p['name']} has nothing to retry")
+            raise ManualError(
+                f"{p['name']} has nothing to retry", "nothing_to_retry", name=p["name"]
+            )
         _queue(
             conn,
             career_id,
@@ -415,19 +447,34 @@ def restore_picture(
     with transaction(conn):
         p = _player(conn, career_id, uid)
         if p["job_status"] == "running":
-            raise ManualError(f"{p['name']} is being drawn right now; try again in a moment")
+            raise ManualError(
+                f"{p['name']} is being drawn right now; try again in a moment",
+                "busy",
+                name=p["name"],
+            )
         img = conn.execute(
             "SELECT * FROM images WHERE id = ? AND career_id = ? AND unique_id = ?",
             (image_id, career_id, uid),
         ).fetchone()
         if img is None:
-            raise ManualError(f"{p['name']} has no picture {image_id}")
+            raise ManualError(
+                f"{p['name']} has no picture {image_id}", "no_image", name=p["name"], image=image_id
+            )
+        version = img["version"]
         if img["is_current"]:
-            raise ManualError(f"v{img['version']} is already the current picture")
+            raise ManualError(
+                f"v{version} is already the current picture", "already_current", version=version
+            )
         if not restorable(img["master_path"], json.loads(img["check_result"] or "{}")):
-            raise ManualError(f"v{img['version']} failed the quality check; it is never published")
+            raise ManualError(
+                f"v{version} failed the quality check; it is never published",
+                "failed_check",
+                version=version,
+            )
         if not (data_dir / img["master_path"]).is_file():
-            raise ManualError(f"v{img['version']}'s picture file is missing from data/")
+            raise ManualError(
+                f"v{version}'s picture file is missing from data/", "file_missing", version=version
+            )
         group = p["group_name"] or img["group_name"]
         band = age_wording(p["age"], group, bool(p["at_my_club"]), settings.age, **audience(p))
         conn.execute(

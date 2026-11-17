@@ -14,9 +14,11 @@ import pytest
 from support.paths import ROOT
 
 from facegen.core.domain import JOB_KINDS
+from facegen.core.problems import KINDS as PROBLEM_KINDS
 from facegen.core.settings_values import DETAIL_SIZES, LANGUAGE_CHOICES, THEME_CHOICES
 from facegen.i18n import LANGUAGES, Translator, catalog
 from facegen.persistence.settings import load_defaults
+from facegen.pipeline.manual import REFUSALS
 from facegen.runtime.contracts import WORKER_REASONS
 from facegen.setup import hardware
 from facegen.web import presentation
@@ -119,6 +121,16 @@ def vocabulary_keys() -> list[str]:
     keys += [f"dur.{k}" for k in ("seconds", "minutes", "hours", "hours_minutes")]
     keys += ["settings.field_tip.banned_traits"]
     keys += [f"term.{k}" for k in ("a", "b", "c", "tracked", "pinned")]
+    keys += [f"problem.{part}.{kind}" for kind in PROBLEM_KINDS for part in ("cause", "do")]
+    keys += [f"manual.refusal.{code}" for code in REFUSALS]
+    keys += [
+        f"manual.error.{code}"
+        for code in (
+            "no_player", "busy", "nothing_to_retry", "no_image", "already_current",
+            "failed_check", "file_missing",
+        )
+    ]  # fmt: skip
+    keys += [f"problem.link.{k}" for k in ("log", "autoconfig", "models", "settings")]
     return keys
 
 

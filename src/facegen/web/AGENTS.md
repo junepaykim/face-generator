@@ -49,6 +49,8 @@ uv run --no-sync ruff check src/facegen/web
   add new vocabularies there. Catalog text may hold markup; values are always escaped.
 - Name groups as {a}/{b}/{c} in catalog text (chips on pages, names elsewhere). Keep page text
   minimal: no notes for obvious features; longer help goes in `_icons.html`'s `info` tip.
+- Errors never reach a page raw: show `messages.problem` with `_problem.html` (raw text folded)
+  or `problem_line`; a new error kind goes in `core/problems.py` and both catalogs.
 - The worker's state reaches pages as `WorkerStatus.reason` + `values`; word it with
   `messages.worker_sentence`. A new reason goes in `contracts.WORKER_REASONS` and both catalogs.
 - Colours are `:root` custom properties with dark overrides for both `prefers-color-scheme`

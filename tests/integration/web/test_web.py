@@ -396,14 +396,15 @@ def test_settings_are_saved_as_they_change(env: Env) -> None:
 
 def test_autosave_refuses_bad_values_and_names_the_field(env: Env) -> None:
     data = autosave(env, **{"groups.a.ca_above": "999"})
-    assert not data["ok"] and "between 0 and 200" in data["errors"]["groups.a.ca_above"]
+    assert not data["ok"] and data["errors"]["groups.a.ca_above"] == "must be from 0 to 200"
     data = autosave(env, **{"groups.b.candidates": "two"})
     assert data["errors"] == {"groups.b.candidates": "needs a number"}
     # Values that only fail together blame the fields named; nothing is stored.
     data = autosave(env, **{"body.short_below_cm": "200"})
     assert list(data["errors"]) == ["body.short_below_cm"]
     data = autosave(env, **{"age.staff.W03": "17"})  # below W02's 18
-    assert list(data["errors"]) == ["age.staff.W03"] and "rise strictly" in data["error"]
+    assert list(data["errors"]) == ["age.staff.W03"]
+    assert "must start at an older age than the one before" in data["error"]
     assert env.one("SELECT COUNT(*) FROM settings") == 0
     # Fixing the field that blocked another saves both in one change.
     data = autosave(env, **{"age.staff.W02": "16", "age.staff.W03": "17"})

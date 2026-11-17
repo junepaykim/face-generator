@@ -30,6 +30,8 @@
 body { margin: 0; background: var(--bg); color: var(--fg);
        font: 14px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif; }
 code, pre, kbd { font-family: Consolas, "Cascadia Mono", ui-monospace, monospace; }
+/* Korean breaks lines between words, not inside them; a long path still wraps. */
+html:lang(ko) body { word-break: keep-all; overflow-wrap: break-word; }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 h1 { font-size: 22px; margin: 4px 0 8px; }
@@ -318,3 +320,16 @@ details > summary { margin-top: 6px; }
 .field input.band { width: 72px; text-align: right; }
 .group-ticks { display: inline-flex; gap: 12px; flex-wrap: wrap; }
 .group-ticks .tick { display: inline-flex; align-items: center; gap: 4px; }
+
+/* An error as what happened and what to do (Phase 12e); its own text folded away. */
+.problem { margin: 8px 0; padding: 10px 12px; border-radius: 8px; background: var(--badbg);
+           border: 1px solid color-mix(in srgb, var(--bad) 30%, transparent); }
+.problem p { margin: 0 0 6px; }
+.problem-title { font-weight: 600; color: var(--bad); }
+.problem-text { font-size: 13px; }
+.problem-links { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; }
+.problem-detail summary { font-size: 12px; color: var(--muted); }
+.problem-detail pre { max-height: 220px; overflow: auto; margin-top: 4px; }
+td .problem { margin: 4px 0 0; padding: 6px 8px; }
+.error-page { max-width: 640px; margin: 10vh auto; }
+.error-page h1 { margin-top: 0; }

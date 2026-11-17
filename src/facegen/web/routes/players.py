@@ -17,10 +17,11 @@ from facegen.pipeline import manual
 from facegen.pipeline.manual import ManualError
 from facegen.pipeline.publish import PublishError
 from facegen.pipeline.worker import load_career
+from facegen.runtime.logging import logger
 from facegen.web import queries
 from facegen.web.dependencies import AppDependencies, need_career
 from facegen.web.forms import form_of
-from facegen.web.messages import manual_summary
+from facegen.web.messages import manual_error_text, manual_summary, problem_line, review_problem
 from facegen.web.presentation import Presentation, uses_reference
 from facegen.web.queries import PlayerFilter
 from facegen.web.responses import _redirect, _safe_next
@@ -110,8 +111,10 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
 
         try:
             message = await run_in_threadpool(run)
-        except (ManualError, HTTPException) as exc:
-            return _redirect(back, err=getattr(exc, "detail", None) or str(exc))
+        except ManualError as exc:
+            return _redirect(back, err=manual_error_text(exc, t))
+        except HTTPException as exc:
+            return _redirect(back, err=str(exc.detail))
         wake()
         return _redirect(back, msg=message)
 
@@ -123,6 +126,8 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
         if detail is None:
             raise HTTPException(404, t("msg.player.none", uid=uid))
         settings = settings_now(conn)
+        for job in detail["jobs"]:  # an error folded under what happened (Phase 12e)
+            job["problem"] = review_problem(f"job-{job['id']}", job.get("error"), t)
         p = detail["player"]
         group_for_redraw = p["group_name"] or (
             detail["current"]["group_name"] if detail["current"] else None
@@ -218,11 +223,17 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
 
         try:
             message = await run_in_threadpool(run)
-        except (ManualError, HTTPException) as exc:
+        except ManualError as exc:
             target = _safe_next(str(form.get("next") or ""), back)
-            return _redirect(target, err=getattr(exc, "detail", None) or str(exc))
+            return _redirect(target, err=manual_error_text(exc, t))
+        except HTTPException as exc:
+            target = _safe_next(str(form.get("next") or ""), back)
+            return _redirect(target, err=str(exc.detail))
         except PublishError as exc:
-            return _redirect(back, err=t("msg.player.publish_failed", error=exc))
+            logger.error("publishing failed for player %s", uid, exc_info=exc)
+            return _redirect(
+                back, err=t("msg.player.publish_failed", error=problem_line(str(exc), t))
+            )
         wake()
         return _redirect(_safe_next(str(form.get("next") or ""), back), msg=message)
 

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_icons.html" import info as tip %}
+{% from "_problem.html" import problem %}
 {% block title %}{{ p.name }}{% endblock %}
 {% block content %}
 {% set cur = d.current %}
@@ -168,7 +169,7 @@ negative: {{ cur.negative_prompt }}</pre></details>
     <tbody>
     {% for j in d.jobs %}
       <tr><td>{{ t("kind." ~ j.kind) }}{{ t("player.requested") if j.manual }}</td><td>{{ grp(j.group_name) }}</td><td>{{ t("job_status." ~ j.status) }}</td>
-        <td class="why">{{ j.reason }}{% if j.error %} <span class="muted">· {{ j.error }}</span>{% endif %}</td><td>{{ j.updated_at[:16]|replace("T", " ") }}</td></tr>
+        <td class="why">{{ j.reason }}{% if j.problem %}{{ problem(j.problem) }}{% endif %}</td><td>{{ j.updated_at[:16]|replace("T", " ") }}</td></tr>
     {% endfor %}
     </tbody>
   </table>

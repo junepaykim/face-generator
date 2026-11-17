@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from facegen.web.context import AppContext, SetupState
 from facegen.web.dependencies import AppDependencies
+from facegen.web.errors import install_error_pages
 from facegen.web.presentation import HERE, Presentation, create_templates, static_version
 from facegen.web.routes import assets, dashboard, live, players, review, settings, setup
 from facegen.web.security import install_security
@@ -29,6 +30,7 @@ def create_app(ctx: AppContext) -> FastAPI:
     app.state.closing = deps.closing
     install_security(app, templates)
     presentation = Presentation(deps, templates)
+    install_error_pages(app, deps, presentation)
 
     app.include_router(dashboard.create_router(deps, presentation))
     app.include_router(setup.create_router(deps))

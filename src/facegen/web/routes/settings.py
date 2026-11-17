@@ -28,7 +28,7 @@ from facegen.web.forms import (
     settings_sections,
     value_text,
 )
-from facegen.web.messages import report_summary
+from facegen.web.messages import report_summary, settings_error_text
 from facegen.web.presentation import Presentation
 from facegen.web.responses import _redirect
 
@@ -180,7 +180,8 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                     conn, preset.changes, label="auto-configure", defaults_path=ctx.defaults_path
                 )
             except SettingsError as exc:
-                return _redirect("/hardware", err=t("msg.settings.not_done", error=exc))
+                said = settings_error_text(str(exc), t)
+                return _redirect("/hardware", err=t("msg.settings.not_done", error=said))
             finally:
                 conn.close()
             if not outcome.changed:
@@ -239,9 +240,10 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                         case _:
                             raise HTTPException(400, "unknown action")
                 except SettingsError as exc:
+                    said = settings_error_text(str(exc), t)
                     if action == "apply":
-                        return settings_page(request, conn, values, error=str(exc))
-                    return _redirect("/settings", err=t("msg.settings.not_done", error=exc))
+                        return settings_page(request, conn, values, error=said)
+                    return _redirect("/settings", err=t("msg.settings.not_done", error=said))
                 if not outcome.changed:
                     nothing = {"undo": "msg.settings.no_undo", "redo": "msg.settings.no_redo"}
                     key = nothing.get(str(action), "msg.settings.nothing")
@@ -273,11 +275,12 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                 except SettingsError as exc:
                     message = str(exc)
                     blamed = blamed_keys(message, list(values)) or list(values)
+                    said = settings_error_text(message, t)
                     return JSONResponse(
                         {
                             "ok": False,
-                            "errors": {k: message for k in blamed},
-                            "error": t("msg.settings.not_saved", error=message),
+                            "errors": {k: said for k in blamed},
+                            "error": t("msg.settings.not_saved", error=said),
                         }
                     )
                 # A new language or theme: the page shows it once it loads again. The texts

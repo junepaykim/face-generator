@@ -57,6 +57,11 @@ WORKER_REASONS = (
     "crashed", "gpu_fault", "gpu_fault_child", "restarting", "gave_up", "stopped",
 )  # fmt: skip
 """Every WorkerStatus.reason: a page words each one (message catalog "worker.reason.<code>")."""
+ERROR_REASONS = frozenset(
+    {"paused_error", "job_error", "retrying", "crashed", "gpu_fault", "gpu_fault_child",
+     "restarting", "gave_up"}
+)  # fmt: skip
+"""The reasons that come from an error: its text is in `values["error"]` (Phase 12e)."""
 
 
 class Link(Protocol):

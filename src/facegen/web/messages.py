@@ -7,10 +7,13 @@ the same fields through the message catalog.
 from __future__ import annotations
 
 import math
+import re
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from facegen.core.problems import UNKNOWN, diagnose
 from facegen.i18n import Translator
-from facegen.pipeline.manual import ActionResult
+from facegen.pipeline.manual import REFUSAL_CODES, REFUSALS, ActionResult, ManualError
 from facegen.pipeline.sync import GROUP_COUNT_KEYS, ChangeReport
 from facegen.runtime.contracts import WorkerStatus
 
@@ -23,7 +26,7 @@ def manual_summary(result: ActionResult, t: Translator) -> str:
     if result.pinned:
         parts.append(t("manual.pinned", count=len(result.pinned)))
     if result.skipped:
-        why = "; ".join(sorted({reason for _, reason in result.skipped}))
+        why = "; ".join(sorted({refusal_text(reason, t) for _, reason in result.skipped}))
         parts.append(t("manual.skipped", count=len(result.skipped), why=why))
     return t("manual.join").join(parts) or t("manual.nothing")
 
@@ -118,3 +121,116 @@ def band_name(wording: str | None, t: Translator) -> str:
         return "-"
     key = f"band.{wording}"
     return t(key) if t.has(key) else wording
+
+
+# --- Phase 12e: errors as what happened and what to do ----------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class Problem:
+    """An error as a page shows it: what happened, what to do, where to go, and the error's
+    own text folded away as the technical details."""
+
+    id: str
+    """Ties the folded details to the page part, so a live update keeps them open."""
+    title: str
+    cause: str
+    todo: str
+    detail: str
+    more: str
+    """The label of the folded details."""
+    links: tuple[tuple[str, str], ...] = field(default=())
+
+
+LINKS = {
+    "gpu_memory": ("/hardware", "problem.link.autoconfig"),
+    "models_missing": ("/#setup", "problem.link.models"),
+    "folder": ("/settings#folders", "problem.link.settings"),
+}
+
+
+def problem(
+    id: str, title: str, raw: str | None, t: Translator, *, log: bool = True
+) -> Problem | None:
+    """The error's kind (core.problems) worded for the page; None without an error."""
+    if not raw:
+        return None
+    kind = diagnose(raw)
+    links = []
+    if kind in LINKS:
+        href, label = LINKS[kind]
+        links.append((href, t(label)))
+    if log:
+        links.append(("/log", t("problem.link.log")))
+    return Problem(
+        id=id,
+        title=title,
+        cause=t(f"problem.cause.{kind}"),
+        todo=t(f"problem.do.{kind}"),
+        detail=raw,
+        more=t("problem.details"),
+        links=tuple(links),
+    )
+
+
+def problem_line(raw: str, t: Translator) -> str:
+    """An error in one plain line, for a message at the top of a page that cannot fold the
+    details away: what happened and what to do; the error's text only when its kind is
+    unknown."""
+    kind = diagnose(raw)
+    line = f"{t(f'problem.cause.{kind}')} {t(f'problem.do.{kind}')}"
+    return f"{line} ({raw})" if kind == UNKNOWN else line
+
+
+def review_problem(id: str, raw: str | None, t: Translator) -> Problem | None:
+    """Why a job went to review: failed checks, a graphics fault, or another error."""
+    if not raw:
+        return None
+    if raw.startswith("failed the quality check"):
+        title = t("problem.review.qc")
+    elif raw.startswith("the graphics driver failed"):
+        title = t("problem.review.gpu")
+    else:
+        return problem(id, t("problem.review.failed"), raw, t, log=False)
+    return Problem(id=id, title=title, cause="", todo="", detail=raw, more=t("problem.details"))
+
+
+def refusal_text(reason: str, t: Translator) -> str:
+    """Why a player was skipped (manual.REFUSALS), in the page's language."""
+    code = REFUSAL_CODES.get(reason)
+    return t(f"manual.refusal.{code}") if code else reason
+
+
+def manual_error_text(exc: ManualError, t: Translator) -> str:
+    """A refused request (ManualError) in the page's language; its English text when it has
+    no code a catalog words."""
+    code = getattr(exc, "code", "")
+    values = dict(getattr(exc, "values", {}))
+    if code in REFUSALS:
+        why = t(f"manual.refusal.{code}")
+        return t("manual.error.named", name=values["name"], why=why) if "name" in values else why
+    if code and t.has(f"manual.error.{code}"):
+        return t(f"manual.error.{code}", **values)
+    return refusal_text(str(exc), t)
+
+
+_SETTINGS_ERRORS = (
+    (
+        re.compile(r"must be between (?P<low>-?[\d.]+) and (?P<high>-?[\d.]+)"),
+        "settings.error.range",
+    ),
+    (re.compile(r"must be one of (?P<choices>.+?), got "), "settings.error.choice"),
+    (re.compile(r"first ages must rise strictly"), "settings.error.ages_rise"),
+    (re.compile(r"needs at least one wording"), "settings.error.one_wording"),
+    (re.compile(r"must be above 0 and at most 1"), "settings.error.scale"),
+    (re.compile(r"needs an? (?:int|float|bool|str|list)"), "settings.error.type"),
+)
+
+
+def settings_error_text(message: str, t: Translator) -> str:
+    """A settings check's message (persistence.settings.SettingsError) in the page's language,
+    for the common checks; the message itself otherwise."""
+    for pattern, key in _SETTINGS_ERRORS:
+        if match := pattern.search(message):
+            return t(key, **match.groupdict())
+    return message

@@ -13,10 +13,10 @@ from facegen.core.settings_values import Settings
 from facegen.datasource import photos
 from facegen.i18n import Translator
 from facegen.pipeline.worker import Career, load_career
-from facegen.runtime.contracts import WorkerStatus
+from facegen.runtime.contracts import ERROR_REASONS, WorkerStatus
 from facegen.web import live, queries
 from facegen.web.dependencies import AppDependencies
-from facegen.web.messages import seconds_since, worker_sentence
+from facegen.web.messages import problem, seconds_since, worker_sentence
 from facegen.web.presentation import Presentation
 from facegen.web.responses import _redirect
 
@@ -58,7 +58,22 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                 "each": each,
                 "percent": min(99, round(100 * elapsed / each)) if elapsed and each else None,
             }
+        error_reasons = ERROR_REASONS
+        raw = None
+        if worker is not None and worker.reason in error_reasons:
+            raw = worker.values.get("error") or worker.last_error
+        sync = ctx.syncer.status() if ctx.syncer else None
+        last = queries.last_sync(conn)
+        sync_raw = (sync.error if sync and not sync.running else None) or (
+            last["error"] if last and not last.get("unsupported") else None
+        )
+        download = ctx.download.status() if ctx.download else None
         return {
+            "worker_problem": problem("worker", "", raw, t),
+            "sync_problem": problem("sync", t("problem.sync"), sync_raw, t),
+            "download_problem": problem(
+                "download", t("problem.download"), download.error if download else None, t
+            ),
             "worker_text": worker_sentence(worker, t) if worker else "",
             "drawing": drawing,
             "estimate": estimate,

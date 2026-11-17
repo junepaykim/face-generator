@@ -15,6 +15,7 @@ from facegen.setup import folder_setup
 from facegen.setup.models import gigabytes
 from facegen.web.dependencies import AppDependencies
 from facegen.web.forms import form_of
+from facegen.web.messages import problem_line
 from facegen.web.responses import _redirect, _safe_next
 
 
@@ -48,7 +49,11 @@ def create_router(deps: AppDependencies) -> APIRouter:
             return folder_back(
                 back,
                 text,
-                t("msg.folder.not_saved", file=local_label(ctx.defaults_path), error=exc).strip(),
+                t(
+                    "msg.folder.not_saved",
+                    file=local_label(ctx.defaults_path),
+                    error=problem_line(str(exc), t),
+                ).strip(),
             )
         if now.paths.fm_user_dir is None:  # cannot happen unless the file was changed meanwhile
             return folder_back(back, text, t("msg.folder.no_effect"))
