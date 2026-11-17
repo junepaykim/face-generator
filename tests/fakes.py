@@ -108,6 +108,9 @@ class FakeRenderer:
         """Prompt texts encoded so far, as the real renderer's cache holds them."""
         self.trips: list[list[Prompt]] = []
         """The prompts of each trip of the text encoders, in order."""
+        self.detail_sizes: list[tuple[int, int]] = []
+        """The target size of each detail pass, in order."""
+        self.vae_tiling = False
 
     # The two stages of prompt encoding (facegen.prompt_cache), without the cache's size limit.
 
@@ -134,17 +137,36 @@ class FakeRenderer:
         return img
 
     def detail(
-        self, image: Image.Image, prompt: Prompt, seed: int, reference: Any = None
+        self,
+        image: Image.Image,
+        prompt: Prompt,
+        seed: int,
+        reference: Any = None,
+        *,
+        size: tuple[int, int],
     ) -> Image.Image:
+        """Scaled as the real renderer's target size scales the 896x1152 render: the fake's
+        56x72 picture is that render divided by 16."""
         self.prepare([prompt])
         self.calls.append(("detail", seed))
         self.references.append(reference)
-        out = image.resize((image.width * 3 // 2, image.height * 3 // 2))
+        self.detail_sizes.append(size)
+        out = image.resize((image.width * size[0] // 896, image.height * size[1] // 1152))
         out.info["seed"] = seed
         return out
 
+    def set_vae_tiling(self, on: bool) -> None:
+        self.vae_tiling = on
+
     def settings(self) -> dict[str, Any]:
-        return {"width": 56, "height": 72, "steps": 1, "cfg": 5.5, "sampler": "fake"}
+        return {
+            "width": 56,
+            "height": 72,
+            "steps": 1,
+            "cfg": 5.5,
+            "sampler": "fake",
+            "vae_tiling": self.vae_tiling,
+        }
 
     closed = 0
 
@@ -152,7 +174,7 @@ class FakeRenderer:
         self.closed += 1
 
     def detail_settings(self) -> dict[str, Any]:
-        return {"scale": 1.5, "strength": 0.35}
+        return {"strength": 0.35}
 
     def reference_settings(self) -> dict[str, Any]:
         return {"adapter": "fake/ip-adapter"}

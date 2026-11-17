@@ -457,8 +457,18 @@ def find_install_dir(kind: Kind, info: WindowsInfo, disk: Disk) -> PurePath | No
 # --- asking this PC ---------------------------------------------------------------------------
 
 
+DOCUMENTS_FOLDER_ID = "FDD39AD0-238F-46AF-ADB4-6C85480369C7"
+"""FOLDERID_Documents."""
+
+
 def _known_documents() -> str | None:
     """Windows's Known Folder "Documents" (SHGetKnownFolderPath), on Windows only."""
+    return known_folder(DOCUMENTS_FOLDER_ID)
+
+
+def known_folder(folder_id_text: str) -> str | None:
+    """A Windows Known Folder by its FOLDERID (SHGetKnownFolderPath), wherever it was moved
+    (OneDrive included); on Windows only."""
     import ctypes
     import uuid
     from ctypes import wintypes
@@ -471,7 +481,7 @@ def _known_documents() -> str | None:
             ("Data4", ctypes.c_ubyte * 8),
         ]
 
-    folder_id = GUID.from_buffer_copy(uuid.UUID("FDD39AD0-238F-46AF-ADB4-6C85480369C7").bytes_le)
+    folder_id = GUID.from_buffer_copy(uuid.UUID(folder_id_text).bytes_le)
     shell32 = ctypes.windll.shell32  # type: ignore[attr-defined]
     ole32 = ctypes.windll.ole32  # type: ignore[attr-defined]
     shell32.SHGetKnownFolderPath.argtypes = [

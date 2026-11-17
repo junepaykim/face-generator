@@ -1,11 +1,14 @@
 """SQLite state database: schema, migrations and transactions.
 
 The connection runs in autocommit mode; group writes with `transaction`. Migrations are
-numbered by position in MIGRATIONS and recorded in PRAGMA user_version.
+numbered by position in MIGRATIONS and recorded in PRAGMA user_version. A renamed setting is
+put right at every connect instead (`rename_settings`), so an older facegen sharing the
+database can still open it.
 """
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -354,6 +357,7 @@ UPDATE jobs SET target_band = NULL
     WHERE status IN ('queued', 'running') AND target_band IN ('M1', 'M2', 'M3', 'M4');
 """
 
+
 MIGRATIONS: tuple[str, ...] = (_V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10, _V11)
 
 # The active career: the one whose save was written last (spec section 8). A career synced
@@ -382,6 +386,70 @@ def migrate(conn: sqlite3.Connection) -> int:
     return schema_version(conn)
 
 
+# --- renamed settings ----------------------------------------------------------------------
+# A setting renamed after the database was made is put right at every connect, not by a
+# numbered migration: an older facegen may share the database, and a newer schema number
+# would lock it out. An older facegen skips a key it does not know, with a warning, as it
+# skips any.
+
+RENAMED_SETTINGS = {
+    f"groups.{g}.detail_pass": (f"groups.{g}.detail_size", {True: "1344x1728", False: "off"})
+    for g in ("a", "b", "c")
+}
+"""Old key to (new key, old value to new value). Phase 10c: the detail pass's switch became its
+size; on was the size it drew at until then, 1344x1728."""
+
+
+def rename_settings(conn: sqlite3.Connection) -> int:
+    """Rename old setting keys in the overrides and in the settings history; return how many
+    overrides changed. A quick read first: with nothing to rename, nothing is written, so a
+    connection takes no write lock for it. An old key written again later (by an older facegen)
+    replaces the new one, as the later change."""
+    old_keys = list(RENAMED_SETTINGS)
+    marks = " OR ".join("before LIKE ? OR after LIKE ?" for _ in old_keys)
+    likes = [f'%"{k}"%' for k in old_keys for _ in (0, 1)]
+    found = conn.execute(
+        f"SELECT 1 FROM settings WHERE key IN ({', '.join('?' * len(old_keys))})"
+        f" UNION ALL SELECT 1 FROM settings_history WHERE {marks} LIMIT 1",
+        [*old_keys, *likes],
+    ).fetchone()
+    if found is None:
+        return 0
+    changed = 0
+    with transaction(conn):
+        for old_key, (new_key, values) in RENAMED_SETTINGS.items():
+            row = conn.execute(
+                "SELECT value, updated_at FROM settings WHERE key = ?", (old_key,)
+            ).fetchone()
+            if row is not None:
+                old_value = json.loads(row[0])
+                conn.execute("DELETE FROM settings WHERE key = ?", (old_key,))
+                if isinstance(old_value, bool):
+                    conn.execute(
+                        "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)"
+                        " ON CONFLICT (key) DO UPDATE SET value = excluded.value,"
+                        " updated_at = excluded.updated_at",
+                        (new_key, json.dumps(values[old_value]), row[1]),
+                    )
+                changed += 1
+            for entry in conn.execute(
+                "SELECT id, before, after FROM settings_history WHERE before LIKE ? OR after LIKE ?",
+                (f'%"{old_key}"%', f'%"{old_key}"%'),
+            ).fetchall():
+                sides = []
+                for text in (entry[1], entry[2]):
+                    side = json.loads(text)
+                    if old_key in side:
+                        value = side.pop(old_key)
+                        side[new_key] = values.get(value) if isinstance(value, bool) else None
+                    sides.append(json.dumps(side))
+                conn.execute(
+                    "UPDATE settings_history SET before = ?, after = ? WHERE id = ?",
+                    (*sides, entry[0]),
+                )
+    return changed
+
+
 def connect(path: Path | str, *, busy_timeout_ms: int = 5000) -> sqlite3.Connection:
     """Open (creating if needed) and migrate the state database.
 
@@ -397,6 +465,7 @@ def connect(path: Path | str, *, busy_timeout_ms: int = 5000) -> sqlite3.Connect
     if str(path) != ":memory:":
         conn.execute("PRAGMA journal_mode = WAL")
     migrate(conn)
+    rename_settings(conn)
     return conn
 
 

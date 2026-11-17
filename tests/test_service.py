@@ -969,3 +969,28 @@ def test_one_encoder_trip_serves_the_jobs_drawn_one_step_at_a_time(env: Env) -> 
     assert len(env.drawn()) == 5
     assert len(renderer.trips) == 2  # only the new request needed another trip
     assert renderer.trips[1][0] == renderer.prompts[3]  # drawn next: manual requests come first
+
+
+def test_missing_models_are_a_setup_state_not_an_error(env: Env) -> None:
+    """Phase 10b: with the models not downloaded the worker waits and loads nothing; once the
+    download has finished it draws."""
+    present = [False]
+    svc = env.service(models_ready=lambda: present[0])
+    assert svc.step() == FM_POLL_SECONDS
+    status = svc.status()
+    assert status.state == "setup" and "not downloaded" in status.detail
+    assert "4 job(s) wait" in status.detail
+    assert status.last_error is None and not status.paused
+    assert env.gpu.renderers == [] and env.drawn() == []
+    present[0] = True
+    assert svc.step() == 0.0
+    assert env.drawn() == [(MINE_2, "initial")]
+
+
+def test_an_empty_queue_does_not_ask_for_the_models(env: Env) -> None:
+    asked = []
+    svc = env.service(models_ready=lambda: asked.append(1) or True)
+    run_until_idle(svc)
+    n = len(asked)
+    assert svc.step() > 0 and svc.status().state == "idle"
+    assert len(asked) == n  # nothing to draw: nothing asked

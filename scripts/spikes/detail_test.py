@@ -55,7 +55,7 @@ def main() -> None:
     results = json.loads(results_path.read_text()) if results_path.exists() else {}
 
     t0 = time.perf_counter()
-    renderer = AnimagineRenderer(detail_scale=SCALE)
+    renderer = AnimagineRenderer()
     load_s = time.perf_counter() - t0
     tagger = qc.Eva02Tagger()
     print(f"loaded in {load_s:.0f} s; weights {torch.cuda.memory_allocated() / 2**30:.1f} GiB")
@@ -98,7 +98,8 @@ def main() -> None:
             renderer.detail_strength = strength
             torch.cuda.reset_peak_memory_stats()
             t1 = time.perf_counter()
-            big = renderer.detail(base, prompt, seed)
+            size = tuple(round(side * SCALE / 64) * 64 for side in base.size)
+            big = renderer.detail(base, prompt, seed, size=size)
             secs = time.perf_counter() - t1
             big.save(path)
             # What FM27 would get: the 1536 master downscaled to group A's 1024.

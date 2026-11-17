@@ -1,5 +1,7 @@
 # Python
 .venv/
+# uv, installed here by Start.bat when it is not on PATH
+/.bin/
 __pycache__/
 *.py[cod]
 .pytest_cache/

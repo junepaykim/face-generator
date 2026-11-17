@@ -369,3 +369,89 @@ def test_serve_refuses_to_listen_beyond_this_pc(env: dict[str, Path]) -> None:
     config.write_text(config.read_text().replace('host = "127.0.0.1"', 'host = "0.0.0.0"'))
     code, text = run(env, "serve")
     assert code == 2 and "this PC only" in text
+
+
+# --- Phase 10: the model files and the graphics card ------------------------------------------
+
+
+def test_run_without_the_models_says_how_to_get_them(env: dict[str, Path]) -> None:
+    from fakes import FakeRenderer, FakeTagger
+
+    from facegen.cli import Gpu
+
+    run(env, "sync")
+    out = io.StringIO()
+    renderer = FakeRenderer()
+    gpu = Gpu(
+        renderer=lambda: renderer, tagger=FakeTagger, fm_check=lambda: False,
+        models_ready=lambda: False,
+    )  # fmt: skip
+    code = main(["--config", str(env["config"]), "run"], gpu=gpu, out=out)
+    assert code == 2 and "facegen models --download" in out.getvalue()
+    assert renderer.calls == []
+    # A dry run needs no models.
+    out = io.StringIO()
+    code = main(["--config", str(env["config"]), "run", "--dry-run"], gpu=gpu, out=out)
+    assert code == 0 and "DRY RUN" in out.getvalue()
+
+
+def test_only_the_real_renderer_asks_for_the_model_files() -> None:
+    from fakes import FakeRenderer
+
+    from facegen import models
+    from facegen.cli import Gpu
+
+    assert Gpu().models_check() is models.ready_now
+    assert Gpu(renderer=FakeRenderer).models_check() is None  # the tests' fakes need none
+    check = lambda: True
+    assert Gpu(renderer=FakeRenderer, models_ready=check).models_check() is check
+
+
+def test_serve_with_the_real_worker_offers_the_model_download(
+    env: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from fakes import FakeRenderer, FakeTagger
+    from fastapi.testclient import TestClient
+
+    from facegen import models
+    from facegen.cli import Gpu
+
+    run(env, "sync")
+    monkeypatch.setattr(
+        models, "status", lambda: models.ModelsStatus(env["data"], models.FILES, 0, 10**12)
+    )
+    seen: dict[str, str] = {}
+
+    def fake_server(app, host: str, port: int) -> None:  # type: ignore[no-untyped-def]
+        with TestClient(app, base_url=f"http://{host}:{port}") as client:
+            seen["page"] = client.get("/").text
+
+    gpu = Gpu(
+        renderer=FakeRenderer, tagger=FakeTagger, fm_check=lambda: True,
+        models_ready=lambda: False,
+    )  # fmt: skip
+    code = main(
+        ["--config", str(env["config"]), "serve", "--paused", "--no-watch"],
+        source_factory=lambda: FakeSource(world()),
+        gpu=gpu,
+        out=io.StringIO(),
+        run_server=fake_server,
+    )
+    assert code == 0
+    assert "Set up: the models" in seen["page"] and "Download 11.6 GB" in seen["page"]
+
+
+def test_models_and_hardware_need_no_database(env: dict[str, Path], monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from facegen import cli, hardware
+
+    monkeypatch.setattr(cli, "cmd_models", lambda args, out: 7)
+    assert main(["--config", str(env["config"]), "models"], out=io.StringIO()) == 7
+    card = hardware.Hardware("Fake 8 GB", 8 * 2**30)
+    monkeypatch.setattr(hardware, "detect", lambda: card)
+    out = io.StringIO()
+    assert main(["--config", str(env["config"]), "hardware", "--json"], out=out) == 0
+    assert hardware.Hardware.from_json(__import__("json").loads(out.getvalue())) == card
+    assert not env["data"].exists()  # neither touched the database
+    out = io.StringIO()
+    assert main(["--config", str(env["config"]), "hardware"], out=out) == 0
+    assert "would change groups.a.candidates: 3 -> 2" in out.getvalue()

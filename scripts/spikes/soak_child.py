@@ -55,9 +55,13 @@ class Measured:
                 real_fault()
         return self._timed("render", reference, lambda: self._inner.render(prompt, seed, reference))
 
-    def detail(self, image: Any, prompt: Any, seed: int, reference: Any = None) -> Any:
+    def detail(
+        self, image: Any, prompt: Any, seed: int, reference: Any = None, *, size: Any
+    ) -> Any:
         return self._timed(
-            "detail", reference, lambda: self._inner.detail(image, prompt, seed, reference)
+            "detail",
+            reference,
+            lambda: self._inner.detail(image, prompt, seed, reference, size=size),
         )
 
     def _timed(self, kind: str, reference: Any, call: Callable[[], Any]) -> Any:

@@ -132,6 +132,19 @@ def test_every_page_works_before_the_first_sync(config_file: Path) -> None:
     assert "No save found" in e.client.get("/").text
 
 
+def test_the_status_block_names_the_career_so_the_page_reloads_after_the_first_sync(
+    config_file: Path,
+) -> None:
+    e = make_env(config_file, synced=False)
+    assert 'data-career=""' in e.client.get("/status").text  # app.js reloads when it changes
+    e.client.close()
+    e = make_env(config_file, synced=True)
+    status = e.client.get("/status").text
+    assert re.search(r'data-career="\d+"', status)
+    assert 'data-career="' in e.client.get("/").text  # the page starts with the same mark
+    e.client.close()
+
+
 def test_dashboard(env: Env) -> None:
     text = env.client.get("/").text
     assert "Group A" in text and "Mine Player" in text  # in the queue
@@ -387,11 +400,17 @@ def test_autosave_refuses_bad_values_and_names_the_field(env: Env) -> None:
     data = autosave(env, **{"age.staff.W02": "16", "age.staff.W03": "17"})
     assert data["ok"] and env.one("SELECT COUNT(*) FROM settings_history") == 1
     # A checkbox is posted either way: empty is off.
-    autosave(env, **{"groups.a.detail_pass": ""})
-    assert load_settings(env.conn(), env.config).groups.a.detail_pass is False
-    autosave(env, **{"groups.a.detail_pass": "on"})
-    assert load_settings(env.conn(), env.config).groups.a.detail_pass is True
-    assert not autosave(env, **{"groups.a.detail_pass": "maybe"})["ok"]
+    autosave(env, **{"reference.enabled": ""})
+    assert load_settings(env.conn(), env.config).reference.enabled is False
+    autosave(env, **{"reference.enabled": "on"})
+    assert load_settings(env.conn(), env.config).reference.enabled is True
+    assert not autosave(env, **{"reference.enabled": "maybe"})["ok"]
+    # The detail pass size is one of a few choices (Phase 10c).
+    data = autosave(env, **{"groups.a.detail_size": "1152x1472"})
+    assert data["ok"] and data["fields"]["groups.a.detail_size"]["text"] == "1152x1472"
+    assert load_settings(env.conn(), env.config).groups.a.detail_size == (1152, 1472)
+    data = autosave(env, **{"groups.a.detail_size": "2048x2048"})
+    assert not data["ok"] and "1344x1728, 1152x1472, off" in data["errors"]["groups.a.detail_size"]
 
 
 def test_undo_redo_and_undo_back_several_steps(env: Env) -> None:
@@ -423,9 +442,9 @@ def test_reset_all_and_the_save_button_without_javascript(env: Env) -> None:
         env, env.client.post("/settings", data={**form, "action": "apply"})
     )
     # An unticked checkbox is not posted with the whole form: it is "off".
-    del form["groups.a.detail_pass"]
+    del form["reference.enabled"]
     follow(env, env.client.post("/settings", data={**form, "action": "apply"}))
-    assert load_settings(env.conn(), env.config).groups.a.detail_pass is False
+    assert load_settings(env.conn(), env.config).reference.enabled is False
     form["groups.b.candidates"] = "two"
     r = env.client.post("/settings", data={**form, "action": "apply"})
     assert r.status_code == 200 and "needs a number" in r.text
@@ -435,7 +454,7 @@ def test_reset_all_and_the_save_button_without_javascript(env: Env) -> None:
     assert env.one("SELECT COUNT(*) FROM settings") == 0
     follow(env, env.client.post("/settings", data={"action": "undo"}))
     s = load_settings(env.conn(), env.config)
-    assert s.groups.a.ca_above == 85 and s.groups.a.detail_pass is False
+    assert s.groups.a.ca_above == 85 and s.reference.enabled is False
 
 
 def test_my_clubs_staff_on_the_players_pages(env: Env) -> None:

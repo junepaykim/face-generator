@@ -22,6 +22,12 @@
   </div>
 </header>
 <main>
+{% if setup and setup.state != "ready" and path != "/" %}
+<div class="flash setup">
+  {% if setup.needs_folder %}<strong>Set up:</strong> {% if setup.folder_gone %}FM27's folder ({{ folder_now }}) is not there any more{% else %}FM27's folder is not set and was not found on this PC{% endif %}, so no save is read and nothing is published. <a href="/#setup">Choose it on the dashboard</a>{% if path == "/settings" %} or below{% endif %}.
+  {% else %}<strong>Set up:</strong> the models are not downloaded yet ({{ gigabytes(setup.models.missing_bytes) }}), so nothing can be drawn. <a href="/#setup">Download them on the dashboard</a>.{% endif %}
+</div>
+{% endif %}
 {% if msg %}<div class="flash ok">{{ msg }}</div>{% endif %}
 {% if err %}<div class="flash bad">{{ err }}</div>{% endif %}
 {% block content %}{% endblock %}

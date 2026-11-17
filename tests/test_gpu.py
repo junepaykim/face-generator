@@ -67,7 +67,7 @@ def test_render_check_and_detail(gpu: tuple[Any, Any], case: tuple[Any, Any, Any
     # Seeded: the same seed draws the same picture (allowing for GPU rounding).
     assert _difference(renderer.render(prompt, sheet.base_seed), image) < 2.0
 
-    detailed = renderer.detail(image, prompt, sheet.base_seed)
+    detailed = renderer.detail(image, prompt, sheet.base_seed, size=(1344, 1728))
     assert detailed.size == (1344, 1728)
     assert crop_to_aspect(detailed).size == (1296, 1728)  # the 3:4 master
 
@@ -102,7 +102,7 @@ def test_reference_picture(gpu: tuple[Any, Any], case: tuple[Any, Any, Any]) -> 
     print("with reference:", result.to_json(tags) | {"tags": None})
     assert result.rating == "general", result.failures
 
-    detailed = renderer.detail(referenced, prompt, seed, reference)
+    detailed = renderer.detail(referenced, prompt, seed, reference, size=(1344, 1728))
     assert detailed.size == (1344, 1728)
 
     # Switched out: the UNet is the plain model again.
@@ -132,7 +132,7 @@ def test_offloaded_models_keep_peak_vram_under_8_gib(
     reference = Reference("gpu-test-vram", candidates[0].crop(face_box(candidates[0])), 0.1)
     redraw = renderer.render(prompt, sheet.base_seed, reference)
     tagger([redraw])
-    detailed = renderer.detail(redraw, prompt, sheet.base_seed, reference)
+    detailed = renderer.detail(redraw, prompt, sheet.base_seed, reference, size=(1344, 1728))
     tagger([detailed])
     reserved = torch.cuda.max_memory_reserved() / 2**30
     allocated = torch.cuda.max_memory_allocated() / 2**30

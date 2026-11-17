@@ -8,12 +8,19 @@ facegen status
 facegen serve [--port N] [--paused] [--no-worker] [--no-watch]
 facegen worker [--generate-now]   (started by serve: the GPU worker in its own process)
 facegen native [--install [--from DIR]]
+facegen models [--download [--yes]]
+facegen hardware [--json]
+facegen app [--minimized] [--port N] [--paused]   (the dashboard in a window, with a tray icon)
+facegen tray [--port N] [--paused]                (the tray icon; the dashboard in the browser)
+facegen launch [--open-running] [--log PATH]      (what Start.bat runs after `uv sync`)
+facegen shortcuts                                 (desktop and Start Menu shortcuts, Windows)
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import json
 import os
 import sqlite3
 import sys
@@ -22,7 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
 
-from facegen import db, native, native_wheel
+from facegen import db, hardware, models, native, native_wheel
 from facegen.datasource.base import DataSource
 from facegen.gallery import write_gallery
 from facegen.kits import KitError, load_kits
@@ -78,6 +85,14 @@ class Gpu:
     program: tuple[str, ...] | None = None
     """How `serve` starts facegen for its worker process, before `[--config X] worker`;
     None: this Python with `-m facegen.cli`. The tests give a script that passes fakes."""
+    models_ready: Callable[[], bool] | None = None
+    """Whether the model files are on this PC; None: asked of the Hugging Face cache when the
+    real renderer is used (models.ready_now), and not at all with the tests' fakes."""
+
+    def models_check(self) -> Callable[[], bool] | None:
+        if self.models_ready is not None:
+            return self.models_ready
+        return models.ready_now if self.renderer is _default_renderer else None
 
 
 def format_report(r: SyncReport) -> str:
@@ -209,6 +224,10 @@ def cmd_status(settings: Settings, conn: sqlite3.Connection, out: TextIO) -> int
     print(f"FM27 folder   {settings.paths.describe('paths.fm_user_dir')}", file=out)
     print(f"FM27 install  {settings.paths.describe('paths.fm_install_dir')}", file=out)
     print(f"Rust code     {native.status().describe()}", file=out)
+    try:
+        print(f"Models        {models.status().describe()}", file=out)
+    except Exception as exc:  # noqa: BLE001 - a status line, never a reason to stop
+        print(f"Models        unknown ({type(exc).__name__}: {exc})", file=out)
     if settings.paths.fm_user_dir is None:
         print(folder_not_set_message(), file=out)
     print(file=out)
@@ -305,6 +324,81 @@ def cmd_native(
     return 0
 
 
+def cmd_models(
+    args: argparse.Namespace,
+    out: TextIO,
+    *,
+    cache: models.HubCache | None = None,
+    command: Sequence[str] | None = None,
+    ask: Callable[[str], str] = input,
+    interactive: Callable[[], bool] = lambda: sys.stdin is not None and sys.stdin.isatty(),
+) -> int:
+    """The model files: which are missing, and with --download fetch them after one
+    confirmation (AGENTS.md hard rule 4); `--yes` is that confirmation, for the launcher.
+    Exit 0 when every file is there, 1 when some are missing (status), 3 when the download did
+    not finish or was not confirmed. --child is the download process itself."""
+    if args.child:
+        return models.run_child(out)
+    now = models.status(cache)
+    for repo, what in models.REPOS.items():
+        left = [f for f in now.missing if f.repo == repo]
+        size = models.total_size(f for f in models.FILES if f.repo == repo)
+        state = "ready" if not left else f"{len(left)} file(s) missing"
+        print(f"{repo:<38} {models.gigabytes(size):>8}  {state}  ({what})", file=out)
+    print(f"Cache        {now.cache}", file=out)
+    free = "unknown" if now.free_bytes is None else models.gigabytes(now.free_bytes)
+    print(f"Free space   {free}", file=out)
+    if now.ready:
+        print("All model files are here; nothing to download.", file=out)
+        return 0
+    size = models.gigabytes(now.missing_bytes)
+    if not args.download:
+        print(f"To download ({size}): facegen models --download", file=out)
+        return 1
+    if not now.enough_space:
+        print(f"Not enough free space for {size} (and 1 GB to spare) in {now.cache}.", file=out)
+        return 3
+    if not args.yes:
+        if not interactive():
+            print("Not downloaded: confirm with --yes, or run this in a console.", file=out)
+            return 3
+        answer = ask(f"Download {size} from Hugging Face into {now.cache}? [y/N] ")
+        if answer.strip().lower() not in ("y", "yes"):
+            print("Not downloaded.", file=out)
+            return 3
+    print(f"Downloading {size}; it can be stopped and started again.", file=out, flush=True)
+    result = models.wait_and_print(models.ModelDownload(command), out)
+    if result.error or not result.finished:
+        print(f"The download did not finish: {result.error or 'stopped'}", file=out)
+        print("Run the same command again to go on where it stopped.", file=out)
+        return 3
+    print("All model files are here.", file=out)
+    return 0
+
+
+def cmd_hardware(
+    args: argparse.Namespace,
+    out: TextIO,
+    *,
+    detect: Callable[[], hardware.Hardware] | None = None,
+    current: dict[str, object] | None = None,
+) -> int:
+    """The graphics card and the preset Auto-configure would apply (Settings page)."""
+    found = (detect or hardware.detect)()
+    if args.json:
+        print(json.dumps(found.to_json(), ensure_ascii=True), file=out, flush=True)
+        return 0
+    print(f"Graphics card  {found.describe()}", file=out)
+    if found.torch:
+        print(f"torch          {found.torch}, CUDA {found.cuda or 'none'}", file=out)
+    preset = hardware.recommend(found.vram_gib)
+    print(f"Preset         {preset.title}: {preset.note}", file=out)
+    if current is not None:
+        for c in hardware.changes(preset, current):
+            print(f"  would change {c.key}: {c.before} -> {c.after}", file=out)
+    return 0 if found.has_gpu else 1
+
+
 def _career(conn: sqlite3.Connection, key: str | None, out: TextIO) -> Career | None:
     career = load_career(conn, key)
     if career is None:
@@ -364,6 +458,14 @@ def cmd_run(
         log=lambda line: print(line, file=out, flush=True),
     )
     f = JobFilter(groups=frozenset(args.group) if args.group else None, my_club_only=args.my_club)
+    check = gpu.models_check()
+    if not args.dry_run and check is not None and not check():
+        print(
+            "The models are not downloaded yet. Run `facegen models --download` (about"
+            f" {models.gigabytes(models.total_size(models.FILES))}), or use the dashboard.",
+            file=out,
+        )
+        return 2
     if args.dry_run:
         previews = worker.preview(f, args.limit)
         print(f"DRY RUN: {len(previews)} jobs would run; nothing is drawn or stored.", file=out)
@@ -443,9 +545,6 @@ def cmd_gallery(
     return 0
 
 
-LOOPBACK = ("127.0.0.1", "localhost", "::1")
-
-
 def cmd_serve(
     args: argparse.Namespace,
     settings: Settings,
@@ -457,63 +556,48 @@ def cmd_serve(
 ) -> int:
     """The web UI with the save watcher in the background and the GPU worker in a process of
     its own (`facegen worker`, supervised by worker_process.WorkerProxy), until Ctrl+C."""
-    from facegen.service import PollerService, SyncService, log_to_file
-    from facegen.web.app import AppContext, create_app
-    from facegen.worker_process import STOP_TIMEOUT, WorkerProxy, worker_command
+    from facegen.runtime import CannotStart, build_runtime
+    from facegen.service import log_to_file
+    from facegen.worker_process import STOP_TIMEOUT
 
-    host = settings.ui.host
-    port = args.port or settings.ui.port
-    if host not in LOOPBACK:
-        print(f"ui.host is {host!r}: facegen serves on this PC only (127.0.0.1).", file=out)
-        return 2
-    try:  # the worker process loads them again; a broken table is reported here, at once
-        load_kits(data_dir=settings.paths.data_dir)
-    except KitError as exc:
-        print(f"kits: {exc}", file=out)
-        return 2
-    db_path = settings.paths.db_path
-    print(f"Log: {log_to_file(settings.paths.data_dir)}", file=out, flush=True)
-    worker = None
-    if not args.no_worker:
-        worker = WorkerProxy(
-            worker_command(gpu.program, args.config), db_path=db_path, start_paused=args.paused
+    try:
+        rt = build_runtime(
+            settings,
+            source_factory,
+            gpu,
+            config=args.config,
+            port=args.port,
+            paused=args.paused,
+            worker=not args.no_worker,
+            watch=not args.no_watch,
         )
-    syncer = SyncService(
-        db_path,
-        source_factory,
-        defaults_path=args.config,
-        on_done=worker.wake if worker else (lambda: None),
-        log=worker.log if worker else (lambda line: None),
-    )
-    poller = None if args.no_watch else PollerService(db_path, syncer, defaults_path=args.config)
-    app = create_app(AppContext(db_path, args.config, worker, syncer, poller))
-    url = f"http://{'[::1]' if host == '::1' else host}:{port}/"
-    print(f"facegen UI at {url}  (Ctrl+C to stop)", file=out, flush=True)
-    if poller is not None:
+    except CannotStart as exc:
+        print(exc, file=out)
+        return 2
+    print(f"Log: {log_to_file(settings.paths.data_dir)}", file=out, flush=True)
+    print(f"facegen UI at {rt.url}  (Ctrl+C to stop)", file=out, flush=True)
+    if rt.poller is not None:
         if settings.paths.games_dir is None:
             print(folder_not_set_message(), file=out, flush=True)
         else:
             print(f"Watching {settings.paths.games_dir} for new saves.", file=out, flush=True)
-        poller.start()
-    if worker is not None:
-        worker.start()
+    rt.start()
     try:
         if run_server is None:
             import uvicorn
 
-            uvicorn.run(app, host=host, port=port, log_level="warning")
+            uvicorn.run(rt.app, host=rt.host, port=rt.port, log_level="warning")
         else:
-            run_server(app, host=host, port=port)
+            run_server(rt.app, host=rt.host, port=rt.port)
     finally:
-        if poller is not None:
-            poller.stop(timeout=None)
-        if worker is not None:
-            print(
-                f"Stopping the worker after the current job (at most {STOP_TIMEOUT:.0f} s)...",
-                file=out,
-                flush=True,
-            )
-            worker.stop(timeout=None)
+        for name, stop in rt.stop_steps():
+            if name == "worker":
+                print(
+                    f"Stopping the worker after the current job (at most {STOP_TIMEOUT:.0f} s)...",
+                    file=out,
+                    flush=True,
+                )
+            stop()
     return 0
 
 
@@ -540,6 +624,7 @@ def cmd_worker(args: argparse.Namespace, settings: Settings, gpu: Gpu, out: Text
         commands=commands,
         out=out,
         generate_now=args.generate_now,
+        models_ready=gpu.models_check(),
     )
     if process and ended.reason == "fault":
         # The CUDA context is dead, and torch tearing it down at exit could hang or abort.
@@ -547,6 +632,50 @@ def cmd_worker(args: argparse.Namespace, settings: Settings, gpu: Gpu, out: Text
         sys.stderr.flush()
         os._exit(0)
     return 2 if ended.reason == "crashed" else 0
+
+
+def cmd_desktop(
+    args: argparse.Namespace,
+    source_factory: Callable[[], DataSource],
+    gpu: Gpu | None,
+) -> int:
+    """`facegen app` and `facegen tray` (desktop.py). A failure while starting is written to
+    the log and shown in a message box on Windows, as when started without a console."""
+    from facegen import desktop
+
+    try:
+        return desktop.run(args.command, args, source_factory=source_factory, gpu=gpu)
+    except KeyboardInterrupt:
+        return 130
+    except Exception as exc:  # noqa: BLE001 - shown, with where the details are
+        desktop.report_crash(exc)
+        return 1
+
+
+def cmd_shortcuts(args: argparse.Namespace, data_dir: Path, out: TextIO) -> int:
+    """Write facegen's shortcuts on the desktop and in the Start Menu (`Start.bat
+    --shortcut`). Exit 2 off Windows, 3 when they could not be written."""
+    from facegen import shortcuts
+
+    if os.name != "nt":
+        print("Shortcuts are for Windows. Here, start facegen with `facegen serve`.", file=out)
+        return 2
+    folders = shortcuts.windows_folders()
+    app = shortcuts.this_app(data_dir, args.config)
+    links = shortcuts.app_shortcuts(
+        folders, pythonw=app.pythonw, root=app.root, icon=app.icon, config=app.config
+    )
+    if not links:
+        print("Neither the desktop nor the Start Menu folder was found.", file=out)
+        return 3
+    try:
+        shortcuts.write(links)
+    except shortcuts.ShortcutError as exc:
+        print(f"Not written: {exc}", file=out)
+        return 3
+    for link in links:
+        print(f"Shortcut    {link.path}", file=out)
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -594,6 +723,26 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="DIR",
         help="with --install: take the wheel from this folder instead of downloading it",
     )
+    m = sub.add_parser("models", help="the model files: what is missing; download them once")
+    m.add_argument(
+        "--download", action="store_true", help="download the missing files (asks first)"
+    )
+    m.add_argument("--yes", action="store_true", help="with --download: do not ask")
+    m.add_argument("--child", action="store_true", help=argparse.SUPPRESS)
+    h = sub.add_parser("hardware", help="the graphics card and the settings preset for it")
+    h.add_argument("--json", action="store_true", help="one line of JSON (for facegen serve)")
+    from facegen.desktop import add_arguments
+
+    add_arguments(sub.add_parser("app", help="the dashboard in a window, with a tray icon"))
+    add_arguments(sub.add_parser("tray", help="the tray icon; the dashboard in the browser"))
+    la = sub.add_parser("launch", help="what Start.bat runs after uv sync: wheel, models")
+    la.add_argument(
+        "--open-running",
+        action="store_true",
+        help="only ask a running facegen app to open its window (exit 1 if none runs)",
+    )
+    la.add_argument("--log", type=Path, metavar="PATH", help="also append the output here")
+    sub.add_parser("shortcuts", help="desktop and Start Menu shortcuts to the app (Windows)")
     return parser
 
 
@@ -625,7 +774,19 @@ def main(
     args = build_parser().parse_args(argv)
     if args.command == "native":  # needs no settings or database
         return cmd_native(args, out)
+    if args.command == "models":  # neither do these
+        return cmd_models(args, out)
+    if args.command == "hardware" and args.json:
+        return cmd_hardware(args, out)
+    if args.command in ("app", "tray"):  # takes its lock before it opens the database
+        return cmd_desktop(args, source_factory, gpu)
+    if args.command == "launch":  # Start.bat's: no database; it reads the settings itself
+        from facegen.launch import cmd_launch
+
+        return cmd_launch(args, out)
     paths = load_settings(defaults_path=args.config).paths
+    if args.command == "shortcuts":
+        return cmd_shortcuts(args, paths.data_dir, out)
     conn = db.connect(paths.db_path)
     try:
         settings = load_settings(conn, defaults_path=args.config)
@@ -645,6 +806,8 @@ def main(
         if args.command == "worker":
             conn.close()  # the worker opens its own
             return cmd_worker(args, settings, gpu or Gpu(), out)
+        if args.command == "hardware":
+            return cmd_hardware(args, out, current=dict(settings.values))
         return cmd_status(settings, conn, out)
     finally:
         conn.close()

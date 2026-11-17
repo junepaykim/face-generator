@@ -10,11 +10,12 @@ from typing import Any
 from starlette.datastructures import FormData
 
 from facegen.age import WORDINGS
-from facegen.settings import is_fixed
+from facegen.settings import DETAIL_SIZES, is_fixed
 
 SECTION_NOTES = {
     "groups": "Thresholds re-classify the stored save at once. Sizes, candidates and the "
-    "detail pass apply to pictures drawn from now on.",
+    "detail pass size apply to pictures drawn from now on: pictures already drawn are not "
+    "drawn again.",
     "eligibility": "Applies at the next sync: these decide, when a save is read, who is in "
     "men's football, at my club and in a continental competition.",
     "newgen": "Used only when a new career is first synced.",
@@ -40,11 +41,13 @@ SECTION_NOTES = {
     "personality": "Applies to character sheets sampled from now on (a first picture or New "
     "face); stored sheets keep their expression.",
     "schedule": "The worker and the save watcher use it at once.",
+    "render": "Applies from the next picture; pictures already drawn are not drawn again. "
+    "Auto-configure for my GPU (above) sets it with the candidates and the detail pass size.",
 }
 # The thresholds first: they are what the page is mostly for (spec section 7).
 SECTION_ORDER = (
     "groups", "staff", "youth", "media", "no_photo", "age", "schedule", "eligibility",
-    "my_club", "body", "personality", "reference", "newgen",
+    "my_club", "body", "personality", "reference", "render", "newgen",
 )  # fmt: skip
 SECTION_TITLES = {
     "groups.a": "Group A",
@@ -67,13 +70,15 @@ SECTION_TITLES = {
     "body": "Height and build",
     "personality": "Personality",
     "schedule": "Worker",
+    "render": "Rendering",
 }
 LABELS = {
     "ca_above": "CA above",
     "pa_above": "PA above",
     "published_long_edge": "Published height (px; pictures are 3:4)",
     "candidates": "Candidates per picture",
-    "detail_pass": "Detail pass",
+    "detail_size": "Detail pass size (width x height)",
+    "vae_tiling": "Decode in tiles to save graphics memory (VAE tiling)",
     "my_academy": "Academy newgens stay in B and tracked after they leave",
     "league_ca_above": "In my league or a continental competition: CA above",
     "league_pa_above": "In my league or a continental competition: PA above",
@@ -110,15 +115,38 @@ LABELS_IN = {
 }
 
 
+CHOICES: dict[str, tuple[tuple[str, str], ...]] = {
+    "detail_size": tuple(
+        (
+            value,
+            {
+                "1344x1728": "1344 x 1728 (1.5 times the render; best)",
+                "1152x1472": "1152 x 1472 (less graphics memory)",
+                "off": "off (no detail pass)",
+            }[value],
+        )
+        for value in DETAIL_SIZES
+    ),
+}
+"""Text settings with a fixed set of values, by the key's last part: (value, label) each,
+shown as a drop-down list."""
+
+
+def choices_of(key: str) -> tuple[tuple[str, str], ...] | None:
+    return CHOICES.get(key.rpartition(".")[2])
+
+
 @dataclass(frozen=True, slots=True)
 class Field:
     key: str
     label: str
-    kind: str  # bool, int, float, list
+    kind: str  # bool, int, float, list, choice, text
     value: Any
     default: Any
     changed: bool
     """Differs from the default."""
+    choices: tuple[tuple[str, str], ...] = ()
+    """For a choice: (value, label) each."""
 
     @property
     def text(self) -> str:
@@ -154,13 +182,15 @@ def value_text(value: Any) -> str:
     return str(value)
 
 
-def _kind(default: Any) -> str:
+def _kind(default: Any, key: str = "") -> str:
     if isinstance(default, bool):
         return "bool"
     if isinstance(default, int):
         return "int"
     if isinstance(default, float):
         return "float"
+    if isinstance(default, str):
+        return "choice" if choices_of(key) else "text"
     return "list"
 
 
@@ -227,10 +257,11 @@ def settings_sections(
             Field(
                 key=key,
                 label=_label(key),
-                kind=_kind(defaults[key]),
+                kind=_kind(defaults[key], key),
                 value=values[key],
                 default=defaults[key],
                 changed=values[key] != defaults[key],
+                choices=choices_of(key) or (),
             )
         )
 
@@ -256,6 +287,8 @@ def _typed(default: Any, text: str) -> Any:
         return int(text)
     if kind == "float":
         return float(text)
+    if kind == "text":  # a choice's value is checked with the settings (settings.py)
+        return text
     items = [x for x in re.split(r"[,\s]+", text) if x]
     if default and isinstance(default[0], str):
         return [x.lower() for x in items]

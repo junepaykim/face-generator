@@ -6,14 +6,28 @@
 
 {% if error %}<div class="flash bad">{{ error }}</div>{% endif %}
 
-<div class="card">
+<div class="cards">
+<div class="card" id="folders">
   <h2>FM27's folders</h2>
   <table class="kv">
     <tr><th>Saves and graphics</th><td>{{ folders.user }}</td></tr>
     <tr><th>Install</th><td>{{ folders.install }}</td></tr>
   </table>
-  <p class="muted small">Found on this PC unless <code>config/local.toml</code> sets them (<code>[paths] fm_user_dir = '…'</code>, <code>fm_install_dir = '…'</code>; a Windows path in single quotes). A change there applies when facegen starts again.</p>
+  <form method="post" action="/setup/folder" class="folder-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="/settings">
+    <input type="text" name="folder" value="{{ folders.value }}" placeholder="C:\Users\you\Documents\Sports Interactive\Football Manager 27" aria-label="FM27's folder" required>
+    <button>Change</button>
+    {% if setup.browse %}<button formaction="/setup/browse" formnovalidate title="Opens a folder window on this PC">Browse…</button>{% endif %}
+  </form>
+  <p class="muted small">FM27's folder holds its <code>games</code> and <code>graphics</code> folders. A change is saved in <code>{{ local_file }}</code> and applies at once: the newest save is read again. The install folder is found on this PC unless that file sets <code>fm_install_dir = '…'</code> (a Windows path in single quotes); a change to it applies when facegen starts again.</p>
   {% if folders.user_missing %}<p class="bad small">{{ folders.not_set }}</p>{% endif %}
+</div>
+
+<div class="card" id="graphics-card">
+  <h2>Graphics card</h2>
+  <p>Auto-configure picks group A's candidates, the detail pass size and VAE tiling for this PC's graphics card, as one change you can undo. Who gets a picture stays as it is.</p>
+  <div class="buttons"><a class="button" href="/hardware">Auto-configure for my GPU…</a></div>
+  <p class="muted small">The next page asks the card (a few seconds) and lists what would change before anything is.</p>
+</div>
 </div>
 
 <div class="bulk sticky savebar">
@@ -44,6 +58,11 @@
             <input type="number" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}" step="1">
           {% elif fd.kind == "float" %}
             <input type="number" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}" step="any">
+          {% elif fd.kind == "choice" %}
+            <select name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}">
+              {% for value, label in fd.choices %}<option value="{{ value }}" {{ "selected" if fd.text == value }}>{{ label }}</option>{% endfor %}
+              {% if fd.text not in fd.choices|map("first") %}<option value="{{ fd.text }}" selected>{{ fd.text }}</option>{% endif %}
+            </select>
           {% else %}
             <input type="text" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}">
           {% endif %}

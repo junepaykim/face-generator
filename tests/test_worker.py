@@ -815,3 +815,50 @@ def test_a_journalist_is_dressed_for_work_on_the_grey_backdrop(
     # Group B: one candidate, no detail pass.
     assert len([c for c in renderer.calls if c[0] == "render"]) == s.groups.b.candidates
     assert "soccer" not in image["prompt"]
+
+
+# --- the detail pass's size and VAE tiling (Phase 10c, 10d) ----------------------------------
+
+
+def _with(settings: Settings, **groups_a: object) -> Settings:
+    return replace(
+        settings, groups=replace(settings.groups, a=replace(settings.groups.a, **groups_a))
+    )
+
+
+def test_the_detail_size_reaches_the_renderer_and_is_recorded(env: Env) -> None:
+    w, r, _ = env.worker(settings=_with(env.settings, detail_size=(1152, 1472)))
+    outcome = w.run(MINE, limit=1).done[0]
+    assert r.detail_sizes == [(1152, 1472)]
+    img = env.current(outcome.job.unique_id)
+    detail = json.loads(img["render"])["detail"]
+    assert detail["target"] == [1152, 1472] and detail["used"] is True
+    assert detail["size"] == [72, 92]  # the fake's 56x72 render scaled as 896x1152 would be
+    with Image.open(env.data / img["master_path"]) as im:
+        assert im.size == (69, 92)  # cropped to 3:4
+
+
+def test_the_default_detail_size_is_one_and_a_half_times_the_render(env: Env) -> None:
+    w, r, _ = env.worker()
+    w.run(MINE, limit=1)
+    assert r.detail_sizes == [(1344, 1728)]
+
+
+def test_detail_size_off_skips_the_pass(env: Env) -> None:
+    w, r, _ = env.worker(settings=_with(env.settings, detail_size=None))
+    outcome = w.run(MINE, limit=1).done[0]
+    assert (r.renders, r.details) == (3, 0)
+    assert json.loads(env.current(outcome.job.unique_id)["render"])["detail"] is None
+
+
+def test_vae_tiling_follows_the_setting_for_each_job(env: Env) -> None:
+    from facegen.settings import RenderSettings
+
+    tiled = replace(env.settings, render=RenderSettings(vae_tiling=True))
+    w, r, _ = env.worker(settings=tiled)
+    outcome = w.run(MINE, limit=1).done[0]
+    assert r.vae_tiling is True
+    assert json.loads(env.current(outcome.job.unique_id)["render"])["vae_tiling"] is True
+    w.settings = env.settings  # changed in the UI: the next job draws without tiling
+    w.run(MINE, limit=1)
+    assert r.vae_tiling is False

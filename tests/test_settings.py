@@ -187,7 +187,8 @@ def test_override_of_a_list(conn: sqlite3.Connection) -> None:
         ("groups.a.nonsense", 1),  # unknown
         ("groups.a.ca_above", "150"),  # string for int
         ("groups.a.ca_above", True),  # bool is not an int here
-        ("groups.a.detail_pass", 1),  # int for bool
+        ("groups.a.detail_size", 1),  # int for text
+        ("render.vae_tiling", 1),  # int for bool
         ("eligibility.continental_competition_ids", [1, "2"]),
         ("paths.data_dir", "/tmp/elsewhere"),  # paths are fixed
     ],
@@ -352,3 +353,52 @@ def test_auto_groups(conn: sqlite3.Connection) -> None:
     assert set_override(conn, "schedule.auto_groups", []).schedule.auto_groups == frozenset()
     with pytest.raises(SettingsError):
         set_override(conn, "schedule.auto_groups", ["d"])
+
+
+# --- Phase 10: the detail pass's size, VAE tiling, the local file beside --config -------------
+
+
+def test_the_detail_pass_size_and_vae_tiling_defaults() -> None:
+    s = load_settings()
+    assert s.groups.a.detail_size == (1344, 1728)
+    assert s.groups.b.detail_size is None and s.groups.c.detail_size is None
+    assert s.render.vae_tiling is False
+    assert "groups.a.detail_pass" not in s.values
+
+
+@pytest.mark.parametrize(
+    ("text", "size"), [("1344x1728", (1344, 1728)), ("1152x1472", (1152, 1472)), ("off", None)]
+)
+def test_each_detail_size(conn: sqlite3.Connection, text: str, size: object) -> None:
+    for group in ("a", "b", "c"):
+        assert (
+            getattr(
+                set_override(conn, f"groups.{group}.detail_size", text).groups, group
+            ).detail_size
+            == size
+        )
+
+
+@pytest.mark.parametrize("text", ["1536x1536", "1344X1728", "", "on"])
+def test_a_detail_size_outside_the_choices_is_refused(conn: sqlite3.Connection, text: str) -> None:
+    with pytest.raises(SettingsError, match="must be one of 1344x1728, 1152x1472, off"):
+        set_override(conn, "groups.a.detail_size", text)
+    assert conn.execute("SELECT COUNT(*) FROM settings").fetchone()[0] == 0
+
+
+def test_an_explicit_defaults_file_takes_the_local_file_beside_it(tmp_path: Path) -> None:
+    from facegen.settings import local_label, local_path
+
+    config = tmp_path / "test.toml"
+    config.write_text(DEFAULTS_PATH.read_text(encoding="utf-8"), encoding="utf-8")
+    assert local_path(config) == tmp_path / "local.toml"
+    assert local_path() == settings_module.LOCAL_PATH
+    assert load_settings(defaults_path=config).paths.fm_user_dir is None
+    (tmp_path / "local.toml").write_text(
+        f"[paths]\nfm_user_dir = '{tmp_path / 'FM27'}'\n", encoding="utf-8"
+    )
+    s = load_settings(defaults_path=config)
+    assert s.paths.fm_user_dir == tmp_path / "FM27"
+    assert (
+        s.paths.origins["paths.fm_user_dir"] == local_label(config) == str(tmp_path / "local.toml")
+    )

@@ -24,13 +24,23 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULTS_PATH = PROJECT_ROOT / "config" / "default.toml"
 LOCAL_PATH = PROJECT_ROOT / "config" / "local.toml"
 """This PC's own folders, laid over the defaults' `[paths]`. Optional and not in git, so the
-repository holds no Windows user name."""
+repository holds no Windows user name. The first-run setup writes FM27's folder here."""
+LOCAL_NAME = "local.toml"
 
 # Keys the UI may not override: where things live on disk, and where the web UI listens (a
 # browser must not be able to open the tool to the network; AGENTS.md hard rule 6).
 _FIXED_PREFIXES = ("paths.", "ui.")
 
 GROUP_NAMES = ("a", "b", "c")
+
+DETAIL_SIZES: dict[str, tuple[int, int] | None] = {
+    "1344x1728": (1344, 1728),
+    "1152x1472": (1152, 1472),
+    "off": None,
+}
+"""`groups.*.detail_size`: the detail pass's target size (width, height), or none. 1344x1728 is
+1.5 times the 896x1152 render; 1152x1472 needs less graphics memory (Phase 10c). Both sides
+are multiples of 64, as the model needs."""
 
 DETECTED_KEYS = ("paths.fm_user_dir", "paths.fm_install_dir")
 """Folders that are looked for on this PC (fm_paths.py) when no file sets them."""
@@ -114,7 +124,8 @@ class GroupA:
     pa_above: int
     published_long_edge: int
     candidates: int
-    detail_pass: bool
+    detail_size: tuple[int, int] | None
+    """The detail pass's target size (width, height); None: no detail pass."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,7 +137,8 @@ class GroupB:
     any_pa_above: int
     published_long_edge: int
     candidates: int
-    detail_pass: bool
+    detail_size: tuple[int, int] | None
+    """The detail pass's target size (width, height); None: no detail pass."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,7 +147,8 @@ class GroupC:
     league_pa_above: int
     published_long_edge: int
     candidates: int
-    detail_pass: bool
+    detail_size: tuple[int, int] | None
+    """The detail pass's target size (width, height); None: no detail pass."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -243,6 +256,15 @@ class Schedule:
 
 
 @dataclass(frozen=True, slots=True)
+class RenderSettings:
+    """How the model draws, for the graphics card it has (Phase 10d)."""
+
+    vae_tiling: bool
+    """Decode in tiles and one picture at a time (diffusers' VAE tiling and slicing): less
+    graphics memory, a little slower."""
+
+
+@dataclass(frozen=True, slots=True)
 class UI:
     host: str
     port: int
@@ -264,6 +286,7 @@ class Settings:
     body: BodyThresholds
     personality: PersonalitySettings
     schedule: Schedule
+    render: RenderSettings
     ui: UI
     values: Mapping[str, Any]
     """Every effective value by dotted key, for display."""
@@ -291,11 +314,22 @@ def detect_folder(key: str) -> Path | None:
     return fm_paths.detect_install_dir()
 
 
+def local_path(defaults_path: Path | None = None) -> Path:
+    """The local file laid over a defaults file: config/local.toml for the standard defaults,
+    and for a defaults file given explicitly (`--config`, the tests) the local.toml beside it."""
+    return LOCAL_PATH if defaults_path is None else defaults_path.with_name(LOCAL_NAME)
+
+
+def local_label(defaults_path: Path | None = None) -> str:
+    """How the local file is named to the user: "config/local.toml", or its full path."""
+    return f"config/{LOCAL_PATH.name}" if defaults_path is None else str(local_path(defaults_path))
+
+
 def load_defaults(path: Path | None = None) -> dict[str, Any]:
     """The defaults file as dotted keys.
 
-    With the standard defaults file, config/local.toml (if present) is laid over it. A
-    defaults file given explicitly is read alone. FM27's folders that neither sets (an empty
+    The local file (`local_path`: config/local.toml, or the local.toml beside a defaults file
+    given explicitly), if present, is laid over it. FM27's folders that neither sets (an empty
     value) are looked for on this PC (fm_paths.py); one not found stays empty, "not set".
     """
     return _load_defaults(path)[0]
@@ -308,10 +342,9 @@ def _load_defaults(path: Path | None) -> tuple[dict[str, Any], dict[str, str]]:
         values = flatten(tomllib.load(f))
     named = f"config/{source.name}" if path is None else str(source)
     origins = {k: named for k in values if k.startswith("paths.") and values[k]}
-    if path is None:
-        local = load_local(values, LOCAL_PATH)
-        values.update(local)
-        origins.update({k: f"config/{LOCAL_PATH.name}" for k, v in local.items() if v})
+    local = load_local(values, local_path(path))
+    values.update(local)
+    origins.update({k: local_label(path) for k, v in local.items() if v})
     kind = platform_info.current()
     for key in [k for k in values if k.startswith("paths.")]:
         if not isinstance(values[key], str):
@@ -415,6 +448,13 @@ def build_settings(
     def candidates(key: str) -> int:
         return _range(key, v[key], 1, 8)
 
+    def detail_size(key: str) -> tuple[int, int] | None:
+        if v[key] not in DETAIL_SIZES:
+            raise SettingsError(
+                f"setting {key!r} must be one of {', '.join(DETAIL_SIZES)}, got {v[key]!r}"
+            )
+        return DETAIL_SIZES[v[key]]
+
     data_dir = Path(v["paths.data_dir"])
     if not data_dir.is_absolute():
         data_dir = PROJECT_ROOT / data_dir
@@ -496,7 +536,7 @@ def build_settings(
                 pa_above=threshold("groups.a.pa_above"),
                 published_long_edge=edge("groups.a.published_long_edge"),
                 candidates=candidates("groups.a.candidates"),
-                detail_pass=v["groups.a.detail_pass"],
+                detail_size=detail_size("groups.a.detail_size"),
             ),
             b=GroupB(
                 my_academy=v["groups.b.my_academy"],
@@ -506,14 +546,14 @@ def build_settings(
                 any_pa_above=threshold("groups.b.any_pa_above"),
                 published_long_edge=edge("groups.b.published_long_edge"),
                 candidates=candidates("groups.b.candidates"),
-                detail_pass=v["groups.b.detail_pass"],
+                detail_size=detail_size("groups.b.detail_size"),
             ),
             c=GroupC(
                 league_ca_above=threshold("groups.c.league_ca_above"),
                 league_pa_above=threshold("groups.c.league_pa_above"),
                 published_long_edge=edge("groups.c.published_long_edge"),
                 candidates=candidates("groups.c.candidates"),
-                detail_pass=v["groups.c.detail_pass"],
+                detail_size=detail_size("groups.c.detail_size"),
             ),
         ),
         staff=StaffSettings(enabled=v["staff.enabled"]),
@@ -542,6 +582,7 @@ def build_settings(
             generate_while_fm_running=v["schedule.generate_while_fm_running"],
             auto_groups=auto_groups,
         ),
+        render=RenderSettings(vae_tiling=v["render.vae_tiling"]),
         ui=UI(host=v["ui.host"], port=_range("ui.port", v["ui.port"], 1, 65535)),
         values=dict(values),
         overridden=overridden,

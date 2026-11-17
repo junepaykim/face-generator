@@ -254,6 +254,14 @@ the ones you see most often get the best pictures, and everyone else is skipped.
   below their native size. So every group renders at full size. The groups differ in how
   many tries they get, whether they get the detail pass, and how big the published file
   is.
+- **Smaller graphics cards:** Settings → "Auto-configure for my GPU" asks the card and
+  proposes picture settings for it: below 10 GB, best of 2 with no detail pass and the
+  picture decoded in tiles; 10 and 11 GB, a smaller detail pass (1152×1472 instead of
+  1344×1728). It lists each change first, saves them as one change that one Undo reverts,
+  and never touches who gets a picture. On the RTX 4080 a group A job peaks at about
+  6.9 GiB of PyTorch memory with the defaults, 5.8 GiB with the 10–11 GB preset and 4.5 GiB
+  with the under-10 GB one (7.7, 6.7 and 5.0 GiB for a re-draw with a reference picture);
+  they are not yet tried on smaller cards.
 - **A new photo shoot each time.** The character sheet keeps a player's face, hair and
   eyes; each picture draws the rest. The kit is worn with short, long or layered sleeves,
   a collar, or as club training wear: a track jacket, open over the shirt or zipped to a
@@ -340,6 +348,19 @@ FACEGEN_TEST_GPU=1 uv run pytest tests/test_gpu.py
 
 ## Run it yourself
 
+**The quick way, on Windows:** download this repository (*Code → Download ZIP*), unpack it
+anywhere you can write to, and double-click **`Start.bat`**. It installs
+[`uv`](https://docs.astral.sh/uv/) if you don't have it, sets up Python and the libraries
+(about 3 GB the first time, mostly PyTorch with CUDA), asks once before downloading the
+models (11.6 GB), and opens facegen in a window of its own. A tray icon offers Pause, Sync
+and Quit; closing the window keeps facegen drawing in the background. Double-click
+`Start.bat` again to bring the window back. `Start.bat --shortcut` also puts a shortcut on
+the desktop and in the Start Menu, and the tray menu can start facegen with Windows. The
+window needs Microsoft Edge WebView2, which Windows 11 has built in; without it the dashboard
+opens in your browser. Start.bat keeps a log in `data\logs\start.log`.
+
+The steps below are the manual way, and the way in WSL.
+
 **You need:**
 
 - A Windows PC with FM27. facegen runs on Windows itself, or in WSL2 (Ubuntu); the same
@@ -364,16 +385,24 @@ uv sync
 
 **2. FM27's folders.** facegen finds FM27's user folder (in your Documents folder, OneDrive
 included) and its Steam install (in any Steam library) by itself; `uv run facegen status`
-shows what it found. If yours are elsewhere, create `config/local.toml`. It is not in git, so
-your Windows user name stays out of the repo. Write a Windows path in single quotes; in WSL
-it works too.
+shows what it found. If it cannot find the user folder, the web UI asks for it when you start
+it (step 5) and saves it in `config/local.toml`. You can also write that file yourself. It is
+not in git, so your Windows user name stays out of the repo. Write a Windows path in single
+quotes; in WSL it works too.
 
 ```toml
 [paths]
 fm_user_dir = 'C:\Users\<you>\Documents\Sports Interactive\Football Manager 27'
 ```
 
-**3. Download the models once** (~11 GB). After this, everything runs offline.
+**3. Download the models once** (~11.6 GB). After this, everything runs offline. Either let
+facegen do it (it shows the size and asks once; the dashboard offers the same button):
+
+```bash
+uv run facegen models --download
+```
+
+or fetch them yourself:
 
 ```bash
 uv run hf download cagliostrolab/animagine-xl-4.0 --include "model_index.json" --include "scheduler/*" --include "text_encoder*/*" --include "tokenizer*/*" --include "unet/*" --include "vae/*"
@@ -412,6 +441,8 @@ Other handy commands:
 | `uv run facegen run --group a --my-club` | Draws your squad from the command line, without the web UI (close FM27 first, or add `--now`) |
 | `uv run facegen status` | Shows careers, group counts and the queue |
 | `uv run facegen serve --no-worker` | Runs only the web UI, with no GPU work |
+| `uv run facegen app` | On Windows: the dashboard in a window, with a tray icon (what Start.bat opens) |
+| `uv run facegen tray` | On Windows: only the tray icon; Open Dashboard opens the browser |
 
 Club kit colours are in `config/kits.toml`. A club that isn't listed takes the colours
 estimated from FM27's own image of its home shirt: facegen ships these for the 832 clubs

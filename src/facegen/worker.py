@@ -464,6 +464,7 @@ class Worker:
         cand_dir = folder / f"v{version:03d}-candidates"
         candidates: list[Candidate] = []
         winner: Candidate | None = None
+        self._configure_renderer()
         for attempt in range(MAX_ATTEMPTS):
             batch = []
             for k in range(group.candidates):
@@ -505,8 +506,8 @@ class Worker:
             return self._finish_failed(job, version, sheet_version, context, candidates, t0)
 
         final, detail_info = winner.image, None
-        if group.detail_pass:
-            final, detail_info = self._detail(winner, prompt, expect, reference)
+        if group.detail_size is not None:
+            final, detail_info = self._detail(winner, prompt, expect, reference, group.detail_size)
         master = folder / f"v{version:03d}.png"
         self.images.save_master(
             master,
@@ -633,20 +634,29 @@ class Worker:
         if len(prompts) > 1:
             self.log(f"  encoded the prompts of the next {len(prompts)} jobs ({texts} texts)")
 
+    def _configure_renderer(self) -> None:
+        """Settings the renderer takes per job rather than at load: VAE tiling (Phase 10d)."""
+        set_tiling = getattr(self.renderer, "set_vae_tiling", None)
+        if set_tiling is not None:
+            set_tiling(self.settings.render.vae_tiling)
+
     def _detail(
         self,
         winner: Candidate,
         prompt: Prompt,
         expect: qc.Expectation,
         reference: Reference | None,
+        size: tuple[int, int],
     ) -> tuple[Image, dict[str, Any]]:
-        """Group A's detail pass. Its result is checked again; a failure keeps the original."""
+        """The detail pass at the group's `detail_size`. Its result is checked again; a failure
+        keeps the original."""
         t0 = self.clock()
-        detailed = self.renderer.detail(winner.image, prompt, winner.seed, reference)
+        detailed = self.renderer.detail(winner.image, prompt, winner.seed, reference, size=size)
         tags = self.tagger([detailed])[0]
         result = qc.check(tags, expect, qc.head_top(detailed))
         info: dict[str, Any] = {
             **_detail_settings(self.renderer),
+            "target": list(size),
             "used": result.passed,
             "seconds": round(self.clock() - t0, 2),
             "size": list(detailed.size),

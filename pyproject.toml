@@ -43,9 +43,16 @@ gpu = [
 # few players have Rust and the MSVC build tools: `facegen native --install` installs the
 # prebuilt wheel there (native_wheel.py), and `uv sync --inexact` keeps it.
 native = ["facegen-native; sys_platform != 'win32'"]
+# The desktop app (Phase 11, `facegen app` and `facegen tray`): the tray icon and the window
+# (pywebview on Microsoft Edge WebView2). Windows only, so Linux and WSL installs do not
+# change; there `facegen serve` and the browser remain the way in.
+desktop = [
+    "pystray>=0.19.5; sys_platform == 'win32'",
+    "pywebview>=6.2; sys_platform == 'win32'",
+]
 
 [tool.uv]
-default-groups = ["dev", "gpu", "native"]
+default-groups = ["dev", "gpu", "native", "desktop"]
 
 [tool.uv.workspace]
 members = ["native"]

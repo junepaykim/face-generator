@@ -1,0 +1,3 @@
+# Windows batch files need CRLF line endings for cmd.exe, in every checkout and in the
+# zip GitHub makes (git archive converts them the same way).
+*.bat text eol=crlf

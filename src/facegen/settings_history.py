@@ -37,7 +37,8 @@ class Entry:
     id: int
     at: str
     label: str
-    """'edit' (a field on the page) or 'defaults' (every setting back to its default)."""
+    """'edit' (a field on the page), 'defaults' (every setting back to its default) or
+    'auto-configure' (the preset for the graphics card, hardware.py)."""
     before: dict[str, Any]
     """Key to its stored override before the change; None for no override."""
     after: dict[str, Any]

@@ -15,8 +15,11 @@
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
+/* Segoe UI and Consolas before the system's font: Korean Windows's Malgun Gothic and GulimChe
+   draw the backslash as a won sign, so C:\Users showed as C:₩Users. Hangul still falls back. */
 body { margin: 0; background: var(--bg); color: var(--fg);
-       font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+       font: 14px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif; }
+code, pre, kbd { font-family: Consolas, "Cascadia Mono", ui-monospace, monospace; }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 h1 { font-size: 22px; margin: 4px 0 8px; }
@@ -65,7 +68,7 @@ input[type=checkbox] { width: 16px; height: 16px; }
 .state { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px;
          font-weight: 600; background: var(--line); }
 .state-running { background: var(--okbg); color: var(--ok); }
-.state-waiting, .state-paused, .state-restarting { background: var(--warnbg); color: var(--warn); }
+.state-waiting, .state-paused, .state-restarting, .state-setup { background: var(--warnbg); color: var(--warn); }
 .state-error, .state-gpu-fault, .state-stopped { background: var(--badbg); color: var(--bad); }
 
 table { border-collapse: collapse; }
@@ -143,6 +146,7 @@ pre.log { max-height: 320px; overflow: auto; }
 form.settings fieldset { background: var(--card); border: 1px solid var(--line); border-radius: 8px;
                          margin: 0 0 12px; padding: 8px 14px 12px; }
 form.settings legend { font-weight: 600; padding: 0 6px; }
+.field:has(select) { grid-template-columns: minmax(220px, 420px) max-content 1fr; }
 .field { display: grid; grid-template-columns: minmax(220px, 420px) 160px 1fr; gap: 10px;
          align-items: center; padding: 3px 0; }
 .field input[type=text] { width: 160px; }
@@ -168,3 +172,14 @@ ol.history > li:last-child { border-bottom: 0; }
 ol.history > li.undone { opacity: .55; }
 ol.history > li.undone .what { text-decoration: line-through; }
 ul.what { margin: 2px 0; padding-left: 16px; }
+
+/* First-run setup (Phase 10) */
+.flash.setup { background: var(--warnbg); color: var(--warn); }
+.card.setup-panel { border-color: var(--warn); }
+.card.setup-panel h2 { color: var(--warn); }
+.folder-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 10px 0 6px; }
+.folder-form input[type=text] { flex: 1 1 360px; min-width: 0; }
+progress { width: min(420px, 100%); height: 14px; vertical-align: middle; accent-color: var(--accent); }
+a.button { display: inline-block; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--line);
+           background: var(--card); color: var(--fg); }
+a.button:hover { border-color: var(--accent); text-decoration: none; }

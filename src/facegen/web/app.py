@@ -9,6 +9,14 @@ from the network. The app is meant for 127.0.0.1 only and has no login, so:
 
 Each request opens its own database connection; the worker and syncs run in their own
 threads (service.py) and are woken when a request changes the queue.
+
+First-run setup (Phase 10): while FM27's folder is neither set nor found, or the model files
+are missing, every page shows a banner and the dashboard a setup panel. The folder is checked
+(folder_setup.check_folder), written to the local file and used at once: the save watcher, the
+syncs and the worker read the settings on every pass, and a sync starts straight away. The
+models are downloaded by a process of their own after one confirmation (models.py). The
+Settings page can change the folder later, and Auto-configure sets the picture settings for the
+graphics card (hardware.py) as one change that Undo reverts.
 """
 
 from __future__ import annotations
@@ -16,7 +24,8 @@ from __future__ import annotations
 import hashlib
 import os
 import sqlite3
-from collections.abc import Iterator
+import threading
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -35,10 +44,20 @@ from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import FormData
 
-from facegen import db, manual, native, photos, settings_history
+from facegen import (
+    db,
+    folder_setup,
+    hardware,
+    manual,
+    native,
+    photos,
+    platform_info,
+    settings_history,
+)
 from facegen.age import audience, table_name
 from facegen.classify import Group
 from facegen.manual import ManualError
+from facegen.models import REPOS, DownloadStatus, ModelDownload, ModelsStatus, gigabytes
 from facegen.planner import REFERENCE_KINDS, reference_scale
 from facegen.poller import UNSUPPORTED_ADVICE
 from facegen.publish import RELOAD_HINT, PublishError
@@ -55,6 +74,8 @@ from facegen.settings import (
     folder_not_set_message,
     load_defaults,
     load_settings,
+    local_label,
+    local_path,
 )
 from facegen.settings_history import Outcome
 from facegen.traits import TRAIT_TABLES, eyes_drawn_round
@@ -62,6 +83,7 @@ from facegen.web import queries
 from facegen.web.forms import (
     blamed_keys,
     change_lines,
+    describe_key,
     input_text,
     parse_settings_changes,
     parse_settings_form,
@@ -94,6 +116,54 @@ class AppContext:
     """WorkerService in a thread, or worker_process.WorkerProxy for a worker process."""
     syncer: SyncService | None = None
     poller: PollerService | None = None
+    models: Callable[[], ModelsStatus] | None = None
+    """The model files' status (models.status); None where no real GPU worker runs (fakes,
+    --no-worker): then the models are not part of the setup."""
+    download: ModelDownload | None = None
+    hardware: Callable[[], hardware.Hardware] | None = None
+    """Asks for the graphics card (hardware.probe, in a child process); asked once."""
+    browse: Callable[[str | None], str | None] | None = None
+    """Opens a folder dialog on this PC (folder_setup.browse); None where there is no display."""
+    platform: platform_info.Kind | None = None
+    """The system the folder check reads paths for; None: this one."""
+
+    def setup(self, settings: Settings) -> SetupState:
+        """What first-run setup still needs (Phase 10): FM27's folder, the model files."""
+        folder = settings.paths.fm_user_dir
+        return SetupState(
+            folder_missing=folder is None,
+            folder_gone=folder is not None and not folder_setup.RealDisk().is_dir(folder),
+            models=self.models() if self.models is not None else None,
+            download=self.download.status() if self.download is not None else None,
+            browse=self.browse is not None,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class SetupState:
+    folder_missing: bool
+    """FM27's folder is neither set nor found on this PC."""
+    folder_gone: bool
+    """It is set, but no such folder is there (moved, or a drive not connected)."""
+    models: ModelsStatus | None
+    download: DownloadStatus | None
+    browse: bool
+    """Browse can open a folder dialog here."""
+
+    @property
+    def needs_folder(self) -> bool:
+        return self.folder_missing or self.folder_gone
+
+    @property
+    def needs_models(self) -> bool:
+        return self.models is not None and not self.models.ready
+
+    @property
+    def state(self) -> str:
+        """ready, needs-folder or needs-models."""
+        if self.needs_folder:
+            return "needs-folder"
+        return "needs-models" if self.needs_models else "ready"
 
 
 # --- helpers ----------------------------------------------------------------------------------
@@ -183,6 +253,8 @@ def create_app(ctx: AppContext) -> FastAPI:
     templates = Jinja2Templates(directory=HERE / "templates")
     env = templates.env
     env.globals.update(
+        gigabytes=gigabytes,
+        model_repos=REPOS,
         tier_name=lambda t: TIER_NAMES.get(t, str(t)),
         kind_name=describe_job,
         reload_hint=RELOAD_HINT,
@@ -212,6 +284,7 @@ def create_app(ctx: AppContext) -> FastAPI:
 
     def page(request: Request, name: str, conn: sqlite3.Connection, **context: Any) -> Response:
         career = load_career(conn)
+        settings = settings_now(conn)
         return templates.TemplateResponse(
             request,
             name,
@@ -222,6 +295,11 @@ def create_app(ctx: AppContext) -> FastAPI:
                 "msg": request.query_params.get("msg"),
                 "err": request.query_params.get("err"),
                 "path": request.url.path,
+                "setup": ctx.setup(settings),
+                "folder_text": request.query_params.get("folder"),
+                "folder_now": settings.paths.fm_user_dir,
+                "folder_origin": settings.paths.describe("paths.fm_user_dir"),
+                "local_file": local_label(ctx.defaults_path),
                 **context,
             },
         )
@@ -257,6 +335,7 @@ def create_app(ctx: AppContext) -> FastAPI:
             "auto_groups": sorted(settings.schedule.auto_groups),
             "photo_status": photos.status(conn),
             "native": native.status(),
+            "setup": ctx.setup(settings),
         }
 
     @app.get("/", response_class=HTMLResponse)
@@ -293,6 +372,97 @@ def create_app(ctx: AppContext) -> FastAPI:
         if not ctx.syncer.start():
             return _redirect("/", err="A sync is already running.")
         return _redirect("/", msg="Sync started: reading the newest save.")
+
+    # -- first-run setup (Phase 10) --
+
+    def folder_back(target: str, text: str, err: str) -> RedirectResponse:
+        """Back to the page with the error, and the folder as typed, so it can be corrected."""
+        base, _, query = target.partition("?")
+        params = [
+            p for p in query.split("&") if p and not p.startswith(("msg=", "err=", "folder="))
+        ]
+        params += [f"err={quote(err)}", f"folder={quote(text)}"]
+        return RedirectResponse(f"{base}?{'&'.join(params)}", status_code=303)
+
+    def use_folder(text: str, back: str) -> Response:
+        """Check the folder, write it to the local file, and use it at once."""
+        kind = ctx.platform or platform_info.current()
+        check = folder_setup.check_folder(text, kind, folder_setup.RealDisk())
+        if check.folder is None:
+            return folder_back(back, text, f"Not FM27's folder: {check.message}")
+        target = local_path(ctx.defaults_path)
+        try:
+            folder_setup.write_local_path(
+                target, "fm_user_dir", folder_setup.value_to_write(check.folder, kind)
+            )
+            now = load_settings(defaults_path=ctx.defaults_path)
+        except (folder_setup.LocalFileError, OSError, SettingsError) as exc:
+            return folder_back(
+                back, text, f"Not saved: {local_label(ctx.defaults_path)} {exc}".strip()
+            )
+        if now.paths.fm_user_dir is None:  # cannot happen unless the file was changed meanwhile
+            return folder_back(back, text, "Not saved: the folder did not take effect.")
+        if ctx.poller is not None:
+            ctx.poller.wake()
+        syncing = ctx.syncer is not None and ctx.syncer.start()
+        wake()
+        note = f"{check.message} " if check.message else ""
+        then = (
+            "Reading the newest save now."
+            if syncing
+            else "Press Sync now to read the newest save."
+            if ctx.syncer is not None
+            else "It is used from the next sync."
+        )
+        return _redirect(
+            back,
+            msg=f"{note}FM27's folder is {now.paths.fm_user_dir}, saved in"
+            f" {local_label(ctx.defaults_path)}. {then}",
+        )
+
+    @app.post("/setup/folder")
+    async def setup_folder(request: Request) -> Response:
+        form = await form_of(request)
+        back = _safe_next(str(form.get("next") or ""), "/")
+        text = str(form.get("folder") or "")
+        return await run_in_threadpool(use_folder, text, back)
+
+    @app.post("/setup/browse")
+    async def setup_browse(request: Request) -> Response:
+        form = await form_of(request)
+        back = _safe_next(str(form.get("next") or ""), "/")
+        if ctx.browse is None:
+            return _redirect(back, err="Browse is not available here: type or paste the folder.")
+        start = str(form.get("folder") or "").strip() or None
+        chosen = await run_in_threadpool(ctx.browse, start)
+        if not chosen:
+            return _redirect(back, msg="No folder chosen.")
+        return await run_in_threadpool(use_folder, chosen, back)
+
+    @app.post("/setup/models")
+    async def setup_models(request: Request) -> Response:
+        """The one confirmation before the model download (AGENTS.md hard rule 4)."""
+        form = await form_of(request)
+        if ctx.download is None or ctx.models is None:
+            return _redirect("/", err="The models are not downloaded by this process.")
+        if form.get("confirm") != "download":
+            return _redirect("/", err="Not downloaded: confirm with the Download button.")
+        now = await run_in_threadpool(ctx.models)
+        if now.ready:
+            return _redirect("/", msg="The models are here already.")
+        if not now.enough_space:
+            return _redirect(
+                "/",
+                err=f"Not enough free space: {gigabytes(now.missing_bytes)} and 1 GB to spare"
+                f" are needed in {now.cache}.",
+            )
+        if not ctx.download.start():
+            return _redirect("/", err="The download is running already.")
+        return _redirect(
+            "/",
+            msg=f"Downloading the models ({gigabytes(now.missing_bytes)}); the dashboard"
+            " shows how far it is. It can be stopped and goes on at the next start.",
+        )
 
     # -- players --
 
@@ -551,6 +721,7 @@ def create_app(ctx: AppContext) -> FastAPI:
             "install": current.paths.describe("paths.fm_install_dir"),
             "user_missing": current.paths.fm_user_dir is None,
             "not_set": folder_not_set_message(),
+            "value": request.query_params.get("folder") or current.paths.fm_user_dir or "",
         }
         return page(
             request,
@@ -566,6 +737,82 @@ def create_app(ctx: AppContext) -> FastAPI:
     @app.get("/settings", response_class=HTMLResponse)
     def settings_get(request: Request, conn: sqlite3.Connection = Conn) -> Response:
         return settings_page(request, conn)
+
+    # -- the graphics card (Phase 10d) --
+
+    card_lock = threading.Lock()
+    card: list[hardware.Hardware] = []
+
+    def graphics_card(again: bool = False) -> hardware.Hardware | None:
+        """The card, asked once per process (a child process imports torch for it)."""
+        if ctx.hardware is None:
+            return None
+        with card_lock:
+            if again or not card:
+                card[:] = [ctx.hardware()]
+            return card[0]
+
+    @app.get("/hardware", response_class=HTMLResponse)
+    async def hardware_page(request: Request) -> Response:
+        found = await run_in_threadpool(graphics_card, request.query_params.get("again") == "1")
+
+        def render() -> Response:
+            conn = db.connect(ctx.db_path, busy_timeout_ms=BUSY_TIMEOUT_MS)
+            try:
+                current = settings_now(conn)
+                defaults = load_defaults(ctx.defaults_path)
+                preset = hardware.recommend(found.vram_gib if found else None)
+                lines = [
+                    {
+                        "label": describe_key(c.key),
+                        "before": input_text(c.before),
+                        "after": input_text(c.after),
+                        "default": input_text(defaults[c.key]),
+                    }
+                    for c in hardware.changes(preset, current.values)
+                ]
+                return page(request, "hardware.html", conn, card=found, preset=preset, lines=lines)
+            finally:
+                conn.close()
+
+        return await run_in_threadpool(render)
+
+    @app.post("/settings/auto-configure")
+    async def auto_configure(request: Request) -> Response:
+        """The preset for this PC's card, as one settings change that one Undo reverts. Only
+        picture settings: never the group thresholds (user, 2026-11-13)."""
+        found = await run_in_threadpool(graphics_card)
+
+        def run() -> Response:
+            if found is None or not found.has_gpu:
+                why = found.reason if found else "the card cannot be asked in this process"
+                return _redirect(
+                    "/hardware", err=f"Nothing changed: no CUDA graphics card ({why})."
+                )
+            preset = hardware.recommend(found.vram_gib)
+            conn = db.connect(ctx.db_path, busy_timeout_ms=BUSY_TIMEOUT_MS)
+            try:
+                outcome = settings_history.save(
+                    conn, preset.changes, label="auto-configure", defaults_path=ctx.defaults_path
+                )
+            except SettingsError as exc:
+                return _redirect("/hardware", err=f"Not done: {exc}")
+            finally:
+                conn.close()
+            if not outcome.changed:
+                return _redirect(
+                    "/settings",
+                    msg=f"Nothing to change: the settings already suit the {found.name}.",
+                )
+            wake()
+            return _redirect(
+                "/settings",
+                msg=f"Auto-configured for the {found.name} ({preset.title}). "
+                + outcome_message("Saved", outcome)
+                + " Pictures already drawn are not drawn again. Undo puts it all back.",
+            )
+
+        return await run_in_threadpool(run)
 
     @app.post("/settings", response_class=HTMLResponse)
     async def settings_post(request: Request) -> Response:

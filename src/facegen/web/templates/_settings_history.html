@@ -5,7 +5,7 @@
   <li class="{{ 'undone' if e.undone }}">
     <div class="when small muted">
       <time datetime="{{ e.at }}">{{ e.at[:16]|replace("T", " ") }} UTC</time>
-      {% if e.label == "defaults" %}· reset to defaults{% endif %}
+      {% if e.label == "defaults" %}· reset to defaults{% elif e.label == "auto-configure" %}· auto-configured for the graphics card{% endif %}
       {% if e.undone %}<span class="tag">undone</span>{% endif %}
     </div>
     {% set lines = h.lines %}

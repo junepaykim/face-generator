@@ -1,16 +1,24 @@
 // facegen: dashboard refresh, tick-all and confirmations. No libraries, nothing loaded from the web.
 "use strict";
 
-// The dashboard's status block reloads itself every few seconds.
+// The dashboard's status block reloads itself every few seconds. When the career changes (the
+// first sync, or a save of another career), the whole page is out of date: reload it.
 (function refresh() {
   const box = document.querySelector("[data-refresh]");
   if (!box) return;
   const url = box.dataset.refresh;
+  const career = () => {
+    const mark = box.querySelector("[data-career]");
+    return mark ? mark.dataset.career : null;
+  };
   setInterval(async () => {
     if (document.hidden) return;
     try {
       const res = await fetch(url, { headers: { "Accept": "text/html" } });
-      if (res.ok) box.innerHTML = await res.text();
+      if (!res.ok) return;
+      const before = career();
+      box.innerHTML = await res.text();
+      if (before !== null && career() !== before) location.reload();
     } catch (e) { /* the server may be restarting */ }
   }, 3000);
 })();

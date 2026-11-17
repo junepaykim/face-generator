@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Graphics card{% endblock %}
+{% block content %}
+<h1>Auto-configure for my GPU</h1>
+<p class="muted"><a href="/settings">← Settings</a></p>
+
+<section class="card">
+  <h2>This PC's graphics card</h2>
+  {% if card is none %}
+    <p class="muted">The card cannot be asked in this process.</p>
+  {% else %}
+    <table class="kv">
+      <tr><th>Card</th><td>{% if card.has_gpu %}<strong>{{ card.name }}</strong>, {{ "%.1f"|format(card.vram_gib) }} GiB{% else %}<span class="bad">no CUDA graphics card</span>{% endif %}</td></tr>
+      {% if not card.has_gpu %}<tr><th>Why</th><td>{{ card.reason }}</td></tr>{% endif %}
+      {% if card.torch %}<tr><th>torch</th><td>{{ card.torch }}, CUDA {{ card.cuda or "none" }}</td></tr>{% endif %}
+    </table>
+    <p class="small"><a href="/hardware?again=1">Ask the card again</a></p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Preset: {{ preset.title }}</h2>
+  <p>{{ preset.note }}</p>
+  {% if preset.changes %}
+    {% if lines %}
+    <table class="list compact">
+      <thead><tr><th>Setting</th><th>Now</th><th>After</th><th>Default</th></tr></thead>
+      <tbody>
+      {% for l in lines %}<tr><td>{{ l.label }}</td><td>{{ l.before }}</td><td><strong>{{ l.after }}</strong></td><td class="muted">{{ l.default }}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    <form method="post" action="/settings/auto-configure"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="buttons"><button class="primary">Apply these {{ lines|length }} change{{ "s" if lines|length != 1 }}</button></div>
+    </form>
+    <p class="muted small">Saved as one change in Settings' Recent changes: one Undo puts back every value above. Pictures already drawn are not drawn again; new pictures use the new settings.</p>
+    {% else %}
+    <p class="ok">Nothing to change: the settings already suit this card.</p>
+    {% endif %}
+  {% endif %}
+  <p class="muted small">Group thresholds are never changed here: they decide who gets a picture, not whether the card copes. A smaller card draws more slowly, not fewer people.</p>
+</section>
+{% endblock %}

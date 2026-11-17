@@ -13,6 +13,9 @@ in `schedule.auto_groups`, in queue order, and publishes after each picture.
   unloaded so the card is free for the game.
 - An error (model failed to load, out of memory) pauses the worker and shows the error;
   the job goes back to the queue. Resume tries again.
+- Models not downloaded yet (models.py) are a setup state, not an error: with jobs waiting
+  the state is "setup" and the worker looks again every half minute, loading nothing, until
+  the download from the dashboard has finished (Phase 10b).
 - A GPU fault (gpu.is_fatal: the driver reported an error that leaves the process's CUDA
   context dead) also puts the job back, but nothing can be drawn again in this process:
   the state is "gpu-fault", and Resume and Generate now are refused with the reason.
@@ -92,6 +95,10 @@ FM_POLL_SECONDS = 30.0
 IDLE_UNLOAD_SECONDS = 300.0
 """An empty queue for this long frees the GPU."""
 LOG_LINES = 200
+MODELS_MISSING = (
+    "the models are not downloaded yet: download them once from the dashboard (Set up), or"
+    " with `facegen models --download`; {n} job(s) wait"
+)
 GPU_FAULT_ADVICE = (
     "The graphics driver reported an error, and this run of facegen cannot draw any more. "
     "Close facegen and start it again to continue; the queue is kept."
@@ -141,7 +148,8 @@ class WorkerStatus:
     """What the dashboard shows about the worker."""
 
     state: str
-    """starting, idle, paused, waiting, running, error, gpu-fault or stopped."""
+    """starting, idle, paused, waiting, setup (models missing), running, error, gpu-fault or
+    stopped."""
     detail: str
     current: Job | None
     paused: bool
@@ -193,8 +201,12 @@ class WorkerService:
         clock: Callable[[], float] = time.monotonic,
         conn: sqlite3.Connection | None = None,
         link: Link | None = None,
+        models_ready: Callable[[], bool] | None = None,
     ) -> None:
         self.db_path = db_path
+        self._models_ready = models_ready
+        """Whether the model files are on this PC (models.ready_now); None: not asked, as
+        with the tests' fake renderers."""
         self.defaults_path = defaults_path
         self._kits = kits
         self._renderer_factory = renderer_factory
@@ -484,6 +496,11 @@ class WorkerService:
             self._set("idle", self._idle_detail(worker))
             return IDLE_POLL_SECONDS
         self._idle_since = None
+
+        if self._models_ready is not None and not self._models_ready():
+            self._publish_pending(worker)
+            self._set("setup", MODELS_MISSING.format(n=len(ready)))
+            return FM_POLL_SECONDS
 
         if not (generate_now or settings.schedule.generate_while_fm_running):
             running = self._fm_check()

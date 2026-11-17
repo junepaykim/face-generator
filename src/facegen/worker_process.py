@@ -35,7 +35,6 @@ follows supervision.FailureHistory: start again after a wait, give up, send a jo
 from __future__ import annotations
 
 import dataclasses
-import json
 import logging
 import os
 import signal
@@ -44,7 +43,7 @@ import sys
 import threading
 import time
 from collections import deque
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Any, TextIO
 
@@ -52,6 +51,14 @@ from facegen import db, jobs, procs
 from facegen.datasource.records import Personality
 from facegen.jobs import Job
 from facegen.kits import KitError, KitTable, load_kits
+from facegen.pipes import (  # noqa: F401 - also used from here by the tests and cli
+    PIPE_POLL_SECONDS,
+    decode,
+    encode,
+    fd_lines,
+    pipe_reader,
+    protocol_streams,
+)
 from facegen.renderer import Renderer, Tagger
 from facegen.service import (
     BUSY_TIMEOUT_MS,
@@ -132,19 +139,6 @@ def status_from_json(data: dict[str, Any]) -> WorkerStatus:
     )
 
 
-def encode(message: dict[str, Any]) -> str:
-    return json.dumps(message, ensure_ascii=True, separators=(",", ":")) + "\n"
-
-
-def decode(line: str) -> dict[str, Any] | None:
-    """One message, or None for a line that is not one."""
-    try:
-        message = json.loads(line)
-    except ValueError:
-        return None
-    return message if isinstance(message, dict) else None
-
-
 # -- the child's side ----------------------------------------------------------------------
 
 
@@ -201,73 +195,6 @@ class _ForwardHandler(logging.Handler):
             self.handleError(record)
 
 
-def protocol_streams(stdin: TextIO, stdout: TextIO) -> tuple[Iterator[str], TextIO]:
-    """The pipe to the parent: commands in, messages out.
-
-    From here on anything else written to stdout (a library's print) goes to stderr, so it
-    cannot break a message. Call once, in the child's main thread, before the models load.
-    """
-    stdout.flush()
-    messages = os.fdopen(os.dup(stdout.fileno()), "w", encoding="ascii", newline="\n", buffering=1)
-    os.dup2(sys.stderr.fileno(), stdout.fileno())
-    return fd_lines(stdin.fileno()), messages
-
-
-PIPE_POLL_SECONDS = 0.05
-"""How often the worker process looks for a command on Windows (`pipe_reader`)."""
-
-
-def pipe_reader(fd: int, *, poll: float = PIPE_POLL_SECONDS) -> Callable[[], bytes]:
-    """A function that returns the next bytes from `fd`, b"" at the end of input.
-
-    On Windows a pipe is not read until something is waiting in it (PeekNamedPipe). A read
-    left waiting on a pipe handle holds up every other call on that handle, and loading a
-    DLL asks Windows about the standard handles: with a thread waiting on stdin, `import
-    torch` stopped inside numpy until the parent next sent a command, which could be never
-    (docs/research.md section 10). Elsewhere, and for anything but a pipe, a plain read.
-    """
-    if os.name != "nt":
-        return lambda: os.read(fd, 4096)
-    import _winapi
-    import msvcrt
-
-    handle = msvcrt.get_osfhandle(fd)
-    if _winapi.GetFileType(handle) != _winapi.FILE_TYPE_PIPE:
-        return lambda: os.read(fd, 4096)
-
-    def read() -> bytes:
-        while True:
-            try:
-                available, _ = _winapi.PeekNamedPipe(handle, 0)
-            except OSError:  # the parent closed its end (ERROR_BROKEN_PIPE): the end
-                return b""
-            if available:
-                return os.read(fd, min(available, 65536))
-            time.sleep(poll)
-
-    return read
-
-
-def fd_lines(fd: int) -> Iterator[str]:
-    """The lines read from a file descriptor, without Python's buffered reader.
-
-    The commands are read in a daemon thread that is still waiting when the loop ends. A
-    thread waiting inside sys.stdin's buffered reader holds its lock, and the interpreter
-    cannot take that lock as it shuts down: it aborts ("could not acquire lock for
-    <stdin> at interpreter shutdown", SIGABRT) after a few seconds. A bare `os.read` holds
-    no such lock. On Windows the pipe is polled instead of waited on (`pipe_reader`).
-    """
-    read = pipe_reader(fd)
-    pending = b""
-    while chunk := read():
-        pending += chunk
-        *lines, pending = pending.split(b"\n")
-        for line in lines:
-            yield line.decode("utf-8", errors="replace")
-    if pending:
-        yield pending.decode("utf-8", errors="replace")
-
-
 def _read_commands(commands: Iterable[str], svc: WorkerService) -> None:
     try:
         for raw in commands:
@@ -301,6 +228,7 @@ def serve_child(
     out: TextIO,
     generate_now: bool = False,
     kits: KitTable | None = None,
+    models_ready: Callable[[], bool] | None = None,
 ) -> Exit:
     """`facegen worker`: run the worker loop, talking to the parent, until it ends. Returns
     why it ended, as told to the parent."""
@@ -327,6 +255,7 @@ def serve_child(
             fm_check=fm_check,
             generate_now=generate_now,
             link=link,
+            models_ready=models_ready,
         )
         reader = threading.Thread(
             target=_read_commands, args=(commands, svc), name="facegen-commands", daemon=True

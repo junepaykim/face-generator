@@ -7,6 +7,7 @@ and my club's staff, so it filters and pages in SQL.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, fields, replace
@@ -225,15 +226,24 @@ def _where(f: PlayerFilter) -> tuple[str, list[Any]]:
     return " AND ".join(clauses), args
 
 
-_FROM = (
-    " FROM players p"
-    " LEFT JOIN clubs c ON c.career_id = p.career_id AND c.club_id = p.club_id"
-    " LEFT JOIN images i ON i.career_id = p.career_id AND i.unique_id = p.unique_id"
-    "   AND i.is_current = 1"
-    " LEFT JOIN jobs j ON j.career_id = p.career_id AND j.unique_id = p.unique_id"
-    "   AND j.status IN ('queued', 'running')"
-    " LEFT JOIN photos ph ON ph.unique_id = p.unique_id"
-)
+_JOINS = {
+    "c": " LEFT JOIN clubs c ON c.career_id = p.career_id AND c.club_id = p.club_id",
+    "i": " LEFT JOIN images i ON i.career_id = p.career_id AND i.unique_id = p.unique_id"
+    "   AND i.is_current = 1",
+    "j": " LEFT JOIN jobs j ON j.career_id = p.career_id AND j.unique_id = p.unique_id"
+    "   AND j.status IN ('queued', 'running')",
+    "ph": " LEFT JOIN photos ph ON ph.unique_id = p.unique_id",
+}
+_FROM = " FROM players p" + "".join(_JOINS.values())
+
+
+def _count_from(where: str) -> str:
+    """`_FROM` with only the joins the filter uses. Each joins at most one row per player (a
+    unique key: one club, one current image, one active job, one photo row), so the others
+    cannot change the count; leaving them out makes counting 160,000 players several times
+    faster."""
+    used = (j for alias, j in _JOINS.items() if re.search(rf"\b{alias}\.", where))
+    return " FROM players p" + "".join(used)
 
 
 def _player_row(r: sqlite3.Row) -> dict[str, Any]:
@@ -247,7 +257,9 @@ def players_page(
 ) -> tuple[list[dict[str, Any]], int]:
     """One page of players matching the filter, and how many match in all."""
     where, args = _where(f)
-    total = conn.execute(f"SELECT COUNT(*){_FROM} WHERE {where}", (career_id, *args)).fetchone()[0]
+    total = conn.execute(
+        f"SELECT COUNT(*){_count_from(where)} WHERE {where}", (career_id, *args)
+    ).fetchone()[0]
     rows = conn.execute(
         "SELECT p.unique_id, p.name, p.age, p.ca, p.pa, p.is_newgen, p.academy, p.at_my_club,"
         " p.in_my_league, p.in_continental, p.in_scope, p.group_name, p.tracked, p.reasons,"

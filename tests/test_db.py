@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -232,3 +233,87 @@ def test_migration_11_drops_drawn_male_and_the_mens_targets() -> None:
     assert "drawn_male" not in columns and "female" in columns
     bands = dict(conn.execute("SELECT unique_id, target_band FROM jobs").fetchall())
     assert bands == {7: None, 8: "W05", 9: "M3"}  # finished jobs keep their record
+
+
+def _history(conn: sqlite3.Connection, before: dict, after: dict) -> None:
+    conn.execute(
+        "INSERT INTO settings_history (at, label, before, after) VALUES ('now', 'edit', ?, ?)",
+        (json.dumps(before), json.dumps(after)),
+    )
+
+
+def test_the_detail_pass_switch_is_renamed_to_its_size_at_connect(tmp_path: Path) -> None:
+    """Phase 10c: a stored detail pass off is "off", on the size it drew at; the settings
+    history follows, so an older change can still be undone. No schema number changes, so an
+    older facegen on the same database still opens it."""
+    path = tmp_path / "facegen.db"
+    conn = db.connect(path)
+    conn.executemany(
+        "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, 'then')",
+        [
+            ("groups.a.detail_pass", "false"),
+            ("groups.b.detail_pass", "true"),
+            ("groups.c.detail_pass", "7"),  # not a switch: dropped, the default applies
+            ("groups.a.ca_above", "150"),
+        ],
+    )
+    _history(conn, {"groups.a.detail_pass": None}, {"groups.a.detail_pass": False})
+    _history(
+        conn,
+        {"groups.b.detail_pass": False, "groups.a.ca_above": None},
+        {"groups.b.detail_pass": True, "groups.a.ca_above": 150},
+    )
+    _history(conn, {"staff.enabled": None}, {"staff.enabled": False})
+    conn.close()
+
+    conn = db.connect(path)
+    assert db.schema_version(conn) == len(db.MIGRATIONS)
+    stored = dict(conn.execute("SELECT key, value FROM settings").fetchall())
+    assert stored == {
+        "groups.a.detail_size": '"off"',
+        "groups.b.detail_size": '"1344x1728"',
+        "groups.a.ca_above": "150",
+    }
+    rows = [
+        (json.loads(r["before"]), json.loads(r["after"]))
+        for r in conn.execute("SELECT before, after FROM settings_history ORDER BY id")
+    ]
+    assert rows == [
+        ({"groups.a.detail_size": None}, {"groups.a.detail_size": "off"}),
+        (
+            {"groups.a.ca_above": None, "groups.b.detail_size": "off"},
+            {"groups.a.ca_above": 150, "groups.b.detail_size": "1344x1728"},
+        ),
+        ({"staff.enabled": None}, {"staff.enabled": False}),
+    ]
+    assert db.rename_settings(conn) == 0  # done once: nothing left
+
+
+def test_an_old_key_written_again_by_an_older_facegen_wins(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        "INSERT INTO settings (key, value, updated_at) VALUES ('groups.a.detail_size', '\"1152x1472\"', 'a')"
+    )
+    conn.execute(
+        "INSERT INTO settings (key, value, updated_at) VALUES ('groups.a.detail_pass', 'false', 'b')"
+    )
+    assert db.rename_settings(conn) == 1
+    assert conn.execute("SELECT key, value, updated_at FROM settings").fetchall()[0][:] == (
+        "groups.a.detail_size",
+        '"off"',
+        "b",
+    )
+
+
+def test_with_nothing_to_rename_a_connection_writes_nothing(tmp_path: Path) -> None:
+    path = tmp_path / "facegen.db"
+    db.connect(path).close()
+    reader = db.connect(path)
+    writer = sqlite3.connect(path, isolation_level=None)
+    writer.execute("BEGIN IMMEDIATE")  # a sync holding the write lock
+    try:
+        quick = db.connect(path, busy_timeout_ms=100)  # would time out if it wanted to write
+        quick.close()
+    finally:
+        writer.execute("ROLLBACK")
+        writer.close()
+        reader.close()

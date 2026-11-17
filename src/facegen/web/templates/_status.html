@@ -1,3 +1,31 @@
+<span hidden data-career="{{ career.id if career else '' }}"></span>
+{% set d = setup.download if setup else none %}
+{% if setup and setup.models is not none and (setup.needs_models or (d and (d.running or d.finished))) %}
+<section class="card setup-panel" {% if not setup.needs_folder %}id="setup"{% endif %}>
+  <h2>Set up: the models</h2>
+  {% if d and d.running %}
+    <p>Downloading{% if d.current %} file {{ d.index }} of {{ d.files }}: <code>{{ d.current }}</code>{% else %}: starting{% endif %}</p>
+    <p><progress max="100" value="{{ d.percent }}">{{ d.percent }}%</progress> {{ d.percent }}% · {{ gigabytes(d.done_bytes) }} of {{ gigabytes(d.total_bytes) }}</p>
+    <p class="muted small">Closing facegen stops it; the next Download goes on where it stopped.</p>
+  {% elif setup.needs_models %}
+    {% set m = setup.models %}
+    {% if d and d.error %}<p class="bad small">The download stopped: {{ d.error }}</p>{% endif %}
+    <p>facegen draws with three models from Hugging Face: {{ gigabytes(m.missing_bytes) }} to download once{% if m.missing_bytes < m.total_bytes %} (the rest is here already){% endif %}. After that it works without the internet.</p>
+    <table class="kv">
+      {% for repo in m.missing_repos() %}<tr><th>{{ model_repos[repo] }}</th><td><code>{{ repo }}</code></td></tr>{% endfor %}
+      <tr><th>Saved in</th><td><code>{{ m.cache }}</code></td></tr>
+      <tr><th>Free space there</th><td>{{ gigabytes(m.free_bytes) if m.free_bytes is not none else "unknown" }}</td></tr>
+    </table>
+    {% if not m.enough_space %}<p class="bad small">Not enough free space: {{ gigabytes(m.missing_bytes) }} and 1 GB to spare are needed there.</p>{% endif %}
+    <form method="post" action="/setup/models"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="confirm" value="download">
+      <div class="buttons"><button class="primary" {{ "disabled" if not m.enough_space }}>Download {{ gigabytes(m.missing_bytes) }}</button></div>
+    </form>
+    <p class="muted small">Nothing is downloaded until you press the button. Queued pictures wait meanwhile.</p>
+  {% else %}
+    <p class="ok">The models are downloaded. Queued pictures are drawn now.</p>
+  {% endif %}
+</section>
+{% endif %}
 {% if last_sync and last_sync.unsupported %}
 <section class="card alert">
   <h2>The newest save cannot be read</h2>

@@ -27,8 +27,8 @@ CFG = 5.5
 SAMPLER = "euler_a"
 
 # Group A's detail pass: the chosen picture upscaled and re-drawn lightly at a higher
-# resolution, then downscaled when published (decisions.md, proposed 2026-11-11).
-DETAIL_SCALE = 1.5
+# resolution, then downscaled when published (decisions.md, proposed 2026-11-11). The size is
+# the setting `groups.<g>.detail_size` (Phase 10c): 1344x1728, 1.5 times the render, by default.
 DETAIL_STRENGTH = 0.35
 
 # The reference picture (spec section 5; bake-off run r4): IP-Adapter plus-face for SDXL with
@@ -57,8 +57,16 @@ class Renderer(Protocol):
     def render(self, prompt: Prompt, seed: int, reference: Reference | None = None) -> Image: ...
 
     def detail(
-        self, image: Image, prompt: Prompt, seed: int, reference: Reference | None = None
-    ) -> Image: ...
+        self,
+        image: Image,
+        prompt: Prompt,
+        seed: int,
+        reference: Reference | None = None,
+        *,
+        size: tuple[int, int],
+    ) -> Image:
+        """The picture upscaled to `size` (width, height) and re-drawn lightly."""
+        ...
 
     def settings(self) -> dict[str, Any]: ...
 
@@ -174,7 +182,6 @@ class AnimagineRenderer:
 
     def __init__(
         self,
-        detail_scale: float = DETAIL_SCALE,
         detail_strength: float = DETAIL_STRENGTH,
         *,
         fp16_accumulation: bool = True,
@@ -220,8 +227,8 @@ class AnimagineRenderer:
         self.img2img.set_progress_bar_config(disable=True)
         if pipe.unet.dtype != torch.float16 or pipe.vae.dtype != torch.float16:
             raise RuntimeError(f"model not in float16: unet {pipe.unet.dtype}")
-        self.detail_scale = detail_scale
         self.detail_strength = detail_strength
+        self.vae_tiling = False
         self._texts: EmbeddingCache[TextEmbedding] = EmbeddingCache(TEXT_CACHE_SIZE)
         # The current job's prompt on the GPU, so its renders do not copy it again.
         self._embeds: dict[tuple[str, str], tuple[Any, ...]] = {}
@@ -343,6 +350,21 @@ class AnimagineRenderer:
 
     # -- drawing --
 
+    def set_vae_tiling(self, on: bool) -> None:
+        """Decode in tiles and one picture at a time (`render.vae_tiling`, Phase 10d): less
+        graphics memory on a small card, a little slower. The worker sets it before each job
+        from the settings, so a change applies to the next picture."""
+        if on == self.vae_tiling:
+            return
+        vae = self.pipe.vae
+        if on:
+            vae.enable_tiling()
+            vae.enable_slicing()
+        else:
+            vae.disable_tiling()
+            vae.disable_slicing()
+        self.vae_tiling = on
+
     @contextmanager
     def _fp16_accumulation(self) -> Iterator[None]:
         """Let fp16 matmuls accumulate in fp16 while the pipeline runs.
@@ -384,13 +406,22 @@ class AnimagineRenderer:
             ).images[0]
 
     def detail(
-        self, image: Image, prompt: Prompt, seed: int, reference: Reference | None = None
+        self,
+        image: Image,
+        prompt: Prompt,
+        seed: int,
+        reference: Reference | None = None,
+        *,
+        size: tuple[int, int],
     ) -> Image:
-        """Upscale and re-draw lightly, with the same prompt, seed and reference."""
+        """Upscale to `size` (width, height; multiples of 64) and re-draw lightly, with the
+        same prompt, seed and reference."""
         from PIL import Image as PILImage
 
-        size = tuple(round(side * self.detail_scale / 64) * 64 for side in image.size)
-        big = image.resize(size, PILImage.Resampling.LANCZOS)
+        width, height = size
+        if width % 64 or height % 64:
+            raise ValueError(f"the detail size must be multiples of 64, got {width}x{height}")
+        big = image.resize((width, height), PILImage.Resampling.LANCZOS)
         pe, pp, ne, npool, _ = self._embeddings(prompt)
         extra = self._conditioning(reference)
         generator = self._torch.Generator("cuda").manual_seed(seed)
@@ -424,11 +455,12 @@ class AnimagineRenderer:
                 else "float16"
             ),
             "vae": f"{MODEL_REPO}/vae (fp16-fix)",
+            "vae_tiling": self.vae_tiling,
             "prompt_encoding": "75-token chunks",
         }
 
     def detail_settings(self) -> dict[str, Any]:
-        return {"scale": self.detail_scale, "strength": self.detail_strength, "steps": STEPS}
+        return {"strength": self.detail_strength, "steps": STEPS}
 
     def reference_settings(self) -> dict[str, Any]:
         return {

@@ -56,7 +56,11 @@ ca_above = 155
 pa_above = 170
 published_long_edge = 1024
 candidates = 3
-detail_pass = true
+# The detail pass: the chosen picture upscaled to this size (width x height), re-drawn lightly
+# and checked again. "1344x1728" is 1.5 times the render size (896x1152); "1152x1472" needs
+# less graphics memory; "off" skips the pass. Pictures already drawn keep their size: a change
+# applies to pictures drawn from then on (Phase 10).
+detail_size = "1344x1728"
 
 [groups.b]
 # Newgens who came through my academy are in group A while at my club. After they
@@ -69,14 +73,14 @@ any_ca_above = 140                  # any club
 any_pa_above = 155
 published_long_edge = 768
 candidates = 1
-detail_pass = false
+detail_size = "off"
 
 [groups.c]
 league_ca_above = 115               # my league only
 league_pa_above = 140
 published_long_edge = 512
 candidates = 1
-detail_pass = false
+detail_size = "off"
 
 [staff]
 # My club's staff (coaches, physios, scouts, analysts, the board, and the manager: you) get
@@ -222,6 +226,13 @@ generate_while_fm_running = false
 # Groups whose automatic jobs `facegen serve` draws. Manual requests from the UI always run,
 # whatever their group. All three since Phase 4.
 auto_groups = ["a", "b", "c"]
+
+[render]
+# Diffusers' VAE tiling and slicing: the picture is decoded from the model's latents in tiles
+# and one at a time, which lowers the peak graphics memory on cards under 10 GB. A little slower,
+# and the blended tiles can change a picture slightly. "Auto-configure for my GPU" on the
+# Settings page turns it on for such a card. Applies from the next picture.
+vae_tiling = false
 
 [ui]
 # Local only: there is no login, so `facegen serve` refuses any address but loopback. These
