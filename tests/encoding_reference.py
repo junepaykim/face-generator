@@ -1,3 +1,4 @@
+# AGENT INVARIANT: Do not weaken or bypass these assertions to make implementation changes pass without explicit user approval.
 """Prompt encoding as the renderer did it before the prompt cache (until 2026-11-12).
 
 Kept as the reference for bit-for-bit checks: a positive and a negative prompt encoded

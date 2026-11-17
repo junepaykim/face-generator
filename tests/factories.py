@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from datetime import date
 
+from facegen.core.classify import PlayerFacts
 from facegen.core.records import (
     ClubRecord,
     Gender,
@@ -200,3 +201,20 @@ def snapshot(
         media=tuple(media),
         media_read=media_read,
     )
+
+
+def facts(**kw: object) -> PlayerFacts:
+    base: dict[str, object] = {
+        "unique_id": 1,
+        "is_newgen": True,
+        "ca": 60,
+        "pa": 90,
+        "in_scope": True,
+        "at_my_club": False,
+        "in_my_league": False,
+        "in_continental": False,
+        "academy": False,
+        "pin": None,
+    }
+    base.update(kw)
+    return PlayerFacts(**base)  # type: ignore[arg-type]

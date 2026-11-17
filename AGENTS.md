@@ -135,7 +135,7 @@ installs uv if needed, runs `uv sync --locked --inexact --no-group native`, `fac
 then `start "" .venv\Scripts\pythonw.exe -m facegen.desktop app`.
 
 The Rust extension is rebuilt by the next `uv sync` or `uv run` after a change under
-`native/src/`. Everything in it has a Python version; `tests/test_native.py` checks that
+`native/src/`. Everything in it has a Python version; `tests/parity/test_native.py` checks that
 the two agree, and the geometry (crop boxes, sizes, thresholds) stays in Python.
 
 ## Hard rules
@@ -243,7 +243,7 @@ native/                   optional Rust extension (PyO3, maturin): figure scan, 
 scripts/build_kit_catalog.py   reduces a kit colour probe report to the bundled catalog
 scripts/spikes/           maintenance, diagnostics, and pending validation
 scripts/archive/          completed save, display, model, and detail experiments
-tests/                    unit tests for the pure modules
+tests/                    unit, integration, parity and opt-in tiers; see tests/AGENTS.md
 .github/workflows/ci.yml  ruff and pytest on Ubuntu and Windows, no GPU group
 .github/workflows/wheels.yml   the extension's wheels (Windows, manylinux), tested; a
                           `native-v*` tag releases them with SHA-256 sums

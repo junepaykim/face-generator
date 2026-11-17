@@ -5,27 +5,11 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from support.config import write_config
+from support.paths import TESTS
 
 from facegen.persistence import db
-from facegen.persistence.settings import DEFAULTS_PATH, Settings, load_settings
-
-ROOT = Path(__file__).resolve().parents[1]
-FM_USER_LINE = 'fm_user_dir = ""'
-FM_INSTALL_LINE = 'fm_install_dir = ""'
-
-
-def write_config(tmp_path: Path) -> Path:
-    """A defaults file whose FM27 user, FM27 install and data folders are under tmp_path."""
-    text = DEFAULTS_PATH.read_text(encoding="utf-8")
-    assert FM_USER_LINE in text and FM_INSTALL_LINE in text
-    text = text.replace(FM_USER_LINE, f'fm_user_dir = "{(tmp_path / "fm").as_posix()}"')
-    text = text.replace(
-        FM_INSTALL_LINE, f'fm_install_dir = "{(tmp_path / "fm-install").as_posix()}"'
-    )
-    text = text.replace('data_dir = "data"', f'data_dir = "{(tmp_path / "data").as_posix()}"')
-    config = tmp_path / "test.toml"
-    config.write_text(text, encoding="utf-8")
-    return config
+from facegen.persistence.settings import Settings, load_settings
 
 
 @pytest.fixture(autouse=True)
@@ -51,3 +35,15 @@ def conn() -> Iterator[sqlite3.Connection]:
 def config_file(tmp_path: Path) -> Path:
     """Defaults with FM27's folder at tmp_path/fm and the data folder at tmp_path/data."""
     return write_config(tmp_path)
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Assign one tier from the path, plus the architecture contract selector."""
+    for item in items:
+        parts = item.path.relative_to(TESTS).parts
+        tier = parts[0]
+        if tier not in {"unit", "integration", "parity", "opt_in"}:
+            raise pytest.UsageError(f"Place collected tests in a tier directory: {item.path}")
+        item.add_marker(getattr(pytest.mark, tier))
+        if parts[:2] == ("integration", "contracts"):
+            item.add_marker(pytest.mark.di)

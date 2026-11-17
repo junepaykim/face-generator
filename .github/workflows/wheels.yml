@@ -3,7 +3,7 @@ name: Native wheels
 # The Rust extension (native/) as prebuilt wheels, so a PC with no Rust or MSVC still gets
 # it: Windows x86-64 and manylinux x86-64. The crate builds with abi3-py312, so one wheel per
 # platform serves Python 3.12 and later. Every run checks the crate (fmt, clippy, cargo test)
-# and runs tests/test_native.py against each built wheel, with the build from native/ left
+# and runs tests/parity/test_native.py against each built wheel, with the build from native/ left
 # out. A `native-v<version>` tag, <version> being native/pyproject.toml's, attaches the
 # wheels and SHA256SUMS.txt to a GitHub Release. Then copy those sums into
 # native/wheels.sha256: `facegen native --install` takes only a wheel listed there.
@@ -14,12 +14,20 @@ on:
     tags: ["native-v*"] # path filters do not apply to tags
     paths:
       - "native/**"
-      - "tests/test_native.py"
+      - "tests/parity/**"
+      - "tests/conftest.py"
+      - "tests/fakes.py"
+      - "tests/support/**"
+      - "pyproject.toml"
       - ".github/workflows/wheels.yml"
   pull_request:
     paths:
       - "native/**"
-      - "tests/test_native.py"
+      - "tests/parity/**"
+      - "tests/conftest.py"
+      - "tests/fakes.py"
+      - "tests/support/**"
+      - "pyproject.toml"
       - ".github/workflows/wheels.yml"
   workflow_dispatch:
     inputs:
@@ -150,10 +158,12 @@ jobs:
         run: uv pip install wheels/*.whl
       - name: The extension against the Python versions
         env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
           FACEGEN_REQUIRE_NATIVE: "1" # fail, not skip, if the wheel does not load
         run: |
           uv run --no-sync python -c "from facegen.platform import native; assert native.ext is not None, 'The installed wheel must load'"
-          uv run --no-sync pytest tests/test_native.py
+          uv run --no-sync pytest tests/parity/test_native.py
 
   release:
     name: GitHub Release

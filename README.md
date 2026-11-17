@@ -330,20 +330,23 @@ alternated the baseline and the variant in turn and took the median.
 
 **Tests**
 
-- **565 tests** pass in about 25 s, with no GPU and no save file needed. Four opt-in tests
-  are skipped by default.
-- **Line coverage is 93%** overall. The pure modules (classification, age wording, prompt
-  building, planning, career identity and INT8 quantisation) are at 100%.
-- The renderer shows 31% in the default run because its real GPU tests are opt-in. Those
-  tests draw real pictures, check that a re-draw with a reference face works on the INT8
-  model, and **fail if peak VRAM reaches 8.0 GiB**.
+Tests are organized by tier and domain: `tests/unit/`, `tests/integration/`,
+`tests/parity/` and `tests/opt_in/`. See [the test suite guide](tests/AGENTS.md) for
+shared doubles, targeted commands and isolation rules. The default suite needs no GPU
+or save file; native/Python and CPU encoding parity run when their libraries are installed.
+
+Run the prepared environment offline, without synchronizing dependencies:
 
 ```bash
-uv run --with pytest-cov pytest --cov=facegen
+env -u FACEGEN_TEST_GPU -u FACEGEN_TEST_SAVE HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+  uv run --no-sync pytest -ra
 ```
 
+The real GPU tests need cached models and explicit opt-in. They check rendering, reference
+faces, encoding equivalence and the 8 GiB peak VRAM limit:
+
 ```bash
-FACEGEN_TEST_GPU=1 uv run pytest tests/test_gpu.py
+FACEGEN_TEST_GPU=1 uv run --no-sync pytest tests/opt_in/test_gpu.py
 ```
 
 ## Run it yourself

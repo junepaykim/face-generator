@@ -78,6 +78,18 @@ packages = ["src/facegen"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["tests"]
+addopts = "--import-mode=importlib --strict-markers"
+markers = [
+    "unit: isolated logic with synthetic inputs, no database or child processes",
+    "integration: temporary storage, adapters, process and application wiring",
+    "parity: native/Python and CPU tensor equivalence contracts",
+    "di: architecture, dependency injection and public compatibility contracts",
+    "opt_in: hardware or platform checks outside the portable default suite",
+    "gpu: requires FACEGEN_TEST_GPU=1 and already cached models on a CUDA GPU",
+    "real_save: requires FACEGEN_TEST_SAVE pointing at a local snapshot copy",
+    "windows_only: requires native Windows; skipped on Linux and WSL",
+]
 
 [tool.ruff]
 line-length = 100
