@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fakes import FakeRenderer, FakeTagger
 
 from facegen.cli import Gpu, main
-from facegen.prompt import Prompt
+from facegen.core.prompt import Prompt
 
 FAULT = "CUDA error: an illegal memory access was encountered"
 

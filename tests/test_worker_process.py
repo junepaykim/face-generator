@@ -18,14 +18,14 @@ from pathlib import Path
 import pytest
 from factories import ABROAD, NEWGEN, RIVAL, player, snapshot
 
-from facegen import db, worker_process
-from facegen.datasource.records import Personality
-from facegen.jobs import Job
-from facegen.service import Exit, WorkerStatus
-from facegen.settings import load_settings
-from facegen.supervision import RestartPolicy
-from facegen.sync import run_sync
-from facegen.worker_process import (
+from facegen.core.records import Personality
+from facegen.persistence import db
+from facegen.persistence.jobs import Job
+from facegen.persistence.settings import load_settings
+from facegen.pipeline.sync import run_sync
+from facegen.runtime import worker_process
+from facegen.runtime.supervision import RestartPolicy
+from facegen.runtime.worker_process import (
     ChildLink,
     WorkerProxy,
     decode,
@@ -35,6 +35,7 @@ from facegen.worker_process import (
     status_to_json,
     worker_command,
 )
+from facegen.service import Exit, WorkerStatus
 
 TESTS = Path(__file__).resolve().parent
 FAST = RestartPolicy(backoff=(0.05,))
@@ -108,7 +109,7 @@ def test_waiting_for_a_command_leaves_the_stdin_handle_free() -> None:
     GetFileInformationByHandle is one of them: it waited behind a plain `os.read`."""
     code = (
         "import ctypes, msvcrt, threading, time\n"
-        "from facegen.worker_process import fd_lines\n"
+        "from facegen.runtime.worker_process import fd_lines\n"
         "threading.Thread(target=lambda: list(fd_lines(0)), daemon=True).start()\n"
         "time.sleep(0.5)\n"
         "info = ctypes.create_string_buffer(64)\n"

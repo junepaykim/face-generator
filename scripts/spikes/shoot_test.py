@@ -24,14 +24,14 @@ from collections import Counter
 from pathlib import Path
 
 from facegen import qc
-from facegen.gpu import prepare_environment
-from facegen.kits import load_kits
-from facegen.picture import face_box
-from facegen.prompt import build_prompt
-from facegen.settings import load_settings
-from facegen.shoot import LOOKS, Shoot, shoot_for
-from facegen.traits import picture_seed, sample_sheet
-from facegen.worker import fm_running
+from facegen.core.prompt import build_prompt
+from facegen.core.shoot import LOOKS, Shoot, shoot_for
+from facegen.core.traits import picture_seed, sample_sheet
+from facegen.datasource.kits import load_kits
+from facegen.persistence.settings import load_settings
+from facegen.pipeline.worker import fm_running
+from facegen.render.gpu import prepare_environment
+from facegen.render.picture import face_box
 
 ROOT = Path(__file__).resolve().parents[2]
 RUN = ROOT / "data" / "shoot-test"
@@ -101,7 +101,7 @@ def main() -> None:
     prepare_environment()
     from PIL import Image, ImageDraw
 
-    from facegen.worker import AnimagineRenderer
+    from facegen.pipeline.worker import AnimagineRenderer
 
     RUN.mkdir(parents=True, exist_ok=True)
     settings = load_settings()

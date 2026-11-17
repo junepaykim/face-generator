@@ -10,8 +10,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from facegen import cli, desktop, runtime, service_logging
-from facegen.settings import load_settings
+from facegen import cli
+from facegen.desktop import shell as desktop
+from facegen.persistence.settings import load_settings
+from facegen.runtime import composition as runtime
+from facegen.runtime import logging as service_logging
 
 
 @pytest.mark.parametrize("server_fails", [False, True])

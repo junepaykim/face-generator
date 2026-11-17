@@ -7,10 +7,9 @@ from dataclasses import fields, replace
 import pytest
 from factories import PLAIN_PERSONALITY
 
-from facegen import traits
-from facegen.datasource.records import Personality
-from facegen.sheet_store import load_sheet, sheet_for
-from facegen.traits import (
+from facegen.core import traits
+from facegen.core.records import Personality
+from facegen.core.traits import (
     BANNABLE,
     FIELDS,
     LEANS,
@@ -29,6 +28,7 @@ from facegen.traits import (
     skin_words,
     weighted,
 )
+from facegen.persistence.sheet_store import load_sheet, sheet_for
 
 
 def test_same_inputs_give_the_same_sheet() -> None:

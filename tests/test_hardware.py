@@ -12,10 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from facegen import hardware
 from facegen.cli import cmd_hardware
-from facegen.hardware import HIGH, LOW, MEDIUM, NONE, Hardware, changes, recommend
-from facegen.settings import load_defaults, load_settings, set_overrides
+from facegen.persistence.settings import load_defaults, load_settings, set_overrides
+from facegen.setup import hardware
+from facegen.setup.hardware import HIGH, LOW, MEDIUM, NONE, Hardware, changes, recommend
 
 GIB = 2**30
 

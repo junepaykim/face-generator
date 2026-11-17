@@ -10,9 +10,9 @@ from typing import Any, Self
 
 from test_app_controller import FakeStartup, FakeSyncer, FakeWorker, status
 
-from facegen.app_controller import NOTICE_CHARS, NOTICE_TITLE_CHARS, AppController, Notice
-from facegen.app_window import AppWindow
-from facegen.tray import TrayIcon
+from facegen.desktop.app_controller import NOTICE_CHARS, NOTICE_TITLE_CHARS, AppController, Notice
+from facegen.desktop.app_window import AppWindow
+from facegen.desktop.tray import TrayIcon
 
 
 def wait_for(check, timeout: float = 5.0) -> None:  # type: ignore[no-untyped-def]

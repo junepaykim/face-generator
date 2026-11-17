@@ -18,7 +18,7 @@ transformers = pytest.importorskip("transformers")
 
 from encoding_reference import encode_pair_before_cache
 
-from facegen.renderer import _encode_text, pair_embeddings
+from facegen.render.renderer import _encode_text, pair_embeddings
 
 BOS, EOS = 997, 998
 

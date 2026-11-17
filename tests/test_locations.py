@@ -8,7 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from facegen import desktop, kits, locations, native_wheel, procs, settings
+from facegen import locations
+from facegen.datasource import kits
+from facegen.desktop import shell as desktop
+from facegen.persistence import settings
+from facegen.platform import procs
+from facegen.setup import native_wheel
 
 
 def test_resource_loaders_ignore_the_working_directory(
@@ -38,13 +43,15 @@ def test_desktop_fallback_paths_survive_without_installed_dependencies(tmp_path:
     package = checkout / "src" / "facegen"
     package.mkdir(parents=True)
     source = Path(locations.__file__).parent
-    for name in ("__init__.py", "locations.py", "desktop.py"):
+    for name in ("__init__.py", "locations.py"):
         shutil.copyfile(source / name, package / name)
+    shutil.copytree(source / "desktop", package / "desktop")
     script = """
 import json
 import sys
-from facegen import desktop, locations
-assert 'facegen.settings' not in sys.modules
+from facegen import locations
+from facegen.desktop import shell as desktop
+assert 'facegen.persistence.settings' not in sys.modules
 print(json.dumps([str(locations.CONFIG_DIR), str(locations.NATIVE_DIR), str(desktop.FALLBACK_LOG)]))
 """
     result = procs.run_quiet(

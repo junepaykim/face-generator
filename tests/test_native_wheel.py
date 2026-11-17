@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import io
+import os
 import subprocess
 import sys
 import tomllib
@@ -15,9 +16,10 @@ from pathlib import Path
 
 import pytest
 
-from facegen import native, native_wheel
 from facegen.cli import cmd_native, main
-from facegen.native_wheel import (
+from facegen.platform import native
+from facegen.setup import native_wheel
+from facegen.setup.native_wheel import (
     Host,
     Plan,
     WheelError,
@@ -241,6 +243,30 @@ def test_uv_install_runs_uv_pip_quietly(tmp_path: Path, monkeypatch: pytest.Monk
     monkeypatch.delenv("UV")
     with pytest.raises(WheelError, match="uv is not on PATH"):
         native_wheel.uv_install(tmp_path / WIN)
+
+
+@pytest.mark.parametrize("version", [native.VERSION, "0.0.0"])
+def test_install_verification_loads_the_extension_in_a_fresh_process(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: str
+) -> None:
+    (tmp_path / "facegen_native.py").write_text("", encoding="utf-8")
+    metadata = tmp_path / f"facegen_native-{version}.dist-info"
+    metadata.mkdir()
+    (metadata / "METADATA").write_text(
+        f"Name: facegen-native\nVersion: {version}\n", encoding="utf-8"
+    )
+    run = native_wheel.procs.run_quiet
+
+    def isolated(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        return run(
+            [args[0], "-S", *args[1:]],
+            cwd=tmp_path,
+            env={**os.environ, "PYTHONPATH": os.pathsep.join((str(tmp_path), str(ROOT / "src")))},
+            **kwargs,
+        )
+
+    monkeypatch.setattr(native_wheel.procs, "run_quiet", isolated)
+    assert native_wheel.imports_cleanly() is (version == native.VERSION)
 
 
 # --- native.py: which extension is used ---------------------------------------------------------

@@ -7,9 +7,9 @@ from typing import Any
 
 import pytest
 
-from facegen import settings as settings_module
-from facegen.db import transaction
-from facegen.settings import (
+from facegen.persistence import settings as settings_module
+from facegen.persistence.db import transaction
+from facegen.persistence.settings import (
     DEFAULTS_PATH,
     FOUND,
     NOT_SET,
@@ -336,7 +336,7 @@ def test_personality_weight_is_checked(conn: sqlite3.Connection) -> None:
 
 
 def test_several_overrides_are_checked_together(conn: sqlite3.Connection) -> None:
-    from facegen.settings import set_overrides
+    from facegen.persistence.settings import set_overrides
 
     # Each alone would put short_below_cm above tall_from_cm; together they are fine.
     s = set_overrides(conn, {"body.short_below_cm": 195, "body.tall_from_cm": 200})
@@ -348,7 +348,7 @@ def test_several_overrides_are_checked_together(conn: sqlite3.Connection) -> Non
 
 
 def test_entering_the_default_again_clears_the_override(conn: sqlite3.Connection) -> None:
-    from facegen.settings import merge_overrides, set_overrides
+    from facegen.persistence.settings import merge_overrides, set_overrides
 
     set_overrides(conn, {"groups.a.ca_above": 150, "groups.a.pa_above": 160})
     assert merge_overrides(conn, {"groups.a.ca_above": 155}).overridden == {"groups.a.pa_above"}
@@ -359,7 +359,7 @@ def test_entering_the_default_again_clears_the_override(conn: sqlite3.Connection
 
 def test_where_the_ui_listens_is_not_a_ui_setting(conn: sqlite3.Connection) -> None:
     """A browser must not be able to open the tool to the network."""
-    from facegen.settings import is_fixed
+    from facegen.persistence.settings import is_fixed
 
     for key, value in (("ui.host", "0.0.0.0"), ("ui.port", 9000)):
         assert is_fixed(key)
@@ -412,7 +412,7 @@ def test_a_detail_size_outside_the_choices_is_refused(conn: sqlite3.Connection, 
 
 
 def test_an_explicit_defaults_file_takes_the_local_file_beside_it(tmp_path: Path) -> None:
-    from facegen.settings import local_label, local_path
+    from facegen.persistence.settings import local_label, local_path
 
     config = tmp_path / "test.toml"
     config.write_text(DEFAULTS_PATH.read_text(encoding="utf-8"), encoding="utf-8")

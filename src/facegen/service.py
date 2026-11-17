@@ -1,8 +1,11 @@
 """Compatibility exports for the web app and existing service consumers."""
 
-from facegen.poller_service import PollerService
-from facegen.runtime_policy import BUSY_TIMEOUT_MS, FM_POLL_SECONDS
-from facegen.service_contracts import (
+from facegen.pipeline.sync_operation import (
+    describe_activation,
+    describe_sync,
+    unchanged_save_notice,
+)
+from facegen.runtime.contracts import (
     FAILED,
     SYNCED,
     UNREADABLE,
@@ -18,15 +21,12 @@ from facegen.service_contracts import (
     WorkerControl,
     WorkerStatus,
 )
-from facegen.service_logging import LOG_FILE, LOG_LINES, log_to_file, logger
-from facegen.service_logging import stamp as _stamp
-from facegen.sync_operation import (
-    describe_activation,
-    describe_sync,
-    unchanged_save_notice,
-)
-from facegen.sync_service import SyncService
-from facegen.worker_service import (
+from facegen.runtime.logging import LOG_FILE, LOG_LINES, log_to_file, logger
+from facegen.runtime.logging import stamp as _stamp
+from facegen.runtime.policy import BUSY_TIMEOUT_MS, FM_POLL_SECONDS
+from facegen.runtime.poller_service import PollerService
+from facegen.runtime.sync_service import SyncService
+from facegen.runtime.worker_service import (
     CHILD_FAULT_DETAIL,
     GPU_FAULT_ADVICE,
     IDLE_POLL_SECONDS,

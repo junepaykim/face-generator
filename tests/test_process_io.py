@@ -12,11 +12,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from facegen import models
-from facegen.app_window import WindowProcess
-from facegen.pipes import JsonWriter
+from facegen.desktop.app_window import WindowProcess
+from facegen.platform.pipes import JsonWriter
+from facegen.runtime.worker_process import ChildLink, WorkerProxy
 from facegen.service import WorkerStatus
-from facegen.worker_process import ChildLink, WorkerProxy
+from facegen.setup import models
 
 
 class FragmentedOutput:

@@ -11,14 +11,14 @@ import pytest
 from fakes import FakeRenderer, FakeTagger
 
 from facegen.cli import Gpu
-from facegen.runtime import (
+from facegen.persistence.settings import load_settings
+from facegen.runtime.composition import (
     CannotStart,
     ServerStartError,
     ServerThread,
     build_runtime,
     port_answers,
 )
-from facegen.settings import load_settings
 
 
 class NoSource:

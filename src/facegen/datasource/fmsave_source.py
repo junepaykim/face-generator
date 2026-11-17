@@ -16,9 +16,8 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from facegen.datasource import people
-from facegen.datasource.base import SaveReadError, UnsupportedSaveError
-from facegen.datasource.records import (
+from facegen.core.leagues import clubs_in_competitions, my_league_competitions
+from facegen.core.records import (
     ClubRecord,
     Gender,
     LeagueTableRecord,
@@ -30,7 +29,8 @@ from facegen.datasource.records import (
     StaffRecord,
     is_first_team_manager,
 )
-from facegen.leagues import clubs_in_competitions, my_league_competitions
+from facegen.datasource import people
+from facegen.datasource.base import SaveReadError, UnsupportedSaveError
 
 _GENDERS = {"MEN": Gender.MEN, "WOMEN": Gender.WOMEN}
 _FIRST_TEAM_SLOTS = (0, None)

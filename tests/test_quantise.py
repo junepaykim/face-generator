@@ -6,7 +6,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from facegen.quantise import Int8Linear, quantise_linears
+from facegen.render.quantise import Int8Linear, quantise_linears
 
 
 def _linear(n_in: int = 64, n_out: int = 48, bias: bool = True) -> torch.nn.Linear:

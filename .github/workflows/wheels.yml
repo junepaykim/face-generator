@@ -152,7 +152,7 @@ jobs:
         env:
           FACEGEN_REQUIRE_NATIVE: "1" # fail, not skip, if the wheel does not load
         run: |
-          uv run --no-sync python -c "from facegen import native; assert native.ext is not None, 'The installed wheel must load'"
+          uv run --no-sync python -c "from facegen.platform import native; assert native.ext is not None, 'The installed wheel must load'"
           uv run --no-sync pytest tests/test_native.py
 
   release:

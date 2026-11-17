@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from facegen import photos
-from facegen.photos import CATALOG_DIR, facepack_ids, game_photo_ids, scan
-from facegen.settings import Paths
+from facegen.datasource import photos
+from facegen.datasource.photos import CATALOG_DIR, facepack_ids, game_photo_ids, scan
+from facegen.persistence.settings import Paths
 
 
 def key(text: str) -> bytes:

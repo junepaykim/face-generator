@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from facegen import db
-from facegen.settings import DEFAULTS_PATH, Settings, load_settings
+from facegen.persistence import db
+from facegen.persistence.settings import DEFAULTS_PATH, Settings, load_settings
 
 ROOT = Path(__file__).resolve().parents[1]
 FM_USER_LINE = 'fm_user_dir = ""'
@@ -32,7 +32,7 @@ def write_config(tmp_path: Path) -> Path:
 def no_folder_detection(monkeypatch: pytest.MonkeyPatch) -> None:
     """FM27's folders are not looked for on the PC running the tests: a folder that no file
     sets is "not set". Tests of detection replace this or call fm_paths directly."""
-    monkeypatch.setattr("facegen.settings.detect_folder", lambda key: None)
+    monkeypatch.setattr("facegen.persistence.settings.detect_folder", lambda key: None)
 
 
 @pytest.fixture

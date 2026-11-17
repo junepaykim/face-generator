@@ -7,15 +7,15 @@ from factories import ABROAD, RIVAL, snapshot, staff_member
 from test_classify import facts
 from test_fmsave_source import UID_MAP, coded, fm_staff
 
-from facegen.classify import Group, Rules, classify
+from facegen.core.classify import Group, Rules, classify
+from facegen.core.traits import sample_sheet
+from facegen.core.wardrobe import role_for
 from facegen.datasource.fmsave_source import convert_staff
-from facegen.jobs import JobFilter, allocate_sheet, claim, load_career, queued_jobs
-from facegen.kits import load_kits
-from facegen.photos import PhotoIndex, PhotoScan
-from facegen.sync import run_sync
-from facegen.traits import sample_sheet
-from facegen.wardrobe import role_for
-from facegen.worker import Worker
+from facegen.datasource.kits import load_kits
+from facegen.datasource.photos import PhotoIndex, PhotoScan
+from facegen.persistence.jobs import JobFilter, allocate_sheet, claim, load_career, queued_jobs
+from facegen.pipeline.sync import run_sync
+from facegen.pipeline.worker import Worker
 
 
 def test_read_only_my_staff_and_league_first_team_managers():

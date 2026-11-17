@@ -42,13 +42,14 @@ sys.path.insert(0, str(ROOT / "tests"))  # the made-up players' builders
 
 from factories import NEWGEN, RIVAL, player, snapshot
 
-from facegen import db, manual
-from facegen.manual import ManualError
+from facegen.persistence import db
+from facegen.persistence.settings import DEFAULTS_PATH, load_settings
+from facegen.pipeline import manual
+from facegen.pipeline.manual import ManualError
+from facegen.pipeline.sync import run_sync
+from facegen.pipeline.worker import load_career
+from facegen.runtime.worker_process import WorkerProxy, worker_command
 from facegen.service import log_to_file
-from facegen.settings import DEFAULTS_PATH, load_settings
-from facegen.sync import run_sync
-from facegen.worker import load_career
-from facegen.worker_process import WorkerProxy, worker_command
 
 CHILD = Path(__file__).resolve().parent / "soak_child.py"
 LINES = {

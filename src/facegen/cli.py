@@ -29,27 +29,30 @@ from functools import partial
 from pathlib import Path
 from typing import TextIO
 
-from facegen import db, hardware, models, native, native_wheel, setup_operations
+from facegen.core.job_records import Career, JobFilter
+from facegen.core.kit_values import KitError
+from facegen.core.settings_values import Settings
 from facegen.datasource.base import DataSource
-from facegen.gallery import write_gallery
-from facegen.job_records import Career, JobFilter
-from facegen.kit_values import KitError
-from facegen.kits import load_kits
-from facegen.output import utf8_output
-from facegen.poller import UNSUPPORTED_ADVICE, NoSaveError, SaveUnreadableError, sync_save
-from facegen.publish import RELOAD_HINT, PublishError, PublishReport, publish_active
-from facegen.runtime_dependencies import Gpu
-from facegen.runtime_dependencies import default_renderer as _default_renderer
-from facegen.runtime_dependencies import default_source as _default_source
-from facegen.runtime_dependencies import default_tagger as _default_tagger
-from facegen.settings import folder_not_set_message, load_settings
-from facegen.settings_values import Settings
-from facegen.sync import SyncReport
-from facegen.worker import (
+from facegen.datasource.kits import load_kits
+from facegen.persistence import db
+from facegen.persistence.settings import folder_not_set_message, load_settings
+from facegen.pipeline.gallery import write_gallery
+from facegen.pipeline.publish import RELOAD_HINT, PublishError, PublishReport, publish_active
+from facegen.pipeline.sync import SyncReport
+from facegen.pipeline.worker import (
     Worker,
     WorkerBusy,
     load_career,
 )
+from facegen.platform import native
+from facegen.platform.output import utf8_output
+from facegen.runtime.dependencies import Gpu
+from facegen.runtime.dependencies import default_renderer as _default_renderer
+from facegen.runtime.dependencies import default_source as _default_source
+from facegen.runtime.dependencies import default_tagger as _default_tagger
+from facegen.runtime.poller import UNSUPPORTED_ADVICE, NoSaveError, SaveUnreadableError, sync_save
+from facegen.setup import hardware, models, native_wheel
+from facegen.setup import operations as setup_operations
 
 _TIER_NAMES = {0: "manual", 1: "A, my club", 2: "A", 3: "B", 4: "C"}
 KIT_SOURCE_NOTES = {
@@ -472,9 +475,9 @@ def cmd_serve(
 ) -> int:
     """The web UI with the save watcher in the background and the GPU worker in a process of
     its own (`facegen worker`, supervised by worker_process.WorkerProxy), until Ctrl+C."""
-    from facegen.runtime import CannotStart, build_runtime
-    from facegen.service_logging import log_to_file
-    from facegen.worker_process import STOP_TIMEOUT
+    from facegen.runtime.composition import CannotStart, build_runtime
+    from facegen.runtime.logging import log_to_file
+    from facegen.runtime.worker_process import STOP_TIMEOUT
 
     try:
         rt = build_runtime(
@@ -523,7 +526,7 @@ def cmd_worker(args: argparse.Namespace, settings: Settings, gpu: Gpu, out: Text
     import faulthandler
     import signal
 
-    from facegen.worker_process import protocol_streams, serve_child
+    from facegen.runtime.worker_process import protocol_streams, serve_child
 
     commands: Iterable[str] = sys.stdin
     process = out is sys.stdout
@@ -557,7 +560,7 @@ def cmd_desktop(
 ) -> int:
     """`facegen app` and `facegen tray` (desktop.py). A failure while starting is written to
     the log and shown in a message box on Windows, as when started without a console."""
-    from facegen import desktop
+    from facegen.desktop import shell as desktop
 
     try:
         return desktop.run(args.command, args, source_factory=source_factory, gpu=gpu)
@@ -571,7 +574,7 @@ def cmd_desktop(
 def cmd_shortcuts(args: argparse.Namespace, data_dir: Path, out: TextIO) -> int:
     """Write facegen's shortcuts on the desktop and in the Start Menu (`Start.bat
     --shortcut`). Exit 2 off Windows, 3 when they could not be written."""
-    from facegen import shortcuts
+    from facegen.desktop import shortcuts
 
     if os.name != "nt":
         print("Shortcuts are for Windows. Here, start facegen with `facegen serve`.", file=out)
@@ -647,7 +650,7 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--child", action="store_true", help=argparse.SUPPRESS)
     h = sub.add_parser("hardware", help="the graphics card and the settings preset for it")
     h.add_argument("--json", action="store_true", help="one line of JSON (for facegen serve)")
-    from facegen.desktop import add_arguments
+    from facegen.desktop.shell import add_arguments
 
     add_arguments(sub.add_parser("app", help="the dashboard in a window, with a tray icon"))
     add_arguments(sub.add_parser("tray", help="the tray icon; the dashboard in the browser"))
@@ -683,7 +686,7 @@ def main(
     if args.command in ("app", "tray"):  # takes its lock before it opens the database
         return cmd_desktop(args, source_factory, gpu)
     if args.command == "launch":  # Start.bat's: no database; it reads the settings itself
-        from facegen.launch import cmd_launch
+        from facegen.setup.launch import cmd_launch
 
         return cmd_launch(args, out)
     paths = load_settings(defaults_path=args.config).paths

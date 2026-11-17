@@ -12,14 +12,14 @@ from factories import GAME_DATE, MY_CLUB, NEWGEN, PLAIN_PERSONALITY, RIVAL, play
 from fakes import FakeRenderer, FakeTagger
 from PIL import Image
 
-from facegen.gallery import write_gallery
-from facegen.kits import load_kits
-from facegen.prompt import CONTENT_NEGATIVE, YOUNG_NEGATIVE
-from facegen.settings import Paths, PersonalitySettings, Settings
-from facegen.sheet_store import load_sheet
-from facegen.sync import run_sync
-from facegen.traits import personality_to_json, sample_sheet
-from facegen.worker import (
+from facegen.core.prompt import CONTENT_NEGATIVE, YOUNG_NEGATIVE
+from facegen.core.traits import personality_to_json, sample_sheet
+from facegen.datasource.kits import load_kits
+from facegen.persistence.settings import Paths, PersonalitySettings, Settings
+from facegen.persistence.sheet_store import load_sheet
+from facegen.pipeline.gallery import write_gallery
+from facegen.pipeline.sync import run_sync
+from facegen.pipeline.worker import (
     MAX_ATTEMPTS,
     JobFilter,
     Worker,
@@ -107,8 +107,8 @@ def env(conn: sqlite3.Connection, settings: Settings, tmp_path: Path) -> Env:
 
 
 def test_changed_selection_is_rejected_then_fresh_job_runs(env: Env) -> None:
-    from facegen import manual
-    from facegen.worker import JobGone
+    from facegen.pipeline import manual
+    from facegen.pipeline.worker import JobGone
 
     w, renderer, _ = env.worker()
     selected = next(j for j in w.runnable(MINE) if j.unique_id == OLD_HAND)
@@ -122,8 +122,8 @@ def test_changed_selection_is_rejected_then_fresh_job_runs(env: Env) -> None:
 
 
 def test_same_request_replaced_in_same_second_invalidates_selection(env: Env) -> None:
-    from facegen import manual
-    from facegen.worker import JobGone
+    from facegen.pipeline import manual
+    from facegen.pipeline.worker import JobGone
 
     w, renderer, _ = env.worker()
     manual.new_face(env.conn, w.career.id, OLD_HAND, env.settings, now=123)
@@ -136,7 +136,7 @@ def test_same_request_replaced_in_same_second_invalidates_selection(env: Env) ->
 
 @pytest.mark.parametrize("column,value", [("present", 0), ("in_scope", 0), ("pin", "never")])
 def test_claim_rechecks_player_eligibility(env: Env, column: str, value: object) -> None:
-    from facegen.worker import JobGone
+    from facegen.pipeline.worker import JobGone
 
     w, renderer, _ = env.worker()
     selected = w.runnable(MINE)[0]
@@ -150,9 +150,9 @@ def test_claim_rechecks_player_eligibility(env: Env, column: str, value: object)
 
 
 def test_interrupted_reroll_reuses_allocated_sheet_seed_and_preview(env: Env) -> None:
-    from facegen import manual
-    from facegen.sheet_store import load_sheet
-    from facegen.traits import picture_seed
+    from facegen.core.traits import picture_seed
+    from facegen.persistence.sheet_store import load_sheet
+    from facegen.pipeline import manual
 
     w, _, _ = env.worker()
     initial = next(j for j in w.runnable(MINE) if j.unique_id == OLD_HAND)
@@ -189,8 +189,8 @@ def test_interrupted_reroll_reuses_allocated_sheet_seed_and_preview(env: Env) ->
 
 
 def test_restore_sheet_controls_next_redraw_and_reroll_versions(env: Env) -> None:
-    from facegen import manual
-    from facegen.sheet_store import load_sheet
+    from facegen.persistence.sheet_store import load_sheet
+    from facegen.pipeline import manual
     from facegen.web.queries import player_detail
 
     w, _, _ = env.worker()
@@ -234,8 +234,8 @@ def test_fm_process_check_respects_command_result(
 ) -> None:
     import subprocess
 
-    from facegen import platform_info, procs
-    from facegen.worker import fm_running
+    from facegen.pipeline.worker import fm_running
+    from facegen.platform import platform_info, procs
 
     calls: list[tuple[list[str], dict]] = []
 
@@ -252,8 +252,8 @@ def test_fm_process_check_respects_command_result(
 
 
 def test_fm_process_check_without_tasklist_cannot_tell(monkeypatch: pytest.MonkeyPatch) -> None:
-    from facegen import platform_info, procs
-    from facegen.worker import fm_running
+    from facegen.pipeline.worker import fm_running
+    from facegen.platform import platform_info, procs
 
     monkeypatch.setattr(platform_info, "current", lambda: "wsl")
     monkeypatch.setattr(procs, "windows_tool", lambda name, k, env: None)
@@ -263,7 +263,8 @@ def test_fm_process_check_without_tasklist_cannot_tell(monkeypatch: pytest.Monke
 def test_fm_process_check_on_linux_looks_for_wine_processes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from facegen import platform_info, worker
+    from facegen.pipeline import worker
+    from facegen.platform import platform_info
 
     monkeypatch.setattr(platform_info, "current", lambda: "linux")
     monkeypatch.setattr(worker, "_process_names", lambda: ["bash\n", "fm.exe\n"])
@@ -616,7 +617,7 @@ def test_one_trip_of_the_text_encoders_serves_the_whole_queue(env: Env) -> None:
 def test_the_trips_follow_the_window_and_the_run_limit(
     env: Env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import facegen.worker as worker_module
+    import facegen.pipeline.worker as worker_module
 
     monkeypatch.setattr(worker_module, "PRE_ENCODE_JOBS", 3)
     w, r, _ = env.worker()
@@ -637,7 +638,7 @@ def test_a_single_job_encodes_its_own_prompt_when_it_draws(env: Env) -> None:
 
 
 def test_a_job_queued_after_the_trip_gets_a_trip_of_its_own(env: Env) -> None:
-    from facegen import manual
+    from facegen.pipeline import manual
 
     w, r, _ = env.worker()
     first, *rest = w.runnable(MINE)
@@ -668,8 +669,8 @@ def test_a_job_that_cannot_be_previewed_does_not_stop_the_one_running(
 
 
 def test_the_renderers_cache_holds_a_whole_window_of_prompts() -> None:
-    from facegen.renderer import TEXT_CACHE_SIZE
-    from facegen.worker import PRE_ENCODE_JOBS
+    from facegen.pipeline.worker import PRE_ENCODE_JOBS
+    from facegen.render.renderer import TEXT_CACHE_SIZE
 
     # A positive and a negative text per job, and the empty text that pads them.
     assert 2 * PRE_ENCODE_JOBS + 1 <= TEXT_CACHE_SIZE
@@ -680,9 +681,9 @@ def test_my_clubs_staff_are_drawn_at_a_quality_in_club_wear_for_their_job(
 ) -> None:
     from factories import staff_member
 
-    from facegen.age import WORDINGS
-    from facegen.prompt import STAFF_NEGATIVE, STAFF_POSITIVE
-    from facegen.wardrobe import ROLES
+    from facegen.core.age import WORDINGS
+    from facegen.core.prompt import STAFF_NEGATIVE, STAFF_POSITIVE
+    from facegen.core.wardrobe import ROLES
 
     coach = NEWGEN + 100
     s = replace(
@@ -722,7 +723,7 @@ def test_my_clubs_staff_are_drawn_at_a_quality_in_club_wear_for_their_job(
 
 
 def test_a_players_picture_is_a_shoot_recorded_with_it(env: Env) -> None:
-    from facegen.shoot import BACKDROP_COLOURS, LOOKS, season_of
+    from facegen.core.shoot import BACKDROP_COLOURS, LOOKS, season_of
 
     w, _r, _t = env.worker()
     assert w.career.game_date == GAME_DATE
@@ -777,7 +778,7 @@ def test_a_man_on_the_staff_is_drawn_and_checked_as_a_woman(
     """Everyone is drawn as a woman (user, 2026-11-14), whatever the save says."""
     from factories import staff_member
 
-    from facegen.prompt import COMPOSITION_NEGATIVE, SUBJECT
+    from facegen.core.prompt import COMPOSITION_NEGATIVE, SUBJECT
 
     scout = NEWGEN + 100
     env, _ = _staff_env(
@@ -800,7 +801,7 @@ def test_a_journalist_is_dressed_for_work_on_the_grey_backdrop(
 ) -> None:
     from factories import media_person
 
-    from facegen.wardrobe import ROLES
+    from facegen.core.wardrobe import ROLES
 
     reporter = 2_002_097_912
     env, s = _staff_env(
@@ -854,7 +855,7 @@ def test_detail_size_off_skips_the_pass(env: Env) -> None:
 
 
 def test_vae_tiling_follows_the_setting_for_each_job(env: Env) -> None:
-    from facegen.settings import RenderSettings
+    from facegen.persistence.settings import RenderSettings
 
     tiled = replace(env.settings, render=RenderSettings(vae_tiling=True))
     w, r, _ = env.worker(settings=tiled)

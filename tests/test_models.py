@@ -17,9 +17,9 @@ from pathlib import Path
 
 import pytest
 
-from facegen import models
 from facegen.cli import cmd_models
-from facegen.models import (
+from facegen.setup import models
+from facegen.setup.models import (
     FILES,
     HubCache,
     ModelDownload,
@@ -72,7 +72,8 @@ def test_the_files_are_the_readmes_three_hf_download_commands() -> None:
 
 
 def test_the_files_are_those_the_code_loads() -> None:
-    from facegen import qc, renderer
+    from facegen import qc
+    from facegen.render import renderer
 
     repos = {f.repo for f in FILES}
     assert {renderer.MODEL_REPO, renderer.IPA_REPO, qc.TAGGER_REPO} == repos

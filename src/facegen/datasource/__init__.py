@@ -1,12 +1,6 @@
 """Save readers. Everything that touches fmsave sits behind DataSource."""
 
-from facegen.datasource.base import (
-    DataSource,
-    SaveBusyError,
-    SaveReadError,
-    UnsupportedSaveError,
-)
-from facegen.datasource.records import (
+from facegen.core.records import (
     ClubRecord,
     Gender,
     LeagueTableRecord,
@@ -16,6 +10,12 @@ from facegen.datasource.records import (
     SaveMeta,
     Snapshot,
     StaffRecord,
+)
+from facegen.datasource.base import (
+    DataSource,
+    SaveBusyError,
+    SaveReadError,
+    UnsupportedSaveError,
 )
 
 __all__ = [

@@ -15,6 +15,7 @@ from types import SimpleNamespace as NS
 
 import pytest
 
+from facegen.core.records import Gender, Personality
 from facegen.datasource.fmsave_source import (
     FmsaveDataSource,
     club_gender,
@@ -27,7 +28,6 @@ from facegen.datasource.fmsave_source import (
     convert_staff,
     staff_job,
 )
-from facegen.datasource.records import Gender, Personality
 
 
 def coded(name: str) -> NS:

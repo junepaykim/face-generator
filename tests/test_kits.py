@@ -9,7 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from facegen.kits import (
+from facegen.core.prompt import CONTENT_NEGATIVE
+from facegen.datasource.kits import (
     BUNDLE_NAME,
     CATALOG_REPORT,
     COLOURS,
@@ -29,7 +30,6 @@ from facegen.kits import (
     report_made,
     with_estimates,
 )
-from facegen.prompt import CONTENT_NEGATIVE
 
 ROOT = Path(__file__).resolve().parents[1]
 

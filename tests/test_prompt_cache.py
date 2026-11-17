@@ -7,7 +7,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from facegen.prompt_cache import EmbeddingCache, prepare
+from facegen.render.prompt_cache import EmbeddingCache, prepare
 
 
 class Encoders:

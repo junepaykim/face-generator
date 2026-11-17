@@ -8,11 +8,11 @@ from pathlib import Path
 import pytest
 from factories import ABROAD, MY_CLUB, NEWGEN, player, snapshot
 
-from facegen import native
 from facegen.cli import main
+from facegen.core.records import Snapshot
 from facegen.datasource.base import UnsupportedSaveError
-from facegen.datasource.records import Snapshot
-from facegen.settings import DEFAULTS_PATH
+from facegen.persistence.settings import DEFAULTS_PATH
+from facegen.platform import native
 
 FM_USER_LINE = 'fm_user_dir = ""'
 FM_INSTALL_LINE = 'fm_install_dir = ""'
@@ -91,7 +91,7 @@ def test_sync_reads_fm27s_photo_list_and_picks_pre_existing_players_without_one(
 ) -> None:
     from test_photos import catalog, config_xml
 
-    from facegen.photos import CATALOG_DIR
+    from facegen.datasource.photos import CATALOG_DIR
 
     snap = snapshot(
         [
@@ -398,8 +398,8 @@ def test_run_without_the_models_says_how_to_get_them(env: dict[str, Path]) -> No
 def test_only_the_real_renderer_asks_for_the_model_files() -> None:
     from fakes import FakeRenderer
 
-    from facegen import models
     from facegen.cli import Gpu
+    from facegen.setup import models
 
     assert Gpu().models_check() is models.ready_now
     assert Gpu(renderer=FakeRenderer).models_check() is None  # the tests' fakes need none
@@ -413,8 +413,8 @@ def test_serve_with_the_real_worker_offers_the_model_download(
     from fakes import FakeRenderer, FakeTagger
     from fastapi.testclient import TestClient
 
-    from facegen import models
     from facegen.cli import Gpu
+    from facegen.setup import models
 
     run(env, "sync")
     monkeypatch.setattr(
@@ -442,7 +442,8 @@ def test_serve_with_the_real_worker_offers_the_model_download(
 
 
 def test_models_and_hardware_need_no_database(env: dict[str, Path], monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    from facegen import cli, hardware
+    from facegen import cli
+    from facegen.setup import hardware
 
     monkeypatch.setattr(cli, "cmd_models", lambda args, out: 7)
     assert main(["--config", str(env["config"]), "models"], out=io.StringIO()) == 7

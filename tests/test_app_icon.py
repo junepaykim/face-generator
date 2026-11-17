@@ -7,7 +7,14 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from facegen.app_icon import BACKGROUND, DOT_COLOURS, FIGURE, ICO_SIZES, draw_icon, write_ico
+from facegen.desktop.app_icon import (
+    BACKGROUND,
+    DOT_COLOURS,
+    FIGURE,
+    ICO_SIZES,
+    draw_icon,
+    write_ico,
+)
 
 
 def close(a: tuple[int, ...], b: tuple[int, ...], tol: int = 12) -> bool:

@@ -26,11 +26,11 @@ from pathlib import Path
 from typing import Any
 
 from facegen import qc
-from facegen.gpu import prepare_environment
-from facegen.kits import Kit
-from facegen.picture import face_box
-from facegen.prompt import build_prompt
-from facegen.traits import pick_pose, picture_seed, sample_sheet
+from facegen.core.prompt import build_prompt
+from facegen.core.traits import pick_pose, picture_seed, sample_sheet
+from facegen.datasource.kits import Kit
+from facegen.render.gpu import prepare_environment
+from facegen.render.picture import face_box
 
 prepare_environment()
 
@@ -42,7 +42,7 @@ GIB = 2**30
 
 
 def main(args: list[str]) -> None:
-    from facegen.worker import AnimagineRenderer, Reference
+    from facegen.pipeline.worker import AnimagineRenderer, Reference
 
     mode = args[0] if args else ""
     if mode not in ("resident", "offload") or not set(args[1:]) <= {"--fp16-weights"}:

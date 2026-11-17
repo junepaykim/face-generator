@@ -20,7 +20,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from facegen.kits import (
+from facegen.datasource.kits import (
     BUNDLE_FORMAT,
     CATALOG_REPORT,
     KitError,

@@ -15,8 +15,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from facegen.app_window import child_main
-from facegen.pipes import protocol_streams
+from facegen.desktop.app_window import child_main
+from facegen.platform.pipes import protocol_streams
 
 notes = Path(sys.argv[1])
 mode = sys.argv[2]

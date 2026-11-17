@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import date
 
-from facegen.classify import Classification, Group
-from facegen.planner import (
+from facegen.core.classify import Classification, Group
+from facegen.core.planner import (
     TIER_A,
     TIER_A_MY_CLUB,
     TIER_B,
@@ -21,7 +21,7 @@ from facegen.planner import (
     queue_position,
     reference_scale,
 )
-from facegen.settings import ReferenceSettings, Settings
+from facegen.persistence.settings import ReferenceSettings, Settings
 
 A = Classification(Group.A, True, ("at my club",))
 A_NEWGEN = Classification(Group.A, True, ("newgen, CA 160 > 155",))

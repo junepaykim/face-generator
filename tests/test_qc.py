@@ -10,10 +10,10 @@ from fakes import figure as figure_on
 from PIL import Image, ImageDraw
 
 from facegen import qc
-from facegen.kits import Kit
+from facegen.core.traits import CharacterSheet
+from facegen.datasource.kits import Kit
+from facegen.persistence.settings import MyClubSettings
 from facegen.qc import CheckResult, TagResult, best, check, expectation, head_top
-from facegen.settings import MyClubSettings
-from facegen.traits import CharacterSheet
 
 SHEET = CharacterSheet(
     hair_colour="silver",

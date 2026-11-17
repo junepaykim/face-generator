@@ -21,8 +21,8 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture(scope="module")
 def gpu() -> Iterator[tuple[Any, Any]]:
+    from facegen.pipeline.worker import AnimagineRenderer
     from facegen.qc import Eva02Tagger
-    from facegen.worker import AnimagineRenderer
 
     renderer = AnimagineRenderer()
     tagger = Eva02Tagger()
@@ -34,9 +34,9 @@ def gpu() -> Iterator[tuple[Any, Any]]:
 
 @pytest.fixture(scope="module")
 def case() -> tuple[Any, Any, Any]:
-    from facegen.kits import Kit
-    from facegen.prompt import build_prompt
-    from facegen.traits import sample_sheet
+    from facegen.core.prompt import build_prompt
+    from facegen.core.traits import sample_sheet
+    from facegen.datasource.kits import Kit
 
     sheet = sample_sheet("gpu-test", 1, 1)
     kit = Kit(shirt=("blue", "white"), pattern="stripes", shorts="blue")
@@ -51,8 +51,8 @@ def _difference(a: Any, b: Any) -> float:
 
 def test_render_check_and_detail(gpu: tuple[Any, Any], case: tuple[Any, Any, Any]) -> None:
     from facegen import qc
-    from facegen.picture import crop_to_aspect
-    from facegen.worker import HEIGHT, WIDTH
+    from facegen.pipeline.worker import HEIGHT, WIDTH
+    from facegen.render.picture import crop_to_aspect
 
     renderer, tagger = gpu
     sheet, kit, prompt = case
@@ -76,8 +76,8 @@ def test_reference_picture(gpu: tuple[Any, Any], case: tuple[Any, Any, Any]) -> 
     """IP-Adapter loads on the first reference, draws with it, and switches out again so a
     picture without a reference is the plain model's."""
     from facegen import qc
-    from facegen.picture import crop_to_aspect, face_box
-    from facegen.worker import Reference
+    from facegen.pipeline.worker import Reference
+    from facegen.render.picture import crop_to_aspect, face_box
 
     renderer, tagger = gpu
     sheet, kit, prompt = case
@@ -117,9 +117,9 @@ def test_offloaded_models_keep_peak_vram_under_8_gib(
     encoder are back in system memory afterwards."""
     import torch
 
-    from facegen.picture import face_box
-    from facegen.prompt import build_prompt
-    from facegen.worker import Reference
+    from facegen.core.prompt import build_prompt
+    from facegen.pipeline.worker import Reference
+    from facegen.render.picture import face_box
 
     renderer, tagger = gpu
     sheet, kit, _ = case
@@ -155,9 +155,9 @@ def test_pre_encoded_prompts_draw_bit_for_bit_what_encoding_per_job_drew(
     import torch
     from encoding_reference import encode_pair_before_cache
 
-    from facegen.gpu import on_gpu
-    from facegen.prompt import build_prompt
-    from facegen.renderer import CFG, HEIGHT, STEPS, WIDTH
+    from facegen.core.prompt import build_prompt
+    from facegen.render.gpu import on_gpu
+    from facegen.render.renderer import CFG, HEIGHT, STEPS, WIDTH
 
     renderer, _ = gpu
     sheet, kit, _ = case

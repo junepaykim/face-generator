@@ -37,19 +37,20 @@ OUT = ROOT / "data" / "phase10" / "preset-memory.json"
 def one_cap(
     cap_gib: float, presets: list[str], with_reference: bool = False
 ) -> list[dict[str, Any]]:
-    from facegen.gpu import prepare_environment
+    from facegen.render.gpu import prepare_environment
 
     prepare_environment()
     import torch
 
-    from facegen import hardware, qc
-    from facegen.kits import Kit
-    from facegen.picture import crop_to_aspect, face_box
-    from facegen.prompt import build_prompt
+    from facegen import qc
+    from facegen.core.prompt import build_prompt
+    from facegen.core.traits import sample_sheet
+    from facegen.datasource.kits import Kit
+    from facegen.persistence.settings import DETAIL_SIZES
+    from facegen.pipeline.worker import AnimagineRenderer, Reference
     from facegen.qc import Eva02Tagger
-    from facegen.settings import DETAIL_SIZES
-    from facegen.traits import sample_sheet
-    from facegen.worker import AnimagineRenderer, Reference
+    from facegen.render.picture import crop_to_aspect, face_box
+    from facegen.setup import hardware
 
     total = torch.cuda.get_device_properties(0).total_memory
     torch.cuda.set_per_process_memory_fraction(min(1.0, cap_gib * 2**30 / total), 0)
@@ -132,8 +133,8 @@ def main() -> int:
     if args.child:
         one_cap(caps[0], presets, args.reference)
         return 0
-    from facegen import procs
-    from facegen.worker import fm_running
+    from facegen.pipeline.worker import fm_running
+    from facegen.platform import procs
 
     if fm_running() is not False:
         print("FM27 is running (or it cannot be told): close it first.", file=sys.stderr)

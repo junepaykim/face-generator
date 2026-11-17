@@ -8,8 +8,9 @@ import threading
 import time
 from pathlib import Path
 
-from facegen import instance, launch
 from facegen.cli import main
+from facegen.desktop import instance
+from facegen.setup import launch
 
 
 def test_tee_writes_the_console_and_the_log_without_progress_lines() -> None:
@@ -136,7 +137,7 @@ def test_facegen_launch_open_running_from_the_command_line(config_file: Path) ->
 
 
 def test_facegen_launch_runs_the_wheel_and_the_models_steps(config_file: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    from facegen import setup_operations
+    from facegen.setup import operations as setup_operations
 
     seen: list[tuple[str, object]] = []
 
@@ -176,9 +177,9 @@ class Console(io.StringIO):
 
 
 def on_windows_with_a_wsl_local_file(config_file: Path, monkeypatch) -> Path:  # type: ignore[no-untyped-def]
-    from facegen import setup_operations
+    from facegen.setup import operations as setup_operations
 
-    monkeypatch.setattr("facegen.platform_info.current", lambda: "windows")
+    monkeypatch.setattr("facegen.platform.platform_info.current", lambda: "windows")
     monkeypatch.setattr(setup_operations, "prepare_native", lambda **kwargs: 0)
     monkeypatch.setattr(setup_operations, "prepare_models", lambda **kwargs: 0)
     local = config_file.with_name("local.toml")
@@ -250,8 +251,8 @@ def test_open_running_says_nothing_about_settings_it_cannot_read(
 
 
 def test_the_apps_message_box_says_a_settings_error_plainly() -> None:
-    from facegen import desktop
-    from facegen.settings import SettingsError
+    from facegen.desktop import shell as desktop
+    from facegen.persistence.settings import SettingsError
 
     error = SettingsError("config/local.toml, paths.fm_user_dir: write it as 'C:\\x'")
     assert desktop.explain(error) == "config/local.toml, paths.fm_user_dir: write it as 'C:\\x'"

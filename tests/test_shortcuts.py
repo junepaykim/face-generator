@@ -12,8 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from facegen import procs, shortcuts
 from facegen.cli import main
+from facegen.desktop import shortcuts
+from facegen.platform import procs
 
 FOLDERS = {
     "desktop": r"C:\Users\me\OneDrive\바탕 화면",

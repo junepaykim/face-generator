@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from facegen import db
+from facegen.persistence import db
 
 TABLES = {"careers", "clubs", "players", "traits", "images", "jobs", "settings", "sync_runs"}
 

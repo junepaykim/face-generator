@@ -22,12 +22,12 @@ from factories import (
     snapshot,
 )
 
-from facegen.datasource.records import Gender, PlayerRecord, Snapshot
-from facegen.photos import PhotoIndex, PhotoScan
-from facegen.planner import TIER_B, TIER_C
-from facegen.settings import Settings, load_settings, set_override
-from facegen.sync import SyncReport, reclassify, record_failed_sync, run_sync, sync_of_save
-from facegen.traits import personality_from_json
+from facegen.core.planner import TIER_B, TIER_C
+from facegen.core.records import Gender, PlayerRecord, Snapshot
+from facegen.core.traits import personality_from_json
+from facegen.datasource.photos import PhotoIndex, PhotoScan
+from facegen.persistence.settings import Settings, load_settings, set_override
+from facegen.pipeline.sync import SyncReport, reclassify, record_failed_sync, run_sync, sync_of_save
 
 # A small world: pre-existing players have low IDs, newgens start at NEWGEN.
 MINE_OLD = 1001  # pre-existing, at my club
@@ -109,8 +109,8 @@ def test_academy_membership_survives_managed_club_changes(
 def test_manual_jobs_refresh_current_targets_and_cancel_when_absent(
     conn: sqlite3.Connection, settings: Settings
 ) -> None:
-    from facegen import manual
-    from facegen.age import age_wording
+    from facegen.core.age import age_wording
+    from facegen.pipeline import manual
 
     uid = 1001
     sync(conn, snapshot([player(uid, age=19)]), settings)
@@ -135,7 +135,7 @@ def test_manual_jobs_refresh_current_targets_and_cancel_when_absent(
 def test_manual_job_is_cancelled_on_transfer_out_of_mens_football(
     conn: sqlite3.Connection, settings: Settings
 ) -> None:
-    from facegen import manual
+    from facegen.pipeline import manual
 
     sync(conn, snapshot([player(1001)]), settings)
     manual.new_face(conn, 1, 1001, settings)
@@ -548,8 +548,8 @@ def test_sync_records_the_save_time_and_who_started_it(
 def test_the_active_career_is_the_one_with_the_newest_save(
     conn: sqlite3.Connection, settings: Settings
 ) -> None:
-    from facegen.db import active_career_id
-    from facegen.worker import load_career
+    from facegen.persistence.db import active_career_id
+    from facegen.pipeline.worker import load_career
 
     one = sync(conn, snapshot(world(), career="one"), settings, save_mtime=2_000.0).career
     # Career two is synced later, from an older save (say `facegen sync --save`).
@@ -604,9 +604,9 @@ def test_no_managed_club(conn: sqlite3.Connection, settings: Settings, managed: 
 def test_reclassify_with_report_says_what_moved(
     conn: sqlite3.Connection, settings: Settings
 ) -> None:
-    from facegen.db import transaction
-    from facegen.settings import set_overrides
-    from facegen.sync import ChangeReport, reclassify_with_report
+    from facegen.persistence.db import transaction
+    from facegen.persistence.settings import set_overrides
+    from facegen.pipeline.sync import ChangeReport, reclassify_with_report
 
     report = sync(conn, snapshot(world()), settings)
     with transaction(conn):
@@ -629,9 +629,9 @@ def test_reclassify_with_report_says_what_moved(
 def test_reclassify_with_report_lists_newly_queued_players(
     conn: sqlite3.Connection, settings: Settings
 ) -> None:
-    from facegen.db import transaction
-    from facegen.settings import set_overrides
-    from facegen.sync import reclassify_with_report
+    from facegen.persistence.db import transaction
+    from facegen.persistence.settings import set_overrides
+    from facegen.pipeline.sync import reclassify_with_report
 
     report = sync(conn, snapshot(world()), settings)
     with transaction(conn):

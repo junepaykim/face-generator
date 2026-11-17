@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from facegen import poller
 from facegen.datasource.base import SaveReadError
+from facegen.runtime import poller
 
 
 def make(path: Path, data: bytes = b"save", mtime: int | None = None) -> Path:

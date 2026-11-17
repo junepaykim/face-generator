@@ -22,11 +22,12 @@ from typing import Any
 import pytest
 from fakes import FakeRenderer, FakeTagger
 
-from facegen import desktop, instance
-from facegen.app_controller import AppController, Notice, View
-from facegen.app_window import NO_WEBVIEW2
 from facegen.cli import Gpu, main
-from facegen.runtime import CannotStart, port_answers
+from facegen.desktop import instance
+from facegen.desktop import shell as desktop
+from facegen.desktop.app_controller import AppController, Notice, View
+from facegen.desktop.app_window import NO_WEBVIEW2
+from facegen.runtime.composition import CannotStart, port_answers
 
 TESTS = Path(__file__).resolve().parent
 

@@ -6,7 +6,7 @@ import os
 import sys
 from pathlib import Path
 
-from facegen import procs
+from facegen.platform import procs
 
 
 def test_policy_imports_do_not_load_adapters(tmp_path: Path) -> None:
@@ -18,20 +18,25 @@ import sys
 class NoAdapters(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
         blocked = {
-            'facegen.settings', 'facegen.settings_store', 'facegen.sheet_store',
-            'facegen.kits', 'facegen.qc', 'facegen.tagger', 'facegen.renderer',
-            'facegen.db', 'facegen.fm_paths', 'facegen.platform_info',
+            'facegen.persistence.settings', 'facegen.persistence.settings_store', 'facegen.persistence.sheet_store',
+            'facegen.datasource.kits', 'facegen.qc', 'facegen.render.tagger', 'facegen.render.renderer',
+            'facegen.persistence.db', 'facegen.platform.fm_paths', 'facegen.platform.platform_info',
             'sqlite3', 'fmsave', 'torch', 'timm', 'huggingface_hub',
         }
         if any(fullname == name or fullname.startswith(name + '.') for name in blocked):
             raise AssertionError('policy loaded adapter: ' + fullname)
 
 sys.meta_path.insert(0, NoAdapters())
-from facegen import age, classify, planner, prompt, shoot, wardrobe
-from facegen.kit_values import Kit
-from facegen.quality_checks import TagResult, check, expectation
-from facegen.settings_values import MyClubSettings
-from facegen.traits import sample_sheet
+from facegen.core import age
+from facegen.core import classify
+from facegen.core import planner
+from facegen.core import prompt
+from facegen.core import shoot
+from facegen.core import wardrobe
+from facegen.core.kit_values import Kit
+from facegen.render.quality_checks import TagResult, check, expectation
+from facegen.core.settings_values import MyClubSettings
+from facegen.core.traits import sample_sheet
 
 sheet = sample_sheet('test-career', 123, 1)
 kit = Kit(('blue',))
@@ -51,7 +56,11 @@ assert TagResult({'general': 1.0}, {}).rating == 'general'
 
 
 def test_compatibility_exports_keep_the_same_values_and_types() -> None:
-    from facegen import kit_values, kits, qc, quality_checks, settings, settings_values, tagger
+    from facegen import qc
+    from facegen.core import kit_values, settings_values
+    from facegen.datasource import kits
+    from facegen.persistence import settings
+    from facegen.render import quality_checks, tagger
 
     assert settings.Settings is settings_values.Settings
     assert settings.Paths is settings_values.Paths

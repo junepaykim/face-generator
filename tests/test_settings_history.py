@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 from factories import NEWGEN, RIVAL, player, snapshot
 
-from facegen import settings_history as history
-from facegen.settings import SettingsError, load_settings, read_overrides, set_override
-from facegen.sync import run_sync
+from facegen.persistence.settings import SettingsError, load_settings, read_overrides, set_override
+from facegen.pipeline import settings_history as history
+from facegen.pipeline.sync import run_sync
 
 RIVAL_C = NEWGEN + 3  # my league, CA 120: group C until C's bar passes 120
 

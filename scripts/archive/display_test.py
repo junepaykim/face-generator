@@ -25,7 +25,7 @@ import sys
 import zlib
 from pathlib import Path
 
-from facegen.settings import load_settings
+from facegen.persistence.settings import load_settings
 
 SHAPES = {
     "square": (1024, 1024, "SQUARE"),

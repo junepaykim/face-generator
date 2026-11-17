@@ -1,6 +1,6 @@
 """Compatibility exports for quality checks and the tagger."""
 
-from facegen.quality_checks import (  # noqa: F401 - compatibility exports
+from facegen.render.quality_checks import (  # noqa: F401 - compatibility exports
     CONTENT_TAGS,
     FORBIDDEN_TAGS,
     HEAD_TOP_MAX,
@@ -16,4 +16,4 @@ from facegen.quality_checks import (  # noqa: F401 - compatibility exports
     head_top,
     score,
 )
-from facegen.tagger import TAGGER_REPO, Eva02Tagger  # noqa: F401 - compatibility exports
+from facegen.render.tagger import TAGGER_REPO, Eva02Tagger  # noqa: F401 - compatibility exports

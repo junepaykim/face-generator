@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from facegen import venv_check
-from facegen.settings import PROJECT_ROOT
+from facegen.persistence.settings import PROJECT_ROOT
+from facegen.setup import venv_check
 
 
 def dist(site: Path, folder: str, *files: str) -> None:

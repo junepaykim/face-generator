@@ -4,8 +4,8 @@ from dataclasses import replace
 
 import pytest
 
-from facegen.classify import Group, PlayerFacts, Rules, classify, rule_matches
-from facegen.settings import Groups, Settings
+from facegen.core.classify import Group, PlayerFacts, Rules, classify, rule_matches
+from facegen.persistence.settings import Groups, Settings
 
 
 def facts(**kw: object) -> PlayerFacts:

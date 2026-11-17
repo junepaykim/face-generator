@@ -7,9 +7,9 @@ from typing import Any
 
 from PIL import Image, ImageDraw
 
-from facegen.prompt import Prompt
+from facegen.core.prompt import Prompt
+from facegen.core.traits import ACCESSORY, EYE_COLOUR, FIELDS, HAIR_COLOUR, MARK
 from facegen.qc import TagResult
-from facegen.traits import ACCESSORY, EYE_COLOUR, FIELDS, HAIR_COLOUR, MARK
 
 GENERAL = {"general": 0.95, "sensitive": 0.04, "questionable": 0.0, "explicit": 0.0}
 SENSITIVE = {"general": 0.30, "sensitive": 0.65, "questionable": 0.04, "explicit": 0.0}

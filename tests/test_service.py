@@ -13,10 +13,14 @@ import pytest
 from factories import ABROAD, NEWGEN, RIVAL, player, snapshot
 from fakes import FakeRenderer, FakeTagger
 
-from facegen import db, manual
-from facegen.datasource.records import Snapshot
-from facegen.db import transaction
-from facegen.kits import load_kits
+from facegen.core.records import Snapshot
+from facegen.datasource.kits import load_kits
+from facegen.persistence import db
+from facegen.persistence.db import transaction
+from facegen.persistence.settings import Settings, load_settings, set_overrides
+from facegen.pipeline import manual
+from facegen.pipeline.sync import classify_and_plan, run_sync
+from facegen.pipeline.worker import load_career, worker_lock
 from facegen.service import (
     FM_POLL_SECONDS,
     IDLE_UNLOAD_SECONDS,
@@ -25,9 +29,6 @@ from facegen.service import (
     WorkerService,
     WorkerStatus,
 )
-from facegen.settings import Settings, load_settings, set_overrides
-from facegen.sync import classify_and_plan, run_sync
-from facegen.worker import load_career, worker_lock
 
 MINE = 1001  # my club: A
 MINE_2 = 1002  # my club: A, arrived later, so drawn first
@@ -777,8 +778,8 @@ def test_an_unsupported_build_is_reported_once_and_the_queue_is_kept(watch: Watc
 def test_a_save_still_being_copied_is_tried_again(
     watch: Watch, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from facegen import poller as poller_module
     from facegen.datasource.base import SaveBusyError
+    from facegen.runtime import poller as poller_module
 
     real = poller_module.copy_snapshot
     calls: list[int] = []

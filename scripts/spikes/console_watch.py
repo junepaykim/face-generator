@@ -127,7 +127,7 @@ def pythonw() -> str:
 def selftest() -> int:
     plain = "import subprocess; subprocess.run(['tasklist.exe'], capture_output=True)"
     quiet = (
-        "from facegen import procs; procs.run_quiet(['tasklist.exe'], timeout=30,"
+        "from facegen.platform import procs; procs.run_quiet(['tasklist.exe'], timeout=30,"
         " capture_output=True)"
     )
     results = {}
@@ -149,9 +149,9 @@ def run(name: str, seconds: float, port: int) -> int:
     from factories import snapshot
     from soak_test import world, write_config
 
-    from facegen import db
-    from facegen.settings import load_settings
-    from facegen.sync import run_sync
+    from facegen.persistence import db
+    from facegen.persistence.settings import load_settings
+    from facegen.pipeline.sync import run_sync
 
     sandbox = ROOT / "data" / "console" / name
     if sandbox.exists():

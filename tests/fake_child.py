@@ -26,8 +26,8 @@ import threading
 import time
 from pathlib import Path
 
-from facegen.jobs import Job
-from facegen.worker_process import encode, job_to_json
+from facegen.persistence.jobs import Job
+from facegen.runtime.worker_process import encode, job_to_json
 
 
 def send(message: dict) -> None:

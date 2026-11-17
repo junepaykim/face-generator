@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from datetime import date
 
-from facegen.datasource.records import (
+from facegen.core.records import (
     ClubRecord,
     Gender,
     LeagueTableRecord,

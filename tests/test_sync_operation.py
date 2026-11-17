@@ -12,13 +12,14 @@ from pathlib import Path
 import pytest
 from factories import player, snapshot
 
-from facegen import db, sync_operation
-from facegen.datasource.records import Snapshot
-from facegen.publish import PublishError
-from facegen.service_contracts import FAILED, SYNCED, SyncRequest, SyncResult
-from facegen.settings import load_settings
-from facegen.settings_values import Settings
-from facegen.sync_service import SyncService
+from facegen.core.records import Snapshot
+from facegen.core.settings_values import Settings
+from facegen.persistence import db
+from facegen.persistence.settings import load_settings
+from facegen.pipeline import sync_operation
+from facegen.pipeline.publish import PublishError
+from facegen.runtime.contracts import FAILED, SYNCED, SyncRequest, SyncResult
+from facegen.runtime.sync_service import SyncService
 
 
 def save_file(config_file: Path) -> Path:

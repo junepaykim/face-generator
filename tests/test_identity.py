@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from facegen.identity import (
+from facegen.core.identity import (
     FINGERPRINT_SIZE,
     Person,
     best_career,

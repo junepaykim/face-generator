@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from facegen.publish import (
+from facegen.pipeline.publish import (
     PublishError,
     config_xml,
     deactivate_packs,
@@ -171,7 +171,7 @@ def test_publish_repairs_old_mappings_without_redrawing_or_reencoding(
         assert not items, "repairing a mapping must reuse the published pictures"
         return iter(())
 
-    monkeypatch.setattr("facegen.publish.published_pictures", no_encoding)
+    monkeypatch.setattr("facegen.pipeline.publish.published_pictures", no_encoding)
     report = publish_career(conn, 1, "k", fm, SIZES, data_dir=data)
     assert (report.written, report.unchanged, report.mapped) == (0, 2, 2)
     assert report.config_changed
@@ -281,8 +281,8 @@ def test_deactivate_packs_does_not_follow_symlinks(tmp_path: Path) -> None:
 def test_publish_pack_follows_the_newest_save(conn: sqlite3.Connection, tmp_path: Path) -> None:
     from conftest import write_config as write_test_config
 
-    from facegen.publish import publish_active, publish_pack
-    from facegen.settings import load_settings
+    from facegen.persistence.settings import load_settings
+    from facegen.pipeline.publish import publish_active, publish_pack
 
     settings = load_settings(defaults_path=write_test_config(tmp_path))
     fm, data = settings.paths.fm_user_dir, settings.paths.data_dir
@@ -310,8 +310,8 @@ def test_publish_pack_follows_the_newest_save(conn: sqlite3.Connection, tmp_path
 def test_publish_active_without_a_career(conn: sqlite3.Connection, tmp_path: Path) -> None:
     from conftest import write_config as write_test_config
 
-    from facegen.publish import publish_active
-    from facegen.settings import load_settings
+    from facegen.persistence.settings import load_settings
+    from facegen.pipeline.publish import publish_active
 
     settings = load_settings(defaults_path=write_test_config(tmp_path))
     assert publish_active(conn, settings) is None
@@ -331,7 +331,7 @@ def test_unpublish_from_an_inactive_pack_keeps_it_unmapped(
 def test_publish_lock_lets_one_writer_in_at_a_time(tmp_path: Path) -> None:
     import threading
 
-    from facegen.publish import publish_lock
+    from facegen.pipeline.publish import publish_lock
 
     entered = threading.Event()
 

@@ -10,13 +10,14 @@ import threading
 import time
 from pathlib import Path
 
-from facegen import instance, procs
+from facegen.desktop import instance
+from facegen.platform import procs
 
 HOLDER = """
 import sys
 from pathlib import Path
 sys.path.insert(0, sys.argv[2])
-from facegen.instance import InstanceLock
+from facegen.desktop.instance import InstanceLock
 lock = InstanceLock(Path(sys.argv[1]))
 print("held" if lock.acquire() else "busy", flush=True)
 sys.stdin.readline()
@@ -40,7 +41,7 @@ def test_another_process_holding_the_lock_is_seen_and_its_end_frees_it(tmp_path:
     # A Windows venv's python.exe can be a launcher with the actual interpreter as its
     # child. Kill the lock owner itself, not that launcher (which can leave the owner alive).
     python = getattr(sys, "_base_executable", sys.executable) if os.name == "nt" else sys.executable
-    source = str(Path(instance.__file__).resolve().parents[1])
+    source = str(Path(__file__).resolve().parents[1] / "src")
     holder = procs.popen_quiet(
         [python, "-c", HOLDER, str(tmp_path), source],
         stdin=subprocess.PIPE,

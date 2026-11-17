@@ -7,8 +7,10 @@ from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 
 import pytest
 
-from facegen import folder_setup, platform_info
-from facegen.folder_setup import (
+from facegen.persistence.settings import load_local
+from facegen.platform import platform_info
+from facegen.setup import folder_setup
+from facegen.setup.folder_setup import (
     LocalFileError,
     RealDisk,
     check_folder,
@@ -17,7 +19,6 @@ from facegen.folder_setup import (
     with_path_key,
     write_local_path,
 )
-from facegen.settings import load_local
 
 DISK = RealDisk()
 NATIVE = platform_info.current()

@@ -11,10 +11,11 @@ from typing import cast
 
 import pytest
 
-from facegen import pipes, procs, worker_process
-from facegen.app_window import WindowProcess
-from facegen.models import ModelDownload
-from facegen.worker_process import WorkerProxy
+from facegen.desktop.app_window import WindowProcess
+from facegen.platform import pipes, procs
+from facegen.runtime import worker_process
+from facegen.runtime.worker_process import WorkerProxy
+from facegen.setup.models import ModelDownload
 
 
 class ChildAfterEOF:

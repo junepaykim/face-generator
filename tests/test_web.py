@@ -14,15 +14,16 @@ from factories import ABROAD, NEWGEN, PLAIN_PERSONALITY, RIVAL, WOMENS, player, 
 from fakes import FakeRenderer, FakeTagger
 from fastapi.testclient import TestClient
 
-from facegen import db, native
-from facegen.datasource.records import Snapshot
-from facegen.kits import load_kits
-from facegen.photos import PhotoIndex, PhotoScan
+from facegen.core.records import Snapshot
+from facegen.datasource.kits import load_kits
+from facegen.datasource.photos import PhotoIndex, PhotoScan
+from facegen.persistence import db
+from facegen.persistence.settings import Settings, is_fixed, load_defaults, load_settings
+from facegen.pipeline.sync import run_sync
+from facegen.pipeline.worker import JobFilter, Worker, load_career
+from facegen.platform import native
 from facegen.service import SyncService, WorkerService
-from facegen.settings import Settings, is_fixed, load_defaults, load_settings
-from facegen.sync import run_sync
 from facegen.web.app import AppContext, create_app
-from facegen.worker import JobFilter, Worker, load_career
 
 MINE = 1001  # my club: A
 STAR = 1002  # pre-existing at another club: hand-picked only
@@ -663,7 +664,7 @@ def test_redirects_stay_on_this_site(env: Env) -> None:
 
 
 def test_dashboard_reports_an_unsupported_build(env: Env) -> None:
-    from facegen.sync import record_failed_sync
+    from facegen.pipeline.sync import record_failed_sync
 
     assert "cannot be read" not in env.client.get("/").text
     c = env.conn()

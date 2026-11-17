@@ -11,13 +11,13 @@ import pytest
 from factories import ABROAD, NEWGEN, RIVAL, WOMENS, player, snapshot
 from fakes import FakeRenderer, FakeTagger
 
-from facegen import manual
-from facegen.kits import load_kits
-from facegen.manual import ManualError
-from facegen.settings import Paths, Settings
-from facegen.sync import run_sync
+from facegen.datasource.kits import load_kits
+from facegen.persistence.settings import Paths, Settings
+from facegen.pipeline import manual
+from facegen.pipeline.manual import ManualError
+from facegen.pipeline.sync import run_sync
+from facegen.pipeline.worker import JobFilter, Worker, load_career
 from facegen.web import queries
-from facegen.worker import JobFilter, Worker, load_career
 
 MINE = 1001  # pre-existing at my club: A
 STAR = 1002  # pre-existing star at another club: in no group, picked by hand

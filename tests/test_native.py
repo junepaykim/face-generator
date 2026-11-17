@@ -16,11 +16,11 @@ import pytest
 from fakes import BACKDROPS, figure
 from PIL import Image, ImageChops, ImageDraw
 
-from facegen import native
-from facegen.figure import PyGrid, grid
-from facegen.picture import face_box
-from facegen.publish import published_bytes, published_pictures
+from facegen.pipeline.publish import published_bytes, published_pictures
+from facegen.platform import native
 from facegen.qc import head_top
+from facegen.render.figure import PyGrid, grid
+from facegen.render.picture import face_box
 
 if native.ext is None:
     if os.environ.get("FACEGEN_REQUIRE_NATIVE"):

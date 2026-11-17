@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from facegen import app_window
-from facegen.app_window import NO_WEBVIEW2, WindowProcess
+from facegen.desktop import app_window
+from facegen.desktop.app_window import NO_WEBVIEW2, WindowProcess
 
 TESTS = Path(__file__).resolve().parent
 URL = "http://127.0.0.1:8765/"

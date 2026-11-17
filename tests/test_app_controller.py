@@ -8,7 +8,7 @@ import threading
 
 import pytest
 
-from facegen.app_controller import (
+from facegen.desktop.app_controller import (
     MENU_STATUS_CHARS,
     NOTICE_CHARS,
     NOTICE_TITLE_CHARS,
@@ -18,7 +18,7 @@ from facegen.app_controller import (
     describe_worker,
     dot_for,
 )
-from facegen.jobs import Job
+from facegen.persistence.jobs import Job
 from facegen.service import SyncStatus, WorkerStatus
 
 STATES = (

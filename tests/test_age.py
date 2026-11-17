@@ -4,9 +4,9 @@ from dataclasses import replace
 
 import pytest
 
-from facegen.age import TABLES, WORDINGS, age_wording, audience, drawn_as_man, table_name
-from facegen.classify import Group
-from facegen.settings import Settings
+from facegen.core.age import TABLES, WORDINGS, age_wording, audience, drawn_as_man, table_name
+from facegen.core.classify import Group
+from facegen.persistence.settings import Settings
 
 # docs/spec.md section 3: real age -> age wording, per table (user, 2026-11-11).
 SPEC = {
@@ -104,7 +104,7 @@ def test_staff_have_their_own_wide_bands_whatever_their_group(settings: Settings
 
 
 def test_staff_ages_up_to_100_are_allowed_in_the_tables(settings: Settings) -> None:
-    from facegen.settings import build_settings
+    from facegen.persistence.settings import build_settings
 
     values = dict(settings.values)
     values["age.staff.W10"] = 99
@@ -156,7 +156,7 @@ def test_audience_reads_a_players_row() -> None:
 
 
 def test_mens_wordings_are_refused_in_a_table(settings: Settings) -> None:
-    from facegen.settings import SettingsError, build_settings
+    from facegen.persistence.settings import SettingsError, build_settings
 
     values = dict(settings.values)
     values["age.staff.M2"] = 40

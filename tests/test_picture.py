@@ -6,7 +6,7 @@ import pytest
 from fakes import BACKDROPS, figure
 from PIL import Image
 
-from facegen.picture import aspect_box, crop_to_aspect, face_box, published_size
+from facegen.render.picture import aspect_box, crop_to_aspect, face_box, published_size
 
 
 @pytest.mark.parametrize(

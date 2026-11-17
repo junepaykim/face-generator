@@ -10,10 +10,9 @@ from datetime import date
 
 import pytest
 
-from facegen.age import WORDINGS
-from facegen.kits import COLOURS, Kit
-from facegen.prompt import CONTENT_NEGATIVE, CONTENT_POSITIVE, QUALITY, build_prompt
-from facegen.shoot import (
+from facegen.core.age import WORDINGS
+from facegen.core.prompt import CONTENT_NEGATIVE, CONTENT_POSITIVE, QUALITY, build_prompt
+from facegen.core.shoot import (
     ANGLES,
     ARMS,
     BACKDROP_COLOURS,
@@ -34,7 +33,8 @@ from facegen.shoot import (
     season_of,
     shoot_for,
 )
-from facegen.traits import HAIR_COLOUR, CharacterSheet
+from facegen.core.traits import HAIR_COLOUR, CharacterSheet
+from facegen.datasource.kits import COLOURS, Kit
 
 COLCHESTER = Kit(shirt=("blue", "white"), pattern="stripes", shorts="blue")
 KEEPER = Kit(shirt=("yellow",), goalkeeper=True)

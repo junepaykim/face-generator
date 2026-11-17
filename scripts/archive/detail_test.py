@@ -19,11 +19,11 @@ import time
 from pathlib import Path
 
 from facegen import qc
-from facegen.gpu import prepare_environment
-from facegen.kits import load_kits
-from facegen.prompt import build_prompt
-from facegen.settings import load_settings
-from facegen.traits import pick_pose, picture_seed, sample_sheet
+from facegen.core.prompt import build_prompt
+from facegen.core.traits import pick_pose, picture_seed, sample_sheet
+from facegen.datasource.kits import load_kits
+from facegen.persistence.settings import load_settings
+from facegen.render.gpu import prepare_environment
 
 prepare_environment()
 
@@ -46,7 +46,7 @@ def main() -> None:
     import torch
     from PIL import Image
 
-    from facegen.worker import AnimagineRenderer
+    from facegen.pipeline.worker import AnimagineRenderer
 
     RUN.mkdir(parents=True, exist_ok=True)
     settings = load_settings()
