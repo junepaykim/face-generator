@@ -386,7 +386,6 @@ def migrate(conn: sqlite3.Connection) -> int:
     return schema_version(conn)
 
 
-# --- renamed settings ----------------------------------------------------------------------
 # A setting renamed after the database was made is put right at every connect, not by a
 # numbered migration: an older facegen may share the database, and a newer schema number
 # would lock it out. An older facegen skips a key it does not know, with a warning, as it

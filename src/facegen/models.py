@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any, TextIO
 
 from facegen import procs
+from facegen.pipes import JsonWriter, drain_lines
 
 logger = logging.getLogger("facegen")
 
@@ -122,9 +123,6 @@ def gigabytes(n: int) -> str:
     if n >= 10**9:
         return f"{n / 10**9:.1f} GB"
     return f"{max(n, 0) / 10**6:.0f} MB"
-
-
-# --- the cache on disk ------------------------------------------------------------------------
 
 
 def hub_cache_root() -> Path:
@@ -236,8 +234,6 @@ def ready_now() -> bool:
         return True
 
 
-# --- the download, in its own process ---------------------------------------------------------
-
 CHILD_ENV_DROP = ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE", "HF_DATASETS_OFFLINE")
 CHILD_ENV = {
     "PYTHONIOENCODING": "utf-8",
@@ -265,12 +261,6 @@ def hf_fetch(f: ModelFile) -> None:
     hf_hub_download(f.repo, f.filename, revision=REVISION)
 
 
-def _send(out: TextIO, lock: threading.Lock, message: dict[str, Any]) -> None:
-    with lock:
-        out.write(json.dumps(message, ensure_ascii=True, separators=(",", ":")) + "\n")
-        out.flush()
-
-
 def run_child(
     out: TextIO,
     *,
@@ -282,10 +272,14 @@ def run_child(
     """`facegen models --child`: download what is missing, one file at a time, telling the
     parent on `out`. Returns the exit code: 0 when every file is there, 1 otherwise."""
     cache = cache or HubCache(hub_cache_root())
-    lock = threading.Lock()
+    writer = JsonWriter()
+
+    def send(message: dict[str, Any]) -> None:
+        writer.send(out, message)
+
     todo = missing(files, cache.has)
     total = total_size(todo)
-    _send(out, lock, {"type": "plan", "files": len(todo), "bytes": total})
+    send({"type": "plan", "files": len(todo), "bytes": total})
     finished = 0
     current: list[ModelFile] = []
     stop = threading.Event()
@@ -298,22 +292,22 @@ def run_child(
 
     def report() -> None:
         while not stop.wait(interval):
-            _send(out, lock, {"type": "progress", "done": bytes_now()})
+            send({"type": "progress", "done": bytes_now()})
 
     reporter = threading.Thread(target=report, name="facegen-models-progress", daemon=True)
     reporter.start()
     try:
         for i, f in enumerate(todo, start=1):
             current[:] = [f]
-            _send(out, lock, {"type": "file", "index": i, "name": f.label, "size": f.size})
+            send({"type": "file", "index": i, "name": f.label, "size": f.size})
             fetch(f)
             finished += f.size
             current.clear()
-            _send(out, lock, {"type": "progress", "done": finished})
+            send({"type": "progress", "done": finished})
     except BaseException as exc:  # noqa: BLE001 - say why, then end
         stop.set()
         message = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
-        _send(out, lock, {"type": "error", "message": message[:1000]})
+        send({"type": "error", "message": message[:1000]})
         return 1
     finally:
         stop.set()
@@ -321,9 +315,9 @@ def run_child(
     left = missing(files, cache.has)
     if left:
         names = ", ".join(f.label for f in left[:3])
-        _send(out, lock, {"type": "error", "message": f"still missing after the download: {names}"})
+        send({"type": "error", "message": f"still missing after the download: {names}"})
         return 1
-    _send(out, lock, {"type": "done", "bytes": total})
+    send({"type": "done", "bytes": total})
     return 0
 
 
@@ -428,15 +422,10 @@ class ModelDownload:
 
     def _run(self) -> None:
         try:
-            child = procs.popen_quiet(
+            child = procs.popen_json(
                 self._command,
+                detached=False,
                 stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                bufsize=1,
                 env=child_env(self._env),
             )
         except OSError as exc:
@@ -450,10 +439,12 @@ class ModelDownload:
 
         def drain() -> None:
             assert child.stderr is not None
-            for raw in child.stderr:
-                line = raw.rstrip("\r\n")
+
+            def receive(line: str) -> None:
                 tail[:] = [*tail[-19:], line]
                 logger.info("models: %s", line)
+
+            drain_lines(child.stderr, receive)
 
         reader = threading.Thread(target=drain, name="facegen-models-stderr", daemon=True)
         reader.start()

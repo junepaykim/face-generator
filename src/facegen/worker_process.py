@@ -53,7 +53,9 @@ from facegen.jobs import Job
 from facegen.kits import KitError, KitTable, load_kits
 from facegen.pipes import (  # noqa: F401 - also used from here by the tests and cli
     PIPE_POLL_SECONDS,
+    JsonWriter,
     decode,
+    drain_lines,
     encode,
     fd_lines,
     pipe_reader,
@@ -93,9 +95,6 @@ drew about 30 lines of them, at each start of a worker process)."""
 logger = logging.getLogger("facegen")
 child_logger = logging.getLogger("facegen.child")
 """The parent writes the child's log records here, so they reach the same log file."""
-
-
-# -- the messages --------------------------------------------------------------------------
 
 
 def job_to_json(job: Job | None) -> dict[str, Any] | None:
@@ -139,15 +138,13 @@ def status_from_json(data: dict[str, Any]) -> WorkerStatus:
     )
 
 
-# -- the child's side ----------------------------------------------------------------------
-
-
 class ChildLink:
     """The child's end of the pipe (service.Link): messages to the parent."""
 
     def __init__(self, out: TextIO) -> None:
         self._out = out
-        self._lock = threading.RLock()
+        self._writer = JsonWriter()
+        self._lock = self._writer.lock
         self._last_status: dict[str, Any] | None = None
         self.broken = False
         """The parent stopped reading; the end of stdin will stop the loop."""
@@ -158,8 +155,7 @@ class ChildLink:
             if self.broken:
                 return
             try:
-                self._out.write(text)
-                self._out.flush()
+                self._writer.send_encoded(self._out, text)
             except (OSError, ValueError):
                 self.broken = True
 
@@ -271,9 +267,6 @@ def serve_child(
         logger.propagate = saved[1]
 
 
-# -- the parent's side ---------------------------------------------------------------------
-
-
 def worker_command(program: Sequence[str] | None = None, config: Path | None = None) -> list[str]:
     """The command line that starts `facegen worker`: this Python, unless `program` says."""
     base = list(program) if program else [sys.executable, "-m", "facegen.cli"]
@@ -318,7 +311,7 @@ class WorkerProxy:
         self._clock = clock
         self._echo_stderr = echo_stderr
         self._lock = threading.Lock()
-        self._send_lock = threading.Lock()
+        self._writer = JsonWriter()
         self._wake = threading.Event()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -339,8 +332,6 @@ class WorkerProxy:
         self._last_error: str | None = None
         self.starts = 0
         """Worker processes started so far."""
-
-    # -- control, from the web threads --
 
     def pause(self) -> None:
         with self._lock:
@@ -435,15 +426,11 @@ class WorkerProxy:
             child = self._child
         if child is None or child.stdin is None:
             return False
-        with self._send_lock:
-            try:
-                child.stdin.write(encode({"cmd": cmd}))
-                child.stdin.flush()
-            except (OSError, ValueError):
-                return False
+        try:
+            self._writer.send(child.stdin, {"cmd": cmd})
+        except (OSError, ValueError):
+            return False
         return True
-
-    # -- the supervisor thread --
 
     def start(self) -> None:
         self._thread = threading.Thread(target=self._main, name="facegen-supervisor", daemon=True)
@@ -497,24 +484,10 @@ class WorkerProxy:
 
     def _spawn(self, generate_now: bool) -> subprocess.Popen[str]:
         command = [*self._command, *(["--generate-now"] if generate_now else [])]
-        if os.name == "nt":  # Ctrl+C in the console is the parent's; it sends "stop"
-            extra: dict[str, Any] = {
-                "creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-            }
-        else:
-            extra = {"start_new_session": True}
-        # No console window of its own on Windows (procs.py), even when the parent has none.
-        return procs.popen_quiet(
+        return procs.popen_json(
             command,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            bufsize=1,
+            detached=True,  # Ctrl+C belongs to the parent, which sends "stop".
             env={**os.environ, **CHILD_ENV},
-            **extra,
         )
 
     def _run_child(self) -> None:
@@ -558,12 +531,7 @@ class WorkerProxy:
                 logger.warning("worker process: bad message %r (%s)", raw[:200], exc)
         code = self._reap(child)
         reader.join(5)
-        for stream in (child.stdin, child.stdout, child.stderr):
-            try:
-                if stream is not None:
-                    stream.close()
-            except OSError:
-                pass
+        procs.close_streams(child.stdin, child.stdout, child.stderr)
         with self._lock:
             last = self._child_status
             if last is not None:
@@ -593,23 +561,19 @@ class WorkerProxy:
 
     def _drain_stderr(self, child: subprocess.Popen[str]) -> None:
         assert child.stderr is not None
-        for raw in child.stderr:
-            line = raw.rstrip("\r\n")
+
+        def receive(line: str) -> None:
             self._stderr_tail.append(line)
             # Library notices, mostly; a crash's last words are logged again as an error.
             child_logger.info("stderr: %s", line)
             if self._echo_stderr and sys.stderr is not None:
                 print(line, file=sys.stderr, flush=True)
 
+        drain_lines(child.stderr, receive)
+
     def _reap(self, child: subprocess.Popen[str]) -> int:
         """The exit code; a child that keeps running after closing its output is ended."""
-        try:
-            return child.wait(timeout=REAP_SECONDS)
-        except subprocess.TimeoutExpired:
-            child.kill()
-            return child.wait()
-
-    # -- after a child ended --
+        return procs.wait_or_kill(child, timeout=REAP_SECONDS)
 
     def _after(self, ended: dict[str, Any] | None, code: int | None, current: Job | None) -> None:
         if self._stop.is_set():

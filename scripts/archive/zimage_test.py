@@ -8,12 +8,12 @@ data/bakeoff/<run>/index.html. A ten-case subset is also rendered in BF16 and wi
 storage only, to see what FP8 costs, and with the tag prompt, to see whether Z-Image
 needs plain English.
 
-    uv run python scripts/spikes/zimage_test.py prompts               # no GPU
-    uv run python scripts/spikes/zimage_test.py smoke                 # 2 pictures, zimage-smoke
-    uv run python scripts/spikes/zimage_test.py render --columns zimage~fp8 --cases S01a
-    uv run python scripts/spikes/zimage_test.py tag
-    uv run python scripts/spikes/zimage_test.py report
-    uv run python scripts/spikes/zimage_test.py all                   # everything, then report
+    uv run python scripts/archive/zimage_test.py prompts               # no GPU
+    uv run python scripts/archive/zimage_test.py smoke                 # 2 pictures, zimage-smoke
+    uv run python scripts/archive/zimage_test.py render --columns zimage~fp8 --cases S01a
+    uv run python scripts/archive/zimage_test.py tag
+    uv run python scripts/archive/zimage_test.py report
+    uv run python scripts/archive/zimage_test.py all                   # everything, then report
 
 Precision (column suffix):
   fp8   FP8 (e4m3) weights with a per-output-channel scale; activations quantised per

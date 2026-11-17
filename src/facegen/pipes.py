@@ -10,8 +10,9 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from typing import Any, TextIO
 
 
@@ -26,6 +27,32 @@ def decode(line: str) -> dict[str, Any] | None:
     except ValueError:
         return None
     return message if isinstance(message, dict) else None
+
+
+class JsonWriter:
+    """Serialize each JSON line and its flush, including across a child's replacement.
+
+    Callers own broken-pipe handling. The reentrant lock also lets a caller read state and
+    send its message under the same lock, so concurrent status reports cannot be reordered.
+    """
+
+    def __init__(self) -> None:
+        self.lock = threading.RLock()
+
+    def send(self, out: TextIO, message: dict[str, Any]) -> None:
+        self.send_encoded(out, encode(message))
+
+    def send_encoded(self, out: TextIO, line: str) -> None:
+        """Send a line from `encode`, letting callers separate encoding and pipe errors."""
+        with self.lock:
+            out.write(line)
+            out.flush()
+
+
+def drain_lines(stream: Iterable[str], receive: Callable[[str], None]) -> None:
+    """Drain a text stream, stripping line endings only; the caller owns logging and errors."""
+    for raw in stream:
+        receive(raw.rstrip("\r\n"))
 
 
 def protocol_streams(stdin: TextIO, stdout: TextIO) -> tuple[Iterator[str], TextIO]:

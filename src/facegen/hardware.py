@@ -226,10 +226,3 @@ def changes(preset: Preset, current: Mapping[str, Any]) -> list[Change]:
         for key, value in preset.changes.items()
         if current.get(key) != value
     ]
-
-
-def main_json(out: Any = None) -> int:
-    """`facegen hardware --json`: one line of JSON for `probe`."""
-    out = out or sys.stdout
-    print(json.dumps(detect().to_json(), ensure_ascii=True), file=out, flush=True)
-    return 0

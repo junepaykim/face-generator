@@ -60,9 +60,6 @@ def facepack_ids(config_xml: bytes) -> frozenset[int]:
     return frozenset(int(m) for m in _MAPPED_PERSON.findall(config_xml))
 
 
-# --- scanning the folders ----------------------------------------------------------------
-
-
 @dataclass(frozen=True, slots=True)
 class PhotoIndex:
     """Who has a photo, as read from FM27's folders."""
@@ -216,9 +213,6 @@ def scan(paths: Paths, previous: Mapping[str, Any] | None = None) -> PhotoScan:
     if previous and fingerprint(previous) == fingerprint(state):
         return PhotoScan(state, None)
     return PhotoScan(state, _read_index(paths, configs))
-
-
-# --- the database -------------------------------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)

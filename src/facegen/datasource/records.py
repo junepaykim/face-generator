@@ -75,8 +75,7 @@ class PlayerRecord:
 
 @dataclass(frozen=True, slots=True)
 class StaffRecord:
-    """A person on my club's staff who is not a player: coach, physio, scout, analyst, a
-    board member, or the save's own human manager."""
+    """A non-player on my club's staff or a first-team manager at another club in my league."""
 
     unique_id: int
     """The game's unique ID for the person; what FM27's config.xml maps, as for players."""

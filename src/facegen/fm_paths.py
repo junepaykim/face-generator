@@ -52,8 +52,6 @@ _WINDOWS_ACCOUNTS = frozenset({"all users", "default", "default user", "public",
 _SAVE_BACKUP_PREFIX = "last save overwrite backup"
 
 
-# --- paths between Windows and WSL ---------------------------------------------------------
-
 _DRIVE_PATH = re.compile(r"^([A-Za-z]):(?:[\\/](.*))?$")
 _WSL_DRIVE_PATH = re.compile(r"^/mnt/([A-Za-z])(?:/(.*))?$")
 
@@ -112,9 +110,6 @@ def native_path(text: str, kind: Kind, mount_root: str = WSL_MOUNT_ROOT) -> str:
     return text
 
 
-# --- what Windows says ------------------------------------------------------------------------
-
-
 @dataclass(frozen=True, slots=True)
 class WindowsInfo:
     """What Windows says about the user's folders. Paths are as Windows writes them."""
@@ -167,9 +162,6 @@ def parse_powershell_info(text: str, drives: Sequence[str] = ()) -> WindowsInfo:
         elif key.startswith("env:"):
             env[key.removeprefix("env:")] = value
     return WindowsInfo(documents, env, steam, tuple(drives))
-
-
-# --- the disk ---------------------------------------------------------------------------------
 
 
 class Disk(Protocol):
@@ -226,9 +218,6 @@ class RealDisk:
         except OSError:
             return None
         return newest
-
-
-# --- the user folder --------------------------------------------------------------------------
 
 
 def _native(kind: Kind, windows_path: str | None) -> PurePath | None:
@@ -326,8 +315,6 @@ def find_user_dir(kind: Kind, info: WindowsInfo, disk: Disk) -> PurePath | None:
         found = choose_user_dir(wsl_scan_candidates(disk), disk)
     return found
 
-
-# --- the install folder -----------------------------------------------------------------------
 
 _VDF_PATH = re.compile(r'"path"\s+"((?:[^"\\]|\\.)*)"', re.IGNORECASE)
 _ACF_INSTALLDIR = re.compile(r'"installdir"\s+"((?:[^"\\]|\\.)*)"', re.IGNORECASE)
@@ -452,9 +439,6 @@ def find_install_dir(kind: Kind, info: WindowsInfo, disk: Disk) -> PurePath | No
         if disk.is_dir(c / INSTALL_MARKER):
             return c
     return None
-
-
-# --- asking this PC ---------------------------------------------------------------------------
 
 
 DOCUMENTS_FOLDER_ID = "FDD39AD0-238F-46AF-ADB4-6C85480369C7"

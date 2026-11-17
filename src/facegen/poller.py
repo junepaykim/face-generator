@@ -190,9 +190,6 @@ def sync_save(
     )
 
 
-# --- watching ------------------------------------------------------------------------------
-
-
 @dataclass(frozen=True, slots=True)
 class SaveVersion:
     """One version of a save file: its path, size and modification time."""

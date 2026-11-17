@@ -34,8 +34,7 @@ ICON_PIXELS = 64
 
 
 class TrayIcon:
-    """The pystray icon. `run` blocks (the tray-only app's main thread); `run_detached`
-    starts it in a thread of its own (the window has the main thread)."""
+    """The pystray icon. `run` blocks in the app's main thread until `stop`."""
 
     def __init__(self, controller: AppController, *, pystray: Any = None) -> None:
         if pystray is None:
@@ -54,8 +53,6 @@ class TrayIcon:
             self._view.tooltip,
             menu=pystray.Menu(self._items),
         )
-
-    # -- the menu --
 
     def _items(self) -> Iterator[Any]:
         MenuItem = self._pystray.MenuItem
@@ -96,8 +93,6 @@ class TrayIcon:
 
         return run
 
-    # -- what desktop.Refresher calls --
-
     def show(self, view: View) -> None:
         """Show a new view: the icon when its dot changed, the tooltip, the menu."""
         with self._lock:
@@ -130,8 +125,6 @@ class TrayIcon:
         except Exception as exc:  # noqa: BLE001 - a notification is not worth stopping for
             logger.warning("tray: could not show a notification: %s", exc)
 
-    # -- the loop --
-
     def _setup(self, icon: Any) -> None:
         icon.visible = True
         with self._lock:
@@ -146,13 +139,6 @@ class TrayIcon:
     def run(self) -> None:
         """The icon's loop in this thread, until `stop`."""
         self.icon.run(setup=self._setup)
-
-    def run_detached(self) -> None:
-        """The icon's loop in a thread of its own (on Windows)."""
-        self.icon.run_detached(setup=self._setup)
-
-    def wait_ready(self, timeout: float | None = None) -> bool:
-        return self._ready.wait(timeout)
 
     def stop(self) -> None:
         try:

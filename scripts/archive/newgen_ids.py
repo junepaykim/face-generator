@@ -1,6 +1,6 @@
 """Phase 0.1 spike: look for the ID boundary between database players and in-game-created ones.
 
-Throwaway. uv run python scripts/spikes/newgen_ids.py SNAPSHOT
+Throwaway. uv run python scripts/archive/newgen_ids.py SNAPSHOT
 """
 
 import sys

@@ -99,9 +99,6 @@ class SyncReport:
     """People on my club's staff who were not at the career's previous sync. 0 on a first sync."""
 
 
-# --- career ------------------------------------------------------------------------------
-
-
 def resolve_career(
     conn: sqlite3.Connection, snapshot: Snapshot, settings: Settings
 ) -> tuple[Career, list[str]]:
@@ -178,8 +175,6 @@ def resolve_career(
     career = Career(match, row["key"], display, boundary, row["newgen_id_source"], is_new=False)
     return career, warnings
 
-
-# --- ingest ------------------------------------------------------------------------------
 
 _PLAYER_COLUMNS = (
     "career_id",
@@ -526,9 +521,6 @@ def _media_rows(
     return rows
 
 
-# --- classify and plan -------------------------------------------------------------------
-
-
 @dataclass(frozen=True, slots=True)
 class Move:
     """A player whose group or tracking a classification changes, from the stored values."""
@@ -695,9 +687,6 @@ def classify_and_plan(conn: sqlite3.Connection, career_id: int, settings: Settin
     )
     apply_plan(conn, career_id, result.plan)
     return result
-
-
-# --- reports -----------------------------------------------------------------------------
 
 
 def queue_preview(conn: sqlite3.Connection, career_id: int, limit: int) -> list[QueueEntry]:

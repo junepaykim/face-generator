@@ -31,7 +31,6 @@ from __future__ import annotations
 import argparse
 import itertools
 import logging
-import os
 import subprocess
 import sys
 import threading
@@ -39,7 +38,8 @@ import time
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any, TextIO
 
-from facegen.pipes import decode, encode
+from facegen import procs
+from facegen.pipes import JsonWriter, decode, drain_lines
 
 logger = logging.getLogger("facegen")
 
@@ -78,14 +78,12 @@ class AppWindow:
         *,
         hidden: bool = False,
         on_hide: Callable[[], None] | None = None,
-        storage: str | None = None,
         webview: Any = None,
     ) -> None:
         if webview is None:
             import webview  # the desktop dependency group, Windows only
 
         self._webview = webview
-        self._storage = storage
         self._on_hide = on_hide
         self._closing_for_good = False
         self.window = webview.create_window(
@@ -111,10 +109,7 @@ class AppWindow:
 
     def run(self) -> None:
         """The window's loop in this thread (the main one), until `destroy`."""
-        kwargs: dict[str, Any] = {}
-        if self._storage:
-            kwargs.update(private_mode=False, storage_path=self._storage)
-        self._webview.start(**kwargs)
+        self._webview.start()
 
     def show(self) -> None:
         try:
@@ -152,9 +147,6 @@ class AppWindow:
         return str(first) or None
 
 
-# --- the window process (the child) ------------------------------------------------------------
-
-
 def child_main(
     url: str,
     hidden: bool,
@@ -165,15 +157,13 @@ def child_main(
     make: Callable[..., AppWindow] = AppWindow,
 ) -> int:
     """The window process: the window in this (main) thread, commands read in another."""
-    lock = threading.Lock()
+    writer = JsonWriter()
 
     def send(message: dict[str, Any]) -> None:
-        with lock:
-            try:
-                out.write(encode(message))
-                out.flush()
-            except (OSError, ValueError):  # the parent has gone; the end of stdin follows
-                pass
+        try:
+            writer.send(out, message)
+        except (OSError, ValueError):  # the parent has gone; the end of stdin follows
+            pass
 
     if missing():
         send({"type": "unavailable", "reason": NO_WEBVIEW2})
@@ -216,9 +206,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     return child_main(args.url, args.hidden, commands, out)
 
 
-# --- the app's side (the parent) ---------------------------------------------------------------
-
-
 def window_command(url: str, hidden: bool) -> list[str]:
     return [
         sys.executable,
@@ -254,6 +241,7 @@ class WindowProcess:
         self._command = command
         self._clock = clock
         self._lock = threading.Lock()
+        self._writer = JsonWriter()
         self._child: subprocess.Popen[str] | None = None
         self._started_at = 0.0
         self._quick_failures = 0
@@ -273,24 +261,9 @@ class WindowProcess:
         self._spawn(self._hidden)
 
     def _spawn(self, hidden: bool) -> None:
-        from facegen import procs
-
-        if os.name == "nt":  # Ctrl+C in a console is the app's, as for the worker process
-            extra: dict[str, Any] = {
-                "creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-            }
-        else:
-            extra = {"start_new_session": True}
-        child = procs.popen_quiet(
+        child = procs.popen_json(
             self._command(self.url, hidden),
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            bufsize=1,
-            **extra,
+            detached=True,  # Ctrl+C belongs to the app, which sends "close".
         )
         with self._lock:
             self._child = child
@@ -311,8 +284,7 @@ class WindowProcess:
         if child is None or child.stdin is None or child.poll() is not None:
             return False
         try:
-            child.stdin.write(encode(message))
-            child.stdin.flush()
+            self._writer.send(child.stdin, message)
         except (OSError, ValueError):
             return False
         return True
@@ -348,19 +320,14 @@ class WindowProcess:
         if child is None:
             return
         self._send({"cmd": "close"})
-        try:
-            if child.stdin is not None:
-                child.stdin.close()
-        except OSError:
-            pass
-        try:
-            child.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            logger.warning("window process %d did not close; ended it", child.pid)
-            child.kill()
-            child.wait()
-
-    # -- the reader threads --
+        procs.close_streams(child.stdin)
+        procs.wait_or_kill(
+            child,
+            timeout=timeout,
+            on_timeout=lambda: logger.warning(
+                "window process %d did not close; ended it", child.pid
+            ),
+        )
 
     def _read(self, child: subprocess.Popen[str]) -> None:
         assert child.stdout is not None
@@ -421,8 +388,7 @@ class WindowProcess:
 
     def _drain(self, child: subprocess.Popen[str]) -> None:
         assert child.stderr is not None
-        for raw in child.stderr:
-            logger.info("window: %s", raw.rstrip("\r\n"))
+        drain_lines(child.stderr, lambda line: logger.info("window: %s", line))
 
 
 if __name__ == "__main__":

@@ -16,13 +16,16 @@ import shutil
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import PurePosixPath, PureWindowsPath
-from typing import Any
+from typing import Any, TextIO
 
 from facegen.platform_info import Kind
 
 CREATE_NO_WINDOW = 0x08000000
 """Windows's process creation flag for a console program that gets no console window
 (`subprocess.CREATE_NO_WINDOW`, which exists only on Windows)."""
+
+CREATE_NEW_PROCESS_GROUP = 0x00000200
+"""Isolate a Windows child from the parent's console signals."""
 
 WSL_SYSTEM32 = PurePosixPath("/mnt/c/Windows/System32")
 
@@ -51,6 +54,62 @@ def run_quiet(
 def popen_quiet(args: Sequence[str], *, os_name: str = os.name, **kwargs: Any) -> subprocess.Popen:
     """`subprocess.Popen` with no console window on Windows."""
     return subprocess.Popen(list(args), **_quiet(kwargs, os_name))
+
+
+def popen_json(
+    args: Sequence[str],
+    *,
+    detached: bool,
+    stdin: int = subprocess.PIPE,
+    env: Mapping[str, str] | None = None,
+    os_name: str = os.name,
+) -> subprocess.Popen[str]:
+    """Quiet UTF-8 line pipes. Environment and console-signal isolation are caller policy."""
+    extra: dict[str, Any] = {}
+    if detached:
+        if os_name == "nt":
+            extra["creationflags"] = CREATE_NEW_PROCESS_GROUP
+        else:
+            extra["start_new_session"] = True
+    return popen_quiet(
+        args,
+        os_name=os_name,
+        stdin=stdin,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
+        env=env,
+        **extra,
+    )
+
+
+def close_streams(*streams: TextIO | None) -> None:
+    """Close supplied streams, tolerating OS errors from a pipe whose peer has gone away."""
+    for stream in streams:
+        try:
+            if stream is not None:
+                stream.close()
+        except OSError:
+            pass
+
+
+def wait_or_kill(
+    child: subprocess.Popen[str],
+    *,
+    timeout: float,
+    on_timeout: Callable[[], None] | None = None,
+) -> int:
+    """Wait for exit, then kill and reap on timeout. The caller chooses the grace period."""
+    try:
+        return child.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        if on_timeout is not None:
+            on_timeout()
+        child.kill()
+        return child.wait()
 
 
 def windows_tool(

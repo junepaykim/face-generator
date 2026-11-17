@@ -166,9 +166,6 @@ def powershell_command(powershell: str, script: str) -> list[str]:
     ]
 
 
-# --- this PC --------------------------------------------------------------------------------
-
-
 def windows_folders(
     env: Mapping[str, str] | None = None,
     ask: Callable[[str], str | None] | None = None,
@@ -235,7 +232,7 @@ def this_app(data_dir: Path, config: Path | None = None) -> AppPaths:
     """This checkout: the repository folder, the venv's pythonw.exe, the icon (written into
     the data folder if it is not there yet)."""
     from facegen.app_icon import write_ico
-    from facegen.settings import PROJECT_ROOT
+    from facegen.locations import PROJECT_ROOT
 
     icon = write_ico(data_dir / "app")
     return AppPaths(

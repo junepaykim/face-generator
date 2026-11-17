@@ -205,8 +205,6 @@ class AppController:
         self.steps_run: list[str] = []
         """The quit steps in the order they ran (for the log and the tests)."""
 
-    # -- actions --
-
     def open(self) -> None:
         """Open Dashboard: show the window, or the dashboard in the browser."""
         try:
@@ -282,8 +280,6 @@ class AppController:
         finally:
             self._quit_done.set()
 
-    # -- what the tray shows --
-
     def view(self) -> View:
         worker = self.worker.status() if self.worker is not None else None
         sync = self.syncer.status() if self.syncer is not None else None
@@ -327,8 +323,6 @@ class AppController:
             return self.startup.is_on()
         except Exception:  # noqa: BLE001 - shown as off
             return False
-
-    # -- notifications --
 
     def notices(self) -> list[Notice]:
         """What has happened since the last call that the user should be told, each once."""

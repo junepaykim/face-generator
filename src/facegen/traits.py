@@ -4,7 +4,7 @@ A sheet is sampled once per player. Every choice is seeded from the career, the 
 unique ID and the sheet version, so the same inputs always give the same sheet. Each field
 is drawn from its own hash, so adding a field later leaves the others unchanged.
 
-The vocabulary is the Phase 0.3 bake-off's (scripts/spikes/bakeoff.py, docs/research.md
+The vocabulary is the Phase 0.3 bake-off's (scripts/archive/bakeoff.py, docs/research.md
 section 5). Each value carries its prompt words and the tagger tags that confirm it was
 drawn: hair and eye colour tags are a pass condition of the quality check, the rest only
 help rank group A's candidates (qc.py).
@@ -152,7 +152,6 @@ def skin_words(skin: str, soften: int = 0) -> str:
     return SKIN_SCALE[step]
 
 
-# --- height and build ----------------------------------------------------------------------
 # Derived from the player's facts, not random, and stored in the sheet when it is sampled.
 # Only the tallest and shortest tenth of men's players, and the strongest and weakest tenth
 # by Strength, get words (user, 2026-11-11). fmsave reads no weight, so Strength stands in
@@ -200,7 +199,6 @@ def build_class(strength: int | None, t: BodyThresholds = DEFAULT_BODY) -> str:
     return "muscular" if strength >= t.muscular_strength_from else "average"
 
 
-# --- personality -----------------------------------------------------------------------------
 # Personality weights one sampled field, the default expression (spec section 4; the user
 # chose expression only, 2026-11-12: eye shape is drawn as before). Each lean below is one end
 # of one attribute: a player at or past its cut-off makes its expression more likely. The
@@ -268,7 +266,6 @@ def weighted(
     }
 
 
-# --- round eyes at my club ---------------------------------------------------------------------
 # The user prefers round eyes at my club, and sports portraits already lean sharp (2026-11-12).
 # A seeded share of sharp-eyed players there are drawn with round eyes instead (settings
 # `my_club.round_eyes`). Applied when the prompt is built, like the other my-club rules; the
@@ -297,9 +294,6 @@ BANNABLE: dict[str, Option] = {
     for name, option in table.items()
     if option.words
 }
-
-
-# --- seeding -----------------------------------------------------------------------------
 
 
 def _digest(*parts: object) -> bytes:
@@ -411,9 +405,6 @@ def picture_seed(base_seed: int, image_version: int, attempt: int, candidate: in
         raise ValueError(f"attempt {attempt} or candidate {candidate} out of range")
     offset = (image_version - 1) * _VERSION_STEP + attempt * _ATTEMPT_STEP + candidate
     return (base_seed + offset) % 2**32
-
-
-# --- storage -----------------------------------------------------------------------------
 
 
 def personality_to_json(personality: Personality | None) -> str | None:

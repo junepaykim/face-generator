@@ -1,6 +1,6 @@
 """Settings: defaults from config/default.toml, overrides from the state database.
 
-Read settings only through `load_settings`. The UI writes overrides with `set_override`.
+Read settings only through `load_settings`. The UI saves through `settings_history`.
 The content rule (docs/spec.md section 3) is code, not a setting, and has no key here.
 """
 
@@ -18,11 +18,12 @@ from typing import Any
 
 from facegen import fm_paths, platform_info
 from facegen.age import TABLES, WORDINGS
+from facegen.locations import CONFIG_DIR, PROJECT_ROOT
+from facegen.settings_store import write_overrides
 from facegen.traits import BANNABLE, BodyThresholds
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULTS_PATH = PROJECT_ROOT / "config" / "default.toml"
-LOCAL_PATH = PROJECT_ROOT / "config" / "local.toml"
+DEFAULTS_PATH = CONFIG_DIR / "default.toml"
+LOCAL_PATH = CONFIG_DIR / "local.toml"
 """This PC's own folders, laid over the defaults' `[paths]`. Optional and not in git, so the
 repository holds no Windows user name. The first-run setup writes FM27's folder here."""
 LOCAL_NAME = "local.toml"
@@ -633,11 +634,7 @@ def set_override(
     merged[key] = value
     result = build_settings(merged, current.overridden | {key}, current.paths.origins)
     now = datetime.now(UTC).isoformat()
-    conn.execute(
-        "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) "
-        "ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-        (key, json.dumps(value), now),
-    )
+    write_overrides(conn, {key: value}, updated_at=now)
     return result
 
 
@@ -677,15 +674,11 @@ def set_overrides(
     """
     result = merge_overrides(conn, changes, defaults_path)
     now = datetime.now(UTC).isoformat()
-    for key, value in changes.items():
-        if key in result.overridden:
-            conn.execute(
-                "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT (key)"
-                " DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-                (key, json.dumps(value), now),
-            )
-        else:
-            conn.execute("DELETE FROM settings WHERE key = ?", (key,))
+    write_overrides(
+        conn,
+        {key: value if key in result.overridden else None for key, value in changes.items()},
+        updated_at=now,
+    )
     return result
 
 

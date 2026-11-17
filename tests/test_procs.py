@@ -111,6 +111,30 @@ def test_popen_quiet_really_starts_a_process() -> None:
     assert out.strip() == "ok" and child.returncode == 0
 
 
+@pytest.mark.parametrize("os_name", ["nt", "posix"])
+@pytest.mark.parametrize("detached", [True, False])
+def test_json_child_spawn_preserves_console_and_environment_policy(
+    os_name: str, detached: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[dict[str, Any]] = []
+    monkeypatch.setattr(subprocess, "Popen", lambda args, **kw: seen.append(kw) or "child")
+    env = {"HF_HUB_OFFLINE": "1", "CUSTOM": "inherited by caller"}
+    assert procs.popen_json(["python"], detached=detached, env=env, os_name=os_name) == "child"
+    options = seen[0]
+    assert options["stdin"] == options["stdout"] == options["stderr"] == subprocess.PIPE
+    assert options["text"] and options["encoding"] == "utf-8" and options["errors"] == "replace"
+    assert options["bufsize"] == 1 and options["env"] == env
+    if os_name == "nt":
+        assert options["creationflags"] == procs.CREATE_NO_WINDOW | (0x200 if detached else 0)
+        assert "start_new_session" not in options
+    else:
+        assert "creationflags" not in options
+        assert options.get("start_new_session", False) is detached
+
+    procs.popen_json(["python"], detached=False, stdin=subprocess.DEVNULL, os_name=os_name)
+    assert seen[1]["stdin"] == subprocess.DEVNULL and seen[1]["env"] is None
+
+
 def test_windows_tool_on_path_first() -> None:
     found = windows_tool("tasklist.exe", "wsl", {}, which=lambda n: f"/on/path/{n}")
     assert found == "/on/path/tasklist.exe"

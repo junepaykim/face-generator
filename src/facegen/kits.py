@@ -43,7 +43,9 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, Literal
 
-KITS_PATH = Path(__file__).resolve().parents[2] / "config" / "kits.toml"
+from facegen.locations import CONFIG_DIR
+
+KITS_PATH = CONFIG_DIR / "kits.toml"
 CATALOG_REPORT = Path("kit-colour-probe") / "report.json"
 """The kit catalog, relative to the data folder: the colour probe's output."""
 BUNDLE_NAME = "kit_catalog.json"
@@ -284,9 +286,6 @@ def parse_kits(data: Mapping[str, Any]) -> KitTable:
             raise KitError(f"clubs.{key}: club keys are the game's unique club IDs")
         clubs[int(key)] = _club_kits(f"clubs.{key}", value)
     return KitTable(clubs=clubs, fallback=_club_kits("fallback", data["fallback"]))
-
-
-# --- the kit catalog ---------------------------------------------------------------------
 
 
 def keeper_colour(home: Kit) -> str:

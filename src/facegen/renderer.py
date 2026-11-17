@@ -239,8 +239,6 @@ class AnimagineRenderer:
         self._adapter_on = False
         self._reference_embeds: dict[str, Any] = {}
 
-    # -- the prompt --
-
     @staticmethod
     def _texts_of(prompts: Iterable[Prompt]) -> list[str]:
         # The empty text pads the shorter prompt of a pair (pair_embeddings).
@@ -286,8 +284,6 @@ class AnimagineRenderer:
         return max(
             len(_token_chunks(self.pipe.tokenizer, t)) for t in (prompt.positive, prompt.negative)
         )
-
-    # -- the reference picture --
 
     def _load_adapter(self) -> None:
         """Load IP-Adapter into the shared UNet; the detail pipeline shares it too.
@@ -347,8 +343,6 @@ class AnimagineRenderer:
                 )
             self._reference_embeds = {reference.key: embeds}  # one reference per job
         return {"ip_adapter_image_embeds": self._reference_embeds[reference.key]}
-
-    # -- drawing --
 
     def set_vae_tiling(self, on: bool) -> None:
         """Decode in tiles and one picture at a time (`render.vae_tiling`, Phase 10d): less

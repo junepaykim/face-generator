@@ -65,10 +65,6 @@ class FakeIcon:
         self.mode = "run"
         setup(self)
 
-    def run_detached(self, setup) -> None:  # type: ignore[no-untyped-def]
-        self.mode = "detached"
-        setup(self)
-
     def stop(self) -> None:
         self.stopped = True
 
@@ -111,7 +107,7 @@ def test_menu_clicks_call_the_controller_without_holding_the_icon() -> None:
     worker, syncer = FakeWorker(status("idle")), FakeSyncer()
     switch = FakeStartup()
     tray, controller = tray_for(worker, syncer, startup=switch)
-    tray.run_detached()
+    tray.run()
     by_text = {i.text: i for i in items(tray)}
     by_text["Open Dashboard"].action()
     by_text["Pause"].action()
@@ -270,6 +266,7 @@ def test_closing_the_window_hides_it_and_quit_closes_it_for_good() -> None:
     win.destroy()  # Quit
     runner.join(5)
     assert not runner.is_alive() and fake.closed.is_set()
+    assert webview.started == {}
 
 
 def test_browse_uses_the_windows_folder_dialog() -> None:

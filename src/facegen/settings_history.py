@@ -23,12 +23,11 @@ from typing import Any
 from facegen.db import transaction
 from facegen.jobs import load_career
 from facegen.settings import Settings, load_defaults, load_settings, read_overrides, set_overrides
+from facegen.settings_store import write_overrides
 from facegen.sync import ChangeReport, reclassify_with_report
 
 HISTORY_LIMIT = 20
 
-# Only these settings change who is in which group or the age band the planner works with;
-# the rest are read by the worker, the save watcher or the next sync.
 _RECLASSIFY_PREFIXES = ("groups.", "age.", "staff.", "no_photo.")
 
 
@@ -108,15 +107,7 @@ def can_redo(conn: sqlite3.Connection) -> bool:
 def _write(conn: sqlite3.Connection, state: Mapping[str, Any]) -> None:
     """Store each key's override, or remove it where the state is None."""
     now = datetime.now(UTC).isoformat()
-    for key, value in state.items():
-        if value is None:
-            conn.execute("DELETE FROM settings WHERE key = ?", (key,))
-        else:
-            conn.execute(
-                "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT (key)"
-                " DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-                (key, json.dumps(value), now),
-            )
+    write_overrides(conn, state, updated_at=now)
 
 
 def _reclassify(

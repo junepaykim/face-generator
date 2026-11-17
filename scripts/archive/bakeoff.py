@@ -5,12 +5,12 @@ anime tagger (content rating, hair and eye colour, kit, one character), and writ
 local comparison page. Pictures stay on this PC (AGENTS.md hard rule 6): everything goes
 to data/bakeoff/<run>/, and the page is a local file.
 
-    uv run python scripts/spikes/bakeoff.py prompts --model noobai     # no GPU
-    uv run python scripts/spikes/bakeoff.py render                     # all models
-    uv run python scripts/spikes/bakeoff.py render --models animagine --cases S01a,S01b
-    uv run python scripts/spikes/bakeoff.py tag
-    uv run python scripts/spikes/bakeoff.py report
-    uv run python scripts/spikes/bakeoff.py all
+    uv run python scripts/archive/bakeoff.py prompts --model noobai     # no GPU
+    uv run python scripts/archive/bakeoff.py render                     # all models
+    uv run python scripts/archive/bakeoff.py render --models animagine --cases S01a,S01b
+    uv run python scripts/archive/bakeoff.py tag
+    uv run python scripts/archive/bakeoff.py report
+    uv run python scripts/archive/bakeoff.py all
 
 Cases: 20 character sheets, four per age band, each drawn twice ("a" and "b") with a
 different kit, pose and seed, to judge whether the same character is recognisable; plus

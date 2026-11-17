@@ -33,10 +33,10 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from facegen import procs
+from facegen import locations, procs
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-NATIVE_DIR = PROJECT_ROOT / "native"
+PROJECT_ROOT = locations.PROJECT_ROOT
+NATIVE_DIR = locations.NATIVE_DIR
 SUMS_PATH = NATIVE_DIR / "wheels.sha256"
 RELEASES = "https://github.com/junepaykim/face-generator/releases/download"
 TAG_PREFIX = "native-v"
@@ -48,9 +48,6 @@ INSTALL_TIMEOUT = 300.0
 
 class WheelError(Exception):
     """The wheel could not be found, fetched, checked or installed."""
-
-
-# --- pure: names, tags and sums ------------------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,9 +192,6 @@ def sha256_of(path: Path) -> str:
         for block in iter(lambda: f.read(1 << 20), b""):
             digest.update(block)
     return digest.hexdigest()
-
-
-# --- the download and the install ----------------------------------------------------------
 
 
 def download(url: str, dest: Path, *, timeout: float = DOWNLOAD_TIMEOUT) -> None:

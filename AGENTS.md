@@ -241,7 +241,8 @@ Start.bat                 Windows: one-click start (uv, uv sync, facegen launch,
 native/                   optional Rust extension (PyO3, maturin): figure scan, PNG encoder;
                           wheels.sha256: the released wheels' checksums
 scripts/build_kit_catalog.py   reduces a kit colour probe report to the bundled catalog
-scripts/spikes/           throwaway Phase 0 experiments
+scripts/spikes/           maintenance, diagnostics, and pending validation
+scripts/archive/          completed save, display, model, and detail experiments
 tests/                    unit tests for the pure modules
 .github/workflows/ci.yml  ruff and pytest on Ubuntu and Windows, no GPU group
 .github/workflows/wheels.yml   the extension's wheels (Windows, manylinux), tested; a

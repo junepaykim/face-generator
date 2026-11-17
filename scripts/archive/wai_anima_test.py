@@ -29,12 +29,12 @@ resumable: a picture already on disk is skipped. Close FM27 first.
 
 DMD2 needs peft, which the project does not install; run with `uv run --with peft`:
 
-    uv run python scripts/spikes/wai_anima_test.py prompts --style anima   # no GPU
-    uv run --with peft python scripts/spikes/wai_anima_test.py smoke       # 2 per column
-    uv run --with peft python scripts/spikes/wai_anima_test.py all
-    uv run python scripts/spikes/wai_anima_test.py render --columns anima29 --cases S01a
-    uv run python scripts/spikes/wai_anima_test.py tag
-    uv run python scripts/spikes/wai_anima_test.py report
+    uv run python scripts/archive/wai_anima_test.py prompts --style anima   # no GPU
+    uv run --with peft python scripts/archive/wai_anima_test.py smoke       # 2 per column
+    uv run --with peft python scripts/archive/wai_anima_test.py all
+    uv run python scripts/archive/wai_anima_test.py render --columns anima29 --cases S01a
+    uv run python scripts/archive/wai_anima_test.py tag
+    uv run python scripts/archive/wai_anima_test.py report
 """
 
 from __future__ import annotations

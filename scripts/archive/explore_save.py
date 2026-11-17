@@ -1,6 +1,6 @@
 """Phase 0.1 spike: explore player IDs, clubs, managed club and competitions.
 
-Throwaway. Reads a snapshot copy only: uv run python scripts/spikes/explore_save.py SNAPSHOT
+Throwaway. Reads a snapshot copy only: uv run python scripts/archive/explore_save.py SNAPSHOT
 """
 
 import sys

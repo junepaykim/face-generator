@@ -57,8 +57,6 @@ def published_size(long_edge: int, aspect: tuple[int, int] = ASPECT) -> tuple[in
     return round(long_edge * aw / ah), long_edge
 
 
-# --- the face crop ---------------------------------------------------------------------------
-
 FACE_SHARE = 0.36
 """Side of the face crop as a share of the picture height (run r4's crops)."""
 _GRID = 128  # the mask is worked out on a picture this many cells wide

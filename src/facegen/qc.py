@@ -181,8 +181,6 @@ def best(results: Sequence[CheckResult]) -> int | None:
     return max(passing, key=lambda i: (results[i].score, -i))
 
 
-# --- head position -------------------------------------------------------------------------
-
 _GRID = 128
 _CORNER = 8
 _DIFF = 60  # summed RGB difference from the backdrop that counts as foreground
@@ -203,8 +201,6 @@ def head_top(image: Image) -> float | None:
     first = g.first_row(edges, _DIFF, max(1, int(_ROW_SHARE * _GRID)))
     return None if first is None else first / _GRID
 
-
-# --- the tagger (GPU) ------------------------------------------------------------------------
 
 TAGGER_REPO = "SmilingWolf/wd-eva02-large-tagger-v3"
 _KEEP_FLOOR = 0.01  # probabilities below this are dropped from TagResult.tags

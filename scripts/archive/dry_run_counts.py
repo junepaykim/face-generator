@@ -1,9 +1,9 @@
 """Phase 0.1 spike: group counts computed straight from fmsave, sharing no code with facegen.
 
-Used to cross-check `facegen sync --dry-run` (Phase 1 exit test). Applies the default
-thresholds from docs/spec.md. Throwaway.
+Used for the Phase 1 exit test. These historical counts predate the staff, media, youth
+and photo-less rules; they do not describe current `facegen sync --dry-run` results.
 
-    uv run python scripts/spikes/dry_run_counts.py SNAPSHOT [--all-genders]
+    uv run python scripts/archive/dry_run_counts.py SNAPSHOT [--all-genders]
 """
 
 import sys

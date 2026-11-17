@@ -1,6 +1,6 @@
 """Phase 0.1 spike: club key stability, league-table team slots, generated-name uniqueness.
 
-Throwaway. uv run python scripts/spikes/club_keys.py SNAPSHOT
+Throwaway. uv run python scripts/archive/club_keys.py SNAPSHOT
 """
 
 import sys

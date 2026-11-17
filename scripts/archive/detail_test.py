@@ -7,7 +7,7 @@ then checked again. Records seconds and peak VRAM with the tagger loaded alongsi
 worker runs. Writes data/phase2/detail/detail.html: a local page, the pictures stay on this
 PC (AGENTS.md hard rule 6). Resumable: pictures already on disk are skipped.
 
-    uv run python scripts/spikes/detail_test.py
+    uv run python scripts/archive/detail_test.py
 """
 
 from __future__ import annotations

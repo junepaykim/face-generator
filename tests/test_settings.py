@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from facegen import settings as settings_module
+from facegen.db import transaction
 from facegen.settings import (
     DEFAULTS_PATH,
     FOUND,
@@ -20,8 +21,10 @@ from facegen.settings import (
     load_defaults,
     load_local,
     load_settings,
+    read_overrides,
     reset_overrides,
     set_override,
+    set_overrides,
 )
 
 
@@ -174,6 +177,28 @@ def test_override_changes_one_value(conn: sqlite3.Connection) -> None:
     assert again.groups.a.ca_above == 150
     assert again.groups.a.pa_above == 170
     assert again.overridden == frozenset({"groups.a.ca_above"})
+
+
+def test_a_single_override_stores_an_explicit_default(conn: sqlite3.Connection) -> None:
+    result = set_override(conn, "groups.a.ca_above", 155)
+    assert result.overridden == frozenset({"groups.a.ca_above"})
+    assert read_overrides(conn) == {"groups.a.ca_above": 155}
+    assert load_settings(conn).overridden == result.overridden
+
+    set_overrides(conn, {"groups.a.ca_above": 155})
+    assert read_overrides(conn) == {}
+
+
+def test_override_writes_leave_the_transaction_to_the_caller(conn: sqlite3.Connection) -> None:
+    set_overrides(conn, {"groups.a.ca_above": 150, "groups.a.pa_above": 160})
+    before = list(conn.execute("SELECT * FROM settings ORDER BY key"))
+
+    with transaction(conn, rollback=True):
+        set_override(conn, "staff.enabled", False)
+        set_overrides(conn, {"groups.a.ca_above": 155, "groups.a.pa_above": 165})
+        assert read_overrides(conn) == {"staff.enabled": False, "groups.a.pa_above": 165}
+
+    assert list(conn.execute("SELECT * FROM settings ORDER BY key")) == before
 
 
 def test_override_of_a_list(conn: sqlite3.Connection) -> None:

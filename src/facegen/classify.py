@@ -66,7 +66,7 @@ class PlayerFacts:
     """A newgen who came through my academy (spec section 2)."""
     pin: Pin | None = None
     is_staff: bool = False
-    """On my club's staff rather than a player (coach, physio, scout, board, manager)."""
+    """A staff member rather than a player, including other clubs' first-team managers."""
     photo: bool | None = None
     """FM27 shows a photo for them other than ours: its own or a facepack's. None: unknown
     (FM27's photo list was not read), which never counts as without a photo."""
@@ -84,7 +84,7 @@ class Rules:
     """The switches the rules follow, from the settings."""
 
     staff: bool = True
-    """Settings `staff.enabled`: my club's staff get pictures."""
+    """Settings `staff.enabled`: my club's staff and eligible league managers get pictures."""
     no_photo: bool = True
     """Settings `no_photo.enabled`: pre-existing players without a photo follow the newgen
     thresholds."""

@@ -159,8 +159,6 @@ def check_folder(text: str, kind: Kind, disk: Disk) -> FolderCheck:
     )
 
 
-# --- the local file -------------------------------------------------------------------------
-
 LOCAL_HEADER = (
     "# This PC's own folders. Not in git (.gitignore): it holds the Windows user name.\n"
     "# Laid over [paths] in config/default.toml; only [paths] keys are allowed here.\n"
@@ -259,9 +257,6 @@ def value_to_write(folder: PurePath, kind: Kind) -> str:
     if kind == "wsl" and (windows := fm_paths.windows_path_of_wsl(text)) is not None:
         return windows
     return text
-
-
-# --- the folder dialog ----------------------------------------------------------------------
 
 
 def dialog_available(

@@ -19,7 +19,7 @@ whole existing picture; expected to carry the old kit over).
 
 Pictures stay local, in data/bakeoff/r4/ (AGENTS.md hard rule 6).
 
-    uv run python scripts/spikes/reference_test.py
+    uv run python scripts/archive/reference_test.py
 """
 
 from __future__ import annotations

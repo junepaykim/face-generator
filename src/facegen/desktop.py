@@ -15,7 +15,7 @@ Started without a console, `pythonw.exe -m facegen.desktop app` (Start.bat, the 
 - what would go to the console (stdout, stderr: uvicorn's lines, the worker process's
   messages) goes to data/logs/facegen.log instead (`LogStream`);
 - a failure while starting is shown in a message box with the log's path, not nothing.
-  This module imports only the standard library at the top, so even a broken installation
+  Its top-level dependencies use only the standard library, so even a broken installation
   (a package missing after an update) reaches that message box.
 
 The window and the tray come from a `Shell`; the tests give fakes, so all of this runs on
@@ -37,12 +37,13 @@ from dataclasses import dataclass, field
 from pathlib import Path, PureWindowsPath
 from typing import TYPE_CHECKING, Any, Protocol
 
+from facegen.locations import PROJECT_ROOT
+
 if TYPE_CHECKING:
     from facegen.app_controller import AppController, Notice, StartupSwitch, View
     from facegen.cli import Gpu
     from facegen.datasource.base import DataSource
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
 FALLBACK_LOG = PROJECT_ROOT / "data" / "logs" / "facegen.log"
 """Where a failure is written when it happens before the settings say where the log is."""
 REFRESH_SECONDS = 1.0
@@ -52,9 +53,6 @@ QUIT_WAIT_SECONDS = 120.0
 WEBVIEW2_URL = "https://developer.microsoft.com/microsoft-edge/webview2/"
 
 logger = logging.getLogger("facegen")
-
-
-# --- what the GUI is made of -------------------------------------------------------------------
 
 
 class TrayLike(Protocol):
@@ -136,9 +134,6 @@ class Shell:
     show_error: Callable[[str, str], None] = show_error
 
 
-# --- output without a console --------------------------------------------------------------------
-
-
 class LogStream(io.TextIOBase):
     """A text stream whose lines go to a logger: stdout and stderr when there is no console
     (pythonw.exe), so they reach the log file."""
@@ -197,9 +192,6 @@ def output_to_log() -> None:
     sys.stderr = LogStream(logging.getLogger("facegen.stderr"), logging.WARNING)
 
 
-# --- the tray's heartbeat -----------------------------------------------------------------------
-
-
 class Refresher:
     """Every second: the tray shows the controller's view, the new notifications, and a second
     start's request to open the window is answered."""
@@ -254,9 +246,6 @@ class Refresher:
         self._stop.set()
         if self._thread is not None and self._thread is not threading.current_thread():
             self._thread.join(5)
-
-
-# --- running it --------------------------------------------------------------------------------
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
@@ -475,9 +464,6 @@ def _stop_quietly(rt: Any, server: Any) -> None:
             server.stop()
         except Exception as exc:
             logger.error("stopping the web server failed", exc_info=exc)
-
-
-# --- a failure while starting ----------------------------------------------------------------------
 
 
 def _log_file() -> Path | None:

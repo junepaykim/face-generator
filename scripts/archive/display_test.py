@@ -6,11 +6,11 @@ has coloured edge bands (red top, blue bottom, green left, orange right) so crop
 visible, lines at one and two thirds of the height, and a figure with its head in the top
 third, as the spec asks for.
 
-    uv run python scripts/spikes/display_test.py install 29141735:square 29193014:portrait
-    uv run python scripts/spikes/display_test.py list
-    uv run python scripts/spikes/display_test.py remove 29141735
-    uv run python scripts/spikes/display_test.py uninstall
-    uv run python scripts/spikes/display_test.py install 1:square --dir /tmp/preview
+    uv run python scripts/archive/display_test.py install 29141735:square 29193014:portrait
+    uv run python scripts/archive/display_test.py list
+    uv run python scripts/archive/display_test.py remove 29141735
+    uv run python scripts/archive/display_test.py uninstall
+    uv run python scripts/archive/display_test.py install 1:square --dir /tmp/preview
 
 Shapes: square (1024x1024), portrait (768x1024, 3:4), tall (640x960, 2:3),
 small (250x250, the classic facepack size).

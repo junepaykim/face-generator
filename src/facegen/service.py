@@ -237,8 +237,6 @@ class WorkerService:
         self.exit: Exit | None = None
         """In a worker process, why the loop ended; None until it does."""
 
-    # -- control, from the web threads --
-
     def pause(self) -> None:
         with self._lock:
             self._paused = True
@@ -323,8 +321,6 @@ class WorkerService:
         self._stop.set()
         self._wake.set()
         return True
-
-    # -- the thread --
 
     def start(self) -> None:
         self._thread = threading.Thread(target=self._main, name="facegen-worker", daemon=True)
@@ -450,8 +446,6 @@ class WorkerService:
             self._worker.career = career
             self._worker.settings = settings
         return self._worker
-
-    # -- one pass --
 
     def step(self) -> float:
         """One pass of the loop: run at most one job. Returns seconds to wait (0: go on)."""
@@ -845,8 +839,6 @@ class PollerService:
         if outcome == SYNCED:
             return status.message or "synced"
         return f"{status.error}; waiting for the next save"
-
-    # -- the thread --
 
     def start(self) -> None:
         self._thread = threading.Thread(target=self._main, name="facegen-poller", daemon=True)

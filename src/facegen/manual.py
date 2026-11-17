@@ -278,7 +278,6 @@ def set_pin(
             _player(conn, career_id, uid)
             _set_pin(conn, career_id, uid, pin)
             if pin == "never":
-                # The rules cancel automatic jobs; a request by hand they leave alone.
                 conn.execute(
                     "UPDATE jobs SET status = 'cancelled', error = 'pinned to never',"
                     " updated_at = ? WHERE career_id = ? AND unique_id = ? AND status = 'queued'",

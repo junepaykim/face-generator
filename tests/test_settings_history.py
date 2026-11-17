@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
 
 import pytest
 from factories import NEWGEN, RIVAL, player, snapshot
 
 from facegen import settings_history as history
-from facegen.settings import SettingsError, load_settings, read_overrides
+from facegen.settings import SettingsError, load_settings, read_overrides, set_override
 from facegen.sync import run_sync
 
 RIVAL_C = NEWGEN + 3  # my league, CA 120: group C until C's bar passes 120
@@ -63,6 +64,45 @@ def test_undo_and_redo_walk_the_history(conn: sqlite3.Connection) -> None:
     history.redo(conn)
     assert a_bar(conn) == 140 and not history.can_redo(conn)
     assert not history.redo(conn).changed
+
+
+def test_history_restores_explicit_overrides_even_when_defaults_change(
+    conn: sqlite3.Connection, config_file: Path
+) -> None:
+    key = "groups.a.ca_above"
+    set_override(conn, key, 155, config_file)
+    history.save(conn, {key: 150}, defaults_path=config_file)
+
+    history.undo(conn, defaults_path=config_file)
+    assert read_overrides(conn) == {key: 155}  # Keep an explicitly stored default.
+
+    config_file.write_text(
+        config_file.read_text(encoding="utf-8").replace("ca_above = 155", "ca_above = 150"),
+        encoding="utf-8",
+    )
+    history.redo(conn, defaults_path=config_file)
+    assert read_overrides(conn) == {key: 150}  # Redo must not normalize through new defaults.
+    history.undo(conn, defaults_path=config_file)
+    assert read_overrides(conn) == {key: 155}
+
+
+def test_failed_undo_rolls_back_override_writes_and_history(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    history.save(conn, {"groups.a.ca_above": 150})
+    history.save(conn, {"groups.a.ca_above": 140, "groups.a.pa_above": 160})
+    before = list(conn.execute("SELECT * FROM settings ORDER BY key"))
+    entries = history.entries(conn)
+
+    def fail(*args: object) -> None:
+        raise RuntimeError("reclassification failed")
+
+    monkeypatch.setattr(history, "_reclassify", fail)
+    with pytest.raises(RuntimeError, match="reclassification failed"):
+        history.undo(conn)
+
+    assert list(conn.execute("SELECT * FROM settings ORDER BY key")) == before
+    assert history.entries(conn) == entries
 
 
 def test_undo_back_to_an_entry_undoes_every_later_change(conn: sqlite3.Connection) -> None:
