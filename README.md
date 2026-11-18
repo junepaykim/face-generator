@@ -547,8 +547,9 @@ neutral kit.
   that writes sentences instead of tags. It also has no negative prompt, so the content
   rule would rest on the checker alone.
 - **The save reader is alpha software.** [`fmsave`](https://github.com/rhiever/fmsave) is
-  pinned at 0.11.0, and a game patch can break reading until fmsave catches up. A save the
-  tool can't read is skipped and reported, and existing pictures stay.
+  pinned at 0.12.6, and a game patch can break reading until fmsave catches up: FM27's 27.1.0
+  update did, until facegen 0.1.1. A save the tool can't read is skipped and the dashboard
+  names its game build; existing pictures stay.
 - **Kits are approximate.** Colours come from a hand-made table or are estimated from
   FM27's kit images (colours only, no pattern), stripes and hoops are hit-and-miss, and
   there are no real badges or sponsors.

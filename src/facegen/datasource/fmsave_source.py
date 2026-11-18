@@ -211,9 +211,9 @@ def read_people(
 ) -> tuple[tuple[MediaRecord, ...], dict[int, bool]]:
     """Journalists, my club's press officers, and whether each of my club's staff is a woman.
 
-    fmsave 0.11.0 reads none of these, so they come from the game database's bytes through
-    datasource/people.py. This borrows fmsave's decompressed section, its name pools and its
-    club index: internals of the pinned version (AGENTS.md rule 5), so any failure here is
+    The pinned fmsave (0.12.6) reads none of these, so they come from the game database's bytes
+    through datasource/people.py. This borrows fmsave's decompressed section, its name pools and
+    its club index: internals of the pinned version (AGENTS.md rule 5), so any failure here is
     reported and the sync goes on without them. `staff_first_names` maps a staff member's
     unique ID to their first name as fmsave reads it.
     """
@@ -318,12 +318,17 @@ class FmsaveDataSource:
                 raise SaveReadError(str(exc)) from exc
             # fmsave reads an FM27 build it has no layouts for with a known build's layouts
             # where the sections match, and raises UnsupportedGameError from any reader whose
-            # section does not. Either way the build is unsupported; say which one.
+            # section does not. On such a build a reader's failed layout check means the same
+            # (FM27 27.1.0 and fmsave 0.11.0: "the save layout differs from what fmsave
+            # expects"). Either way the build is unsupported; say which one. On a build fmsave
+            # knows, a failed check is a damaged save: a read error.
             try:
                 info = save.info
                 try:
                     snapshot = self._read(save, fmsave)
-                except fmsave.UnsupportedGameError as exc:
+                except (fmsave.UnsupportedGameError, fmsave.ReaderCheckError) as exc:
+                    if isinstance(exc, fmsave.ReaderCheckError) and info.known_build:
+                        raise SaveReadError(str(exc)) from exc
                     raise UnsupportedSaveError(
                         f"{info.game} build {info.build} cannot be read by {reader}: {exc}",
                         build=info.build,

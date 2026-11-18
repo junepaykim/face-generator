@@ -412,6 +412,25 @@ def test_a_reader_refusing_the_build_makes_the_save_unsupported(
     assert save.closed
 
 
+def test_a_failed_layout_check_on_an_unknown_build_makes_the_save_unsupported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FM27 27.1.0 with fmsave 0.11.0 (research.md section 17): the reader's checks refuse the
+    club table. The page should say the build cannot be read yet, not "unexpected error"."""
+    import fmsave
+
+    from facegen.datasource.base import UnsupportedSaveError
+
+    message = "section 'game_db': club table framing is invalid or ambiguous"
+    save = FakeSave(known_build=False, fail=fmsave.ReaderCheckError(message))
+    _patch_open(monkeypatch, save)
+    with pytest.raises(UnsupportedSaveError) as info:
+        FmsaveDataSource().load(Path("Career.fm"))
+    assert info.value.build == "27.1.0+2600000"
+    assert "FM27 build 27.1.0+2600000 cannot be read" in str(info.value)
+    assert "club table framing" in str(info.value) and save.closed
+
+
 def test_a_save_from_another_game_is_unsupported(monkeypatch: pytest.MonkeyPatch) -> None:
     import fmsave
 

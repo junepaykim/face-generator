@@ -1,6 +1,6 @@
 [project]
 name = "facegen"
-version = "0.1.0"
+version = "0.1.1"
 description = "Generates anime-style portraits for Football Manager 27 players."
 readme = "README.md"
 license = "MIT"
@@ -9,7 +9,7 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
     # Alpha library that tracks game patches. Keep the exact pin; see AGENTS.md.
-    "fmsave==0.11.0",
+    "fmsave==0.12.6",
     # Pictures: publishing (downscale, PNG) and the quality check's head position.
     "jinja2>=3.1",
     "pillow>=10",

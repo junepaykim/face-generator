@@ -426,7 +426,7 @@ wheels = [
 
 [[package]]
 name = "facegen"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
@@ -463,7 +463,7 @@ native = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
-    { name = "fmsave", specifier = "==0.11.0" },
+    { name = "fmsave", specifier = "==0.12.6" },
     { name = "jinja2", specifier = ">=3.1" },
     { name = "pillow", specifier = ">=10" },
     { name = "python-multipart", specifier = ">=0.0.9" },
@@ -525,14 +525,14 @@ wheels = [
 
 [[package]]
 name = "fmsave"
-version = "0.11.0"
+version = "0.12.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "backports-zstd", marker = "python_full_version < '3.14'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/cf/4e/5557abc0e37e786b18127231be89d79ebb4909d2baa4d9a861348d7c4ef2/fmsave-0.11.0.tar.gz", hash = "sha256:0c69adb5f7fc3f9c44baabed082ae5d18220e86f55cf53e8df341efb1a9e0b90", size = 471969, upload-time = "2026-11-09T02:03:34.829Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/21/1a/be8feccb5880809605b44e1f21eb3149b07e3f93895b7a646269cd78d77d/fmsave-0.12.6.tar.gz", hash = "sha256:38846d773a10a5ebc24fffc12df14b4471f6354b4903161fa3d676e747adc842", size = 485272, upload-time = "2026-11-17T19:51:32.124Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/55/a7/ad25e37307075893dc7470fab5241a8ca969394406f1fb89f9ee390b043a/fmsave-0.11.0-py3-none-any.whl", hash = "sha256:f09912ae2e787f5b2c71dfbd83107bc58cfde91dbfe7f4947a3cecf01da9ed33", size = 515806, upload-time = "2026-11-09T02:03:32.856Z" },
+    { url = "https://files.pythonhosted.org/packages/ae/77/305e45c51850df8658131756e58676017c931d38ca80e93e1c796cf1b8b4/fmsave-0.12.6-py3-none-any.whl", hash = "sha256:a0a9e00523ead9b35ecc3d0a39b44937978932e60c8b08757fdf347ac7077cf9", size = 530134, upload-time = "2026-11-17T19:51:30.507Z" },
 ]
 
 [[package]]
