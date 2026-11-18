@@ -26,7 +26,21 @@
     {% endif %}
     <tr><th>{{ t("settings.info.watcher") }}</th><td>{{ t("settings.info.watching" if info.watching else "settings.info.not_watching") }}</td></tr>
     {% if info.photos %}<tr><th>{{ t("settings.info.photos") }}</th><td>{% if info.photos.game_known %}{{ t("settings.info.photos_value", count=info.photos.game) }}{% if info.photos.facepack_files %}{{ t("settings.info.facepacks", count=info.photos.facepack_files, mapped=info.photos.facepack) }}{% endif %}{% else %}<span class="bad">{{ t("settings.info.photos_unknown") }}</span>{% endif %}</td></tr>{% endif %}
+    {% if update %}{% set u = update.status %}
+    <tr><th>{{ t("settings.info.version") }}</th><td>{{ u.current }}</td></tr>
+    <tr id="update-state"><th>{{ t("settings.info.updates") }}</th><td>
+      {% if u.checking %}{{ t("settings.info.update_checking") }}
+      {% elif u.available %}{{ t("settings.info.update_available", version=u.latest, url=u.page) }}
+      {% elif u.error and not u.latest %}<span class="bad">{{ t("settings.info.update_failed") }}</span>
+      {% elif update.checked %}{{ t("settings.info.update_latest") }}
+      {% elif not u.enabled %}{{ t("settings.info.update_off") }}
+      {% else %}{{ t("settings.info.update_never") }}{% endif %}
+      {% if update.checked %}<span class="muted small">{{ t("settings.info.update_checked", when=update.checked) }}</span>{% endif %}
+      {% if u.error %}<details class="problem-detail" id="update-detail"><summary>{{ t("problem.details") }}</summary><pre>{{ u.error }}</pre></details>{% endif %}
+    </td></tr>
+    {% endif %}
   </table>
+  {% if update %}<form method="post" action="/update/check" class="buttons"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="/settings/advanced#about"><button>{{ t("settings.info.update_check") }}</button></form>{% endif %}
 </div>
 </div>
 

@@ -526,6 +526,16 @@ photos_value = "{count:,} photos"
 facepacks = { one = "; {count} facepack with {mapped:,}", other = "; {count} facepacks with {mapped:,}" }
 photos_unknown = "could not be read"
 no_worker = "not generated in this process"
+version = "Version"
+updates = "Updates"
+update_checking = "checking…"
+update_available = "facegen {version} is available: <a href=\"{url}\" target=\"_blank\" rel=\"noopener noreferrer\">what's new</a>"
+update_latest = "up to date"
+update_failed = "could not check"
+update_off = "not looked for (switched off below)"
+update_never = "not checked yet"
+update_checked = "checked {when}"
+update_check = "Check for updates now"
 
 [settings.folders]
 title = "FM27's folders"
@@ -579,6 +589,7 @@ personality = "Personality"
 schedule = "Running"
 render = "Rendering"
 display = "Language and look"
+updates = "Updates"
 
 [settings.note]
 eligibility = "Applies from the next sync."
@@ -638,6 +649,7 @@ auto_groups = "Groups drawn automatically"
 "reference.enabled" = "Use the current face when drawing again"
 "display.language" = "Language"
 "display.theme" = "Theme"
+"updates.check" = "Look for a newer facegen once a day"
 
 [settings.choice.detail_size]
 1344x1728 = "1344 x 1728 (best)"
@@ -828,6 +840,26 @@ not_saved = "Not saved: {error}"
 no_card = "Nothing changed: no CUDA graphics card ({why})."
 suits = "Nothing to change: the settings already suit the {card}."
 configured = "Auto-configured for the {card} ({preset}). {outcome} Undo puts it all back."
+
+[msg.update]
+absent = "facegen does not look for updates here."
+failed = "facegen could not ask GitHub for its newest version. Check the internet connection and try again."
+available = "facegen {version} is available."
+latest = "facegen {version} is the newest version."
+not_here = "This facegen cannot update itself: quit it and run Start.bat --update in its folder."
+not_started = "The update could not be started: {error}"
+
+[update]
+title = "facegen {version} is out"
+current = "You have {version}."
+whats_new = "What's new"
+install = "Update now"
+install_title = "facegen closes, updates in a window of its own and starts again"
+later = "Later"
+how_git = "This folder is a git checkout: update it with <code>git pull</code> and <code>uv sync</code>."
+how_manual = "To update, quit facegen and run <code>Start.bat --update</code> in its folder."
+updating_title = "Updating facegen"
+updating = "facegen closes now and a window shows the update to {version}. When it is done, facegen starts again by itself."
 
 [worker.reason]
 starting = "Starting…"

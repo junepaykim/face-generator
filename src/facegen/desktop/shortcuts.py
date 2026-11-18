@@ -5,6 +5,10 @@ Windows adds `--minimized`; it is off until enabled in the tray, which creates o
 only our facegen.lnk.
 Known Folders follow relocated directories, including OneDrive. WScript.Shell writes the
 shortcuts through PowerShell's -EncodedCommand so paths need no command-line quoting.
+
+The installer's shortcuts start Start.bat, as there is no .venv until the first setup.
+`refresh` (run by `facegen launch` once that setup is done) points those at pythonw.exe, so
+later starts show no console; a shortcut that targets anything else is left alone.
 """
 
 from __future__ import annotations
@@ -208,6 +212,69 @@ def write(shortcuts: Sequence[Shortcut], *, run: Callable[..., object] | None = 
         text = (getattr(done, "stderr", "") or getattr(done, "stdout", "") or "").strip()
         last = text.splitlines()[-1] if text else f"exit code {code}"
         raise ShortcutError(f"the shortcut could not be written: {last}")
+
+
+def refresh_script(links: Sequence[Shortcut], start_bat: str) -> str:
+    """PowerShell that rewrites each of `links` that exists and starts `start_bat` (compared
+    without case), and prints the paths it rewrote."""
+    lines = [
+        "$ErrorActionPreference = 'Stop'",
+        "[Console]::OutputEncoding = [Text.Encoding]::UTF8",
+        "$ProgressPreference = 'SilentlyContinue'",
+        "$shell = New-Object -ComObject WScript.Shell",
+    ]
+    for s in links:
+        lines += [
+            f"if (Test-Path -LiteralPath {ps_string(s.path)}) {{",
+            f"  $s = $shell.CreateShortcut({ps_string(s.path)})",
+            f"  if ($s.TargetPath -ieq {ps_string(start_bat)}) {{",
+            f"    $s.TargetPath = {ps_string(s.target)}",
+            f"    $s.Arguments = {ps_string(s.arguments)}",
+            f"    $s.WorkingDirectory = {ps_string(s.working_dir)}",
+            f"    $s.IconLocation = {ps_string(s.icon + ',0')}",
+            f"    $s.Description = {ps_string(s.description)}",
+            "    $s.Save()",
+            f"    Write-Output {ps_string(s.path)}",
+            "  }",
+            "}",
+        ]
+    return "\n".join(lines) + "\n"
+
+
+def refresh(
+    links: Sequence[Shortcut],
+    start_bat: str,
+    *,
+    run: Callable[..., object] | None = None,
+    exists: Callable[[str], bool] = os.path.isfile,
+) -> list[str]:
+    """Point the installer's Start.bat shortcuts at pythonw.exe (module docstring). Returns the
+    shortcuts rewritten; raises ShortcutError. Without any of `links` on disk, nothing runs."""
+    present = [s for s in links if exists(s.path)]
+    if not present:
+        return []
+    powershell = procs.windows_tool(POWERSHELL, "windows", os.environ)
+    if powershell is None:
+        raise ShortcutError("PowerShell was not found, so no shortcut could be updated")
+    runner = run or procs.run_quiet
+    try:
+        done = runner(
+            powershell_command(powershell, refresh_script(present, start_bat)),
+            timeout=POWERSHELL_SECONDS,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except (OSError, ValueError) as exc:
+        raise ShortcutError(f"PowerShell could not be started: {exc}") from exc
+    code = getattr(done, "returncode", 1)
+    out = (getattr(done, "stdout", "") or "").strip()
+    if code != 0:
+        text = (getattr(done, "stderr", "") or out).strip()
+        last = text.splitlines()[-1] if text else f"exit code {code}"
+        raise ShortcutError(f"the shortcut could not be updated: {last}")
+    return [line.strip() for line in out.splitlines() if line.strip()]
 
 
 @dataclass(frozen=True, slots=True)

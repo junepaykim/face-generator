@@ -41,6 +41,7 @@ def test_serve_propagates_the_first_cleanup_failure(
         poller=None,
         start=lambda: calls.append("start"),
         stop_steps=lambda: steps,
+        stop_updates=lambda: None,  # the update check (Phase 13) is not a quit step
     )
     monkeypatch.setattr(runtime, "build_runtime", lambda *args, **kwargs: rt)
     monkeypatch.setattr(service_logging, "log_to_file", lambda data_dir: data_dir / "facegen.log")

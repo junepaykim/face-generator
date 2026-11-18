@@ -1,6 +1,8 @@
 """Shared runtime composition for `serve`, `tray` and `app`.
 
-`build_runtime` constructs without starting; `Runtime.start` starts the watcher and worker.
+`build_runtime` constructs without starting; `Runtime.start` starts the watcher, the worker
+and the update check. The update check is not a quit step (it only waits between checks):
+`Runtime.stop_updates` ends it when facegen stops.
 `Runtime.stop_steps` stops downloads, the watcher, then the worker, allowing its current job
 up to `worker_process.STOP_TIMEOUT` seconds before releasing the GPU by ending the process.
 `serve` runs uvicorn in the main thread and cleans up afterward. The desktop shell runs
@@ -29,6 +31,7 @@ if TYPE_CHECKING:
     from facegen.runtime.dependencies import Gpu
     from facegen.runtime.poller_service import PollerService
     from facegen.runtime.sync_service import SyncService
+    from facegen.runtime.update_service import UpdateService
     from facegen.runtime.worker_process import WorkerProxy
     from facegen.web.app import AppContext
 
@@ -58,17 +61,25 @@ class Runtime:
     download: models.ModelDownload | None
     host: str
     port: int
+    updates: UpdateService | None = None
 
     @property
     def url(self) -> str:
         return f"http://{'[::1]' if self.host == '::1' else self.host}:{self.port}/"
 
     def start(self) -> None:
-        """Start the save watcher and the GPU worker process."""
+        """Start the save watcher, the GPU worker process and the update check."""
         if self.poller is not None:
             self.poller.start()
         if self.worker is not None:
             self.worker.start()
+        if self.updates is not None:
+            self.updates.start()
+
+    def stop_updates(self) -> None:
+        """End the update check's thread (at once: it only waits between checks)."""
+        if self.updates is not None:
+            self.updates.stop()
 
     def stop_steps(self) -> list[tuple[str, Callable[[], None]]]:
         """How the parts stop, in order (module docstring); the web server is not among them."""
@@ -101,6 +112,7 @@ def build_runtime(
     as configured (an address beyond this PC, a broken kit table)."""
     from facegen.runtime.poller_service import PollerService
     from facegen.runtime.sync_service import SyncService
+    from facegen.runtime.update_service import UpdateService
     from facegen.runtime.worker_process import WorkerProxy, worker_command
     from facegen.setup import folder_setup
     from facegen.web.app import AppContext, create_app
@@ -135,6 +147,7 @@ def build_runtime(
         download = models.ModelDownload(on_done=proxy.wake)
     if browse is DEFAULT_BROWSE:
         browse = folder_setup.browse if folder_setup.dialog_available() else None
+    updates = UpdateService(settings.paths.data_dir, lambda: updates_enabled(db_path, config))
     context = AppContext(
         db_path,
         config,
@@ -145,6 +158,7 @@ def build_runtime(
         download=download,
         hardware=lambda: hardware.probe(gpu.program, config),
         browse=browse,
+        updates=updates,
     )
     return Runtime(
         create_app(context),
@@ -155,7 +169,20 @@ def build_runtime(
         download,
         host,
         port or settings.ui.port,
+        updates,
     )
+
+
+def updates_enabled(db_path: Path, config: Path | None) -> bool:
+    """`updates.check` as saved now (it can change while facegen runs)."""
+    from facegen.persistence import db
+    from facegen.persistence.settings import load_settings
+
+    conn = db.connect(db_path)
+    try:
+        return load_settings(conn, defaults_path=config).updates.check
+    finally:
+        conn.close()
 
 
 def port_answers(host: str, port: int, *, timeout: float = 0.5) -> bool:

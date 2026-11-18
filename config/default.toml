@@ -265,6 +265,12 @@ vae_tiling = false
 language = "auto"                   # auto, en (English) or ko (한국어)
 theme = "auto"                      # auto, light or dark
 
+[updates]
+# Look for a newer facegen once a day (Phase 13): one request for this repository's list of
+# releases on GitHub, which sends nothing about this PC or its user. A newer one is offered on
+# the dashboard; nothing is downloaded until you choose Update. false: never look.
+check = true
+
 [ui]
 # Local only: there is no login, so `facegen serve` refuses any address but loopback. These
 # keys can only be changed here, not from the UI.

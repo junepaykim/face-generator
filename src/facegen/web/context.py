@@ -10,6 +10,7 @@ from facegen.core.settings_values import Settings
 from facegen.platform import platform_info
 from facegen.runtime.contracts import SyncControl, WorkerControl
 from facegen.runtime.poller_service import PollerService
+from facegen.runtime.update_service import UpdateService
 from facegen.setup import folder_setup, hardware
 from facegen.setup.models import DownloadStatus, ModelDownload, ModelsStatus
 
@@ -32,6 +33,11 @@ class AppContext:
     """Opens a folder dialog on this PC (folder_setup.browse); None where there is no display."""
     platform: platform_info.Kind | None = None
     """The system the folder check reads paths for; None: this one."""
+    updates: UpdateService | None = None
+    """The update check (Phase 13); None where nothing looks for releases (the tests)."""
+    install_update: Callable[[], None] | None = None
+    """Starts `Start.bat --update` and quits facegen: set by the desktop app on Windows, in a
+    folder that is not a git checkout. None elsewhere: the dashboard says how to update."""
 
     def setup(self, settings: Settings) -> SetupState:
         """What first-run setup still needs (Phase 10): FM27's folder, the model files."""

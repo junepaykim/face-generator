@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import time
 from collections.abc import Callable, Iterator
 from typing import Any
 
@@ -94,6 +95,24 @@ class AppDependencies:
         from facegen.web import guide  # the guide's module needs nothing from here
 
         return (self.card.state(), guide.closed(self.data_dir))
+
+    def update_offer(self) -> dict[str, Any] | None:
+        """The update check's state for the pages (Phase 13), and how this facegen is updated:
+        "app" (the dashboard's button), "git" (a checkout) or "manual" (Start.bat --update).
+        None where nothing looks for releases."""
+        if self.ctx.updates is None:
+            return None
+        status = self.ctx.updates.status()
+        if self.ctx.install_update is not None:
+            how = "app"
+        else:
+            how = "git" if status.checkout else "manual"
+        checked = (
+            time.strftime("%Y-%m-%d %H:%M", time.localtime(status.checked_at))
+            if status.checked_at
+            else None
+        )
+        return {"status": status, "how": how, "checked": checked}
 
     def settings_now(self, conn: sqlite3.Connection) -> Settings:
         return load_settings(conn, self.ctx.defaults_path)

@@ -214,6 +214,8 @@ form.settings legend { font-weight: 600; padding: 0 6px; }
 .preview { border-color: var(--accent); }
 .card.alert { border-color: var(--bad); background: var(--badbg); }
 .card.alert h2 { color: var(--bad); }
+.card.update { border-color: var(--accent); background: var(--accent-soft); }
+.card.update h2 { color: var(--accent); }
 
 /* Settings: saved as you go, with undo. */
 .settings-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); gap: 14px;

@@ -42,6 +42,7 @@ from facegen.core.settings_values import (
     Schedule,
     Settings,
     StaffSettings,
+    UpdateSettings,
     YouthSettings,
 )
 from facegen.core.traits import BANNABLE, BodyThresholds
@@ -391,6 +392,7 @@ def build_settings(
             language=one_of("display.language", LANGUAGE_CHOICES),
             theme=one_of("display.theme", THEME_CHOICES),
         ),
+        updates=UpdateSettings(check=v["updates.check"]),
         ui=UI(host=v["ui.host"], port=_range("ui.port", v["ui.port"], 1, 65535)),
         values=dict(values),
         overridden=overridden,

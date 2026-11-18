@@ -10,9 +10,13 @@ rem      model files: their size is shown and they are downloaded only after one
 rem   5. Start facegen's window with pythonw.exe (no console), and close this one.
 rem
 rem   Start.bat --shortcut   also puts a facegen shortcut on the desktop and in the Start Menu.
+rem   Start.bat --update     first waits for facegen to quit and puts the newest release over
+rem                          this folder (src/facegen/setup/update.py; data\ is kept), then
+rem                          goes on as above with the new files. facegen's Update now runs it.
 rem
-rem The decisions live in Python (src/facegen/launch.py), where they are tested; this file
-rem only runs the steps. A log is kept in data\logs\start.log. Errors stay on screen.
+rem The decisions live in Python (src/facegen/setup/launch.py and update.py), where they are
+rem tested; this file only runs the steps. A log is kept in data\logs\start.log. Errors stay
+rem on screen.
 
 setlocal EnableExtensions
 cd /d "%~dp0"
@@ -21,17 +25,39 @@ set "LOG=%ROOT%data\logs\start.log"
 set "PY=%ROOT%.venv\Scripts\python.exe"
 set "PYW=%ROOT%.venv\Scripts\pythonw.exe"
 set "SHORTCUT="
+set "UPDATE="
 if /i "%~1"=="--shortcut" set "SHORTCUT=1"
+if /i "%~1"=="--update" set "UPDATE=1"
 title facegen
 if not exist "%ROOT%data\logs" mkdir "%ROOT%data\logs"
 call :log "Start.bat %*"
 
 rem --- 1. facegen running already? ---------------------------------------------------------
+if defined UPDATE goto update
 if not exist "%PY%" goto find_uv
 "%PY%" -m facegen.cli launch --open-running --log "%LOG%"
 set "CODE=%ERRORLEVEL%"
 if "%CODE%"=="0" goto done
 if "%CODE%"=="4" goto fail_running
+goto find_uv
+
+rem --- 1b. Start.bat --update ------------------------------------------------------------
+:update
+rem Not set up yet: set up the files here first; the update can come later.
+if not exist "%PY%" goto find_uv
+echo Updating facegen. This window waits for facegen to quit, downloads the newest release
+echo and replaces facegen's files; your pictures, settings and data folder are kept.
+call :log "update"
+rem cmd reads a batch file line by line as it runs it, and the update replaces this file. So
+rem the rest runs from this block, which cmd has read in full: the update, then the new
+rem Start.bat (from its first line), which sets up the new version's libraries and starts it.
+(
+  "%PY%" -m facegen.cli update --log "%LOG%"
+  if errorlevel 1 pause
+  endlocal
+  call "%~f0"
+  exit /b
+)
 
 rem --- 2. uv --------------------------------------------------------------------------------
 :find_uv

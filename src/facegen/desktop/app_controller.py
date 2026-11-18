@@ -14,9 +14,12 @@ import threading
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from facegen.runtime.contracts import PollerStatus, SyncStatus, WorkerControl, WorkerStatus
+
+if TYPE_CHECKING:
+    from facegen.runtime.update_service import UpdateStatus
 
 logger = logging.getLogger("facegen")
 
@@ -40,6 +43,8 @@ FAULT_STATES = frozenset({"gpu-fault", "error", "restarting"})
 PAUSED_STATES = frozenset({"paused", "stopped"})
 
 PICTURES_ADVICE = "restart FM27 or reload the skin to see them."
+UPDATE_LOOK_SECONDS = 60.0
+"""How often the tray looks at the update check's answer (it is asked once a day)."""
 
 
 class SyncControl(Protocol):
@@ -51,6 +56,12 @@ class SyncControl(Protocol):
 
 class PollerView(Protocol):
     def status(self) -> PollerStatus: ...
+
+
+class UpdatesView(Protocol):
+    """What the controller uses of update_service.UpdateService."""
+
+    def status(self) -> UpdateStatus: ...
 
 
 class StartupSwitch(Protocol):
@@ -85,7 +96,7 @@ class View:
 @dataclass(frozen=True, slots=True)
 class Notice:
     kind: str
-    """pictures, fault, error, unsupported or sync."""
+    """pictures, fault, error, unsupported, sync or update."""
     title: str
     message: str
 
@@ -163,6 +174,7 @@ class AppController:
         on_quit_done: Callable[[], None] = lambda: None,
         poller: PollerView | None = None,
         startup: StartupSwitch | None = None,
+        updates: UpdatesView | None = None,
         clock: Callable[[], float] = time.monotonic,
         quiet_seconds: float = PICTURES_QUIET_SECONDS,
     ) -> None:
@@ -170,6 +182,9 @@ class AppController:
         self.syncer = syncer
         self.poller = poller
         self.startup = startup
+        self.updates = updates
+        self._update_said: str | None = None
+        self._update_looked: float | None = None
         self._open_dashboard = open_dashboard
         self._quit_steps = list(quit_steps)
         self._on_quit_done = on_quit_done
@@ -318,7 +333,34 @@ class AppController:
             out += self._worker_notices(worker)
         if sync is not None:
             out += self._sync_notices(sync)
+        out += self._update_notices()
         return out
+
+    def _update_notices(self) -> list[Notice]:
+        """A newer facegen, said once per version (and not again after Later)."""
+        now = self._clock()
+        if self.updates is None or (
+            self._update_looked is not None and now - self._update_looked < UPDATE_LOOK_SECONDS
+        ):
+            return []
+        self._update_looked = now
+        try:
+            status = self.updates.status()
+        except Exception as exc:  # noqa: BLE001 - the tray goes on without it
+            logger.warning("could not read the update check: %s", exc)
+            return []
+        if not status.offered or status.latest is None or status.latest == self._update_said:
+            return []
+        self._update_said = status.latest
+        return [
+            self._clipped(
+                Notice(
+                    "update",
+                    f"facegen {status.latest} is available",
+                    f"You have {status.current}. Open the dashboard to update.",
+                )
+            )
+        ]
 
     def _worker_notices(self, w: WorkerStatus) -> list[Notice]:
         out: list[Notice] = []

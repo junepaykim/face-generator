@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ t("nav.dashboard") }}{% endblock %}
 {% block content %}
+{% include "_update.html" %}
 <div id="status" data-refresh="/status" data-topic="status" data-rev="{{ rev }}">{% include "_status.html" %}</div>
 {% endblock %}

@@ -1,0 +1,15 @@
+{# A newer facegen, offered on the dashboard (Phase 13) until it is installed or put off. #}
+{% if update and update.status.offered %}{% set u = update.status %}
+<section class="card update" id="update">
+  <h2>{{ t("update.title", version=u.latest) }}</h2>
+  <p>{{ t("update.current", version=u.current) }} <a href="{{ u.page }}" target="_blank" rel="noopener noreferrer">{{ t("update.whats_new") }}</a></p>
+  {% if update.how == "git" %}<p class="small muted">{{ t("update.how_git") }}</p>
+  {% elif update.how == "manual" %}<p class="small muted">{{ t("update.how_manual") }}</p>{% endif %}
+  <div class="buttons">
+    {% if update.how == "app" %}
+    <form method="post" action="/update/install"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="primary" title="{{ tr('update.install_title') }}">{{ t("update.install") }}</button></form>
+    {% endif %}
+    <form method="post" action="/update/later"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button>{{ t("update.later") }}</button></form>
+  </div>
+</section>
+{% endif %}

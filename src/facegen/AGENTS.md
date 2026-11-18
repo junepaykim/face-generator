@@ -29,6 +29,10 @@ Use the web/datasource guides for HTTP, adapters and bundled kit data; use
   the standard library available. Entry-point `--help` must not create runtime state.
 - Use `locations.py` for repository/config/native paths, not parent-counting in moved
   modules. Load packaged resources through `importlib.resources`.
+- `setup/update.py` defines the release payload for both the installer and in-place
+  updates. An update runs the *installed* version's code, so keep the selection an
+  exclusion list (new top-level files must still ship) and never write `data/`, `.venv/`,
+  `.bin/` or `config/local.toml`. Tests never reach GitHub (root `conftest.py`).
 
 ## Storage and job invariants
 

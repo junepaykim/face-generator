@@ -154,7 +154,14 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
         t = deps.translator(request, conn)
         # What app.js compares events with.
         rev = live.snapshot(ctx, conn, deps.live_extra())["status"]["rev"]
-        return page(request, "dashboard.html", conn, rev=rev, **dashboard_context(conn, t))
+        return page(
+            request,
+            "dashboard.html",
+            conn,
+            rev=rev,
+            update=deps.update_offer(),
+            **dashboard_context(conn, t),
+        )
 
     @router.get("/status", response_class=HTMLResponse)
     def status(request: Request, conn: sqlite3.Connection = Conn) -> Response:

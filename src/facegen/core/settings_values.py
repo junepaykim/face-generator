@@ -235,6 +235,13 @@ class DisplaySettings:
 
 
 @dataclass(frozen=True, slots=True)
+class UpdateSettings:
+    """Whether the app asks GitHub for a newer release (Phase 13)."""
+
+    check: bool
+
+
+@dataclass(frozen=True, slots=True)
 class UI:
     host: str
     port: int
@@ -258,6 +265,7 @@ class Settings:
     schedule: Schedule
     render: RenderSettings
     display: DisplaySettings
+    updates: UpdateSettings
     ui: UI
     values: Mapping[str, Any]
     """Every effective value by dotted key, for display."""

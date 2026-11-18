@@ -12,6 +12,79 @@ pictures into FM27. It needs no cloud service, and you don't copy any files by h
   <sub>Four made-up test players, drawn with the same setup the tool uses today.</sub>
 </p>
 
+## Install on Windows
+
+**You need** Windows 10 or 11 (64-bit), FM27, an NVIDIA graphics card with about 8 GB of
+memory, and about 20 GB of free disk: 3 GB for Python and PyTorch, 11.6 GB for the picture
+models, and room for the pictures. The window uses Microsoft Edge WebView2, which Windows 11
+has built in.
+
+1. **Download** `facegen-setup-<version>.exe` from the
+   [Releases page](https://github.com/junepaykim/face-generator/releases) (the newest release
+   whose name starts with "facegen", not "facegen-native").
+2. **Run it.** Windows SmartScreen will probably say *"Windows protected your PC"*: choose
+   **More info**, then **Run anyway**. It says this because the installer is not code-signed
+   (see [below](#why-smartscreen-warns)).
+3. **Install.** It installs for you alone, with no administrator prompt, into
+   `%LOCALAPPDATA%\facegen`, adds facegen to the Start Menu and, if you tick it, to the
+   desktop. It is about 20 MB, most of it [uv](https://docs.astral.sh/uv/), which sets up
+   Python: Python, PyTorch and the models would make it 15 GB, so they are fetched at the
+   first start instead.
+4. **First start.** Leave *Start facegen now* ticked. A console window sets up Python and the
+   libraries (about 3 GB, most of it PyTorch with CUDA; a few minutes), then asks **once**
+   before downloading the picture models (11.6 GB). Then facegen opens in a window of its own.
+   Later starts open the window straight away, with no console.
+5. **Use it.** The dashboard walks you through the rest: it finds FM27's folder (or asks for
+   it), checks the graphics card, and reads your newest save once FM27 saves. facegen draws
+   while FM27 is closed; then, in FM27, choose **Reload Skin** (or restart the game) to see
+   the faces.
+
+Closing the window keeps facegen drawing in the background; its tray icon has Open
+Dashboard, Pause, Sync Latest Save Now, Start with Windows and Quit. Starting facegen again
+brings the window back.
+
+### Updates
+
+facegen looks for a newer version once a day: one request for this repository's list of
+releases on GitHub, which sends nothing about you or your PC. A newer version is offered on
+the dashboard; **Update now** closes facegen, updates it in a window of its own (your
+pictures, settings and database are kept) and starts it again. *Update facegen* in the Start
+Menu does the same at any time. To turn the check off: **Settings → Advanced → Updates**.
+
+### Uninstall
+
+**Windows Settings → Apps → facegen → Uninstall.** It asks two questions, and answering No
+keeps things:
+
+- *Also remove facegen's pictures from FM27?* deletes FM27's `graphics\facegen` folder,
+  facegen's own; FM27 then shows its own photos again. Nothing else in FM27's folder is
+  touched.
+- *Also delete facegen's data?* deletes the pictures, the database and your settings.
+
+The picture models stay in the Hugging Face cache, `%USERPROFILE%\.cache\huggingface\hub`,
+since other programs can share it. To free those 11.6 GB, delete its folders
+`models--cagliostrolab--animagine-xl-4.0`, `models--h94--IP-Adapter` and
+`models--SmilingWolf--wd-eva02-large-tagger-v3`.
+
+### Why SmartScreen warns
+
+SmartScreen warns about programs that are not signed with a code-signing certificate and
+that few people have downloaded yet. A certificate costs money every year, so facegen is not
+signed for now. To check what you downloaded, compare its SHA-256
+(`Get-FileHash .\facegen-setup-<version>.exe` in PowerShell) with `SHA256SUMS.txt` on the
+release page: GitHub's own build made both from the source you can read here
+([the workflow](.github/workflows/release.yml)).
+
+### Without the installer
+
+Download this repository (*Code → Download ZIP*), unpack it anywhere you can write to, and
+double-click **`Start.bat`**. It does what the installer's first start does, and installs
+[`uv`](https://docs.astral.sh/uv/) into the folder first if you don't have it.
+`Start.bat --shortcut` adds the desktop and Start Menu shortcuts; `Start.bat --update`
+updates the folder in place. Windows may mark the unpacked files as downloaded, so
+`Start.bat` can show a security warning too: choose **Run**, or tick **Unblock** in its
+Properties. Start.bat keeps a log in `data\logs\start.log`.
+
 ## The problem
 
 Football Manager invents new players every season. Fans call them *newgens*. They arrive
@@ -327,6 +400,7 @@ alternated the baseline and the variant in turn and took the median.
 | First real squad run (Colchester, 52 players) | 154 of 156 candidates passed; all 52 players passed in the first round (19 min, before the speed-ups) |
 | Reading and sorting a whole save | ~10 s |
 | Web UI players list, 33,000-player database | 5–40 ms per page |
+| Web UI players list, 181,000-player database | about 50 ms for the first page, with its count |
 
 **Tests**
 
@@ -349,20 +423,12 @@ faces, encoding equivalence and the 8 GiB peak VRAM limit:
 FACEGEN_TEST_GPU=1 uv run --no-sync pytest tests/opt_in/test_gpu.py
 ```
 
-## Run it yourself
+## For developers: WSL2 and Linux
 
-**The quick way, on Windows:** download this repository (*Code → Download ZIP*), unpack it
-anywhere you can write to, and double-click **`Start.bat`**. It installs
-[`uv`](https://docs.astral.sh/uv/) if you don't have it, sets up Python and the libraries
-(about 3 GB the first time, mostly PyTorch with CUDA), asks once before downloading the
-models (11.6 GB), and opens facegen in a window of its own. A tray icon offers Pause, Sync
-and Quit; closing the window keeps facegen drawing in the background. Double-click
-`Start.bat` again to bring the window back. `Start.bat --shortcut` also puts a shortcut on
-the desktop and in the Start Menu, and the tray menu can start facegen with Windows. The
-window needs Microsoft Edge WebView2, which Windows 11 has built in; without it the dashboard
-opens in your browser. Start.bat keeps a log in `data\logs\start.log`.
-
-The steps below are the manual way, and the way in WSL.
+On Windows, the [installer](#install-on-windows) is the way in. For working on facegen, clone
+the repository and use WSL2 (Ubuntu), where every test runs; the same commands work on
+Windows itself. A git checkout updates with `git pull` and `uv sync`, not in place: the
+dashboard says so when a newer release is out.
 
 **You need:**
 
@@ -432,6 +498,9 @@ uv run facegen sync --dry-run
 uv run facegen serve
 ```
 
+(On Windows, `uv run facegen app` opens the window and the tray icon instead, as the
+installed facegen does.)
+
 Open <http://127.0.0.1:8765/>. The dashboard shows the queue and the worker. The worker
 draws while FM27 is closed; press **Generate now** to draw anyway. Then, in FM27, choose
 **Settings → Reload Skin**.
@@ -447,6 +516,13 @@ Other handy commands:
 | `uv run facegen app` | On Windows: the dashboard in a window, with a tray icon (what Start.bat opens) |
 | `uv run facegen tray` | On Windows: only the tray icon; Open Dashboard opens the browser |
 
+**Making a release.** Set the version in `pyproject.toml`, run `uv lock`, commit, and push a
+`v<version>` tag. [The release workflow](.github/workflows/release.yml) runs the tests on
+Windows, builds `facegen-setup-<version>.exe` with [Inno Setup](https://jrsoftware.org/isinfo.php)
+from `installer/` and attaches it with its SHA-256 to a GitHub Release; installed copies are
+offered the update the next day. The installer and an update in place write the same files:
+the tagged source without tests, scripts and docs (`src/facegen/setup/update.py`).
+
 Club kit colours are in `config/kits.toml`. A club that isn't listed takes the colours
 estimated from FM27's own image of its home shirt: facegen ships these for the 832 clubs
 FM27 has an image for (`src/facegen/data/kit_catalog.json`, colour names only), so there is
@@ -460,7 +536,8 @@ neutral kit.
 
 - **Works on my machine™.** It was built and tested on one PC: Windows with WSL2, an
   RTX 4080 and FM27 build 27.0.0, and since then on the same PC's native Windows, where a
-  picture takes about 8% longer than in WSL. Other GPUs, plain Linux and macOS are untested. The
+  picture takes about 8% longer than in WSL. A fresh install on another PC has not been
+  tried yet, and the installer is not code-signed. Other GPUs, plain Linux and macOS are untested. The
   check for a running FM27 relies on Windows' `tasklist.exe`. facegen finds FM27's folders in
   the usual places only; the Epic and Game Pass versions are untested.
 - **Only one model is supported.** Animagine XL 4.0 is built in: its settings, its
@@ -491,6 +568,7 @@ neutral kit.
 ```
 config/          default settings and the kit colour table
 docs/images/     the sample pictures on this page
+installer/       the Windows installer (Inno Setup) and what it bundles
 native/          the optional Rust extension, and its released wheels' checksums
 scripts/         the kit colour bundle's builder; spikes/: the experiments behind the numbers
 src/facegen/     the Python package

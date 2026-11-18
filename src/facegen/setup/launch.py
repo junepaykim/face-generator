@@ -9,6 +9,9 @@ showing their size and obtaining consent. Either step may fail without blocking 
 Unreadable settings produce a plain error (exit 2). Converting a copied WSL folder path
 to Windows form requires confirmation and preserves the local file's other text.
 Output is also written to `--log`, except download progress.
+
+On Windows it last points the installer's shortcuts, which start Start.bat, at the app
+itself (desktop.shortcuts.refresh); a failure there is only a warning.
 """
 
 from __future__ import annotations
@@ -194,6 +197,29 @@ def data_dir_of(
     return None
 
 
+def refresh_shortcuts(data_dir: Path, config: Path | None, out: TextIO) -> None:
+    """The installer's shortcuts to Start.bat, pointed at pythonw.exe now that it exists."""
+    import os
+
+    if os.name != "nt":
+        return
+    from facegen.desktop import shortcuts
+    from facegen.locations import PROJECT_ROOT
+
+    try:
+        folders = shortcuts.windows_folders()
+        app = shortcuts.this_app(data_dir, config)
+        links = shortcuts.app_shortcuts(
+            folders, pythonw=app.pythonw, root=app.root, icon=app.icon, config=app.config
+        )
+        done = shortcuts.refresh(links, str(PROJECT_ROOT / "Start.bat"))
+    except Exception as exc:  # noqa: BLE001 - the shortcuts still start Start.bat
+        print(f"Warning: the shortcuts were not updated: {exc}", file=out, flush=True)
+        return
+    for path in done:
+        print(f"Shortcut    {path} now starts facegen directly", file=out, flush=True)
+
+
 def cmd_launch(args: argparse.Namespace, out: TextIO) -> int:
     """`facegen launch` (module docstring)."""
     from facegen.setup import models
@@ -225,7 +251,7 @@ def cmd_launch(args: argparse.Namespace, out: TextIO) -> int:
         )
         if data_dir is None:
             return 2
-        return prepare(
+        code = prepare(
             tee,
             native_step=lambda o: setup_operations.prepare_native(
                 install=True, report=partial(print, file=o)
@@ -239,6 +265,8 @@ def cmd_launch(args: argparse.Namespace, out: TextIO) -> int:
                 run_download=lambda: models.wait_and_print(models.ModelDownload(), o),
             ),
         )
+        refresh_shortcuts(data_dir, args.config, tee)
+        return code
     finally:
         tee.flush()
         if log is not None:

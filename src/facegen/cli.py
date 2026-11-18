@@ -14,6 +14,8 @@ facegen app [--minimized] [--port N] [--paused]   (the dashboard in a window, wi
 facegen tray [--port N] [--paused]                (the tray icon; the dashboard in the browser)
 facegen launch [--open-running] [--log PATH]      (what Start.bat runs after `uv sync`)
 facegen shortcuts                                 (desktop and Start Menu shortcuts, Windows)
+facegen update [--wait S] [--log PATH]            (what Start.bat --update runs)
+facegen remove-pack [--yes]                       (what the uninstaller offers)
 """
 
 from __future__ import annotations
@@ -31,7 +33,7 @@ from typing import TextIO
 
 from facegen.core.job_records import Career, JobFilter
 from facegen.core.kit_values import KitError
-from facegen.core.settings_values import Settings
+from facegen.core.settings_values import Paths, Settings
 from facegen.datasource.base import DataSource
 from facegen.datasource.kits import load_kits
 from facegen.persistence import db
@@ -519,6 +521,7 @@ def cmd_serve(
         else:
             run_server(rt.app, host=rt.host, port=rt.port)
     finally:
+        rt.stop_updates()
         for name, stop in rt.stop_steps():
             if name == "worker":
                 print(
@@ -607,6 +610,32 @@ def cmd_shortcuts(args: argparse.Namespace, data_dir: Path, out: TextIO) -> int:
     return 0
 
 
+def cmd_remove_pack(args: argparse.Namespace, paths: Paths, out: TextIO) -> int:
+    """Delete facegen's pictures from FM27's graphics folder (graphics/facegen/), as the
+    uninstaller offers. Asks first unless --yes. Exit 1 when not done."""
+    from facegen.pipeline.publish import packs_root, remove_packs
+
+    if paths.fm_user_dir is None:
+        print("FM27's folder is not set, so there is no picture pack to remove.", file=out)
+        return 0
+    root = packs_root(paths.fm_user_dir)
+    if not root.exists() and not root.is_symlink():
+        print(f"There is no picture pack to remove ({root}).", file=out)
+        return 0
+    if not args.yes:
+        answer = input(f"Delete {root} and every picture in it? [y/N] ")
+        if answer.strip().lower() not in ("y", "yes"):
+            print("Nothing was removed.", file=out)
+            return 1
+    try:
+        remove_packs(paths.fm_user_dir, paths.data_dir)
+    except OSError as exc:
+        print(f"Not removed: {exc}", file=out)
+        return 1
+    print(f"Removed {root}. FM27 shows its own photos after a restart or Reload Skin.", file=out)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="facegen", description=__doc__.splitlines()[0])
     parser.add_argument("--config", type=Path, help="defaults file (default: config/default.toml)")
@@ -672,6 +701,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     la.add_argument("--log", type=Path, metavar="PATH", help="also append the output here")
     sub.add_parser("shortcuts", help="desktop and Start Menu shortcuts to the app (Windows)")
+    up = sub.add_parser(
+        "update", help="what Start.bat --update runs: put the newest release over this folder"
+    )
+    up.add_argument(
+        "--wait",
+        type=float,
+        default=180.0,
+        metavar="SECONDS",
+        help="how long to wait for a running facegen to quit (default 180)",
+    )
+    up.add_argument("--log", type=Path, metavar="PATH", help="also append the output here")
+    rp = sub.add_parser(
+        "remove-pack", help="delete facegen's pictures from FM27's graphics folder (uninstall)"
+    )
+    rp.add_argument("--yes", action="store_true", help="do not ask")
     return parser
 
 
@@ -699,9 +743,15 @@ def main(
         from facegen.setup.launch import cmd_launch
 
         return cmd_launch(args, out)
+    if args.command == "update":  # Start.bat --update's: no database either
+        from facegen.setup.update import cmd_update
+
+        return cmd_update(args, out)
     paths = load_settings(defaults_path=args.config).paths
     if args.command == "shortcuts":
         return cmd_shortcuts(args, paths.data_dir, out)
+    if args.command == "remove-pack":
+        return cmd_remove_pack(args, paths, out)
     conn = db.connect(paths.db_path)
     try:
         settings = load_settings(conn, defaults_path=args.config)

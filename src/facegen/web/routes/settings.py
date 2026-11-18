@@ -216,6 +216,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                 "watching": ctx.poller is not None,
                 "photos": photos.status(conn),
             },
+            update=deps.update_offer(),
             folders=folders_of(request, current),
             sections=settings_sections(shown, defaults, t),
             errors=errors or {},

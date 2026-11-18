@@ -82,6 +82,25 @@ def popen_json(
     )
 
 
+def start_console(
+    program: str,
+    arguments: str,
+    *,
+    cwd: str,
+    os_name: str = os.name,
+    startfile: Callable[..., None] | None = None,
+) -> None:
+    """Start `program` in a console window of its own, detached from facegen (Windows's
+    ShellExecute): for a step the user should watch and that outlives facegen, such as
+    `Start.bat --update`. Raises OSError where it cannot."""
+    if os_name != "nt":
+        raise OSError("a program in a console of its own is started on Windows only")
+    run = startfile if startfile is not None else getattr(os, "startfile", None)
+    if run is None:
+        raise OSError("os.startfile is not available")
+    run(program, "open", arguments, cwd)
+
+
 def close_streams(*streams: TextIO | None) -> None:
     """Close supplied streams, tolerating OS errors from a pipe whose peer has gone away."""
     for stream in streams:

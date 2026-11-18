@@ -39,8 +39,9 @@ Local guides add only directory-specific instructions; commands below use the re
 | `native/` | Optional Rust/PyO3 CPU extension; [guide](native/AGENTS.md). |
 | `tests/` | Test tiers, fixtures and doubles; [guide](tests/AGENTS.md). |
 | `config/` | Defaults and kit table; `local.toml` holds this PC's paths. |
+| `installer/` | Inno Setup script, payload staging and the pinned uv checksum (Phase 13). |
 | `scripts/spikes/`, `scripts/archive/` | Active probes and completed experiments. |
-| `.github/workflows/` | Python CI and native wheel builds/releases. |
+| `.github/workflows/` | Python CI, native wheel builds and the installer release. |
 | `data/` | Local runtime state and snapshots. |
 
 ## Environment and setup

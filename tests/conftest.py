@@ -19,6 +19,20 @@ def no_folder_detection(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("facegen.persistence.settings.detect_folder", lambda key: None)
 
 
+@pytest.fixture(autouse=True)
+def no_release_requests(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nothing asks GitHub for facegen's releases or downloads one: tests that need answers
+    pass their own fetchers (setup/update.py)."""
+
+    def refuse(url: str, *args: object, **kwargs: object) -> None:
+        from facegen.setup.update import UpdateError
+
+        raise UpdateError(f"tests do not reach the network: {url}")
+
+    monkeypatch.setattr("facegen.setup.update.fetch_json", refuse)
+    monkeypatch.setattr("facegen.setup.update.download", refuse)
+
+
 @pytest.fixture
 def settings() -> Settings:
     return load_settings()

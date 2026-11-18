@@ -5,8 +5,9 @@ name: Native wheels
 # platform serves Python 3.12 and later. Every run checks the crate (fmt, clippy, cargo test)
 # and runs tests/parity/test_native.py against each built wheel, with the build from native/ left
 # out. A `native-v<version>` tag, <version> being native/pyproject.toml's, attaches the
-# wheels and SHA256SUMS.txt to a GitHub Release. Then copy those sums into
-# native/wheels.sha256: `facegen native --install` takes only a wheel listed there.
+# wheels and SHA256SUMS.txt to a GitHub Release, not marked latest (that is the app's newest
+# `v` release, release.yml). Then copy those sums into native/wheels.sha256: `facegen native
+# --install` takes only a wheel listed there.
 
 on:
   push:
@@ -198,5 +199,6 @@ jobs:
           gh release create "$RELEASE_TAG" dist/*.whl dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
+            --latest=false \
             --title "facegen-native ${RELEASE_TAG#native-v}" \
             --notes "Prebuilt wheels of facegen's optional Rust extension (abi3, Python 3.12 and later). Add SHA256SUMS.txt to native/wheels.sha256 so that \`facegen native --install\` takes them."

@@ -1,7 +1,12 @@
 """Read-only queries behind the web pages. Plain SQL over the state database; no web here.
 
-The players list covers every present player of the career (33,000 in the Colchester save),
-and my club's staff, so it filters and pages in SQL.
+The players list covers every present player of the career (33,000 in the Colchester save,
+181,000 in the Telford one), and my club's staff, so it filters and pages in SQL. It needs no
+index beyond the schema's (measured after Phase 12, docs/research.md: an index on players made
+most other filters and a sync's writes slower). Instead the page is chosen first, over the
+players table and only the joins its filter and order use, and the other columns are read for
+those hundred rows; the Review and club-name filters are lists looked up once, not asked again
+for every player.
 """
 
 from __future__ import annotations
@@ -28,6 +33,15 @@ _LATEST_JOB = (
     "(SELECT jj.status FROM jobs jj WHERE jj.career_id = p.career_id"
     " AND jj.unique_id = p.unique_id AND jj.status != 'cancelled' ORDER BY jj.id DESC LIMIT 1)"
 )
+# The same test for the Review filter, as a list of players found once in the jobs table (not
+# correlated with the player row, which asked the jobs for every player).
+_IN_REVIEW = (
+    "(p.career_id, p.unique_id) IN (SELECT rj.career_id, rj.unique_id FROM jobs rj"
+    " WHERE rj.status = 'failed' AND rj.id = (SELECT MAX(rjj.id) FROM jobs rjj"
+    " WHERE rjj.career_id = rj.career_id AND rjj.unique_id = rj.unique_id"
+    " AND rjj.status != 'cancelled'))"
+)
+"""Its aliases are not the page's own (`j`), so `_count_from` joins nothing for it."""
 
 LEAGUES = {
     "any": "any league",
@@ -72,7 +86,7 @@ SORTS = {
     "pa": "p.pa DESC, p.ca DESC",
     "name": "p.name COLLATE NOCASE",
     "age": "p.age, p.name COLLATE NOCASE",
-    "club": "club COLLATE NOCASE, p.ca DESC",
+    "club": "c.name COLLATE NOCASE, p.ca DESC",
 }
 
 
@@ -167,7 +181,11 @@ def _where(f: PlayerFilter) -> tuple[str, list[Any]]:
         clauses.append("p.club_id = ?")
         args.append(f.club_id)
     elif f.club:
-        clauses.append("c.name LIKE ?")
+        # The matching clubs found once, as with the Review filter; a player without a club
+        # (or whose club is not stored) matches neither way.
+        clauses.append(
+            "(p.career_id, p.club_id) IN (SELECT career_id, club_id FROM clubs WHERE name LIKE ?)"
+        )
         args.append(f"%{f.club}%")
     match f.league:
         case "mine":
@@ -214,7 +232,7 @@ def _where(f: PlayerFilter) -> tuple[str, list[Any]]:
         case "queued":
             clauses.append("j.id IS NOT NULL")
         case "review":
-            clauses.append(f"{_LATEST_JOB} = 'failed'")
+            clauses.append(_IN_REVIEW)
     match f.photo:
         case "game":
             clauses.append("ph.game = 1")
@@ -256,11 +274,18 @@ def _player_row(r: sqlite3.Row) -> dict[str, Any]:
 def players_page(
     conn: sqlite3.Connection, career_id: int, f: PlayerFilter, per_page: int = PER_PAGE
 ) -> tuple[list[dict[str, Any]], int]:
-    """One page of players matching the filter, and how many match in all."""
+    """One page of players matching the filter, and how many match in all. The page's rows
+    are chosen first, then read in full (module docstring); `p.unique_id` last in the order
+    makes it total, so both steps agree on it."""
     where, args = _where(f)
     total = conn.execute(
         f"SELECT COUNT(*){_count_from(where)} WHERE {where}", (career_id, *args)
     ).fetchone()[0]
+    order = f"{SORTS[f.sort]}, p.unique_id"
+    window = (
+        f"SELECT p.unique_id{_count_from(f'{where} {order}')} WHERE {where}"
+        f" ORDER BY {order} LIMIT ? OFFSET ?"
+    )
     rows = conn.execute(
         "SELECT p.unique_id, p.name, p.age, p.ca, p.pa, p.is_newgen, p.academy, p.at_my_club,"
         " p.in_my_league, p.in_continental, p.in_scope, p.group_name, p.tracked, p.reasons,"
@@ -269,8 +294,8 @@ def players_page(
         " i.id AS image_id, ph.game AS photo_game, ph.facepack AS photo_facepack,"
         " i.published_path, i.group_name AS image_group, j.status AS job_status,"
         f" j.kind AS job_kind, j.manual AS job_manual, {_LATEST_JOB} AS latest_job"
-        f"{_FROM} WHERE {where} ORDER BY {SORTS[f.sort]}, p.unique_id LIMIT ? OFFSET ?",
-        (career_id, *args, per_page, (f.page - 1) * per_page),
+        f"{_FROM} WHERE p.career_id = ? AND p.unique_id IN ({window}) ORDER BY {order}",
+        (career_id, career_id, *args, per_page, (f.page - 1) * per_page),
     ).fetchall()
     return [_player_row(r) for r in rows], total
 

@@ -265,6 +265,33 @@ def test_the_app_from_start_to_quit(config_file: Path, tmp_path: Path) -> None:
         os.kill(child, 0)  # the worker process has exited: its memory is free
 
 
+def test_update_now_starts_the_update_and_quits(config_file: Path) -> None:
+    """Where an update in place works (faked here: Windows, not a git checkout), the web app
+    gets Update now's hook: it starts Start.bat --update and quits facegen a moment later."""
+    record = Record()
+    updates: list[str] = []
+    base = record.shell
+
+    def shell() -> desktop.Shell:
+        s = base()
+        s.can_update = lambda: True
+        s.start_update = lambda: updates.append("Start.bat --update")
+        return s
+
+    record.shell = shell  # type: ignore[method-assign]
+    app = Running("app", args_for(config_file, free_port()), record, fake_gpu())
+    hook = app.started.install_update
+    assert hook is not None and app.controller.updates is not None
+    hook()
+    assert updates == ["Start.bat --update"]
+    app.thread.join(60)
+    assert not app.thread.is_alive() and app.code == 0 and app.controller.quitting
+    # Without it (Linux, or a git checkout) there is no hook.
+    plain = Running("app", args_for(config_file, free_port()), Record(), fake_gpu())
+    assert plain.started.install_update is None
+    plain.quit()
+
+
 def test_the_tray_alone_opens_the_dashboard_in_the_browser(config_file: Path) -> None:
     record = Record()
     port = free_port()

@@ -38,6 +38,11 @@ REFRESH_SECONDS = 1.0
 """How often the tray reads the state, answers a second start and shows notifications."""
 QUIT_WAIT_SECONDS = 120.0
 """How long the end of `run` waits for Quit: the worker's 60 s, then the server's."""
+UPDATE_QUIT_DELAY = 1.5
+"""After Update now has started `Start.bat --update`: time for the page saying so to load."""
+APP_MUTEX = "facegen-app"
+"""A named mutex the app holds while it runs, so the installer and uninstaller can tell
+(Inno Setup's AppMutex, installer/facegen.iss)."""
 WEBVIEW2_URL = "https://developer.microsoft.com/microsoft-edge/webview2/"
 
 logger = logging.getLogger("facegen")
@@ -95,6 +100,45 @@ def _open_browser(url: str) -> None:
     webbrowser.open(url)
 
 
+def _can_update_here() -> bool:
+    """Update now works on Windows, in a folder with Start.bat that is not a git checkout."""
+    from facegen.setup import update
+
+    return os.name == "nt" and (PROJECT_ROOT / "Start.bat").is_file() and not update.is_checkout()
+
+
+def _start_update() -> None:
+    """`Start.bat --update` in a console of its own: it waits for facegen to quit."""
+    from facegen.platform import procs
+
+    procs.start_console(str(PROJECT_ROOT / "Start.bat"), "--update", cwd=str(PROJECT_ROOT))
+
+
+def hold_app_mutex(os_name: str = os.name) -> Callable[[], None]:
+    """Hold APP_MUTEX on Windows (nothing elsewhere); returns its release. A failure is only
+    logged: the installer then cannot tell facegen runs, nothing else changes."""
+    if os_name != "nt":
+        return lambda: None
+    import ctypes
+    from ctypes import wintypes
+
+    try:
+        # A kernel32 of our own, so these prototypes (a HANDLE, not ctypes' default int)
+        # change nothing for other users of ctypes.windll.kernel32.
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+        kernel32.CreateMutexW.restype = wintypes.HANDLE
+        kernel32.CreateMutexW.argtypes = (wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR)
+        kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+        handle = kernel32.CreateMutexW(None, False, APP_MUTEX)
+    except (OSError, AttributeError) as exc:
+        logger.warning("the app mutex could not be created: %s", exc)
+        return lambda: None
+    if not handle:
+        logger.warning("the app mutex could not be created")
+        return lambda: None
+    return lambda: kernel32.CloseHandle(handle)
+
+
 def show_error(title: str, text: str) -> None:
     """A message box on Windows (a top-most error box: there is no console to read);
     elsewhere the text on stderr."""
@@ -120,6 +164,8 @@ class Shell:
     startup: Callable[[Path, Path | None], StartupSwitch | None] = _startup_switch
     open_browser: Callable[[str], object] = _open_browser
     show_error: Callable[[str, str], None] = show_error
+    can_update: Callable[[], bool] = _can_update_here
+    start_update: Callable[[], None] = _start_update
 
 
 class LogStream(io.TextIOBase):
@@ -254,6 +300,8 @@ class Started:
     tray: TrayLike | None = None
     url: str | None = None
     notices: list[Notice] = field(default_factory=list)
+    install_update: Callable[[], None] | None = None
+    """Update now's hook, as given to the web app (Windows, not a git checkout)."""
 
 
 def run(
@@ -300,6 +348,7 @@ def run(
             " try again; if it seems stuck, end it in Task Manager and start facegen again."
         )
     log_path = log_to_file(paths.data_dir)
+    release_mutex = hold_app_mutex()
     console = has_console()
     if not console:
         output_to_log()
@@ -373,7 +422,18 @@ def run(
             quit_steps=[*rt.stop_steps(), ("web server", server.stop)],
             on_quit_done=close_shell,
             startup=shell.startup(paths.data_dir, config),
+            updates=rt.updates,
         )
+        if shell.can_update():
+            quitting_for_update = controller
+
+            def install_update() -> None:
+                shell.start_update()
+                logger.info("Update now: Start.bat --update started; quitting")
+                threading.Timer(UPDATE_QUIT_DELAY, quitting_for_update.quit).start()
+
+            rt.context.install_update = install_update
+            started.install_update = install_update
         said_hidden: list[bool] = []
 
         def on_hide() -> None:
@@ -439,6 +499,9 @@ def run(
     finally:
         if refresher is not None:
             refresher.stop()
+        if rt is not None:
+            rt.stop_updates()
+        release_mutex()
         lock.release()
 
 

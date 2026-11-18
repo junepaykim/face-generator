@@ -13,6 +13,7 @@ deleting; atomic replacement and skipping unchanged files make publishing idempo
 from __future__ import annotations
 
 import os
+import shutil
 import sqlite3
 from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
@@ -273,6 +274,22 @@ def deactivate_packs(fm_user_dir: Path, keep: str | None) -> tuple[str, ...]:
         if (folder / "config.xml").is_file() and write_config(folder, (), fm_user_dir):
             changed.append(folder.name)
     return tuple(changed)
+
+
+def remove_packs(fm_user_dir: Path, data_dir: Path) -> bool:
+    """Delete graphics/facegen/ and everything in it, which the uninstaller offers: FM27
+    shows its own photos again from its next start or Reload Skin. Nothing else in graphics/
+    is touched (AGENTS.md rule 2). False when there was nothing to remove. A later publish
+    writes every picture again, as their files are gone."""
+    root = packs_root(fm_user_dir)
+    with publish_lock(data_dir):
+        if root.is_symlink():
+            root.unlink()
+            return True
+        if not root.exists():
+            return False
+        shutil.rmtree(root)
+    return True
 
 
 @contextmanager

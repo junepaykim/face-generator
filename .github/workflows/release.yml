@@ -1,0 +1,117 @@
+name: Release
+
+# facegen's Windows installer (Phase 13). A `v<version>` tag, <version> being pyproject.toml's,
+# builds facegen-setup-<version>.exe with Inno Setup and attaches it and SHA256SUMS.txt to a
+# GitHub Release, marked latest. The installer holds the release payload (installer/stage.py:
+# the same files an update in place writes), uv.exe checked against installer/uv.sha256, and
+# the icon; Python, PyTorch and the models are fetched by Start.bat at the first start.
+# The app's update check reads the newest `v` release; the Rust wheels' `native-v` releases are
+# not app releases.
+#
+# Releasing: set the version in pyproject.toml, run `uv lock`, commit, then
+#   git tag v<version> && git push origin v<version>
+# The installer is not signed, so Windows SmartScreen warns about it (README).
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing v tag to build (blank: build the branch without releasing)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  UV_VERSION: "0.10.0"
+
+jobs:
+  installer:
+    name: Installer
+    runs-on: windows-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: The tag
+        id: tag
+        shell: bash
+        env:
+          REQUESTED_TAG: ${{ inputs.release_tag }}
+        run: |
+          tag="$REQUESTED_TAG"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag="$GITHUB_REF_NAME"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Install (light)
+        run: uv sync --locked --no-group gpu --no-group native
+      - name: Tests
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: uv run --no-sync pytest -q
+      - name: Stage the payload, uv.exe and the icon
+        id: stage
+        shell: bash
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          mkdir -p build
+          git archive --format=zip --prefix=facegen/ -o build/source.zip HEAD
+          curl -fsSL -o build/uv-x86_64-pc-windows-msvc.zip \
+            "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-pc-windows-msvc.zip"
+          args=(--archive build/source.zip --uv-zip build/uv-x86_64-pc-windows-msvc.zip --out build/stage)
+          if [ -n "$TAG" ]; then args+=(--tag "$TAG"); fi
+          uv run --no-sync python installer/stage.py "${args[@]}" | tee build/stage.out
+          grep '^version=' build/stage.out >> "$GITHUB_OUTPUT"
+      - name: Inno Setup
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup --no-progress -y
+          }
+          & $iscc "/DVersion=${{ steps.stage.outputs.version }}" "/DStage=$PWD\build\stage" "/DOutput=$PWD\build\dist" installer\facegen.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: SHA-256 sums
+        shell: bash
+        working-directory: build/dist
+        run: sha256sum *.exe | tee SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer
+          path: build/dist/*
+          if-no-files-found: error
+
+  release:
+    name: GitHub Release
+    if: needs.installer.outputs.tag != ''
+    needs: installer
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: installer
+          path: dist
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.installer.outputs.tag }}
+        run: |
+          gh release create "$RELEASE_TAG" dist/*.exe dist/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --latest \
+            --title "facegen ${RELEASE_TAG#v}" \
+            --notes "Download facegen-setup-${RELEASE_TAG#v}.exe and run it. Windows SmartScreen warns about it because it is not signed: choose More info, then Run anyway. Already installed? facegen offers the update on its dashboard."
