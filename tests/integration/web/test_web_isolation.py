@@ -73,6 +73,7 @@ def test_http_surface_and_slash_redirects(config_file: Path) -> None:
         (("POST",), "/players/{uid}/{action}", "player_action", "JSONResponse"),
         (("GET",), "/review", "review", "HTMLResponse"),
         (("GET",), "/settings", "settings_get", "HTMLResponse"),
+        (("GET",), "/settings/basic", "settings_basic", "HTMLResponse"),
         (("GET",), "/settings/advanced", "settings_advanced", "HTMLResponse"),
         (("GET",), "/hardware", "hardware_page", "HTMLResponse"),
         (("POST",), "/settings/auto-configure", "auto_configure", "JSONResponse"),

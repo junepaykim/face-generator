@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -32,7 +33,31 @@ from facegen.web.messages import report_summary, settings_error_text
 from facegen.web.presentation import Presentation
 from facegen.web.responses import _redirect, _safe_next
 
+BASIC = "/settings/basic"
 ADVANCED = "/settings/advanced"
+LEVEL_FILE = "settings-level"
+"""A file in the data folder: the level the Settings link opens, the one last shown (Phase 12g,
+user 2026-11-17). Not a setting, so it is neither on the page nor in the undo history; a file
+because the desktop window keeps no browser storage between runs."""
+LEVELS = ("basic", "advanced")
+
+
+def remembered_level(data_dir: Path) -> str:
+    try:
+        level = (data_dir / LEVEL_FILE).read_text(encoding="utf-8").strip()
+    except OSError:
+        return "basic"
+    return level if level in LEVELS else "basic"
+
+
+def remember_level(data_dir: Path, level: str) -> None:
+    if remembered_level(data_dir) == level:
+        return
+    try:
+        data_dir.mkdir(parents=True, exist_ok=True)
+        (data_dir / LEVEL_FILE).write_text(level + "\n", encoding="utf-8")
+    except OSError:
+        pass  # only a convenience: the page still opens
 
 
 def preset_title(kind: str, name: str, t: Translator) -> str:
@@ -200,10 +225,19 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
 
     @router.get("/settings", response_class=HTMLResponse)
     def settings_get(request: Request, conn: sqlite3.Connection = Conn) -> Response:
+        """The level shown last, Basic at first."""
+        if remembered_level(deps.data_dir) == "advanced":
+            return settings_page(request, conn)
+        return basic_page(request, conn)
+
+    @router.get("/settings/basic", response_class=HTMLResponse)
+    def settings_basic(request: Request, conn: sqlite3.Connection = Conn) -> Response:
+        remember_level(deps.data_dir, "basic")
         return basic_page(request, conn)
 
     @router.get("/settings/advanced", response_class=HTMLResponse)
     def settings_advanced(request: Request, conn: sqlite3.Connection = Conn) -> Response:
+        remember_level(deps.data_dir, "advanced")
         return settings_page(request, conn)
 
     graphics_card = deps.card.get  # asked once per app, shared with the dashboard's guide

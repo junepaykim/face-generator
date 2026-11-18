@@ -636,5 +636,7 @@ def review_items(conn: sqlite3.Connection, career_id: int) -> list[dict[str, Any
             (career_id, r["unique_id"]),
         ).fetchone()
         item["image"] = _image(image) if image is not None else None
+        # What FM27 shows now, to compare the candidates with (Phase 12i).
+        item["current_id"] = current_picture_id(conn, career_id, r["unique_id"])
         items.append(item)
     return items

@@ -304,6 +304,32 @@ progress();
   update();
 })();
 
+// Review: a player's candidates side by side, with the picture FM27 shows now (Phase 12i). The
+// pictures load when the dialog opens; without a dialog the links open each picture.
+document.addEventListener("click", (e) => {
+  const opener = e.target.closest("[data-compare]");
+  if (opener) {
+    const dialog = document.getElementById(opener.dataset.compare);
+    if (!dialog || typeof dialog.showModal !== "function") return;
+    e.preventDefault();
+    dialog.querySelectorAll("img[data-src]").forEach((img) => {
+      img.src = img.dataset.src;
+      img.removeAttribute("data-src");
+    });
+    dialog.querySelectorAll(".compare-pic.picked").forEach((f) => f.classList.remove("picked"));
+    dialog.showModal();
+    const at = opener.dataset.at && dialog.querySelector(`.compare-pic[data-at="${opener.dataset.at}"]`);
+    if (at) {
+      at.classList.add("picked");
+      at.scrollIntoView({ block: "nearest", inline: "center" });
+    }
+    return;
+  }
+  // A click beside the dialog's box, or on Close, closes it.
+  const dialog = e.target.closest("dialog.compare");
+  if (dialog && (e.target === dialog || e.target.closest("[data-close]"))) dialog.close();
+});
+
 // Forms with data-confirm ask first.
 document.addEventListener("submit", (e) => {
   const msg = e.target.dataset && e.target.dataset.confirm;

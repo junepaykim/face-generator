@@ -96,6 +96,12 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                 if action == "new-picture":
                     r = manual.new_pictures(conn, career.id, uids, settings)
                     return t("msg.bulk.new_picture", summary=manual_summary(r, t))
+                if action == "retry":  # the review page (Phase 12i)
+                    r = manual.retry_many(conn, career.id, uids, settings)
+                    return t("msg.bulk.retry", summary=manual_summary(r, t))
+                if action == "new-face":
+                    r = manual.new_faces(conn, career.id, uids, settings)
+                    return t("msg.bulk.new_face", summary=manual_summary(r, t))
                 if action == "pin":
                     pin = str(form.get("pin") or "")
                     r = manual.set_pin(conn, career.id, uids, pin or None, settings)

@@ -69,6 +69,7 @@ REFUSALS: dict[str, str] = {
     "never": "pinned to never; unpin first",
     "no_picture": "no picture to draw again; use Generate",
     "no_group": "in no group; use Generate and choose one",
+    "no_failed": "no failed picture to retry",
 }
 """Why no job can be queued for a player, by code: the reasons ActionResult.skipped and
 ManualError carry."""
@@ -256,6 +257,34 @@ def new_picture(
     return _redraw(conn, career_id, uid, settings, "redraw", now)
 
 
+def _redraw_many(
+    conn: sqlite3.Connection,
+    career_id: int,
+    uids: Iterable[int],
+    settings: Settings,
+    kind: str,
+    now: float | None,
+) -> ActionResult:
+    """A re-draw for many players at once; those who cannot have one are skipped with the
+    reason. Players run in the order given."""
+    result = ActionResult()
+    if now is None:
+        now = time.time()
+    with transaction(conn):
+        for uid in dict.fromkeys(uids):
+            p = _player(conn, career_id, uid)
+            try:
+                group = _redraw_group(conn, career_id, p, kind)
+            except ManualError as exc:
+                result.skipped.append((uid, str(exc)))
+                continue
+            rank = request_rank(now, len(result.queued))
+            _queue(conn, career_id, p, kind, group, rank, _redraw_reason(kind), settings)
+            result.queued.append(uid)
+        classify_and_plan(conn, career_id, settings)
+    return result
+
+
 def new_pictures(
     conn: sqlite3.Connection,
     career_id: int,
@@ -264,24 +293,20 @@ def new_pictures(
     *,
     now: float | None = None,
 ) -> ActionResult:
-    """New picture for many players at once (the players page); those who cannot have one
-    are skipped with the reason. Players run in the order given."""
-    result = ActionResult()
-    if now is None:
-        now = time.time()
-    with transaction(conn):
-        for uid in dict.fromkeys(uids):
-            p = _player(conn, career_id, uid)
-            try:
-                group = _redraw_group(conn, career_id, p, "redraw")
-            except ManualError as exc:
-                result.skipped.append((uid, str(exc)))
-                continue
-            rank = request_rank(now, len(result.queued))
-            _queue(conn, career_id, p, "redraw", group, rank, _redraw_reason("redraw"), settings)
-            result.queued.append(uid)
-        classify_and_plan(conn, career_id, settings)
-    return result
+    """New picture for many players at once (the players page)."""
+    return _redraw_many(conn, career_id, uids, settings, "redraw", now)
+
+
+def new_faces(
+    conn: sqlite3.Connection,
+    career_id: int,
+    uids: Iterable[int],
+    settings: Settings,
+    *,
+    now: float | None = None,
+) -> ActionResult:
+    """New face for many players at once (the review page, Phase 12i)."""
+    return _redraw_many(conn, career_id, uids, settings, "reroll", now)
 
 
 def set_pin(
@@ -389,6 +414,43 @@ def retry(
         )
         classify_and_plan(conn, career_id, settings)
     return ActionResult(queued=[uid])
+
+
+def retry_many(
+    conn: sqlite3.Connection,
+    career_id: int,
+    uids: Iterable[int],
+    settings: Settings,
+    *,
+    now: float | None = None,
+) -> ActionResult:
+    """`retry` for many players at once (the review page, Phase 12i): each one's failed job
+    queued again with new seeds; those who cannot be retried are skipped with the reason."""
+    result = ActionResult()
+    if now is None:
+        now = time.time()
+    with transaction(conn):
+        for uid in dict.fromkeys(uids):
+            p = _player(conn, career_id, uid)
+            if why := _refusal(p):
+                result.skipped.append((uid, why))
+                continue
+            failed = conn.execute(
+                "SELECT kind, group_name FROM jobs WHERE career_id = ? AND unique_id = ?"
+                " AND status = 'failed' ORDER BY id DESC LIMIT 1",
+                (career_id, uid),
+            ).fetchone()
+            if failed is None:
+                result.skipped.append((uid, REFUSALS["no_failed"]))
+                continue
+            rank = request_rank(now, len(result.queued))
+            _queue(
+                conn, career_id, p, failed["kind"], failed["group_name"], rank,
+                "requested: retry", settings,
+            )  # fmt: skip
+            result.queued.append(uid)
+        classify_and_plan(conn, career_id, settings)
+    return result
 
 
 def cancel(conn: sqlite3.Connection, career_id: int, uid: int, settings: Settings) -> bool:

@@ -4,34 +4,67 @@
 {% block title %}{{ t("nav.review") }}{% endblock %}
 {% block content %}
 <h1>{{ t("nav.review") }} {{ tip(t("review.tip")) }}</h1>
-{% for it in items %}
-<section class="card review">
-  <div class="head">
-    <h2><a href="/players/{{ it.unique_id }}">{{ it.name }}</a> <span class="muted small">{{ it.club or t("common.free_agent") }} · {{ t("review.age", age=it.age) }} · {{ t("kind." ~ it.kind) }} · {{ grp(it.group_name) }} · {{ it.updated_at[:16]|replace("T", " ") }}</span></h2>
-    <div class="buttons">
-      {% if it.present and it.in_scope %}
-      <form method="post" action="/players/{{ it.unique_id }}/retry"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="/review"><button class="primary">{{ t("player.retry") }}</button></form>
-      <form method="post" action="/players/{{ it.unique_id }}/new-face"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="/review"><button>{{ t("player.new_face") }}</button></form>
-      {% endif %}
-      <form method="post" action="/players/{{ it.unique_id }}/pin"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="/review"><input type="hidden" name="pin" value="never"><button title="{{ t('review.give_up') }}">{{ t("review.pin_never") }}</button></form>
-    </div>
+{% if items %}
+{# One form for the list: the ticked players go to the bar's buttons; each player's own buttons
+   post to their page's action (formaction). Phase 12i. #}
+<form method="post" action="/players/action" id="bulk"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="next" value="/review"><input type="hidden" name="pin" value="never">
+  <div class="bulk sticky">
+    <label class="tick-all"><input type="checkbox" data-tick-all> {{ t("review.tick_all") }}</label>
+    <span class="ticked muted" data-ticked>{{ t("js.ticked", count=0) }}</span>
+    <button class="primary" name="action" value="retry" data-needs-tick>{{ t("player.retry") }}</button>
+    <button name="action" value="new-face" data-needs-tick>{{ t("player.new_face") }}</button>
+    <button name="action" value="pin" data-needs-tick title="{{ t('review.give_up') }}">{{ t("review.pin_never") }}</button>
   </div>
-  {% if it.problem %}{{ problem(it.problem) }}{% endif %}
-  {% if it.image %}
-    <div class="cands">
-    {% for c in it.image.check.candidates %}
-      <figure class="cand">
-        <a href="/files?path={{ c.path|urlencode }}" target="_blank"><img src="/files?path={{ c.path|urlencode }}&amp;size=192" loading="lazy" alt=""></a>
-        <figcaption>
-          <span class="b {{ 'ok' if c.rating == 'general' else 'bad' }}">{{ c.rating }} {{ "%.2f"|format(c.p_general) }}</span>
-          {% for fl in c.failures %}<span class="b bad">{{ fl }}</span>{% endfor %}
-        </figcaption>
-      </figure>
-    {% endfor %}
+  {% for it in items %}
+  {% set cands = it.image.check.candidates if it.image else [] %}
+  <section class="card review" id="review-{{ it.unique_id }}">
+    <div class="head">
+      <h2><input type="checkbox" name="uid" value="{{ it.unique_id }}" aria-label="{{ t('players.tick', name=it.name) }}"> <a href="/players/{{ it.unique_id }}">{{ it.name }}</a> <span class="muted small">{{ it.club or t("common.free_agent") }} · {{ t("review.age", age=it.age) }} · {{ t("kind." ~ it.kind) }} · {{ grp(it.group_name) }} · <time datetime="{{ it.updated_at }}">{{ it.updated_at[:16]|replace("T", " ") }}</time></span></h2>
+      <div class="buttons">
+        {% if it.present and it.in_scope %}
+        <button class="primary" formaction="/players/{{ it.unique_id }}/retry">{{ t("player.retry") }}</button>
+        <button formaction="/players/{{ it.unique_id }}/new-face">{{ t("player.new_face") }}</button>
+        {% endif %}
+        <button formaction="/players/{{ it.unique_id }}/pin" title="{{ t('review.give_up') }}">{{ t("review.pin_never") }}</button>
+        {% if cands %}<button type="button" data-compare="compare-{{ it.unique_id }}">{{ t("review.compare") }}</button>{% endif %}
+      </div>
     </div>
-  {% endif %}
-</section>
+    {% if it.problem %}{{ problem(it.problem) }}{% endif %}
+    {% if cands %}
+    <div class="cands">
+      {% for c in cands %}
+      <figure class="cand" title="{{ c.failures|join('; ') }}">
+        <a href="/files?path={{ c.path|urlencode }}" target="_blank" data-compare="compare-{{ it.unique_id }}" data-at="{{ loop.index }}"><img src="/files?path={{ c.path|urlencode }}&amp;size=192" loading="lazy" alt="{{ t('review.candidate', n=loop.index) }}"></a>
+        <figcaption>{% for why in c.why %}<span class="b bad">{{ why }}</span>{% endfor %}</figcaption>
+      </figure>
+      {% endfor %}
+    </div>
+    <dialog class="compare" id="compare-{{ it.unique_id }}" aria-label="{{ t('review.compare_title', name=it.name) }}">
+      <div class="compare-head">
+        <strong>{{ it.name }}</strong>
+        <button type="button" data-close>{{ t("common.close") }}</button>
+      </div>
+      <div class="compare-row">
+        {% if it.current_id %}
+        <figure class="compare-pic now">
+          <a href="/pictures/{{ it.current_id }}" target="_blank"><img data-src="/pictures/{{ it.current_id }}" alt="{{ t('review.now') }}"></a>
+          <figcaption><span class="b ok">{{ t("review.now") }}</span></figcaption>
+        </figure>
+        {% endif %}
+        {% for c in cands %}
+        <figure class="compare-pic" data-at="{{ loop.index }}">
+          <a href="/files?path={{ c.path|urlencode }}" target="_blank"><img data-src="/files?path={{ c.path|urlencode }}" alt="{{ t('review.candidate', n=loop.index) }}"></a>
+          <figcaption><span class="b">{{ t("review.candidate", n=loop.index) }}</span>{% for why in c.why %}<span class="b bad">{{ why }}</span>{% endfor %}</figcaption>
+        </figure>
+        {% endfor %}
+      </div>
+    </dialog>
+    {% endif %}
+  </section>
+  {% endfor %}
+</form>
 {% else %}
 <p class="muted">{{ t("review.nothing") }}</p>
-{% endfor %}
+{% endif %}
 {% endblock %}

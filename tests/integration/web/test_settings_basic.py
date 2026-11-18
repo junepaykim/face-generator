@@ -61,11 +61,11 @@ def test_basic_holds_who_quality_and_when_and_advanced_holds_everything(
     ):  # fmt: skip
         assert f'name="{key}" data-key' in page, key
     assert 'name="groups.a.ca_above"' not in page and "About this run" not in page
-    assert 'href="/settings" class="on" aria-current="page">Basic' in page
+    assert 'href="/settings/basic" class="on" aria-current="page">Basic' in page
     advanced = client.get("/settings/advanced").text
     assert 'name="groups.a.ca_above"' in advanced and "Recent changes" in advanced
     assert 'href="/settings/advanced" class="on" aria-current="page">Advanced' in advanced
-    korean = unescape(client.get("/settings", headers=KOREAN_WINDOWS).text)
+    korean = unescape(client.get("/settings/basic", headers=KOREAN_WINDOWS).text)
     for text in ("그림 대상", "다른 구단 선수", "적게", "보통", "많이", "그림 품질", "메모리 절약"):
         assert text in korean, text
 
@@ -82,7 +82,7 @@ def test_a_preset_is_one_named_change_that_one_undo_reverts(
     assert all(now[k] == defaults[k] - 10 for k in presets.REACH_KEYS)
     advanced = unescape(client.get("/settings/advanced").text)
     assert "· Players at other clubs: More" in advanced  # the history names the preset
-    assert checked(client.get("/settings").text, "reach") == ["more"]
+    assert checked(client.get("/settings/basic").text, "reach") == ["more"]
 
     r = client.post("/settings", data={"action": "undo", "next": "/settings"})
     assert r.status_code == 303 and r.headers["location"].startswith("/settings?msg=")
@@ -151,3 +151,25 @@ def test_the_quality_this_card_suits_is_marked(config_file: Path) -> None:
     match = re.search(r'value="(\w+)" data-preset[^>]*>\s*<span class="choice-name">[^<]+'
                       r'<span class="tag ok" data-tip="Fake 8 GB">Recommended', page)  # fmt: skip
     assert match is not None and match[1] == "low"
+
+
+def test_the_settings_link_opens_the_level_shown_last_even_after_a_restart(
+    client: TestClient, config_file: Path
+) -> None:
+    advanced_on = 'href="/settings/advanced" class="on" aria-current="page">Advanced'
+    assert "Who gets a picture" in client.get("/settings").text  # Basic at first
+    client.get("/settings/advanced")
+    assert advanced_on in client.get("/settings").text
+    client.get("/gallery")  # another page in between
+    page = client.get("/settings").text
+    assert advanced_on in page and 'name="groups.a.ca_above"' in page
+    # A new run of the app on the same data folder.
+    db_path = load_settings(defaults_path=config_file).paths.db_path
+    again = client_for(config_file, db_path)
+    try:
+        assert advanced_on in again.get("/settings").text
+        again.get("/settings/basic")
+        assert "Who gets a picture" in again.get("/settings").text
+    finally:
+        again.close()
+    assert (load_settings(defaults_path=config_file).paths.data_dir / "settings-level").exists()

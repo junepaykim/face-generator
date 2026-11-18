@@ -2,7 +2,7 @@
 <div class="page-head">
   <h1>{{ t("nav.settings") }} {{ tip(t("settings.intro_tip")) }}</h1>
   <nav class="tabs" aria-label="{{ t('nav.settings') }}">
-    <a href="/settings"{% if level == "basic" %} class="on" aria-current="page"{% endif %}>{{ t("settings.level.basic") }}</a>
+    <a href="/settings/basic"{% if level == "basic" %} class="on" aria-current="page"{% endif %}>{{ t("settings.level.basic") }}</a>
     <a href="/settings/advanced"{% if level == "advanced" %} class="on" aria-current="page"{% endif %}>{{ t("settings.level.advanced") }}</a>
   </nav>
 </div>

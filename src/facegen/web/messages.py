@@ -195,6 +195,26 @@ def review_problem(id: str, raw: str | None, t: Translator) -> Problem | None:
     return Problem(id=id, title=title, cause="", todo="", detail=raw, more=t("problem.details"))
 
 
+CHECK_FAILURES = (
+    (re.compile(r"rated (?P<rating>\w+) \(general [\d.]+\)"), "rating"),
+    (re.compile(r"content: (?P<tags>.+)"), "content"),
+    (re.compile(r"hair colour not seen"), "hair"),
+    (re.compile(r"eye colour not seen"), "eyes"),
+    (re.compile(r"not one girl: (?P<what>.+)"), "people"),
+    (re.compile(r"no figure found against the background"), "figure"),
+    (re.compile(r"head starts (?P<share>\d+%) down the picture"), "head"),
+)
+
+
+def check_failure_text(raw: str, t: Translator) -> str:
+    """Why a candidate failed its checks (render.quality_checks), in the page's language; the
+    check's own text when it is not one of these. Only the wording: the checks are unchanged."""
+    for pattern, key in CHECK_FAILURES:
+        if m := pattern.fullmatch(raw):
+            return t(f"review.failure.{key}", **m.groupdict())
+    return raw
+
+
 def refusal_text(reason: str, t: Translator) -> str:
     """Why a player was skipped (manual.REFUSALS), in the page's language."""
     code = REFUSAL_CODES.get(reason)

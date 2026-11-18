@@ -30,7 +30,7 @@
 {% endmacro %}
 
 <div class="cards basic-settings">
-  <form method="post" action="/settings" class="contents" data-autosave><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="/settings">
+  <form method="post" action="/settings" class="contents" data-autosave><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="{{ path }}">
     <section class="card" id="who">
       <h2>{{ t("settings.basic.who") }} {{ tip(t("settings.basic.who_tip")) }}</h2>
       <div class="field" data-field>

@@ -25,6 +25,7 @@ from facegen.setup import hardware
 from facegen.setup.models import REPOS
 from facegen.web import presentation
 from facegen.web.forms import editable_keys, settings_sections
+from facegen.web.messages import CHECK_FAILURES
 from facegen.web.queries import (
     GALLERY_SORTS,
     GROUP_FILTERS,
@@ -142,6 +143,7 @@ def vocabulary_keys() -> list[str]:
     keys += [f"hardware.preset.{name}.title" for name in presets.QUALITY]
     keys += [f"gallery.where_option.{k}" for k in WHERE_FILTERS]
     keys += [f"gallery.sort.{k}" for k in GALLERY_SORTS]
+    keys += [f"review.failure.{key}" for _, key in CHECK_FAILURES]
     return keys
 
 

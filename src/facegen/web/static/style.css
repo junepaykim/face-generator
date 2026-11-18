@@ -400,3 +400,23 @@ form.contents { display: contents; }
 /* The picture wall (Phase 12h): bigger cards than the dashboard's, the club under the name. */
 .thumbs.wall { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 14px 12px; }
 .thumb-club { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Review (Phase 12i): tick boxes for the bar's buttons, and a player's candidates side by side
+   in a dialog with the picture FM27 shows now. */
+.review .head h2 input[type=checkbox] { margin: 0 4px 0 0; vertical-align: -1px; }
+.bulk .tick-all { display: inline-flex; align-items: center; gap: 6px; }
+.cand a { display: block; }
+dialog.compare { width: min(1400px, 96vw); max-height: 94vh; padding: 0; border: 1px solid var(--line);
+                 border-radius: 10px; background: var(--card); color: var(--fg); }
+dialog.compare::backdrop { background: rgb(0 0 0 / .55); }
+.compare-head { position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between;
+                align-items: center; gap: 12px; padding: 10px 14px; background: var(--card);
+                border-bottom: 1px solid var(--line); }
+.compare-row { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(220px, 1fr); gap: 12px;
+               padding: 12px 14px; overflow-x: auto; }
+.compare-pic { margin: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.compare-pic img { display: block; width: 100%; max-height: calc(94vh - 150px); aspect-ratio: 3 / 4;
+                   object-fit: contain; background: var(--row); border-radius: 6px; }
+.compare-pic.now img { outline: 2px solid var(--ok); outline-offset: -2px; }
+.compare-pic.picked img { outline: 2px solid var(--accent); outline-offset: -2px; }
+.compare-pic figcaption { padding: 0; }

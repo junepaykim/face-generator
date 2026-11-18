@@ -46,6 +46,7 @@ language = "Language"
 theme = "Theme"
 
 [common]
+close = "Close"
 group = "{group} group"
 unknown = "unknown"
 none = "none"
@@ -478,6 +479,20 @@ age = "age {age}"
 give_up = "Never draw this player"
 pin_never = "Never draw"
 nothing = "No players to review right now."
+tick_all = "Select all"
+compare = "Compare"
+compare_title = "{name}: the candidates side by side"
+now = "Now in FM27"
+candidate = "Candidate {n}"
+
+[review.failure]
+rating = "Not rated safe ({rating})"
+content = "Content not allowed: {tags}"
+hair = "Hair colour not seen"
+eyes = "Eye colour not seen"
+people = "Not one person: {what}"
+figure = "No person found against the background"
+head = "Head too low ({share} down)"
 
 [settings]
 intro_tip = "Settings save automatically and apply at once. Undo, or an entry in Recent changes, puts earlier values back. Pictures already made are never deleted."
@@ -788,6 +803,8 @@ nothing_to_cancel = "Nothing to cancel."
 publish_failed = "Publishing failed: {error}"
 
 [msg.bulk]
+retry = "Retry: {summary}."
+new_face = "New face: {summary}."
 generate = "Generate in the {group} group: {summary}."
 new_picture = "New picture: {summary}."
 pin = "Pin to {group}: {summary}."
@@ -910,6 +927,7 @@ drawing = "being generated right now"
 never = "set to never draw; clear the pin first"
 no_picture = "no picture to draw again; use Generate"
 no_group = "in no group; use Generate and choose one"
+no_failed = "no failed picture to retry"
 
 [manual.error]
 named = "{name}: {why}"
