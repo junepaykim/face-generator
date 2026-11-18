@@ -19,7 +19,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -104,12 +104,26 @@ def gigabytes(n: int) -> str:
     return f"{max(n, 0) / 10**6:.0f} MB"
 
 
-def hub_cache_root() -> Path:
+def hub_cache_root(env: Mapping[str, str] | None = None) -> Path:
     """The Hugging Face cache folder, as huggingface_hub works it out (HF_HUB_CACHE, HF_HOME,
-    then ~/.cache/huggingface/hub)."""
-    from huggingface_hub import constants
-
-    return Path(constants.HF_HUB_CACHE)
+    then ~/.cache/huggingface/hub). Without huggingface_hub (an install without the GPU group,
+    such as CI's), the same rules from its documentation, so the status still answers."""
+    if env is None:
+        try:
+            from huggingface_hub import constants
+        except ImportError:
+            pass
+        else:
+            return Path(constants.HF_HUB_CACHE)
+        env = os.environ
+    cache = env.get("HF_HUB_CACHE") or env.get("HUGGINGFACE_HUB_CACHE")
+    if cache:
+        return Path(cache).expanduser()
+    home = env.get("HF_HOME")
+    if not home:
+        base = env.get("XDG_CACHE_HOME") or str(Path("~/.cache").expanduser())
+        home = str(Path(base) / "huggingface")
+    return Path(home).expanduser() / "hub"
 
 
 class HubCache:

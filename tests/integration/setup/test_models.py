@@ -97,6 +97,37 @@ def test_missing_is_pure() -> None:
     assert missing(SMALL, lambda f: f in have) == [SMALL[1], SMALL[2]]
 
 
+def test_the_cache_folder_follows_huggingface_hubs_rules_without_it(tmp_path: Path) -> None:
+    """An install without the GPU group (CI's) has no huggingface_hub: the folder is worked out
+    by its documented rules, and the model status still answers."""
+    home = Path("~").expanduser()
+    assert models.hub_cache_root({}) == home / ".cache" / "huggingface" / "hub"
+    assert models.hub_cache_root({"XDG_CACHE_HOME": str(tmp_path)}) == (
+        tmp_path / "huggingface" / "hub"
+    )
+    assert models.hub_cache_root({"HF_HOME": str(tmp_path / "hf")}) == tmp_path / "hf" / "hub"
+    assert models.hub_cache_root(
+        {"HF_HOME": str(tmp_path / "hf"), "HF_HUB_CACHE": str(tmp_path / "c")}
+    ) == (tmp_path / "c")
+    assert models.hub_cache_root({"HUGGINGFACE_HUB_CACHE": str(tmp_path / "old")}) == (
+        tmp_path / "old"
+    )
+
+
+def test_without_huggingface_hub_the_status_still_answers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setitem(sys.modules, "huggingface_hub", None)  # import fails, as without it
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "empty-cache"))
+    assert models.hub_cache_root() == tmp_path / "empty-cache"
+    assert not models.status().ready
+
+
+def test_with_huggingface_hub_the_folder_is_its_own(monkeypatch: pytest.MonkeyPatch) -> None:
+    constants = pytest.importorskip("huggingface_hub.constants")
+    assert models.hub_cache_root() == Path(constants.HF_HUB_CACHE)
+
+
 def test_the_cache_finds_files_through_refs_main(tmp_path: Path) -> None:
     cache = HubCache(tmp_path)
     assert not cache.has(SMALL[0])  # no repository at all
