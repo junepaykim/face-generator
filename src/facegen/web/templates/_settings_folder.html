@@ -1,0 +1,15 @@
+<div class="card{{ ' folder-row' if level == 'basic' }}" id="folders">
+  <h2>{{ t("settings.folders.title") }}</h2>
+  {% if level != "basic" %}
+  <table class="kv">
+    <tr><th>{{ t("settings.folders.user") }}</th><td>{{ folders.user }}</td></tr>
+    <tr><th>{{ t("settings.folders.install") }}</th><td>{{ folders.install }}</td></tr>
+  </table>
+  {% endif %}
+  <form method="post" action="/setup/folder" class="folder-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="{{ path }}">
+    <input type="text" name="folder" value="{{ folders.value }}" placeholder="C:\Users\you\Documents\Sports Interactive\Football Manager 27" aria-label="{{ t('setup.folder.aria') }}" required>
+    <button>{{ t("settings.folders.change") }}</button>
+    {% if setup.browse %}<button formaction="/setup/browse" formnovalidate title="{{ t('setup.folder.browse_title') }}">{{ t("setup.folder.browse") }}</button>{% endif %}
+  </form>
+  {% if folders.user_missing %}<p class="bad small">{{ folders.not_set }}</p>{% endif %}
+</div>

@@ -60,7 +60,7 @@ def test_the_language_switch_wins_over_the_window_and_can_be_undone(client: Test
     assert data["ok"] and data["changed"] and data["reload"]
     assert ">대시보드<" in client.get("/").text  # no Accept-Language: the setting decides
     assert ">대시보드<" in client.get("/", headers={"Accept-Language": "en-US"}).text
-    settings = client.get("/settings").text
+    settings = client.get("/settings/advanced").text
     assert "언어와 화면" in settings and "최근 변경" in settings  # listed, and undoable
     r = client.post("/settings", data={"action": "undo"})
     assert r.status_code == 303

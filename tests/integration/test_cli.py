@@ -295,7 +295,7 @@ def test_serve_starts_the_ui_and_the_worker_and_stops_cleanly(env: dict[str, Pat
         seen.update(host=host, port=port)
         with TestClient(app, base_url=f"http://{host}:{port}") as client:
             seen["page"] = client.get("/").text
-            seen["settings"] = client.get("/settings").text  # About this run (Phase 12)
+            seen["settings"] = client.get("/settings/advanced").text  # About this run (Phase 12)
 
     out = io.StringIO()
     gpu = Gpu(renderer=FakeRenderer, tagger=FakeTagger, fm_check=lambda: True)
@@ -322,7 +322,7 @@ def test_serve_without_the_save_watcher(env: dict[str, Path]) -> None:
 
     def fake_server(app, host: str, port: int) -> None:  # type: ignore[no-untyped-def]
         with TestClient(app, base_url=f"http://{host}:{port}") as client:
-            seen["page"] = client.get("/settings").text  # About this run (Phase 12)
+            seen["page"] = client.get("/settings/advanced").text  # About this run (Phase 12)
 
     out = io.StringIO()
     code = main(

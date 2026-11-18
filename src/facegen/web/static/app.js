@@ -357,21 +357,32 @@ function localTimes(root) {
     field.classList.toggle("error", Boolean(message));
     field.querySelector("[data-error]").textContent = message ? " · " + message : "";
   };
+  // The Basic page shows no default beside its fields.
   const showChanged = (el, changed) => {
     const field = fieldOf(el);
     field.classList.toggle("changed", changed);
-    field.querySelector("[data-dot]").hidden = !changed;
-    field.querySelector("[data-use-default]").hidden = !changed;
+    field.querySelectorAll("[data-dot], [data-use-default]").forEach((x) => { x.hidden = !changed; });
+  };
+  // A preset (Basic page) is a radio group: the choice sent, then the one the values match.
+  const chosen = new Map();
+  const radios = (kind) => form.querySelectorAll(`[data-preset][name="preset.${kind}"]`);
+  const showPreset = (kind, name) => {
+    radios(kind).forEach((r) => { r.checked = r.value === name; });
+    const custom = form.querySelector(`[data-custom="${kind}"]`);
+    if (custom) custom.hidden = name !== null;
   };
 
   async function saveDirty() {
     const fields = dirty();
-    if (!fields.length) return;
+    const picked = new Map(chosen);
+    chosen.clear();
+    if (!fields.length && !picked.size) return;
     running += 1;
     say(text("js.saving"));
     const body = new FormData();
     const posted = new Map(fields.map((el) => [el.name, read(el)]));
     posted.forEach((value, name) => body.append(name, value));
+    picked.forEach((value, name) => body.append(name, value));
     try {
       const res = await fetch("/settings/save", {
         method: "POST",
@@ -381,6 +392,10 @@ function localTimes(root) {
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       fields.forEach((el) => showError(el, data.errors && data.errors[el.name]));
+      picked.forEach((_, name) => {
+        const radio = form.querySelector(`[data-preset][name="${name}"]`);
+        if (radio) showError(radio, data.errors && data.errors[name]);
+      });
       if (!data.ok) {
         say(data.error, "bad");
         return;
@@ -398,11 +413,14 @@ function localTimes(root) {
         showChanged(el, f.changed);
       }
       syncTicks();
+      Object.entries(data.presets || {}).forEach(([kind, name]) => showPreset(kind, name));
       say(data.message, data.changed ? "ok" : "");
       // A new language or theme shows once the page loads again.
       if (data.reload) { leaving = true; location.reload(); return; }
-      history.innerHTML = data.history_html;
-      localTimes(history);
+      if (history) {
+        history.innerHTML = data.history_html;
+        localTimes(history);
+      }
       undoButton.disabled = !data.can_undo;
       redoButton.disabled = !data.can_redo;
     } catch (e) {
@@ -430,6 +448,9 @@ function localTimes(root) {
       .filter((b) => b.checked).map((b) => b.value).join(", ");
   }, true);
 
+  form.addEventListener("change", (e) => {
+    if (e.target.matches("[data-preset]")) chosen.set(e.target.name, e.target.value);
+  }, true);
   form.addEventListener("change", save);
   form.addEventListener("submit", (e) => { e.preventDefault(); save(); });
   form.addEventListener("keydown", (e) => {

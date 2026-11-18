@@ -227,7 +227,7 @@ def test_with_the_folder_in_its_usual_place_nothing_asks(
     )
     env = make_env(tmp_path)
     assert "Set up:" not in env.client.get("/").text
-    assert "found on this PC" in env.client.get("/settings").text
+    assert "found on this PC" in env.client.get("/settings/advanced").text
 
 
 def test_a_folder_that_was_moved_is_asked_for_again(env: Env) -> None:
@@ -243,7 +243,7 @@ def test_the_folder_can_be_changed_from_settings(env: Env) -> None:
     second = fm27(env.tmp / "two")
     env.follow(env.client.post("/setup/folder", data={"folder": str(first), "next": "/settings"}))
     env.syncer.join(10)
-    page = env.client.get("/settings").text
+    page = env.client.get("/settings/advanced").text
     assert f'value="{first}"' in page and 'action="/setup/folder"' in page
     r = env.client.post("/setup/folder", data={"folder": str(second), "next": "/settings"})
     assert r.headers["location"].startswith("/settings?msg=")
@@ -397,7 +397,7 @@ def test_auto_configure_on_an_8_gb_card_and_one_undo(tmp_path: Path) -> None:
     )
     assert env.one("SELECT COUNT(*) FROM settings_history") == 1
     assert env.one("SELECT label FROM settings_history") == "auto-configure"
-    assert "auto-configured for the graphics card" in env.client.get("/settings").text
+    assert "auto-configured for the graphics card" in env.client.get("/settings/advanced").text
 
     text = env.follow(env.client.post("/settings", data={"action": "undo"}))
     assert "Undone:" in text
@@ -425,7 +425,7 @@ def test_auto_configure_without_a_cuda_card_changes_nothing(tmp_path: Path) -> N
 
 
 def test_the_settings_page_offers_auto_configure_and_the_rendering_section(env: Env) -> None:
-    text = env.client.get("/settings").text
+    text = env.client.get("/settings/advanced").text
     assert 'href="/hardware"' in text
     assert '<select name="groups.a.detail_size"' in text
     assert '<option value="1152x1472"' in text

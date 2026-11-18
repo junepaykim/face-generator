@@ -74,7 +74,7 @@
           {% if s.data.why == "paused" %}
             <form method="post" action="/worker/resume"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><div class="buttons"><button class="primary">{{ t("dash.worker.resume") }}</button></div></form>
           {% elif s.data.why == "nobody" %}
-            <p><a class="button" href="/settings#section-groups-a">{{ t("problem.link.settings") }}</a></p>
+            <p><a class="button" href="/settings#who">{{ t("problem.link.settings") }}</a></p>
           {% else %}
             <form method="post" action="/worker/generate-now"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><div class="buttons"><button class="primary">{{ t("dash.worker.generate_now") }}</button></div></form>
           {% endif %}

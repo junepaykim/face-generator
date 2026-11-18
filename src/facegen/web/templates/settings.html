@@ -2,24 +2,13 @@
 {% from "_icons.html" import info as tip %}
 {% block title %}{{ t("nav.settings") }}{% endblock %}
 {% block content %}
-<h1>{{ t("nav.settings") }} {{ tip(t("settings.intro_tip")) }}</h1>
+{% set level = "advanced" %}
+{% include "_settings_head.html" %}
 
 {% if error %}<div class="flash bad">{{ error }}</div>{% endif %}
 
 <div class="cards">
-<div class="card" id="folders">
-  <h2>{{ t("settings.folders.title") }}</h2>
-  <table class="kv">
-    <tr><th>{{ t("settings.folders.user") }}</th><td>{{ folders.user }}</td></tr>
-    <tr><th>{{ t("settings.folders.install") }}</th><td>{{ folders.install }}</td></tr>
-  </table>
-  <form method="post" action="/setup/folder" class="folder-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="/settings">
-    <input type="text" name="folder" value="{{ folders.value }}" placeholder="C:\Users\you\Documents\Sports Interactive\Football Manager 27" aria-label="{{ t('setup.folder.aria') }}" required>
-    <button>{{ t("settings.folders.change") }}</button>
-    {% if setup.browse %}<button formaction="/setup/browse" formnovalidate title="{{ t('setup.folder.browse_title') }}">{{ t("setup.folder.browse") }}</button>{% endif %}
-  </form>
-  {% if folders.user_missing %}<p class="bad small">{{ folders.not_set }}</p>{% endif %}
-</div>
+{% include "_settings_folder.html" %}
 
 <div class="card" id="graphics-card">
   <h2>{{ t("settings.gpu.title") }} {{ tip(t("settings.gpu.tip")) }}</h2>
@@ -41,17 +30,7 @@
 </div>
 </div>
 
-<div class="bulk sticky savebar">
-  <form method="post" action="/settings" class="inline" data-settings-action><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button name="action" value="undo" data-undo {{ "disabled" if not can_undo }} title="{{ t('settings.undo_title') }}">↶ {{ t("settings.undo") }}</button>
-    <button name="action" value="redo" data-redo {{ "disabled" if not can_redo }} title="{{ t('settings.redo_title') }}">↷ {{ t("settings.redo") }}</button>
-  </form>
-  <span class="save-status" data-save-status role="status" aria-live="polite">{{ t("settings.all_saved") }}</span>
-  <span class="muted small grow">{{ t("settings.changed_legend") }} <span class="dot"></span></span>
-  <form method="post" action="/settings" class="inline" data-settings-action><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button name="action" value="defaults" title="{{ t('settings.reset_title') }}">{{ t("settings.reset") }}</button>
-  </form>
-</div>
+{% include "_settings_bar.html" %}
 
 <div class="settings-layout">
   <form method="post" action="/settings" class="settings" data-autosave><input type="hidden" name="csrf_token" value="{{ csrf_token }}">

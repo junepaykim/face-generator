@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 from support.paths import ROOT
 
+from facegen.core import presets
 from facegen.core.domain import JOB_KINDS
 from facegen.core.problems import KINDS as PROBLEM_KINDS
 from facegen.core.settings_values import DETAIL_SIZES, LANGUAGE_CHOICES, THEME_CHOICES
@@ -133,6 +134,10 @@ def vocabulary_keys() -> list[str]:
     ]  # fmt: skip
     keys += [f"problem.link.{k}" for k in ("log", "autoconfig", "models", "settings")]
     keys += [f"models.repo.{repo}" for repo in REPOS]
+    keys += [f"settings.basic.{kind}" for kind in presets.KINDS]
+    keys += [f"settings.basic.reach_option.{name}" for name in presets.REACH_STEPS]
+    keys += [f"settings.basic.quality_option.{name}" for name in presets.QUALITY]
+    keys += [f"hardware.preset.{name}.title" for name in presets.QUALITY]
     return keys
 
 

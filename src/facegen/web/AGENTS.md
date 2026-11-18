@@ -34,7 +34,8 @@ uv run --no-sync ruff check src/facegen/web
 - Picture routes resolve paths beneath masters; thumbnails go in the thumb cache.
   Redirect targets must pass `_safe_next`.
 - Settings autosaves are serialized and send only dirty fields. Preserve edits made while
-  a save is in flight; undo/redo/reset wait for pending saves.
+  a save is in flight; undo/redo/reset wait for pending saves. Basic (`/settings`) and
+  Advanced (`/settings/advanced`) share one history; presets live in `core/presets.py`.
 - Keep template `data-*` attributes aligned with `static/app.js`; a live part has
   `data-refresh`, `data-topic` and `data-rev` (`web/live.py`), and the career marker reloads
   the page after the first sync. Asset URLs include `static_version`.

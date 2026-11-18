@@ -41,10 +41,10 @@ def test_each_band_tag_is_part_of_its_wording() -> None:
 def test_age_looks_are_named_with_a_tag_or_two_and_a_dash_leaves_one_out(
     client: TestClient,
 ) -> None:
-    page = client.get("/settings").text
+    page = client.get("/settings/advanced").text
     assert "Child face (child)" in page and "Late youthful (teenage girl)" in page
     assert re.search(r'name="age.b.W03" data-key data-default="-" value="-"', page)
-    korean = client.get("/settings", headers=KOREAN_WINDOWS).text
+    korean = client.get("/settings/advanced", headers=KOREAN_WINDOWS).text
     assert "어린 얼굴 (child)" in korean and "앳된 얼굴 (young girl)" in korean
     data = save(client, **{"age.b.W03": "17"})
     assert data["ok"] and data["fields"]["age.b.W03"]["text"] == "17"
@@ -56,11 +56,11 @@ def test_age_looks_are_named_with_a_tag_or_two_and_a_dash_leaves_one_out(
 
 
 def test_group_names_show_as_chips_in_labels_and_titles(client: TestClient) -> None:
-    page = client.get("/settings").text
+    page = client.get("/settings/advanced").text
     standard = '<span class="grp grp-b" data-tip="One picture each at standard quality: strong and promising players in my league, continental competitions and my youth teams, and the press.">Standard</span>'
     assert f"Academy players stay in the {standard} group after they leave" in page
     assert f"<legend>{standard} group" in page
-    korean = client.get("/settings", headers=KOREAN_WINDOWS).text
+    korean = client.get("/settings/advanced", headers=KOREAN_WINDOWS).text
     assert re.search(
         r'내 구단 출신 유스는 이적해도 <span class="grp grp-b" data-tip="[^"]+">표준</span> 그룹에 남기기',
         korean,
@@ -68,7 +68,7 @@ def test_group_names_show_as_chips_in_labels_and_titles(client: TestClient) -> N
 
 
 def test_groups_drawn_automatically_are_tick_boxes(client: TestClient) -> None:
-    page = client.get("/settings").text
+    page = client.get("/settings/advanced").text
     assert '<input type="hidden" name="schedule.auto_groups" data-key' in page
     for group in "abc":
         assert f'data-group-of="schedule.auto_groups" value="{group}" checked' in page
@@ -78,12 +78,12 @@ def test_groups_drawn_automatically_are_tick_boxes(client: TestClient) -> None:
         "Groups drawn automatically Detailed, Standard, Light → Detailed, Light"
         in (data["message"])
     )
-    page = client.get("/settings").text
+    page = client.get("/settings/advanced").text
     assert 'data-group-of="schedule.auto_groups" value="b" >' in page
 
 
 def test_long_notes_are_tips_and_the_obvious_ones_are_gone(client: TestClient) -> None:
-    page = unescape(client.get("/settings").text)
+    page = unescape(client.get("/settings/advanced").text)
     assert '<p class="muted">Settings save' not in page  # in the heading's ⓘ (user, 2026-11-17)
     for gone in (
         "Thresholds re-classify",
@@ -99,12 +99,12 @@ def test_long_notes_are_tips_and_the_obvious_ones_are_gone(client: TestClient) -
     assert any(tip.startswith("Auto-configure sets the") for tip in tips)
     assert any(tip.startswith("The age each look starts at") for tip in tips)
     assert "Pictures with these words become much less likely." in tips
-    korean = unescape(client.get("/settings", headers=KOREAN_WINDOWS).text)
+    korean = unescape(client.get("/settings/advanced", headers=KOREAN_WINDOWS).text)
     assert "금지어에 추가된 키워드를 포함하는 이미지가 생성될 가능성이 대폭 줄어듭니다." in korean
 
 
 def test_about_this_run_has_what_left_the_dashboard(client: TestClient) -> None:
-    page = unescape(client.get("/settings").text)
+    page = unescape(client.get("/settings/advanced").text)
     assert "About this run" in page
     assert "Image model</th><td>not loaded" in page
     assert "This run</th><td>0 made, 0 sent to review" in page

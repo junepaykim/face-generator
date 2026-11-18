@@ -407,7 +407,9 @@ def test_exit_test_a_fault_on_the_third_job_is_shown_once_and_drawn_after_a_rest
 
             def all_drawn() -> bool:
                 seen["status"] = client.get("/status").text
-                about = client.get("/settings").text  # the run's counts are here (Phase 12)
+                about = client.get(
+                    "/settings/advanced"
+                ).text  # the run's counts are here (Phase 12)
                 return "3 made, 0 sent to review" in about and "state-idle" in seen["status"]
 
             wait_for(all_drawn, timeout=60)

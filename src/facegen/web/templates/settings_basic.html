@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% from "_icons.html" import info as tip %}
+{% block title %}{{ t("nav.settings") }}{% endblock %}
+{% block content %}
+{% set level = "basic" %}
+{% include "_settings_head.html" %}
+{% include "_settings_bar.html" %}
+
+{% macro tick(key, text, field_tip="") %}
+  <label class="field tick-row" data-field>
+    <input type="hidden" name="{{ key }}" value="off">
+    <input type="checkbox" name="{{ key }}" data-key {{ "checked" if values[key] is sameas true }}>
+    <span>{{ text }}{% if field_tip %} {{ tip(field_tip) }}{% endif %}</span>
+    <span class="bad small" data-error></span>
+  </label>
+{% endmacro %}
+
+{% macro choose(kind, chosen, names, sub=None) %}
+  <div class="choices{{ ' rows' if sub }}" role="radiogroup" aria-label="{{ t('settings.basic.' ~ kind) }}">
+    {% for name in names %}
+    <label class="choice">
+      <input type="radio" name="preset.{{ kind }}" value="{{ name }}" data-preset {{ "checked" if name == chosen }}>
+      <span class="choice-name">{{ t("settings.basic." ~ kind ~ "_option." ~ name) }}{% if kind == "quality" and name == recommended %} <span class="tag ok" data-tip="{{ card.name }}">{{ t("settings.basic.recommended") }}</span>{% endif %}</span>
+      {% if sub %}<span class="muted small">{{ t(sub ~ name ~ ".title") }}</span>{% endif %}
+    </label>
+    {% endfor %}
+  </div>
+  {% set advanced %}<a href="/settings/advanced">{{ t("settings.level.advanced") }}</a>{% endset %}
+  <p class="muted small" data-custom="{{ kind }}" {{ "hidden" if chosen is not none }}>{{ t("settings.basic.custom", advanced=advanced) }}</p>
+{% endmacro %}
+
+<div class="cards basic-settings">
+  <form method="post" action="/settings" class="contents" data-autosave><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="/settings">
+    <section class="card" id="who">
+      <h2>{{ t("settings.basic.who") }} {{ tip(t("settings.basic.who_tip")) }}</h2>
+      <div class="field" data-field>
+        <span class="name">{{ t("settings.basic.reach") }}</span>
+        {{ choose("reach", reach, reach_options) }}
+        <span class="bad small" data-error></span>
+      </div>
+      {{ tick("staff.enabled", t("settings.basic.staff")) }}
+      {{ tick("media.journalists", t("settings.basic.journalists")) }}
+      {{ tick("media.press_officers", t("settings.basic.press_officers")) }}
+      {{ tick("no_photo.enabled", t("settings.basic.no_photo")) }}
+    </section>
+
+    <section class="card" id="quality">
+      <h2>{{ t("settings.basic.quality") }} {{ tip(t("settings.basic.quality_tip")) }}</h2>
+      <div class="field" data-field>
+        {{ choose("quality", quality, quality_options, "hardware.preset.") }}
+        <span class="bad small" data-error></span>
+      </div>
+      <p><a href="/hardware">{{ t("settings.basic.check_card") }}</a></p>
+    </section>
+
+    <section class="card" id="when">
+      <h2>{{ t("settings.basic.when") }} {{ tip(t("settings.basic.when_tip")) }}</h2>
+      {{ tick("schedule.generate_while_fm_running", t("settings.label.generate_while_fm_running"), t("settings.basic.fm_running_tip")) }}
+      <div class="field" data-field>
+        <span class="name">{{ t("settings.label.auto_groups") }}</span>
+        <span class="group-ticks">
+          <input type="hidden" name="schedule.auto_groups" data-key value="{{ values['schedule.auto_groups']|join(', ') }}">
+          {% for g in ("a", "b", "c") %}<label class="tick"><input type="checkbox" data-group-of="schedule.auto_groups" value="{{ g }}" {{ "checked" if g in values["schedule.auto_groups"] }}> {{ grp(g) }}</label>{% endfor %}
+        </span>
+        <span class="bad small" data-error></span>
+      </div>
+    </section>
+    <noscript><div class="bulk"><button name="action" value="apply-some" class="primary">{{ t("settings.save") }}</button><span class="muted small">{{ t("settings.noscript") }}</span></div></noscript>
+  </form>
+  {% include "_settings_folder.html" %}
+</div>
+{% endblock %}

@@ -619,6 +619,38 @@ auto = "자동(Windows)"
 light = "밝게"
 dark = "어둡게"
 
+[settings.level]
+basic = "기본"
+advanced = "고급"
+
+[settings.basic]
+who = "그림 대상"
+who_tip = "내 구단 선수는 모두 그립니다. 다른 구단 선수를 어디까지 그릴지 정합니다."
+reach = "다른 구단 선수"
+custom = "{advanced}에서 직접 정한 값입니다."
+staff = "내 구단 스태프"
+journalists = "내 구단 나라의 기자"
+press_officers = "내 구단 홍보 담당자"
+no_photo = "사진 없는 기존 선수"
+quality = "그림 품질"
+quality_tip = "그래픽카드 메모리에 맞게 고르세요. 그림 대상은 바뀌지 않습니다."
+recommended = "추천"
+check_card = "그래픽카드 확인…"
+when = "자동 생성"
+when_tip = "선수 페이지에서 요청한 그림은 언제나 그립니다."
+fm_running_tip = "FM27과 그래픽카드를 함께 쓰므로 게임이 느려질 수 있습니다."
+preset = "{kind}: {option}"
+
+[settings.basic.reach_option]
+fewer = "적게"
+default = "보통"
+more = "많이"
+
+[settings.basic.quality_option]
+high = "최고"
+medium = "균형"
+low = "메모리 절약"
+
 [history]
 title = "최근 변경"
 defaults = "기본값으로 되돌림"

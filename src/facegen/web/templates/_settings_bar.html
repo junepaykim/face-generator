@@ -1,0 +1,11 @@
+<div class="bulk sticky savebar">
+  <form method="post" action="/settings" class="inline" data-settings-action><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="{{ path }}">
+    <button name="action" value="undo" data-undo {{ "disabled" if not can_undo }} title="{{ t('settings.undo_title') }}">↶ {{ t("settings.undo") }}</button>
+    <button name="action" value="redo" data-redo {{ "disabled" if not can_redo }} title="{{ t('settings.redo_title') }}">↷ {{ t("settings.redo") }}</button>
+  </form>
+  <span class="save-status" data-save-status role="status" aria-live="polite">{{ t("settings.all_saved") }}</span>
+  <span class="muted small grow">{% if level == "advanced" %}{{ t("settings.changed_legend") }} <span class="dot"></span>{% endif %}</span>
+  <form method="post" action="/settings" class="inline" data-settings-action><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="{{ path }}">
+    <button name="action" value="defaults" title="{{ t('settings.reset_title') }}">{{ t("settings.reset") }}</button>
+  </form>
+</div>

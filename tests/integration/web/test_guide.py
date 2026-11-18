@@ -142,7 +142,7 @@ def make_client(tmp: Path, card: Hardware | None) -> tuple[TestClient, Path, Wor
         hardware=(lambda: card) if card is not None else None, platform="linux",
     )  # fmt: skip
     client = TestClient(create_app(ctx), base_url=BASE, follow_redirects=False)
-    token = re.search(r'name="csrf_token" value="([^"]+)"', client.get("/settings").text)
+    token = re.search(r'name="csrf_token" value="([^"]+)"', client.get("/settings/advanced").text)
     assert token is not None
     client.headers["X-CSRF-Token"] = token[1]
     return client, settings.paths.data_dir, worker

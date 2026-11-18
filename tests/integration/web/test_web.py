@@ -154,12 +154,12 @@ def test_dashboard(env: Env) -> None:
     status = env.client.get("/status").text
     assert "<html" not in status and 'id="now"' in status
     # The Rust code is part of every install now: no row about it (user, 2026-11-17).
-    assert "Rust code" not in env.client.get("/settings").text
+    assert "Rust code" not in env.client.get("/settings/advanced").text
     env.drain()
     text = env.client.get("/status").text
     # Group A, then group B: both drawn without a request since Phase 4.
     assert "Mine Player" in text and "Latest pictures" in text
-    assert "2 made, 0 sent to review" in env.client.get("/settings").text
+    assert "2 made, 0 sent to review" in env.client.get("/settings/advanced").text
 
 
 def test_players_list_filters(env: Env) -> None:
@@ -356,7 +356,7 @@ def autosave(env: Env, **fields: str) -> dict[str, Any]:
 
 
 def test_settings_are_saved_as_they_change(env: Env) -> None:
-    page = env.client.get("/settings").text
+    page = env.client.get("/settings/advanced").text
     assert 'name="groups.a.ca_above"' in page and 'name="ui.host"' not in page
     assert 'name="paths.fm_user_dir"' not in page
     # FM27's folders are shown, with where each came from, but not as fields.
@@ -389,7 +389,7 @@ def test_settings_are_saved_as_they_change(env: Env) -> None:
     again = autosave(env, **{"groups.a.ca_above": "85"})
     assert again["ok"] and not again["changed"] and again["message"] == "Nothing changed."
     # The page lists the change and offers to undo it.
-    page = env.client.get("/settings").text
+    page = env.client.get("/settings/advanced").text
     assert "Recent changes" in page and "155 → <strong>85</strong>" in page
     assert not re.search(r"data-undo\s+disabled", page)
 
@@ -553,11 +553,13 @@ def test_photos_on_the_players_pages_and_the_dashboard(env: Env) -> None:
     status = env.client.get("/status").text
     assert "1 of them in a group" in status
     # FM27's photo list itself is in Settings' About this run (Phase 12 feedback).
-    assert "FM27's photo list</th><td>1 photos" in unescape(env.client.get("/settings").text)
+    assert "FM27's photo list</th><td>1 photos" in unescape(
+        env.client.get("/settings/advanced").text
+    )
 
 
 def test_the_no_photo_setting_is_on_the_settings_page(env: Env) -> None:
-    text = env.client.get("/settings").text
+    text = env.client.get("/settings/advanced").text
     assert "Pre-existing players without a photo" in text
     assert 'name="no_photo.enabled"' in text
 
@@ -714,6 +716,6 @@ def test_pages_link_the_script_and_styles_by_version(env: Env) -> None:
     from facegen.web.app import HERE, static_version
 
     version = static_version(HERE / "static")
-    page = env.client.get("/settings").text
+    page = env.client.get("/settings/advanced").text
     assert f'/static/app.js?v={version}"' in page and f'/static/style.css?v={version}"' in page
     assert env.client.get(f"/static/app.js?v={version}").status_code == 200

@@ -21,13 +21,14 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from facegen.core.presets import QUALITY
 from facegen.platform import procs
 
 PROBE_SECONDS = 180.0
 """How long `probe` waits for the child: importing torch takes several seconds, longer on a
 cold disk."""
 
-PRESET_KEYS = ("groups.a.candidates", "groups.a.detail_size", "render.vae_tiling")
+PRESET_KEYS = tuple(QUALITY["high"])
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,19 +158,19 @@ class Preset:
 HIGH = Preset(
     "high",
     "12 GB or more",
-    {"groups.a.candidates": 3, "groups.a.detail_size": "1344x1728", "render.vae_tiling": False},
+    dict(QUALITY["high"]),
     "The defaults: group A is the best of 3 candidates, with the detail pass at 1344x1728.",
 )
 MEDIUM = Preset(
     "medium",
     "10 to under 12 GB",
-    {"groups.a.candidates": 3, "groups.a.detail_size": "1152x1472", "render.vae_tiling": False},
+    dict(QUALITY["medium"]),
     "Group A is the best of 3, with a smaller detail pass (1152x1472), which needs less memory.",
 )
 LOW = Preset(
     "low",
     "under 10 GB",
-    {"groups.a.candidates": 2, "groups.a.detail_size": "off", "render.vae_tiling": True},
+    dict(QUALITY["low"]),
     "Group A is the best of 2 with no detail pass, and the picture is decoded in tiles to save"
     " memory. Pictures take longer; who gets one does not change.",
 )

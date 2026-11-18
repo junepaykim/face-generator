@@ -619,6 +619,38 @@ auto = "Auto (Windows)"
 light = "Light"
 dark = "Dark"
 
+[settings.level]
+basic = "Basic"
+advanced = "Advanced"
+
+[settings.basic]
+who = "Who gets a picture"
+who_tip = "Everyone at my club gets one. This sets how far it reaches at other clubs."
+reach = "Players at other clubs"
+custom = "Set by hand in {advanced}."
+staff = "My club's staff"
+journalists = "Journalists from my club's country"
+press_officers = "My club's press officers"
+no_photo = "Existing players with no photo"
+quality = "Picture quality"
+quality_tip = "Pick what your graphics card's memory allows. Who gets a picture does not change."
+recommended = "Recommended"
+check_card = "Check the graphics card…"
+when = "Drawing on its own"
+when_tip = "Pictures you ask for on a player's page are always drawn."
+fm_running_tip = "FM27 and the drawing share the graphics card, so the game may slow down."
+preset = "{kind}: {option}"
+
+[settings.basic.reach_option]
+fewer = "Fewer"
+default = "Default"
+more = "More"
+
+[settings.basic.quality_option]
+high = "Best"
+medium = "Balanced"
+low = "Memory saver"
+
 [history]
 title = "Recent changes"
 defaults = "reset to defaults"

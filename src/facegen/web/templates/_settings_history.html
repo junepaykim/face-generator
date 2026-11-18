@@ -5,7 +5,7 @@
   <li class="{{ 'undone' if e.undone }}">
     <div class="when small muted">
       <time datetime="{{ e.at }}">{{ e.at[:16]|replace("T", " ") }} UTC</time>
-      {% if e.label == "defaults" %}· {{ t("history.defaults") }}{% elif e.label == "auto-configure" %}· {{ t("history.auto_configure") }}{% endif %}
+      {% if h.title %}· {{ h.title }}{% endif %}
       {% if e.undone %}<span class="tag">{{ t("history.undone") }}</span>{% endif %}
     </div>
     {% set lines = h.lines %}
@@ -34,7 +34,7 @@
     {% endif %}
     {% if not e.undone %}
     <form method="post" action="/settings" class="inline" data-settings-action><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <input type="hidden" name="through" value="{{ e.id }}">
+      <input type="hidden" name="through" value="{{ e.id }}"><input type="hidden" name="next" value="/settings/advanced">
       <button class="link small" name="action" value="undo">{{ t("history.undo" if e.id == latest_done else "history.undo_later") }}</button>
     </form>
     {% endif %}
