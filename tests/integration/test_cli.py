@@ -367,7 +367,8 @@ def test_sync_of_another_careers_newer_save_switches_the_pack(env: dict[str, Pat
 
 def test_serve_refuses_to_listen_beyond_this_pc(env: dict[str, Path]) -> None:
     config = env["config"]
-    config.write_text(config.read_text().replace('host = "127.0.0.1"', 'host = "0.0.0.0"'))
+    text = config.read_text(encoding="utf-8")  # the defaults hold Korean text
+    config.write_text(text.replace('host = "127.0.0.1"', 'host = "0.0.0.0"'), encoding="utf-8")
     code, text = run(env, "serve")
     assert code == 2 and "this PC only" in text
 

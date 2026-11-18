@@ -157,7 +157,9 @@ def make_env(
         download=download,  # type: ignore[arg-type]
         hardware=ask if card is not None else None,
         browse=browse,
-        platform="linux",
+        # The folders are real temporary ones, so this system's path rules (Windows's on
+        # Windows); Linux's elsewhere, WSL included, as before.
+        platform="windows" if os.name == "nt" else "linux",
     )
     client = TestClient(create_app(ctx), base_url=BASE, follow_redirects=False)
     token = re.search(r'name="csrf_token" value="([^"]+)"', client.get("/").text)

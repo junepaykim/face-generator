@@ -275,9 +275,13 @@ def test_check_override_returns_the_value() -> None:
 
 
 def test_build_settings_with_custom_defaults_file(tmp_path: Path) -> None:
-    text = (PROJECT_ROOT / "config" / "default.toml").read_text()
+    # UTF-8 both ways: the defaults hold Korean text, which a Korean Windows's own code page
+    # (cp949) cannot read as written.
+    text = (PROJECT_ROOT / "config" / "default.toml").read_text(encoding="utf-8")
     custom = tmp_path / "custom.toml"
-    custom.write_text(text.replace('data_dir = "data"', f'data_dir = "{tmp_path.as_posix()}/d"'))
+    custom.write_text(
+        text.replace('data_dir = "data"', f'data_dir = "{tmp_path.as_posix()}/d"'), encoding="utf-8"
+    )
     s = load_settings(defaults_path=custom)
     assert s.paths.data_dir == tmp_path / "d"
     assert build_settings(dict(s.values)).paths.data_dir == tmp_path / "d"

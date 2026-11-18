@@ -22,6 +22,7 @@ from typing import Any
 import pytest
 from fakes import FakeRenderer, FakeTagger
 from support.paths import TESTS
+from support.processes import has_exited
 
 from facegen.cli import Gpu, main
 from facegen.desktop import instance
@@ -261,8 +262,7 @@ def test_the_app_from_start_to_quit(config_file: Path, tmp_path: Path) -> None:
     assert not port_answers("127.0.0.1", port)
     assert not instance.held_elsewhere(config_file.parent / "data")
     assert proxy.child_pid is None  # type: ignore[attr-defined]
-    with pytest.raises(ProcessLookupError):
-        os.kill(child, 0)  # the worker process has exited: its memory is free
+    assert has_exited(child)  # the worker process has exited: its memory is free
 
 
 def test_update_now_starts_the_update_and_quits(config_file: Path) -> None:
@@ -287,7 +287,16 @@ def test_update_now_starts_the_update_and_quits(config_file: Path) -> None:
     app.thread.join(60)
     assert not app.thread.is_alive() and app.code == 0 and app.controller.quitting
     # Without it (Linux, or a git checkout) there is no hook.
-    plain = Running("app", args_for(config_file, free_port()), Record(), fake_gpu())
+    without = Record()
+    plain_shell = without.shell
+
+    def no_update_here() -> desktop.Shell:
+        s = plain_shell()
+        s.can_update = lambda: False
+        return s
+
+    without.shell = no_update_here  # type: ignore[method-assign]
+    plain = Running("app", args_for(config_file, free_port()), without, fake_gpu())
     assert plain.started.install_update is None
     plain.quit()
 

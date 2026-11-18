@@ -84,10 +84,15 @@ def test_a_broken_update_check_does_not_stop_the_tray() -> None:
     assert [n for n in c.notices() if n.kind == "update"] == []
 
 
-def test_the_hook_is_only_set_where_an_update_in_place_works() -> None:
+def test_the_hook_is_only_set_where_an_update_in_place_works(tmp_path: Path) -> None:
     from facegen.desktop import shell as desktop
 
-    assert desktop.Shell().can_update() is False  # Linux, and a git checkout
+    (tmp_path / "Start.bat").write_bytes(b"@echo off\r\n")
+    assert desktop._can_update_here("nt", tmp_path)  # an installed or unzipped facegen
+    assert not desktop._can_update_here("posix", tmp_path)  # Linux and WSL: `facegen serve`
+    (tmp_path / ".git").mkdir()
+    assert not desktop._can_update_here("nt", tmp_path)  # a git checkout: git pull
+    assert not desktop._can_update_here("nt", tmp_path / "elsewhere")  # no Start.bat
     with pytest.raises(OSError, match="Windows only"):
         procs.start_console("Start.bat", "--update", cwd=".", os_name="posix")
     calls: list[tuple[Any, ...]] = []

@@ -100,11 +100,11 @@ def _open_browser(url: str) -> None:
     webbrowser.open(url)
 
 
-def _can_update_here() -> bool:
+def _can_update_here(os_name: str = os.name, root: Path = PROJECT_ROOT) -> bool:
     """Update now works on Windows, in a folder with Start.bat that is not a git checkout."""
     from facegen.setup import update
 
-    return os.name == "nt" and (PROJECT_ROOT / "Start.bat").is_file() and not update.is_checkout()
+    return os_name == "nt" and (root / "Start.bat").is_file() and not update.is_checkout(root)
 
 
 def _start_update() -> None:

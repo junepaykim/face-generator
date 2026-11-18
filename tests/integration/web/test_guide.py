@@ -139,7 +139,9 @@ def make_client(tmp: Path, card: Hardware | None) -> tuple[TestClient, Path, Wor
     syncer = SyncService(settings.paths.db_path, Source, defaults_path=config)
     ctx = AppContext(
         settings.paths.db_path, config, worker, syncer,
-        hardware=(lambda: card) if card is not None else None, platform="linux",
+        hardware=(lambda: card) if card is not None else None,
+        # Real temporary folders: this system's path rules (Linux's on Linux and WSL).
+        platform="windows" if os.name == "nt" else "linux",
     )  # fmt: skip
     client = TestClient(create_app(ctx), base_url=BASE, follow_redirects=False)
     token = re.search(r'name="csrf_token" value="([^"]+)"', client.get("/settings/advanced").text)
