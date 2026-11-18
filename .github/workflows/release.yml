@@ -27,6 +27,11 @@ permissions:
 
 env:
   UV_VERSION: "0.10.0"
+  # The Inno Setup the installer was first compiled and tested with (2026-11-17), from its
+  # official GitHub release, checked by SHA-256 (GitHub's asset digest) before it runs.
+  INNO_VERSION: "6.7.4"
+  INNO_URL: "https://github.com/jrsoftware/issrc/releases/download/is-6_7_4/innosetup-6.7.4.exe"
+  INNO_SHA256: "a549929319f9120716677c685535ca4671e4b937b5fdc87e2585f32d8eb30e8c"
 
 jobs:
   installer:
@@ -72,14 +77,19 @@ jobs:
           args=(--archive build/source.zip --uv-zip build/uv-x86_64-pc-windows-msvc.zip --out build/stage)
           if [ -n "$TAG" ]; then args+=(--tag "$TAG"); fi
           uv run --no-sync python installer/stage.py "${args[@]}" | tee build/stage.out
-          grep '^version=' build/stage.out >> "$GITHUB_OUTPUT"
+          # Python on Windows ends its lines with CR LF: keep the CR out of the version.
+          grep '^version=' build/stage.out | tr -d '\r' >> "$GITHUB_OUTPUT"
       - name: Inno Setup
         shell: pwsh
         run: |
-          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          if (-not (Test-Path $iscc)) {
-            choco install innosetup --no-progress -y
-          }
+          $setup = "$env:RUNNER_TEMP\innosetup-$env:INNO_VERSION.exe"
+          Invoke-WebRequest -Uri $env:INNO_URL -OutFile $setup
+          $found = (Get-FileHash -Algorithm SHA256 $setup).Hash.ToLower()
+          if ($found -ne $env:INNO_SHA256) { throw "Inno Setup: SHA-256 $found is not $env:INNO_SHA256" }
+          $dir = "$env:RUNNER_TEMP\InnoSetup"
+          Start-Process $setup -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/SP-","/CURRENTUSER","/DIR=$dir" -Wait
+          $iscc = "$dir\ISCC.exe"
+          if (-not (Test-Path $iscc)) { throw "Inno Setup did not install to $dir" }
           & $iscc "/DVersion=${{ steps.stage.outputs.version }}" "/DStage=$PWD\build\stage" "/DOutput=$PWD\build\dist" installer\facegen.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: SHA-256 sums
