@@ -38,7 +38,8 @@ uv run --no-sync ruff check src/facegen/web
   Advanced (`/settings/advanced`) share one history; presets live in `core/presets.py`.
 - Keep template `data-*` attributes aligned with `static/app.js`; a live part has
   `data-refresh`, `data-topic` and `data-rev` (`web/live.py`), and the career marker reloads
-  the page after the first sync. Asset URLs include `static_version`.
+  the page after the first sync. A `data-pictures` section's cards are merged by `data-id`.
+  Asset URLs include `static_version`.
 - `/events` never ends by itself: the test client reads to the end, so tests shorten
   `live.STREAM_SECONDS`; a server must call `close_streams` before stopping.
 - Tests cover HTML/HTTP contracts, not browser behavior; inspect JS/CSS interactions

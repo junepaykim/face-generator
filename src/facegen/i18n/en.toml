@@ -32,6 +32,7 @@ W10 = "Veteran look"
 [nav]
 label = "Pages"
 dashboard = "Dashboard"
+gallery = "Gallery"
 players = "Players"
 review = "Review"
 log = "Log"
@@ -260,6 +261,25 @@ started_by = "Started by"
 watching = "Save watcher"
 checked = "checked {time}"
 not_watching = "not watching (<code>--no-watch</code>): press Sync now after saving"
+
+[gallery]
+total = { one = "{count} picture", other = "{count:,} pictures" }
+none = "No pictures yet."
+to_dashboard = "See the progress on the Dashboard"
+none_match = "No pictures match."
+where = "Where"
+role_any = "Everyone"
+
+[gallery.where_option]
+any = "Every club"
+mine = "My club"
+league = "My league"
+other = "Other leagues"
+
+[gallery.sort]
+new = "Newest"
+name = "By name"
+ca = "By CA"
 
 [players]
 generate = "Generate"

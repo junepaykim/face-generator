@@ -32,6 +32,7 @@ W10 = "베테랑 외형"
 [nav]
 label = "페이지"
 dashboard = "대시보드"
+gallery = "갤러리"
 players = "선수"
 review = "검토"
 log = "기록"
@@ -260,6 +261,25 @@ started_by = "시작"
 watching = "세이브 감시"
 checked = "확인 {time}"
 not_watching = "감시하지 않음(<code>--no-watch</code>): 저장한 뒤 ‘지금 동기화’를 누르세요"
+
+[gallery]
+total = "그림 {count:,}장"
+none = "아직 그림이 없습니다."
+to_dashboard = "대시보드에서 진행 상황 보기"
+none_match = "조건에 맞는 그림이 없습니다."
+where = "구단"
+role_any = "모든 사람"
+
+[gallery.where_option]
+any = "모든 구단"
+mine = "내 구단"
+league = "내 리그"
+other = "다른 리그"
+
+[gallery.sort]
+new = "최신순"
+name = "이름순"
+ca = "CA순"
 
 [players]
 generate = "생성"

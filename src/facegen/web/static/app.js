@@ -83,7 +83,7 @@ const LANG = document.documentElement.lang || undefined;
           const html = el.id ? key(el) : null;
           if (old && sent.get(el.id) === html) { wanted.push(old); continue; }
           if (el.id) sent.set(el.id, html);
-          if (old && el.id === "recent") {
+          if (old && old.hasAttribute("data-pictures")) {
             const merged = mergePictures(old, el);
             if (merged) { wanted.push(old); fresh.push(...merged.fresh); after.push(merged.done); continue; }
           }
@@ -221,7 +221,7 @@ const LANG = document.documentElement.lang || undefined;
   const seen = {};
   if (box && topic) seen[topic] = box.dataset.rev;
   const source = new EventSource("/events");
-  ["status", "log"].forEach((name) => {
+  ["status", "log", "pictures"].forEach((name) => {
     source.addEventListener(name, (e) => {
       let data;
       try { data = JSON.parse(e.data); } catch (err) { return; }
@@ -482,6 +482,21 @@ function localTimes(root) {
     if (!leaving && (running || dirty().length)) { e.preventDefault(); e.returnValue = ""; }
   });
 })();
+
+// A filter form that applies itself: a list choice at once, the search box on Enter (Gallery).
+// Fields left at their default (an empty box, a list's first choice) stay out of the address.
+document.querySelectorAll("form[data-autosubmit]").forEach((form) => {
+  form.addEventListener("change", (e) => { if (e.target.matches("select")) form.requestSubmit(); });
+  form.addEventListener("submit", () => {
+    form.querySelectorAll("input[name], select[name]").forEach((el) => {
+      el.disabled = el.matches("select") ? el.selectedIndex === 0 : !el.value.trim();
+    });
+  });
+  // Back to a page kept by the browser: the fields work again.
+  window.addEventListener("pageshow", () => {
+    form.querySelectorAll("[name]").forEach((el) => { el.disabled = false; });
+  });
+});
 
 // Times on every page (the settings history, the dashboard's pictures) in this PC's local time.
 localTimes(document);

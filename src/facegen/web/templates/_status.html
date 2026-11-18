@@ -87,8 +87,8 @@
 {% endif %}
 
 {% if recent %}
-<section class="card" id="recent">
-  <h2>{{ t("dash.recent.title") }} <a class="small" href="/players?picture=yes">{{ t("dash.recent.all") }}</a></h2>
+<section class="card" id="recent" data-pictures>
+  <h2>{{ t("dash.recent.title") }} <a class="small" href="/gallery">{{ t("dash.recent.all") }}</a></h2>
   <div class="thumbs">
     {% for r in recent %}
     <a class="thumb-card" href="/players/{{ r.unique_id }}" data-id="{{ r.id }}">

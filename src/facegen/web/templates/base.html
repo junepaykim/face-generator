@@ -15,6 +15,7 @@
   <a class="brand" href="/" title="facegen"><span class="logo" aria-hidden="true">fg</span><span class="label">facegen</span></a>
   <nav aria-label="{{ t('nav.label') }}">
     <a href="/" class="{{ 'on' if path == '/' }}" title="{{ t('nav.dashboard') }}">{{ icon("dashboard") }}<span class="label">{{ t("nav.dashboard") }}</span>{% if worker_state %}<span class="dot-state state-{{ worker_state }}" title="{{ t('worker.state.' ~ worker_state) }}"></span>{% endif %}</a>
+    <a href="/gallery" class="{{ 'on' if path == '/gallery' }}" title="{{ t('nav.gallery') }}">{{ icon("pictures") }}<span class="label">{{ t("nav.gallery") }}</span></a>
     <a href="/players" class="{{ 'on' if path.startswith('/players') }}" title="{{ t('nav.players') }}">{{ icon("players") }}<span class="label">{{ t("nav.players") }}</span></a>
     <a href="/review" class="{{ 'on' if path == '/review' }}" title="{{ t('nav.review') }}">{{ icon("review") }}<span class="label">{{ t("nav.review") }}</span>{% if review_count %} <span class="count">{{ review_count }}</span>{% endif %}</a>
     <a href="/log" class="{{ 'on' if path == '/log' }}" title="{{ t('nav.log') }}">{{ icon("log") }}<span class="label">{{ t("nav.log") }}</span></a>

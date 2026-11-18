@@ -26,6 +26,7 @@ from facegen.setup.models import REPOS
 from facegen.web import presentation
 from facegen.web.forms import editable_keys, settings_sections
 from facegen.web.queries import (
+    GALLERY_SORTS,
     GROUP_FILTERS,
     LEAGUES,
     ORIGINS,
@@ -34,6 +35,7 @@ from facegen.web.queries import (
     ROLES,
     SCOPES,
     SORTS,
+    WHERE_FILTERS,
 )
 
 WEB = ROOT / "src" / "facegen" / "web"
@@ -138,6 +140,8 @@ def vocabulary_keys() -> list[str]:
     keys += [f"settings.basic.reach_option.{name}" for name in presets.REACH_STEPS]
     keys += [f"settings.basic.quality_option.{name}" for name in presets.QUALITY]
     keys += [f"hardware.preset.{name}.title" for name in presets.QUALITY]
+    keys += [f"gallery.where_option.{k}" for k in WHERE_FILTERS]
+    keys += [f"gallery.sort.{k}" for k in GALLERY_SORTS]
     return keys
 
 

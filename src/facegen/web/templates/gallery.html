@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}{{ t("nav.gallery") }}{% endblock %}
+{% block content %}
+<h1>{{ t("nav.gallery") }}</h1>
+<form class="filters" method="get" action="/gallery" data-autosubmit>
+  <input type="search" name="q" value="{{ f.q }}" placeholder="{{ t('players.filter.name') }}" aria-label="{{ t('players.filter.name') }}">
+  <select name="where" aria-label="{{ t('gallery.where') }}">{% for k in wheres %}<option value="{{ k }}" {{ "selected" if f.where == k }}>{{ t("gallery.where_option." ~ k) }}</option>{% endfor %}</select>
+  <select name="group" aria-label="{{ t('col.group') }}">{% for k in groups %}<option value="{{ k }}" {{ "selected" if f.group == k }}>{{ tr("players.group." ~ k) }}</option>{% endfor %}</select>
+  <select name="role" aria-label="{{ t('players.filter.role') }}">{% for k in roles %}<option value="{{ k }}" {{ "selected" if f.role == k }}>{{ t("gallery.role_any" if k == "any" else "players.role." ~ k) }}</option>{% endfor %}</select>
+  <select name="sort" aria-label="{{ t('players.filter.sort') }}">{% for k in sorts %}<option value="{{ k }}" {{ "selected" if f.sort == k }}>{{ t("gallery.sort." ~ k) }}</option>{% endfor %}</select>
+  <noscript><button class="primary">{{ t("players.filter.apply") }}</button></noscript>
+  {% if f.active %}<a href="/gallery">{{ t("players.filter.clear") }}</a>{% endif %}
+</form>
+<div id="wall" data-refresh="/gallery/part{{ '?' ~ f.query() if f.query() }}" data-topic="pictures" data-rev="{{ rev }}">{% include "_gallery.html" %}</div>
+{% endblock %}

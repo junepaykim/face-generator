@@ -396,3 +396,7 @@ form.contents { display: contents; }
 .card.folder-row h2 { margin: 0; }
 .card.folder-row .folder-form { flex: 1 1 420px; margin: 0; }
 .card.folder-row > p { flex-basis: 100%; margin: 0; }
+
+/* The picture wall (Phase 12h): bigger cards than the dashboard's, the club under the name. */
+.thumbs.wall { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 14px 12px; }
+.thumb-club { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

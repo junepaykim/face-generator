@@ -456,6 +456,107 @@ def recent_pictures(
     ]
 
 
+GALLERY_PER_PAGE = 60
+WHERE_FILTERS = {
+    "any": "anywhere",
+    "mine": "my club",
+    "league": "my league",
+    "other": "elsewhere",
+}
+GALLERY_SORTS = {
+    "new": "i.id DESC",
+    "name": "p.name COLLATE NOCASE, i.id DESC",
+    "ca": "p.ca DESC, p.pa DESC, i.id DESC",
+}
+GALLERY_GROUPS = ("any", "a", "b", "c")
+
+
+@dataclass(frozen=True, slots=True)
+class GalleryFilter:
+    """The picture wall's filters (Phase 12h): everyone's current picture."""
+
+    q: str = ""
+    where: str = "any"
+    group: str = "any"
+    role: str = "any"
+    sort: str = "new"
+    page: int = 1
+
+    @classmethod
+    def from_query(cls, params: Mapping[str, str]) -> GalleryFilter:
+        """From the page's query string; anything malformed falls back to its default."""
+        get = params.get
+        group = get("group")
+        return cls(
+            q=(get("q") or "").strip()[:100],
+            where=_choice(get("where"), WHERE_FILTERS, "any"),
+            group=group if group in GALLERY_GROUPS else "any",
+            role=_choice(get("role"), ROLES, "any"),
+            sort=_choice(get("sort"), GALLERY_SORTS, "new"),
+            page=_int(get("page"), 1, 100_000) or 1,
+        )
+
+    def query(self, **changes: Any) -> str:
+        """The query string with some fields changed; defaults are left out."""
+        f = replace(self, **changes)
+        default = GalleryFilter()
+        return urlencode({k: v for k, v in asdict(f).items() if v != getattr(default, k)})
+
+    @property
+    def active(self) -> bool:
+        """Whether any filter other than the page and sort is set."""
+        return replace(self, page=1, sort="new") != GalleryFilter()
+
+
+def gallery_page(
+    conn: sqlite3.Connection, career_id: int, f: GalleryFilter, per_page: int | None = None
+) -> tuple[list[dict[str, Any]], int]:
+    """One page of current pictures matching the filter, and how many match in all. A
+    current picture is the one FM27 shows, so it passed its checks."""
+    per_page = per_page or GALLERY_PER_PAGE
+    clauses = ["i.career_id = ?", "i.is_current = 1", "i.master_path IS NOT NULL"]
+    args: list[Any] = [career_id]
+    if f.q:
+        if f.q.isdigit():
+            clauses.append("(p.unique_id = ? OR p.name LIKE ?)")
+            args += [int(f.q), f"%{f.q}%"]
+        else:
+            clauses.append("p.name LIKE ?")
+            args.append(f"%{f.q}%")
+    match f.where:
+        case "mine":
+            clauses.append("p.at_my_club = 1")
+        case "league":
+            clauses.append("p.in_my_league = 1")
+        case "other":
+            clauses.append("p.at_my_club = 0 AND p.in_my_league = 0")
+    if f.group != "any":
+        clauses.append("i.group_name = ?")
+        args.append(f.group)
+    match f.role:
+        case "players":
+            clauses.append("p.is_staff = 0 AND p.media_role IS NULL")
+        case "youth":
+            clauses.append("p.youth_team = 1")
+        case "staff":
+            clauses.append("p.is_staff = 1")
+        case "media":
+            clauses.append("p.media_role IS NOT NULL")
+    where = " AND ".join(clauses)
+    joins = (
+        " FROM images i JOIN players p ON p.career_id = i.career_id AND p.unique_id = i.unique_id"
+    )
+    total = conn.execute(f"SELECT COUNT(*){joins} WHERE {where}", args).fetchone()[0]
+    rows = conn.execute(
+        "SELECT i.id, i.unique_id, i.group_name, i.created_at, p.name, p.at_my_club,"
+        " p.is_staff, p.media_role, c.name AS club"
+        f"{joins} LEFT JOIN clubs c ON c.career_id = p.career_id AND c.club_id = p.club_id"
+        f" WHERE {where} ORDER BY {GALLERY_SORTS[f.sort]} LIMIT ? OFFSET ?",
+        (*args, per_page, (f.page - 1) * per_page),
+    ).fetchall()
+    return [dict(r) for r in rows], total
+
+
 def game_date(conn: sqlite3.Connection, career_id: int) -> str | None:
     row = conn.execute("SELECT last_game_date FROM careers WHERE id = ?", (career_id,)).fetchone()
     return row[0] if row else None

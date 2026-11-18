@@ -65,6 +65,8 @@ def test_http_surface_and_slash_redirects(config_file: Path) -> None:
         (("POST",), "/setup/browse", "setup_browse", "JSONResponse"),
         (("POST",), "/setup/guide", "setup_guide_closed", "JSONResponse"),
         (("POST",), "/setup/models", "setup_models", "JSONResponse"),
+        (("GET",), "/gallery", "gallery", "HTMLResponse"),
+        (("GET",), "/gallery/part", "gallery_part", "HTMLResponse"),
         (("GET",), "/players", "players", "HTMLResponse"),
         (("POST",), "/players/action", "players_action", "JSONResponse"),
         (("GET",), "/players/{uid}", "player", "HTMLResponse"),
@@ -83,6 +85,7 @@ def test_http_surface_and_slash_redirects(config_file: Path) -> None:
     with TestClient(app, base_url=BASE, follow_redirects=False) as client:
         client.headers["X-CSRF-Token"] = token(client)
         for method, path in (
+            ("GET", "/gallery"),
             ("GET", "/players"),
             ("GET", "/review"),
             ("GET", "/settings"),

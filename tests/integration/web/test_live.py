@@ -56,7 +56,8 @@ def test_each_part_is_sent_once_then_only_pings(setup: tuple[TestClient, WorkerS
     assert r.headers["cache-control"] == "no-cache"
     assert r.text.startswith(f"retry: {live.RETRY_MS}\n\n")
     sent = events(r.text)
-    assert [topic for topic, _ in sent] == ["status", "log"]  # nothing changed meanwhile
+    # Nothing changed meanwhile: each topic once.
+    assert [topic for topic, _ in sent] == ["status", "log", "pictures"]
     assert ": ping" in r.text
     status = sent[0][1]
     assert (status["state"], status["label"], status["review"]) == ("starting", "Starting", 0)

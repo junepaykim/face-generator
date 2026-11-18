@@ -2,7 +2,7 @@
 
 The stream (`GET /events`) sends one event per topic whenever the fingerprint of what that
 part shows changes: "status" (the dashboard's status block, with the worker's state and the
-review count for the sidebar) and "log" (the Log page). The page then fetches its part as
+review count for the sidebar), "log" (the Log page) and "pictures" (the Gallery, Phase 12h). The page then fetches its part as
 before. Nothing is pushed between changes but a ping; the picture's progress bar moves in the
 page itself.
 """
@@ -28,7 +28,7 @@ restart of the server for long."""
 RETRY_MS = 1500
 """How soon the page reconnects after a stream ends or the server restarts."""
 
-TOPICS = ("status", "log")
+TOPICS = ("status", "log", "pictures")
 
 
 def _digest(value: Any) -> str:
@@ -60,6 +60,12 @@ def snapshot(
         ).fetchone()
     )
     review = queries.review_count(conn, career.id) if career else 0
+    # Any picture made, restored or removed changes the current set's sum of ids.
+    current = list(
+        conn.execute(
+            "SELECT MAX(id), COUNT(*), TOTAL(id) FROM images WHERE is_current = 1"
+        ).fetchone()
+    )
     shown = None
     if worker is not None:
         shown = [
@@ -94,6 +100,7 @@ def snapshot(
             "review": review,
         },
         "log": {"rev": _digest(log)},
+        "pictures": {"rev": _digest([career.id if career else None, current, db[3]])},
     }
 
 
