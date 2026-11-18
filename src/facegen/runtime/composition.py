@@ -3,8 +3,11 @@
 `build_runtime` constructs without starting; `Runtime.start` starts the watcher, the worker
 and the update check. The update check is not a quit step (it only waits between checks):
 `Runtime.stop_updates` ends it when facegen stops.
-`Runtime.stop_steps` stops downloads, the watcher, then the worker, allowing its current job
-up to `worker_process.STOP_TIMEOUT` seconds before releasing the GPU by ending the process.
+`Runtime.stop_steps` stops downloads, a running sync (its process ends within a few seconds,
+leaving the database as it was: sync_process), the watcher, then the worker, allowing its
+current job up to `worker_process.STOP_TIMEOUT` seconds before releasing the GPU by ending
+the process. With the real save reader each sync runs in a process of its own; the tests'
+fake sources sync in the calling thread.
 `serve` runs uvicorn in the main thread and cleans up afterward. The desktop shell runs
 `ServerThread` and stops it after the runtime steps.
 """
@@ -86,6 +89,8 @@ class Runtime:
         steps: list[tuple[str, Callable[[], None]]] = []
         if self.download is not None:
             steps.append(("model download", self.download.stop))
+        # Before the watcher: its thread may be waiting for that sync.
+        steps.append(("sync", self.syncer.stop))
         if self.poller is not None:
             poller = self.poller
             steps.append(("save watcher", lambda: poller.stop(timeout=None)))
@@ -110,6 +115,8 @@ def build_runtime(
 ) -> Runtime:
     """The parts of a running facegen, none started. Raises CannotStart when it cannot run
     as configured (an address beyond this PC, a broken kit table)."""
+    from facegen.runtime import sync_process
+    from facegen.runtime.dependencies import default_source
     from facegen.runtime.poller_service import PollerService
     from facegen.runtime.sync_service import SyncService
     from facegen.runtime.update_service import UpdateService
@@ -133,12 +140,16 @@ def build_runtime(
             start_paused=paused,
             echo_stderr=echo_stderr,
         )
+    # The real reader parses in a process of its own; a test's fake source in this one.
+    own_process = source_factory is default_source
     syncer = SyncService(
         db_path,
-        source_factory,
+        None if own_process else source_factory,
+        command=sync_process.sync_command() if own_process else None,
         defaults_path=config,
         on_done=proxy.wake if proxy else (lambda: None),
         log=proxy.log if proxy else (lambda line: None),
+        echo_stderr=echo_stderr,
     )
     poller = PollerService(db_path, syncer, defaults_path=config) if watch else None
     # The model files matter only to the real GPU worker: not with --no-worker or fakes.

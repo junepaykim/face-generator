@@ -1,7 +1,10 @@
 """Execute one sync with owned resources, then publish the active career's pack.
 
-Ingestion and planning commit before publication begins. A later process adapter must not
-promise to roll back either a committed sync or files already published when it stops.
+Copying and parsing come first, then ingestion and planning in one database transaction;
+publication begins after its commit. Abandoning a sync before `on_committed` leaves the
+database as it was (the copy goes through a `.part` file; SQLite rolls the
+unfinished transaction back). After it, neither the committed sync nor files already
+published can be rolled back: runtime.sync_process lets publication finish when it stops.
 """
 
 from __future__ import annotations
@@ -83,13 +86,15 @@ def execute_sync(
     source_factory: Callable[[], DataSource],
     *,
     log: Callable[[str], None] = lambda line: None,
+    on_committed: Callable[[], None] = lambda: None,
     on_result: Callable[[SyncResult], None] = lambda result: None,
 ) -> SyncResult:
     """Run in this thread and log in execution order.
 
-    After closing the connection, deliver the final record even when a source or log
-    callback raises out of execution. This lets an adapter release its claim without
-    swallowing the exception or announcing normal completion.
+    `on_committed` is called once the sync's transaction has committed, before anything is
+    logged or published. After closing the connection, deliver the final record even when a
+    source or log callback raises out of execution. This lets an adapter release its claim
+    without swallowing the exception or announcing normal completion.
     """
     defaults_path = Path(request.defaults_path) if request.defaults_path is not None else None
     save = Path(request.save_path) if request.save_path is not None else None
@@ -105,6 +110,7 @@ def execute_sync(
         if save is None and trigger == "sync now":
             notice = unchanged_save_notice(conn, settings.paths.games_dir)
         report = sync_save(conn, settings, source_factory(), save, preview=0, trigger=trigger)
+        on_committed()
         outcome = SYNCED
         message = describe_sync(report)
         warnings = list(report.warnings)

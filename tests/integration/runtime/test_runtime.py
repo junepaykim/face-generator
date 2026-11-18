@@ -4,6 +4,7 @@ order; the web server in a thread of its own for the desktop app."""
 from __future__ import annotations
 
 import socket
+import sys
 import urllib.request
 from pathlib import Path
 
@@ -39,16 +40,35 @@ def fake_gpu(**kw: object) -> Gpu:
 def test_the_parts_stop_in_order(config_file: Path) -> None:
     settings = load_settings(defaults_path=config_file)
     rt = build_runtime(settings, NoSource, fake_gpu(), config=config_file, paused=True)
-    assert [name for name, _ in rt.stop_steps()] == ["save watcher", "worker"]
+    # A running sync ends first: the save watcher's thread may be waiting for it (Phase 14).
+    assert [name for name, _ in rt.stop_steps()] == ["sync", "save watcher", "worker"]
     assert rt.url == f"http://127.0.0.1:{settings.ui.port}/"
     assert rt.context.browse is None or callable(rt.context.browse)
     # With the real worker's model check, the download is stopped first.
     rt = build_runtime(
         settings, NoSource, fake_gpu(models_ready=lambda: True), config=config_file, paused=True
     )
-    assert [name for name, _ in rt.stop_steps()] == ["model download", "save watcher", "worker"]
+    assert [name for name, _ in rt.stop_steps()] == [
+        "model download", "sync", "save watcher", "worker",
+    ]  # fmt: skip
     rt = build_runtime(settings, NoSource, fake_gpu(), worker=False, watch=False, browse=None)
-    assert rt.stop_steps() == [] and rt.context.browse is None
+    assert [name for name, _ in rt.stop_steps()] == ["sync"] and rt.context.browse is None
+
+
+def test_the_real_save_reader_syncs_in_a_process_of_its_own(config_file: Path) -> None:
+    """Phase 14: with the real reader each sync runs in `facegen sync-process`; a test's fake
+    source syncs in the calling thread, as WorkerService stays beside WorkerProxy."""
+    from facegen.runtime.dependencies import default_source
+    from facegen.runtime.sync_process import sync_command
+
+    settings = load_settings(defaults_path=config_file)
+    real = build_runtime(settings, default_source, fake_gpu(), worker=False, browse=None)
+    assert real.syncer.process is not None
+    assert real.syncer.process.command == sync_command() == [
+        sys.executable, "-m", "facegen.cli", "sync-process",
+    ]  # fmt: skip
+    fake = build_runtime(settings, NoSource, fake_gpu(), worker=False, browse=None)
+    assert fake.syncer.process is None
 
 
 def test_an_address_beyond_this_pc_is_refused(config_file: Path) -> None:

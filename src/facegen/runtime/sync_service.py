@@ -1,16 +1,28 @@
-"""The thread adapter that claims and reports one sync at a time."""
+"""The adapter that claims and reports one sync at a time.
+
+With a `command`, each sync runs in a child process (runtime.sync_process): `facegen serve`
+and the desktop app with the real save reader. With a `source_factory` instead, it runs in
+the calling thread: the tests' fake sources, as WorkerService stays beside WorkerProxy.
+"""
 
 from __future__ import annotations
 
+import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
 from facegen.datasource.base import DataSource
 from facegen.pipeline.sync_operation import execute_sync
-from facegen.runtime.contracts import SyncOutcome, SyncRequest, SyncResult, SyncStatus
+from facegen.runtime.contracts import FAILED, SyncOutcome, SyncRequest, SyncResult, SyncStatus
 from facegen.runtime.logging import stamp
+from facegen.runtime.sync_process import SyncProcess
+
+STOP_JOIN_SECONDS = 10.0
+"""How long `stop` waits for "Sync now"'s thread once its sync process has ended."""
+
+logger = logging.getLogger("facegen")
 
 
 class SyncService:
@@ -19,20 +31,33 @@ class SyncService:
     def __init__(
         self,
         db_path: Path,
-        source_factory: Callable[[], DataSource],
+        source_factory: Callable[[], DataSource] | None = None,
         *,
+        command: Sequence[str] | None = None,
         defaults_path: Path | None = None,
         on_done: Callable[[], Any] = lambda: None,
         log: Callable[[str], None] = lambda line: None,
+        echo_stderr: bool = True,
     ) -> None:
+        if (source_factory is None) == (command is None):
+            raise ValueError("SyncService takes either a source factory or a sync process command")
         self.db_path = db_path
         self.defaults_path = defaults_path
         self._source_factory = source_factory
+        self._process = (
+            SyncProcess(command, log=log, echo_stderr=echo_stderr) if command is not None else None
+        )
         self._on_done = on_done
         self._log = log
         self._lock = threading.Lock()
         self._status = SyncStatus()
+        self._stopped = False
         self._thread: threading.Thread | None = None
+
+    @property
+    def process(self) -> SyncProcess | None:
+        """The child-process runner, or None when syncs run in the calling thread."""
+        return self._process
 
     def status(self) -> SyncStatus:
         with self._lock:
@@ -40,13 +65,14 @@ class SyncService:
 
     def _claim(self, trigger: str) -> bool:
         with self._lock:
-            if self._status.running:
+            if self._status.running or self._stopped:
                 return False
             self._status = SyncStatus(running=True, started=stamp(), trigger=trigger)
             return True
 
     def start(self) -> bool:
-        """Start a sync of the newest save in the background; False if one is running."""
+        """Start a sync of the newest save in the background; False if one is running, or
+        facegen is quitting."""
         if not self._claim("sync now"):
             return False
         self._thread = threading.Thread(
@@ -61,23 +87,42 @@ class SyncService:
 
     def run(self, save: Path | None = None, trigger: str = "sync now") -> SyncOutcome | None:
         """Sync `save` (default: the newest) in this thread. Returns SYNCED, UNREADABLE or
-        FAILED, or None if another sync is running."""
+        FAILED, or None if another sync is running or facegen is quitting."""
         if not self._claim(trigger):
             return None
         return self._run(save, trigger)
 
+    def stop(self, timeout: float | None = STOP_JOIN_SECONDS) -> None:
+        """For Quit: start no further sync and end a running sync process (its database
+        transaction is rolled back; a committed one publishes first, see sync_process), then
+        wait up to `timeout` seconds for "Sync now"'s thread. A sync in the calling thread
+        (the tests' fakes) cannot be ended."""
+        with self._lock:
+            self._stopped = True
+        if self._process is not None:
+            self._process.stop()
+        if self._thread is not None:
+            self._thread.join(timeout)
+
     def _run(self, save: Path | None, trigger: str) -> SyncOutcome:
-        result = execute_sync(
-            SyncRequest(
-                db_path=str(self.db_path),
-                defaults_path=str(self.defaults_path) if self.defaults_path is not None else None,
-                save_path=str(save) if save is not None else None,
-                trigger=trigger,
-            ),
-            self._source_factory,
-            log=self._log,
-            on_result=self._finished,
+        request = SyncRequest(
+            db_path=str(self.db_path),
+            defaults_path=str(self.defaults_path) if self.defaults_path is not None else None,
+            save_path=str(save) if save is not None else None,
+            trigger=trigger,
         )
+        if self._process is None:
+            assert self._source_factory is not None
+            result = execute_sync(
+                request, self._source_factory, log=self._log, on_result=self._finished
+            )
+        else:
+            try:
+                result = self._process.run(request)
+            except Exception as exc:
+                logger.error("the sync process could not be run", exc_info=exc)
+                result = SyncResult(FAILED, error=f"sync failed: {type(exc).__name__}: {exc}")
+            self._finished(result)
         self._on_done()
         return result.outcome
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import signal
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import PurePosixPath, PureWindowsPath
@@ -125,6 +126,20 @@ def wait_or_kill(
             on_timeout()
         child.kill()
         return child.wait()
+
+
+def describe_exit(code: int | None) -> str:
+    """A child's exit code in words for the log: a signal's name, a Windows status in hex."""
+    if code is None:
+        return "it could not be started"
+    if code < 0:
+        try:
+            return f"ended by {signal.Signals(-code).name}"
+        except ValueError:
+            return f"ended by signal {-code}"
+    if code >= 0x80000000:  # a Windows status, e.g. 0xC0000005 for an access violation
+        return f"exit code {code:#010x}"
+    return f"exit code {code}"
 
 
 def windows_tool(

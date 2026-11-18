@@ -257,7 +257,9 @@ def test_the_app_from_start_to_quit(config_file: Path, tmp_path: Path) -> None:
     app.quit()
     assert app.code == 0
     # The real worker's model check is in use, so there is a model download to stop too.
-    assert controller.steps_run == ["model download", "save watcher", "worker", "web server"]
+    assert controller.steps_run == [
+        "model download", "sync", "save watcher", "worker", "web server",
+    ]  # fmt: skip
     assert tray.stopped.is_set() and window.closed.is_set()
     assert not port_answers("127.0.0.1", port)
     assert not instance.held_elsewhere(config_file.parent / "data")
@@ -312,7 +314,52 @@ def test_the_tray_alone_opens_the_dashboard_in_the_browser(config_file: Path) ->
     view = app.controller.view()
     assert view.entry("pause").label == "Resume"  # type: ignore[union-attr]  # --paused
     app.quit()
-    assert app.code == 0 and app.controller.steps_run == ["save watcher", "worker", "web server"]
+    assert app.code == 0
+    assert app.controller.steps_run == ["sync", "save watcher", "worker", "web server"]
+
+
+def test_quit_during_a_sync_ends_its_process_at_once(
+    config_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Phase 14: the app syncs in a process of its own (here `facegen sync-process` with a
+    fake reader that takes a minute, sync_child.py); the tray answers meanwhile, and Quit
+    ends the sync within seconds with the database as it was."""
+    import sqlite3
+    from contextlib import closing
+
+    from facegen.persistence.settings import load_settings
+    from facegen.runtime import sync_process
+
+    state = tmp_path / "sync-child"
+    program = [sys.executable, str(TESTS / "sync_child.py"), str(state), "slow"]
+    command = sync_process.sync_command(program)
+    monkeypatch.setattr(sync_process, "sync_command", lambda: command)
+    settings = load_settings(defaults_path=config_file)
+    games = settings.paths.games_dir
+    assert games is not None
+    games.mkdir(parents=True)
+    (games / "career.fm").write_bytes(b"a made-up save")
+    record = Record()
+    app = Running("tray", args_for(config_file, free_port()), record, fake_gpu())
+    controller = app.controller
+    syncer = controller.syncer
+    assert syncer is not None and syncer.process is not None  # type: ignore[attr-defined]
+    with closing(sqlite3.connect(settings.paths.db_path)) as conn:
+        before = list(conn.iterdump())
+    assert controller.sync_now()
+    wait_for(lambda: (state / "reading").is_file())
+    pid = int((state / "reading").read_text(encoding="utf-8"))
+    started = time.monotonic()
+    view = controller.view()  # the tray, while the save is read
+    assert time.monotonic() - started < 0.5
+    assert view.entry("sync").label == "Syncing the latest save…"  # type: ignore[union-attr]
+    started = time.monotonic()
+    app.quit()
+    assert time.monotonic() - started < 10.0
+    assert app.code == 0 and app.controller.steps_run[0] == "sync"
+    assert has_exited(pid)
+    with closing(sqlite3.connect(settings.paths.db_path)) as conn:
+        assert list(conn.iterdump()) == before
 
 
 def test_without_webview2_the_dashboard_opens_in_the_browser(config_file: Path) -> None:

@@ -29,7 +29,6 @@ from __future__ import annotations
 import dataclasses
 import logging
 import os
-import signal
 import subprocess
 import sys
 import threading
@@ -56,6 +55,7 @@ from facegen.platform.pipes import (  # noqa: F401 - also used from here by the 
     pipe_reader,
     protocol_streams,
 )
+from facegen.platform.procs import describe_exit
 from facegen.render.renderer import Renderer, Tagger
 from facegen.runtime.contracts import Exit, WorkerStatus
 from facegen.runtime.logging import LOG_LINES, stamp, utc_now
@@ -265,19 +265,6 @@ def worker_command(program: Sequence[str] | None = None, config: Path | None = N
     """The command line that starts `facegen worker`: this Python, unless `program` says."""
     base = list(program) if program else [sys.executable, "-m", "facegen.cli"]
     return [*base, *(["--config", str(config)] if config else []), "worker"]
-
-
-def describe_exit(code: int | None) -> str:
-    if code is None:
-        return "it could not be started"
-    if code < 0:
-        try:
-            return f"ended by {signal.Signals(-code).name}"
-        except ValueError:
-            return f"ended by signal {-code}"
-    if code >= 0x80000000:  # a Windows status, e.g. 0xC0000005 for an access violation
-        return f"exit code {code:#010x}"
-    return f"exit code {code}"
 
 
 def _times(n: int) -> str:

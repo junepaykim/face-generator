@@ -7,6 +7,7 @@ facegen gallery
 facegen status
 facegen serve [--port N] [--paused] [--no-worker] [--no-watch]
 facegen worker [--generate-now]   (started by serve: the GPU worker in its own process)
+facegen sync-process              (started by serve and the app: one sync in its own process)
 facegen native [--install [--from DIR]]
 facegen models [--download [--yes]]
 facegen hardware [--json]
@@ -523,6 +524,12 @@ def cmd_serve(
     finally:
         rt.stop_updates()
         for name, stop in rt.stop_steps():
+            if name == "sync" and rt.syncer.status().running:
+                print(
+                    "Stopping the sync; the save is read again at the next start...",
+                    file=out,
+                    flush=True,
+                )
             if name == "worker":
                 print(
                     f"Stopping the worker after the current job (at most {STOP_TIMEOUT:.0f} s)...",
@@ -564,6 +571,23 @@ def cmd_worker(args: argparse.Namespace, settings: Settings, gpu: Gpu, out: Text
         sys.stderr.flush()
         os._exit(0)
     return 2 if ended.reason == "crashed" else 0
+
+
+def cmd_sync_process(source_factory: Callable[[], DataSource], out: TextIO) -> int:
+    """One sync as a child of `facegen serve` or the app: the request on stdin, messages on
+    stdout (runtime.sync_process). Not meant to be run by hand. Exit 2 without a request."""
+    import faulthandler
+    import signal
+
+    from facegen.platform.pipes import protocol_streams
+    from facegen.runtime.sync_process import serve_child
+
+    commands: Iterable[str] = sys.stdin
+    if out is sys.stdout:
+        signal.signal(signal.SIGINT, signal.SIG_IGN)  # Ctrl+C is the parent's: it stops us
+        faulthandler.enable()  # a crash in native code leaves its stack on stderr, so in the log
+        commands, out = protocol_streams(sys.stdin, sys.stdout)
+    return 0 if serve_child(commands, out, source_factory) is not None else 2
 
 
 def cmd_desktop(
@@ -668,6 +692,10 @@ def build_parser() -> argparse.ArgumentParser:
         "worker", help="the GPU worker process that serve starts (JSON lines on stdin and stdout)"
     )
     w.add_argument("--generate-now", action="store_true", help="draw the whole queue at once")
+    sub.add_parser(
+        "sync-process",
+        help="one sync in a process of its own, as serve and the app start it (JSON lines)",
+    )
     n = sub.add_parser("native", help="whether the Rust extension is in use; install its wheel")
     n.add_argument(
         "--install",
@@ -737,6 +765,8 @@ def main(
         return cmd_models(args, out)
     if args.command == "hardware" and args.json:
         return cmd_hardware(args, out)
+    if args.command == "sync-process":  # the request names the database and defaults
+        return cmd_sync_process(source_factory, out)
     if args.command in ("app", "tray"):  # takes its lock before it opens the database
         return cmd_desktop(args, source_factory, gpu)
     if args.command == "launch":  # Start.bat's: no database; it reads the settings itself

@@ -43,6 +43,8 @@ pass without explicit user approval; fix the implementation or raise the conflic
 - `fake_child.py`: worker protocol/fault/crash/hang scenarios. `gpu_child.py` runs the
   real worker loop with fake rendering and fault injection; it requires no GPU.
 - `fake_window_child.py`: real window protocol with a fake GUI.
+- `sync_child.py`: real `facegen sync-process` with a fake reader by plan (synced,
+  unsupported, crash, slow read/transaction/publication for Quit).
 - `support/config.py`, `desktop.py`, `fmsave.py`, `people.py`, `photos.py`: temporary
   settings, controller doubles, reader-shaped records, byte fixtures and photo catalogs.
 - Reuse/extend these doubles and injection seams before ad-hoc patch stacks. Focused

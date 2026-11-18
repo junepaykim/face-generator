@@ -53,7 +53,9 @@ Use the web/datasource guides for HTTP, adapters and bundled kit data; use
 
 - `runtime.composition.build_runtime` constructs without starting; serve/app/tray share
   its lifecycle. Stop downloads, watcher, worker, then the desktop server and GUI.
-- Worker and window each own a child process; sync currently runs in the app process.
+- Worker, window and each sync own a child process. `SyncService` runs the sync in the
+  calling thread only for a test's fake source; the real reader goes to `facegen
+  sync-process`. A stop may end that child only before its commit (`on_committed`).
   A fatal CUDA fault requires worker exit/restart, not another render in the same context.
 - Child stdout carries JSON lines only; diagnostics go to stderr. Use
   `platform.pipes.JsonWriter` for atomic write/flush; status read-and-send share its lock.
