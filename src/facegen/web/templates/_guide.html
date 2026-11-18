@@ -1,0 +1,92 @@
+{# The first run as one guided flow (Phase 12f): each step with its state, asking only when it
+   cannot work it out. `guide` is web.guide.Guide. #}
+{% from "_problem.html" import problem %}
+{% if guide %}
+<section class="card guide{{ ' complete' if guide.complete }}" id="setup">
+  <h2>{{ t("guide.title_done" if guide.complete else "guide.title") }}</h2>
+  <ol class="steps">
+  {% for s in guide.steps %}
+    <li class="step step-{{ s.state }}{{ ' current' if s.key == guide.current }}">
+      <span class="step-mark" aria-hidden="true">{% if s.state == "done" %}✓{% elif s.state == "working" %}<span class="spin"></span>{% elif s.state == "problem" %}!{% else %}{{ loop.index }}{% endif %}</span>
+      <div class="step-body">
+        <p class="step-head"><strong>{{ t("guide.step." ~ s.key) }}</strong>
+        {%- if s.key == "folder" %}
+          {% if s.state == "done" %}<code>{{ s.data.folder }}</code>
+          {% elif s.data.gone %}{{ t("guide.folder.gone", folder=s.data.folder) }}
+          {% else %}{{ t("guide.folder.missing") }}{% endif %}
+        {%- elif s.key == "gpu" %}
+          {% if s.state == "working" %}{{ t("guide.gpu.asking") }}
+          {% elif s.state == "done" %}{{ t("guide.gpu.fine", card=s.data.card, gib=s.data.gib) }}
+          {% elif s.state == "ask" %}{{ t("guide.gpu.suggest", card=s.data.card, gib=s.data.gib, count=s.data.lines|length) }}
+          {% else %}{{ t("guide.gpu.none") }}{% endif %}
+        {%- elif s.key == "models" %}
+          {% if s.state == "done" %}{{ t("guide.models.done") }}
+          {% elif s.state == "working" %}{% set d = s.data.download %}{% if d.current %}{{ t("setup.models.file", index=d.index, files=d.files, name=d.current) }}{% else %}{{ t("setup.models.starting") }}{% endif %}
+          {% else %}{{ t("setup.models.intro", size=gigabytes(s.data.models.missing_bytes)) }}{% if s.data.models.missing_bytes < s.data.models.total_bytes %}{{ t("setup.models.rest_here") }}{% endif %}{% endif %}
+        {%- elif s.key == "sync" %}
+          {% if s.state == "done" %}{{ t("guide.sync.done", career=s.data.career, date=s.data.date or t("side.unknown")) }}
+          {% elif s.state == "wait" %}{{ t("guide.sync.wait") }}
+          {% elif s.state == "working" %}{{ t("guide.sync.working") }}
+          {% else %}{{ t("guide.sync.save" if s.data.watching else "guide.sync.press") }}{% endif %}
+        {%- elif s.key == "pictures" %}
+          {% if s.state == "done" %}{{ t("guide.pictures.done", count=s.data.count) }}
+          {% elif s.state == "wait" %}{{ t("guide.pictures.wait") }}
+          {% elif s.state == "working" %}{% if s.data.name %}{{ t("guide.pictures.drawing", name=s.data.name) }}{% else %}{{ t("guide.pictures.starting") }}{% endif %}
+          {% elif s.state == "ask" %}{{ t("guide.pictures." ~ ("fm" if s.data.why in ("fm_running", "fm_unknown") else s.data.why)) }}
+          {% else %}{{ worker_text }}{% endif %}
+        {%- endif %}</p>
+
+        {% if s.key == "folder" and s.state == "ask" %}
+          <p class="muted small">{{ t("guide.folder.hint") }}</p>
+          <form method="post" action="/setup/folder" class="folder-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="/">
+            <input type="text" name="folder" value="{{ folder_text or '' }}" placeholder="C:\Users\you\Documents\Sports Interactive\Football Manager 27" aria-label="{{ t('setup.folder.aria') }}" required>
+            <button class="primary">{{ t("setup.folder.use") }}</button>
+            {% if setup.browse %}<button formaction="/setup/browse" formnovalidate title="{{ t('setup.folder.browse_title') }}">{{ t("setup.folder.browse") }}</button>{% endif %}
+          </form>
+          {% if not setup.browse %}<p class="muted small">{{ t("setup.folder.no_browse") }}</p>{% endif %}
+        {% elif s.key == "gpu" and s.state == "ask" %}
+          <ul class="step-list">{% for label, before, after in s.data.lines %}<li>{{ label }}: {{ before }} → <strong>{{ after }}</strong></li>{% endfor %}</ul>
+          <form method="post" action="/settings/auto-configure"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="/">
+            <div class="buttons"><button class="primary">{{ t("guide.gpu.apply") }}</button></div>
+          </form>
+        {% elif s.key == "gpu" and s.state == "problem" %}
+          {% if s.data.why %}<details class="problem-detail" id="gpu-detail"><summary>{{ t("problem.details") }}</summary><pre>{{ s.data.why }}</pre></details>{% endif %}
+        {% elif s.key == "models" and s.state == "working" %}
+          {% set d = s.data.download %}
+          <p><progress max="100" value="{{ d.percent }}">{{ d.percent }}%</progress> {{ t("setup.models.progress", percent=d.percent, done=gigabytes(d.done_bytes), total=gigabytes(d.total_bytes)) }}</p>
+          <p class="muted small">{{ t("setup.models.stop_note") }}</p>
+        {% elif s.key == "models" and s.state == "ask" %}
+          {% set m = s.data.models %}
+          {% if download_problem %}{{ problem(download_problem) }}{% endif %}
+          <div class="table-wrap"><table class="kv">
+            {% for repo in m.missing_repos() %}<tr><th>{{ t("models.repo." ~ repo) if tr.has("models.repo." ~ repo) else model_repos[repo] }}</th><td><code>{{ repo }}</code></td></tr>{% endfor %}
+            <tr><th>{{ t("setup.models.saved_in") }}</th><td><code>{{ m.cache }}</code></td></tr>
+            <tr><th>{{ t("setup.models.free") }}</th><td>{{ gigabytes(m.free_bytes) if m.free_bytes is not none else t("common.unknown") }}</td></tr>
+          </table></div>
+          {% if not m.enough_space %}<p class="bad small">{{ t("setup.models.no_space", size=gigabytes(m.missing_bytes)) }}</p>{% endif %}
+          <form method="post" action="/setup/models"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="confirm" value="download">
+            <div class="buttons"><button class="primary" {{ "disabled" if not m.enough_space }}>{{ t("setup.models.download", size=gigabytes(m.missing_bytes)) }}</button></div>
+          </form>
+        {% elif s.key == "sync" and s.state in ("ask", "wait") %}
+          {% if sync_problem %}{{ problem(sync_problem) }}{% endif %}
+          {% if s.state == "ask" and s.data.can_sync %}<form method="post" action="/sync"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><div class="buttons"><button>{{ t("dash.sync.now") }}</button></div></form>{% endif %}
+        {% elif s.key == "pictures" and s.state == "ask" %}
+          {% if s.data.why == "paused" %}
+            <form method="post" action="/worker/resume"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><div class="buttons"><button class="primary">{{ t("dash.worker.resume") }}</button></div></form>
+          {% elif s.data.why == "nobody" %}
+            <p><a class="button" href="/settings#section-groups-a">{{ t("problem.link.settings") }}</a></p>
+          {% else %}
+            <form method="post" action="/worker/generate-now"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><div class="buttons"><button class="primary">{{ t("dash.worker.generate_now") }}</button></div></form>
+          {% endif %}
+        {% elif s.key == "pictures" and s.state == "problem" %}
+          {% if worker_problem %}{{ problem(worker_problem) }}{% endif %}
+        {% endif %}
+      </div>
+    </li>
+  {% endfor %}
+  </ol>
+  {% if guide.complete %}
+  <form method="post" action="/setup/guide"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><div class="buttons"><button>{{ t("guide.close") }}</button></div></form>
+  {% endif %}
+</section>
+{% endif %}

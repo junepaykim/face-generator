@@ -28,7 +28,7 @@ def create_router(deps: AppDependencies) -> APIRouter:
     def look() -> dict[str, dict[str, Any]]:
         conn = deps.connect()
         try:
-            return live.snapshot(ctx, conn)
+            return live.snapshot(ctx, conn, deps.live_extra())
         finally:
             conn.close()
 

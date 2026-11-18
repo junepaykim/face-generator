@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import sqlite3
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from typing import Any
 
 from fastapi import Depends, HTTPException, Request
 
@@ -14,7 +15,53 @@ from facegen.persistence import db
 from facegen.persistence.settings import load_settings
 from facegen.pipeline.worker import Career, load_career
 from facegen.runtime.policy import BUSY_TIMEOUT_MS
+from facegen.setup.hardware import Hardware
 from facegen.web.context import AppContext
+
+
+class CardProbe:
+    """The graphics card, asked once per app: a child process imports torch for it, which
+    takes a few seconds, so the dashboard asks in the background (Phase 12f) and the GPU page
+    waits for the same answer."""
+
+    def __init__(self, ask: Callable[[], Hardware] | None) -> None:
+        self._ask = ask
+        self._lock = threading.Lock()
+        self._card: Hardware | None = None
+        self._thread: threading.Thread | None = None
+
+    @property
+    def available(self) -> bool:
+        """This process can ask the card (the GPU worker's setup is part of it)."""
+        return self._ask is not None
+
+    def get(self, again: bool = False) -> Hardware | None:
+        """The card, asking now if not yet asked (or `again`); None where it cannot be asked."""
+        if self._ask is None:
+            return None
+        with self._lock:
+            if again or self._card is None:
+                self._card = self._ask()
+            return self._card
+
+    def start(self) -> None:
+        """Ask in the background, once."""
+        with self._lock:
+            if self._ask is None or self._card is not None or self._thread is not None:
+                return
+            self._thread = threading.Thread(target=self.get, name="facegen-card", daemon=True)
+        self._thread.start()
+
+    def known(self) -> Hardware | None:
+        """The answer if there is one yet; never waits."""
+        return self._card
+
+    def state(self) -> tuple[Any, ...]:
+        """For the live fingerprint: not asked, asking, or the answer."""
+        card = self._card
+        if card is not None:
+            return ("known", card.name, card.total_bytes, card.reason)
+        return ("asking",) if self._thread is not None else ("not asked",)
 
 
 class AppDependencies:
@@ -26,6 +73,7 @@ class AppDependencies:
         self.masters_dir = self.data_dir / "masters"
         self.thumbs_dir = self.data_dir / "thumbs"
         self.connection = Depends(self.get_conn)
+        self.card = CardProbe(ctx.hardware)
         self.closing = threading.Event()
         """Set when the server stops (web.app.close_streams): live event streams end."""
 
@@ -39,6 +87,13 @@ class AppDependencies:
             yield conn
         finally:
             conn.close()
+
+    def live_extra(self) -> tuple[Any, ...]:
+        """State outside the services and the database that live pages show: the card's
+        answer and whether the first-run guide was closed (web.live, Phase 12f)."""
+        from facegen.web import guide  # the guide's module needs nothing from here
+
+        return (self.card.state(), guide.closed(self.data_dir))
 
     def settings_now(self, conn: sqlite3.Connection) -> Settings:
         return load_settings(conn, self.ctx.defaults_path)

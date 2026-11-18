@@ -36,7 +36,9 @@ def _digest(value: Any) -> str:
     return hashlib.sha1(text.encode()).hexdigest()[:16]
 
 
-def snapshot(ctx: AppContext, conn: sqlite3.Connection) -> dict[str, dict[str, Any]]:
+def snapshot(
+    ctx: AppContext, conn: sqlite3.Connection, extra: Any = None
+) -> dict[str, dict[str, Any]]:
     """Per topic, what its event carries; "rev" changes when the part would look different.
 
     Cheap on purpose: the services' status in memory and a few MAX/COUNT lookups, about once
@@ -72,6 +74,7 @@ def snapshot(ctx: AppContext, conn: sqlite3.Connection) -> dict[str, dict[str, A
             worker.last_error,
         ]
     status = {
+        "extra": extra,  # the first-run guide's own state (Phase 12f): the card's answer
         "career": career.id if career else None,
         "db": db,
         "worker": shown,

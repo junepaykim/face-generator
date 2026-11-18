@@ -333,3 +333,31 @@ details > summary { margin-top: 6px; }
 td .problem { margin: 4px 0 0; padding: 6px 8px; }
 .error-page { max-width: 640px; margin: 10vh auto; }
 .error-page h1 { margin-top: 0; }
+
+/* The first run as one guided flow (Phase 12f): numbered steps, a tick when done, a spinner
+   while facegen works on one, and the step that needs attention set apart. */
+.card.guide { border-color: var(--accent); }
+.card.guide.complete { border-color: var(--line); }
+ol.steps { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.step { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; padding: 8px 6px;
+        border-radius: 8px; }
+.step.current { background: var(--row); }
+.step-mark { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
+             font-size: 12px; font-weight: 700; border: 2px solid var(--line); color: var(--muted);
+             background: var(--card); }
+.step-done .step-mark { border-color: var(--ok); background: var(--ok); color: var(--card); }
+.step-ask .step-mark { border-color: var(--accent); color: var(--accent); }
+.step-problem .step-mark { border-color: var(--bad); background: var(--bad); color: var(--card); }
+.step-working .step-mark { border-color: var(--accent); }
+.spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--accent);
+        border-right-color: transparent; animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+.step-head { margin: 2px 0 4px; }
+.step-head strong { margin-right: 8px; }
+.step-done .step-head { color: var(--muted); }
+.step-done .step-head strong { color: var(--fg); }
+.step-wait .step-head { color: var(--muted); }
+.step-body .folder-form { margin-top: 6px; }
+.step-body .buttons { margin-top: 6px; }
+ul.step-list { margin: 4px 0; padding-left: 18px; font-size: 13px; }

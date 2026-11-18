@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -14,8 +15,10 @@ from facegen.datasource import photos
 from facegen.i18n import Translator
 from facegen.pipeline.worker import Career, load_career
 from facegen.runtime.contracts import ERROR_REASONS, WorkerStatus
-from facegen.web import live, queries
+from facegen.web import guide, live, queries
+from facegen.web.context import SetupState
 from facegen.web.dependencies import AppDependencies
+from facegen.web.forms import describe_key, value_text
 from facegen.web.messages import problem, seconds_since, worker_sentence
 from facegen.web.presentation import Presentation
 from facegen.web.responses import _redirect
@@ -80,13 +83,60 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             "recent": queries.recent_pictures(conn, career.id) if career else [],
         }
 
+    def first_run(
+        conn: sqlite3.Connection,
+        career: Career | None,
+        settings: Settings,
+        setup: SetupState,
+        worker: WorkerStatus | None,
+        counts: dict[str, int] | None,
+        t: Translator,
+    ) -> guide.Guide | None:
+        """The first run as one guided flow (Phase 12f); None once it is not shown."""
+        sync = ctx.syncer.status() if ctx.syncer else None
+        facts = guide.Facts(
+            folder_ok=not setup.needs_folder,
+            folder=str(settings.paths.fm_user_dir) if settings.paths.fm_user_dir else None,
+            folder_gone=setup.folder_gone,
+            models=setup.models,
+            download=setup.download,
+            card_available=deps.card.available,
+            card=deps.card.known(),
+            current_values=dict(settings.values),
+            career=career.display_name if career else None,
+            game_date=queries.game_date(conn, career.id) if career else None,
+            syncing=bool(sync and sync.running),
+            can_sync=ctx.syncer is not None,
+            watching=ctx.poller is not None,
+            worker=worker,
+            pictures=counts["pictures"] if counts else 0,
+            first_picture_at=queries.first_picture_at(conn, career.id) if career else None,
+            closed=guide.closed(deps.data_dir),
+            now=datetime.now(UTC),
+        )
+        shown = guide.build(facts)
+        if shown is not None and deps.card.known() is None:
+            deps.card.start()  # a few seconds in the background; the page updates when done
+        if shown is not None:
+            for step in shown.steps:
+                if "changes" in step.data:  # the card's suggested settings, for people to read
+                    step.data["lines"] = [
+                        (describe_key(c.key, t), value_text(c.before, t, c.key),
+                         value_text(c.after, t, c.key))
+                        for c in step.data["changes"]
+                    ]  # fmt: skip
+        return shown
+
     def dashboard_context(conn: sqlite3.Connection, t: Translator) -> dict[str, Any]:
         career = load_career(conn)
         settings = settings_now(conn)
         worker = ctx.worker.status() if ctx.worker else None
+        counts = queries.counts(conn, career.id) if career else None
+        setup = ctx.setup(settings)
         return {
             **now_context(conn, career, settings, worker, t),
-            "counts": queries.counts(conn, career.id) if career else None,
+            "guide": first_run(conn, career, settings, setup, worker, counts, t),
+            "counts": counts,
             "queue": queries.queue(conn, career.id) if career else [],
             "last_sync": queries.last_sync(conn),
             "careers": queries.careers(conn),
@@ -96,13 +146,14 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             "settings": settings,
             "auto_groups": sorted(settings.schedule.auto_groups),
             "photo_status": photos.status(conn),
-            "setup": ctx.setup(settings),
+            "setup": setup,
         }
 
     @router.get("/", response_class=HTMLResponse)
     def dashboard(request: Request, conn: sqlite3.Connection = Conn) -> Response:
         t = deps.translator(request, conn)
-        rev = live.snapshot(ctx, conn)["status"]["rev"]  # what app.js compares events with
+        # What app.js compares events with.
+        rev = live.snapshot(ctx, conn, deps.live_extra())["status"]["rev"]
         return page(request, "dashboard.html", conn, rev=rev, **dashboard_context(conn, t))
 
     @router.get("/status", response_class=HTMLResponse)
@@ -123,7 +174,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
     @router.get("/log", response_class=HTMLResponse)
     def log(request: Request, conn: sqlite3.Connection = Conn) -> Response:
         """The technical side: the worker's log and the last sync in full (Phase 12)."""
-        rev = live.snapshot(ctx, conn)["log"]["rev"]
+        rev = live.snapshot(ctx, conn, deps.live_extra())["log"]["rev"]
         return page(request, "log.html", conn, rev=rev, **log_context(conn))
 
     @router.get("/log/part", response_class=HTMLResponse)

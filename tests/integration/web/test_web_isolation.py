@@ -63,6 +63,7 @@ def test_http_surface_and_slash_redirects(config_file: Path) -> None:
         (("POST",), "/sync", "sync_now", "JSONResponse"),
         (("POST",), "/setup/folder", "setup_folder", "JSONResponse"),
         (("POST",), "/setup/browse", "setup_browse", "JSONResponse"),
+        (("POST",), "/setup/guide", "setup_guide_closed", "JSONResponse"),
         (("POST",), "/setup/models", "setup_models", "JSONResponse"),
         (("GET",), "/players", "players", "HTMLResponse"),
         (("POST",), "/players/action", "players_action", "JSONResponse"),

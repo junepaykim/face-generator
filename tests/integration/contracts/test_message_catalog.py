@@ -21,6 +21,7 @@ from facegen.persistence.settings import load_defaults
 from facegen.pipeline.manual import REFUSALS
 from facegen.runtime.contracts import WORKER_REASONS
 from facegen.setup import hardware
+from facegen.setup.models import REPOS
 from facegen.web import presentation
 from facegen.web.forms import editable_keys, settings_sections
 from facegen.web.queries import (
@@ -131,6 +132,7 @@ def vocabulary_keys() -> list[str]:
         )
     ]  # fmt: skip
     keys += [f"problem.link.{k}" for k in ("log", "autoconfig", "models", "settings")]
+    keys += [f"models.repo.{repo}" for repo in REPOS]
     return keys
 
 

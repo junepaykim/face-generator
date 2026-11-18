@@ -13,6 +13,7 @@ from facegen.persistence.settings import SettingsError, load_settings, local_lab
 from facegen.platform import platform_info
 from facegen.setup import folder_setup
 from facegen.setup.models import gigabytes
+from facegen.web import guide
 from facegen.web.dependencies import AppDependencies
 from facegen.web.forms import form_of
 from facegen.web.messages import problem_line
@@ -100,6 +101,12 @@ def create_router(deps: AppDependencies) -> APIRouter:
         if not chosen:
             return _redirect(back, msg=t("msg.folder.none_chosen"))
         return await run_in_threadpool(use_folder, chosen, back, t)
+
+    @router.post("/setup/guide")
+    async def setup_guide_closed() -> Response:
+        """The user closed the finished first-run guide (Phase 12f)."""
+        await run_in_threadpool(guide.close, deps.data_dir)
+        return _redirect("/")
 
     @router.post("/setup/models")
     async def setup_models(request: Request) -> Response:

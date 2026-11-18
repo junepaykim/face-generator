@@ -77,6 +77,7 @@ const LANG = document.documentElement.lang || undefined;
         const wanted = [];
         const fresh = [];
         const after = [];
+        let refocus = null;
         for (const el of Array.from(parts.children)) {
           const old = el.id ? box.querySelector(":scope > #" + CSS.escape(el.id)) : null;
           const html = el.id ? key(el) : null;
@@ -91,12 +92,26 @@ const LANG = document.documentElement.lang || undefined;
             const twin = el.querySelector("#" + CSS.escape(d.id));
             if (twin) twin.open = true;
           });
+          // So does what the user is typing (the guide's folder box).
+          if (old) old.querySelectorAll("input[name]:not([type=hidden])").forEach((input) => {
+            const twin = el.querySelector(`input[name="${CSS.escape(input.name)}"]`);
+            if (!twin || twin.type !== input.type) return;
+            if (input.value !== input.defaultValue) twin.value = input.value;
+            if (document.activeElement === input) {
+              refocus = [twin, input.selectionStart, input.selectionEnd];
+            }
+          });
           wanted.push(el);
           fresh.push(...el.querySelectorAll("img"));
         }
         await decoded(fresh);
         place(box, wanted);
         after.forEach((done) => done());
+        if (refocus) {
+          const [input, start, end] = refocus;
+          input.focus();
+          try { input.setSelectionRange(start, end); } catch (e) { /* not a text box */ }
+        }
         localTimes(box);
         progress();
         if (before !== null && career() !== before) location.reload();

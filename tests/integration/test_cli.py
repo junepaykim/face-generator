@@ -439,7 +439,7 @@ def test_serve_with_the_real_worker_offers_the_model_download(
         run_server=fake_server,
     )
     assert code == 0
-    assert "Set up: the models" in seen["page"] and "Download 11.6 GB" in seen["page"]
+    assert "<strong>Picture models</strong>" in seen["page"] and "Download 11.6 GB" in seen["page"]
 
 
 def test_models_and_hardware_need_no_database(env: dict[str, Path], monkeypatch) -> None:  # type: ignore[no-untyped-def]

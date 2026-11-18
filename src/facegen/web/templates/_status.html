@@ -1,30 +1,6 @@
 {% from "_problem.html" import problem %}<span hidden data-career="{{ career.id if career else '' }}"></span>
-{% set d = setup.download if setup else none %}
-{% if setup and setup.models is not none and (setup.needs_models or (d and (d.running or d.finished))) %}
-<section class="card setup-panel" id="{{ 'setup' if not setup.needs_folder else 'models' }}">
-  <h2>{{ t("setup.models.title") }}</h2>
-  {% if d and d.running %}
-    <p>{% if d.current %}{{ t("setup.models.file", index=d.index, files=d.files, name=d.current) }}{% else %}{{ t("setup.models.starting") }}{% endif %}</p>
-    <p><progress max="100" value="{{ d.percent }}">{{ d.percent }}%</progress> {{ t("setup.models.progress", percent=d.percent, done=gigabytes(d.done_bytes), total=gigabytes(d.total_bytes)) }}</p>
-    <p class="muted small">{{ t("setup.models.stop_note") }}</p>
-  {% elif setup.needs_models %}
-    {% set m = setup.models %}
-    {% if download_problem %}{{ problem(download_problem) }}{% endif %}
-    <p>{{ t("setup.models.intro", size=gigabytes(m.missing_bytes)) }}{% if m.missing_bytes < m.total_bytes %}{{ t("setup.models.rest_here") }}{% endif %}</p>
-    <div class="table-wrap"><table class="kv">
-      {% for repo in m.missing_repos() %}<tr><th>{{ model_repos[repo] }}</th><td><code>{{ repo }}</code></td></tr>{% endfor %}
-      <tr><th>{{ t("setup.models.saved_in") }}</th><td><code>{{ m.cache }}</code></td></tr>
-      <tr><th>{{ t("setup.models.free") }}</th><td>{{ gigabytes(m.free_bytes) if m.free_bytes is not none else t("common.unknown") }}</td></tr>
-    </table></div>
-    {% if not m.enough_space %}<p class="bad small">{{ t("setup.models.no_space", size=gigabytes(m.missing_bytes)) }}</p>{% endif %}
-    <form method="post" action="/setup/models"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="confirm" value="download">
-      <div class="buttons"><button class="primary" {{ "disabled" if not m.enough_space }}>{{ t("setup.models.download", size=gigabytes(m.missing_bytes)) }}</button></div>
-    </form>
-  {% else %}
-    <p class="ok">{{ t("setup.models.done") }}</p>
-  {% endif %}
-</section>
-{% endif %}
+{% include "_guide.html" %}
+{% set first_run = guide and not career %}
 {% if last_sync and last_sync.unsupported %}
 <section class="card alert" id="unsupported">
   <h2>{{ t("dash.unsupported.title") }}</h2>
@@ -34,7 +10,8 @@
 </section>
 {% endif %}
 
-{% if worker %}
+{% if first_run %}{# the guide stands alone until the first save is read #}
+{% elif worker %}
 <section class="card now" id="now">
   <div class="now-pic">
     {% if drawing and drawing.picture %}<a href="/players/{{ drawing.job.unique_id }}"><img src="/pictures/{{ drawing.picture }}?size=192" alt="{{ tr('dash.now.current_alt', name=drawing.job.name) }}"></a>
@@ -70,7 +47,7 @@
 <section class="card now" id="now"><div class="now-main"><h2>{{ t("dash.worker.title") }}</h2><p class="muted">{{ t("dash.worker.absent") }}</p></div></section>
 {% endif %}
 
-{% if estimate %}
+{% if estimate and not first_run %}
 <section class="card queue-card" id="queue">
   <h2>{{ t("dash.queue.title") }}</h2>
   {% if estimate.queued %}
@@ -124,6 +101,7 @@
 </section>
 {% endif %}
 
+{% if not first_run %}
 <section class="cards" id="facts">
   <div class="card">
     <h2>{{ t("dash.sync.title") }}</h2>
@@ -173,3 +151,4 @@
     {% endif %}
   </div>
 </section>
+{% endif %}

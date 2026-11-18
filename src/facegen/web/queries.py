@@ -456,6 +456,21 @@ def recent_pictures(
     ]
 
 
+def game_date(conn: sqlite3.Connection, career_id: int) -> str | None:
+    row = conn.execute("SELECT last_game_date FROM careers WHERE id = ?", (career_id,)).fetchone()
+    return row[0] if row else None
+
+
+def first_picture_at(conn: sqlite3.Connection, career_id: int) -> str | None:
+    """When the career's first picture was made (the guide's finish, Phase 12f)."""
+    row = conn.execute(
+        "SELECT MIN(created_at) FROM images WHERE career_id = ? AND master_path IS NOT NULL"
+        " AND master_path NOT LIKE '%-rejected.png'",
+        (career_id,),
+    ).fetchone()
+    return row[0] if row else None
+
+
 def current_picture_id(conn: sqlite3.Connection, career_id: int, unique_id: int) -> int | None:
     row = conn.execute(
         "SELECT id FROM images WHERE career_id = ? AND unique_id = ? AND is_current = 1"

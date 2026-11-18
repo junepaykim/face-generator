@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import sqlite3
-import threading
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -30,7 +29,7 @@ from facegen.web.forms import (
 )
 from facegen.web.messages import report_summary, settings_error_text
 from facegen.web.presentation import Presentation
-from facegen.web.responses import _redirect
+from facegen.web.responses import _redirect, _safe_next
 
 
 def create_router(deps: AppDependencies, presentation: Presentation) -> APIRouter:
@@ -124,17 +123,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
     def settings_get(request: Request, conn: sqlite3.Connection = Conn) -> Response:
         return settings_page(request, conn)
 
-    card_lock = threading.Lock()
-    card: list[hardware.Hardware] = []
-
-    def graphics_card(again: bool = False) -> hardware.Hardware | None:
-        """The card, asked once per app (a child process imports torch for it)."""
-        if ctx.hardware is None:
-            return None
-        with card_lock:
-            if again or not card:
-                card[:] = [ctx.hardware()]
-            return card[0]
+    graphics_card = deps.card.get  # asked once per app, shared with the dashboard's guide
 
     @router.get("/hardware", response_class=HTMLResponse)
     async def hardware_page(request: Request) -> Response:
@@ -165,7 +154,10 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
     @router.post("/settings/auto-configure")
     async def auto_configure(request: Request) -> Response:
         """The preset for this PC's card, as one settings change that one Undo reverts. Only
-        picture settings: never the group thresholds (user, 2026-11-13)."""
+        picture settings: never the group thresholds (user, 2026-11-13). From the dashboard's
+        first-run guide it goes back there (`next`)."""
+        form = await form_of(request)
+        done = _safe_next(str(form.get("next") or ""), "/settings")
         found = await run_in_threadpool(graphics_card)
         t = await run_in_threadpool(deps.translator, request)
 
@@ -185,10 +177,10 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             finally:
                 conn.close()
             if not outcome.changed:
-                return _redirect("/settings", msg=t("msg.hardware.suits", card=found.name))
+                return _redirect(done, msg=t("msg.hardware.suits", card=found.name))
             wake()
             return _redirect(
-                "/settings",
+                done,
                 msg=t(
                     "msg.hardware.configured",
                     card=found.name,

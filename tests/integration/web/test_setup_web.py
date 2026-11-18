@@ -176,7 +176,9 @@ def env(tmp_path: Path) -> Env:
 
 def test_without_a_folder_every_page_says_so_and_the_dashboard_asks(env: Env) -> None:
     text = env.client.get("/").text
-    assert "Set up: FM27's folder" in text and 'action="/setup/folder"' in text
+    # The first-run guide (Phase 12f) asks for it as its first step.
+    assert "Getting started" in text and "<strong>FM27's folder</strong>" in text
+    assert 'action="/setup/folder"' in text
     assert "Browse…" not in text and "Browse cannot open a window from here" in text
     for url in ("/players", "/review", "/settings"):
         assert "FM27's folder was not found." in env.client.get(url).text, url
@@ -314,7 +316,7 @@ def test_missing_models_ask_for_one_confirmation(tmp_path: Path) -> None:
     env.syncer.join(10)
 
     text = env.client.get("/").text
-    assert "Set up: the models" in text and "Download 11.6 GB" in text
+    assert "<strong>Picture models</strong>" in text and "Download 11.6 GB" in text
     assert str(hub.root) in text and "Free space there" in text
     assert "the models are not downloaded yet (11.6 GB)" in env.client.get("/players").text
     # Nothing starts without the confirmation (AGENTS.md hard rule 4).
@@ -334,7 +336,9 @@ def test_missing_models_ask_for_one_confirmation(tmp_path: Path) -> None:
         (repo / "snapshots" / "c0" / f.filename).parent.mkdir(parents=True, exist_ok=True)
         (repo / "snapshots" / "c0" / f.filename).write_bytes(b"x")
     download.now = DownloadStatus(finished=True, total_bytes=1000, done_bytes=1000)
-    assert "The models are downloaded" in env.client.get("/status").text
+    assert re.search(
+        r"<strong>Picture models</strong>\s*Downloaded\.", env.client.get("/status").text
+    )
     assert "Set up:" not in env.client.get("/players").text
 
 
@@ -351,7 +355,7 @@ def test_not_enough_space_disables_the_download(tmp_path: Path) -> None:
 
 
 def test_without_a_gpu_worker_the_models_are_not_part_of_the_setup(env: Env) -> None:
-    assert "the models" not in env.client.get("/status").text
+    assert "Picture models" not in env.client.get("/status").text
     text = env.follow(env.client.post("/setup/models", data={"confirm": "download"}))
     assert "not downloaded by this process" in text
 

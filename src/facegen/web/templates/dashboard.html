@@ -1,21 +1,5 @@
 {% extends "base.html" %}
 {% block title %}{{ t("nav.dashboard") }}{% endblock %}
 {% block content %}
-{% if setup.needs_folder %}
-<section class="card setup-panel" id="setup">
-  <h2>{{ t("setup.folder.title") }}</h2>
-  {% if setup.folder_gone %}
-  <p>{{ t("setup.folder.gone", folder=folder_now) }}</p>
-  {% else %}
-  <p>{{ t("setup.folder.missing") }}</p>
-  {% endif %}
-  <form method="post" action="/setup/folder" class="folder-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="/">
-    <input type="text" name="folder" value="{{ folder_text or '' }}" placeholder="C:\Users\you\Documents\Sports Interactive\Football Manager 27" aria-label="{{ t('setup.folder.aria') }}" required>
-    <button class="primary">{{ t("setup.folder.use") }}</button>
-    {% if setup.browse %}<button formaction="/setup/browse" formnovalidate title="{{ t('setup.folder.browse_title') }}">{{ t("setup.folder.browse") }}</button>{% endif %}
-  </form>
-  {% if not setup.browse %}<p class="muted small">{{ t("setup.folder.no_browse") }}</p>{% endif %}
-</section>
-{% endif %}
 <div id="status" data-refresh="/status" data-topic="status" data-rev="{{ rev }}">{% include "_status.html" %}</div>
 {% endblock %}
