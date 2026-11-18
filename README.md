@@ -27,7 +27,7 @@ has built in.
    (see [below](#why-smartscreen-warns)).
 3. **Install.** It installs for you alone, with no administrator prompt, into
    `%LOCALAPPDATA%\facegen`, adds facegen to the Start Menu and, if you tick it, to the
-   desktop. It is about 20 MB, most of it [uv](https://docs.astral.sh/uv/), which sets up
+   desktop. It is about 17 MB, most of it [uv](https://docs.astral.sh/uv/), which sets up
    Python: Python, PyTorch and the models would make it 15 GB, so they are fetched at the
    first start instead.
 4. **First start.** Leave *Start facegen now* ticked. A console window sets up Python and the
