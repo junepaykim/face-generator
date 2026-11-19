@@ -239,6 +239,14 @@ def test_run_needs_a_career(env: dict[str, Path]) -> None:
     assert code == 2 and "Run `facegen sync`" in text
 
 
+def test_publish_needs_the_requested_career(env: dict[str, Path]) -> None:
+    code, text = run(env, "publish")
+    assert code == 2 and text.strip() == "No careers yet. Run `facegen sync`."
+    run(env, "sync")
+    code, text = run(env, "publish", "--career", "absent")
+    assert code == 2 and text.strip() == "No career 'absent'."
+
+
 def test_run_dry_run_prints_prompts_and_draws_nothing(env: dict[str, Path]) -> None:
     run(env, "sync")
     code, text = run_gpu(env, "run", "--group", "a", "--my-club", "--dry-run")
@@ -346,7 +354,9 @@ def test_sync_records_that_the_command_started_it(env: dict[str, Path]) -> None:
         conn.close()
 
 
-def test_sync_of_another_careers_newer_save_switches_the_pack(env: dict[str, Path]) -> None:
+def test_sync_of_another_careers_newer_save_switches_the_pack(
+    env: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
     run(env, "sync")
     code, text = run_gpu(env, "run", "--group", "a", "--my-club")
     assert code == 0, text
@@ -363,6 +373,14 @@ def test_sync_of_another_careers_newer_save_switches_the_pack(env: dict[str, Pat
     assert f"packs now map nothing: {first.name}" in text and "Published" not in text
     assert 'from="1001"' not in (first / "config.xml").read_text()
     assert (first / "1001.png").is_file()
+
+    # An explicit publish can repair the older pack using just its stored masters.
+    (first / "1001.png").unlink()
+    monkeypatch.setattr("facegen.datasource.kits.KITS_PATH", env["data"] / "missing-kits.toml")
+    code, text = run(env, "publish", "--career", first.name)
+    assert code == 0 and f"1 pictures to {first}, not mapped" in text
+    assert (first / "1001.png").is_file()
+    assert 'from="1001"' not in (first / "config.xml").read_text()
 
 
 def test_serve_refuses_to_listen_beyond_this_pc(env: dict[str, Path]) -> None:

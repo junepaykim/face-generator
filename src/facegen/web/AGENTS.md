@@ -24,6 +24,7 @@ uv run --no-sync ruff check src/facegen/web
   with long-lived services.
 - `queries.py` builds page read models and handles roster query strings.
   `persistence/player_queries.py` owns roster filtering, ordering and pagination in SQLite.
+  Read photo counts and scan status from `persistence/photo_index.py`.
   Mutations use pipeline/settings-history APIs. Wake the worker after changes that affect its queue.
 
 ## Gotchas

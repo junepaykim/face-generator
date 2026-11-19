@@ -34,7 +34,7 @@ RELOAD_HINT = "In FM27: Settings -> Reload Skin (스킨 다시 불러오기) to 
 
 
 class PublishError(RuntimeError):
-    """A path would leave graphics/facegen/, or a picture is missing."""
+    """Publishing needs a valid destination under FM27's graphics/facegen/."""
 
 
 class FolderNotSetError(PublishError):
@@ -61,8 +61,10 @@ def pack_dir(fm_user_dir: Path, career_key: str) -> Path:
 
 
 def _guard(path: Path, fm_user_dir: Path) -> None:
-    root = packs_root(fm_user_dir).resolve()
-    if not path.resolve().is_relative_to(root) or path.resolve() == root:
+    # Resolve the configured FM directory, then keep writes under its graphics/facegen/.
+    root = packs_root(fm_user_dir.resolve())
+    resolved = path.resolve()
+    if not resolved.is_relative_to(root) or resolved == root:
         raise PublishError(f"refusing to write outside {root}: {path}")
 
 
@@ -93,8 +95,16 @@ def config_xml(ids: Iterable[int]) -> str:
 
 def _write_atomic(path: Path, data: bytes) -> None:
     tmp = path.with_name(f".{path.name}.part")
-    tmp.write_bytes(data)
-    os.replace(tmp, path)
+    # The publish lock is held. Discard any interrupted write before opening a fresh file.
+    tmp.unlink(missing_ok=True)
+    stream = tmp.open("xb")
+    try:
+        with stream:
+            stream.write(data)
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def write_config(folder: Path, ids: Iterable[int], fm_user_dir: Path) -> bool:
@@ -168,18 +178,6 @@ def _pillow_bytes(master: Path, long_edge: int) -> bytes:
     buf = io.BytesIO()
     img.save(buf, format="PNG", optimize=True)
     return buf.getvalue()
-
-
-def publish_picture(
-    master: Path, folder: Path, unique_id: int, size: int, fm_user_dir: Path
-) -> Path:
-    dest = folder / f"{unique_id}.png"
-    _guard(dest, fm_user_dir)
-    if not master.is_file():
-        raise PublishError(f"master picture missing: {master}")
-    folder.mkdir(parents=True, exist_ok=True)
-    _write_atomic(dest, published_bytes(master, size))
-    return dest
 
 
 @dataclass(frozen=True, slots=True)

@@ -130,3 +130,6 @@ def test_a_save_given_by_path_still_syncs_but_is_not_published(
     code = main(["--config", str(config), "sync", "--save", str(save)], source_factory=One, out=out)
     assert code == 3
     assert "Sync stored." in out.getvalue() and NOT_SET in out.getvalue()
+
+    code, text = run_cli(config, "publish")
+    assert code == 3 and f"Publishing failed: {NOT_SET}" in text

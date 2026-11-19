@@ -159,6 +159,8 @@ def test_interrupted_reroll_reuses_allocated_sheet_seed_and_preview(env: Env) ->
     w.run_job(initial)
     original_sheet = load_sheet(env.conn, w.career.id, OLD_HAND)
     manual.new_face(env.conn, w.career.id, OLD_HAND, env.settings)
+    reroll = next(p for p in w.preview(MINE) if p.job.unique_id == OLD_HAND)
+    assert reroll.job.traits_version is None
     seeds = []
     for _ in range(2):
         renderer = FakeRenderer(fail_on_call=1, exc=RuntimeError("interrupted"))
@@ -166,12 +168,14 @@ def test_interrupted_reroll_reuses_allocated_sheet_seed_and_preview(env: Env) ->
         job = next(j for j in w.runnable(MINE) if j.unique_id == OLD_HAND)
         with pytest.raises(RuntimeError, match="interrupted"):
             w.run_job(job)
+        assert renderer.prompts == [reroll.prompt]
         seeds.append(renderer.calls[0][1])
         assert env.jobs()[OLD_HAND] == "queued"
         assert load_sheet(env.conn, w.career.id, OLD_HAND) == original_sheet
     assert seeds[0] == seeds[1]
     preview = next(p for p in w.preview(MINE) if p.job.unique_id == OLD_HAND)
     assert preview.job.traits_version == 2
+    assert (preview.sheet, preview.prompt) == (reroll.sheet, reroll.prompt)
     assert picture_seed(preview.sheet.base_seed, 2, 0, 0) == seeds[0]
     assert (
         env.conn.execute("SELECT COUNT(*) FROM traits WHERE unique_id = ?", (OLD_HAND,)).fetchone()[
@@ -185,6 +189,7 @@ def test_interrupted_reroll_reuses_allocated_sheet_seed_and_preview(env: Env) ->
     assert w.requeue_stale() == 1
     w.run_job(next(j for j in w.runnable(MINE) if j.unique_id == OLD_HAND))
     assert renderer.calls[0][1] == seeds[0]
+    assert renderer.prompts[0] == preview.prompt
     assert env.current(OLD_HAND)["traits_version"] == 2
 
 
@@ -542,15 +547,32 @@ def test_a_missing_reference_file_draws_without_one(env: Env) -> None:
 
 def test_preview_draws_and_stores_nothing(env: Env) -> None:
     w, r, _ = env.worker()
+    before = env.conn.total_changes
     previews = w.preview(MINE)
+    assert env.conn.total_changes == before
+    assert not w.models_loaded and not env.data.exists()
     assert {p.job.unique_id for p in previews} == {OLD_HAND, KEEPER}
     assert all(p.prompt is not None and "safe" in p.prompt.positive for p in previews)
     assert r.calls == []
     assert env.conn.execute("SELECT COUNT(*) FROM traits").fetchone()[0] == 0
     # The preview shows the sheet the run then stores.
     w.run(MINE, publish=False)
+    assert r.prompts == [
+        p.prompt for p in previews for _ in range(env.settings.groups.a.candidates)
+    ]
     stored = {row[0]: row[1] for row in env.conn.execute("SELECT unique_id, base_seed FROM traits")}
     assert {p.job.unique_id: p.sheet.base_seed for p in previews} == stored
+
+
+def test_unknown_age_previews_without_a_prompt_and_fails_before_rendering(env: Env) -> None:
+    env.conn.execute("UPDATE players SET age = NULL WHERE unique_id = ?", (OLD_HAND,))
+    env.conn.execute("UPDATE jobs SET target_band = NULL WHERE unique_id = ?", (OLD_HAND,))
+    w, _, _ = env.worker()
+    preview = next(p for p in w.preview(MINE) if p.job.unique_id == OLD_HAND)
+    assert preview.wording is None and preview.prompt is None
+    outcome = w.run_job(preview.job)
+    assert outcome.status == "failed" and "age unknown" in outcome.message
+    assert not w.models_loaded and env.current(OLD_HAND) is None
 
 
 def test_the_sheet_is_weighted_by_the_players_personality(env: Env) -> None:

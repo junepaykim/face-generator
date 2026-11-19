@@ -40,6 +40,9 @@ pass without explicit user approval; fix the implementation or raise the conflic
   `settings` loads defaults; autouse `no_folder_detection` blocks real FM discovery.
 - `factories.py`: plain people/club/snapshot records, stable IDs and career/newgen filler.
 - `fakes.py`: `FakeRenderer`, `FakeTagger`, synthetic figures/backdrops and failure injection.
+- Check preview prompts against `FakeRenderer` in `integration/pipeline/test_worker.py`.
+  Exercise pack writes through `publish_pack` in `integration/pipeline/test_publish.py`.
+  Pixel comparisons for the native and Pillow encoders live in `parity/test_native.py`.
 - `fake_child.py`: worker protocol/fault/crash/hang scenarios. `gpu_child.py` runs the
   real worker loop with fake rendering and fault injection; it requires no GPU.
 - `fake_window_child.py`: real window protocol with a fake GUI.

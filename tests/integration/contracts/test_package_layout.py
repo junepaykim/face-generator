@@ -138,7 +138,7 @@ WEB_EXPORTS = [
     ),
     ("models", "setup.models", "DownloadStatus ModelDownload ModelsStatus REPOS gigabytes"),
     ("native", "platform.native", "status"),
-    ("photos", "datasource.photos", "player_counts status"),
+    ("photos", "persistence.photo_index", "player_counts status"),
     ("planner", "core.planner", "REFERENCE_KINDS reference_scale"),
     ("platform_info", "platform.platform_info", "Kind current"),
     ("poller", "runtime.poller", "UNSUPPORTED_ADVICE"),

@@ -196,6 +196,15 @@ class Setup:
 
 
 @dataclass(frozen=True, slots=True)
+class _PreparedPortrait:
+    version: int
+    wording: str | None
+    setup: Setup
+    my_club: MyClubSettings | None
+    prompt: Prompt | None
+
+
+@dataclass(frozen=True, slots=True)
 class Preview:
     job: Job
     sheet: CharacterSheet
@@ -318,22 +327,17 @@ class Worker:
                 manager=job.staff and is_first_team_manager(job.staff_job),
             )
         else:
-            sheet_version, sheet = found
-        version = self.images.next_version(job.unique_id)
-        wording = job.target_band or age_wording(
-            job.age, job.group, job.at_my_club, self.settings.age, **_audience(job)
-        )
-        setup = self._setup(job, sheet, version)
-        my_club = self.settings.my_club if job.at_my_club else None
-        prompt = self._prompt(sheet, wording, setup, my_club) if wording else None
+            _, sheet = found
+        portrait = self._prepare_portrait(job, sheet)
+        setup = portrait.setup
         return Preview(
             job,
             sheet,
-            wording,
+            portrait.wording,
             setup.wear.describe(),
             setup.kit_source,
             f"{setup.pose_text()}, {setup.backdrop.describe()} backdrop",
-            prompt,
+            portrait.prompt,
             self.reference_scale(job),
         )
 
@@ -417,22 +421,17 @@ class Worker:
 
     def _run_job(self, job: Job, upcoming: Sequence[Job] = ()) -> JobOutcome:
         t0 = self.clock()
-        s = self.settings
         group = self._group(job.group)
         sheet_version, sheet = jobs.allocate_sheet(
-            self.conn, self.career, job, s.body, s.personality.weight
+            self.conn, self.career, job, self.settings.body, self.settings.personality.weight
         )
-        version = self.images.next_version(job.unique_id)
-        wording = job.target_band or age_wording(
-            job.age, job.group, job.at_my_club, s.age, **_audience(job)
-        )
-        setup = self._setup(job, sheet, version)
-        wear = setup.wear
-        my_club = s.my_club if job.at_my_club else None
-        if wording is None:
+        portrait = self._prepare_portrait(job, sheet)
+        version, wording, prompt = portrait.version, portrait.wording, portrait.prompt
+        if wording is None or prompt is None:
             return self._finish_failed(job, version, sheet_version, None, [], t0, "age unknown")
-        prompt = self._prompt(sheet, wording, setup, my_club)
-        expect = qc.expectation(sheet, wear, my_club)
+        setup = portrait.setup
+        wear = setup.wear
+        expect = qc.expectation(sheet, wear, portrait.my_club)
         self._pre_encode(prompt, upcoming)
 
         folder = master_dir(self.data_dir, self.career.key, job.unique_id)
@@ -547,6 +546,26 @@ class Worker:
         )
         return JobOutcome(job, "done", image_id, version, self.clock() - t0, message)
 
+    def _prepare_portrait(self, job: Job, sheet: CharacterSheet) -> _PreparedPortrait:
+        """Choose the next picture's setup and prompt without assigning a sheet or rendering."""
+        version = self.images.next_version(job.unique_id)
+        wording = job.target_band or age_wording(
+            job.age,
+            job.group,
+            job.at_my_club,
+            self.settings.age,
+            staff=job.staff,
+            media=job.media_role is not None,
+        )
+        setup = self._setup(job, sheet, version)
+        my_club = self.settings.my_club if job.at_my_club else None
+        prompt = None
+        if wording is not None:
+            prompt = build_prompt(
+                sheet, wording, setup.wear, setup.pose, my_club, backdrop=setup.backdrop
+            )
+        return _PreparedPortrait(version, wording, setup, my_club, prompt)
+
     def _setup(self, job: Job, sheet: CharacterSheet, version: int) -> Setup:
         """Select a player shoot or a staff/media outfit with its role's pose and backdrop."""
         if job.media_role:
@@ -577,14 +596,6 @@ class Worker:
             game_date=self.career.game_date,
         )
         return Setup(shoot.wear, shoot.pose, shoot.backdrop, source, shoot)
-
-    @staticmethod
-    def _prompt(
-        sheet: CharacterSheet, wording: str, setup: Setup, my_club: MyClubSettings | None
-    ) -> Prompt:
-        return build_prompt(
-            sheet, wording, setup.wear, setup.pose, my_club, backdrop=setup.backdrop
-        )
 
     def _pre_encode(self, prompt: Prompt, upcoming: Sequence[Job]) -> None:
         """Encode this job's prompt and the next jobs' in one trip of the text encoders.
@@ -740,11 +751,6 @@ class Worker:
             crop=self.images.rel(path),
         )
         return Reference(f"{row['master_path']}|{box}", crop, scale), info
-
-
-def _audience(job: Job) -> dict[str, bool]:
-    """`age_wording`'s staff and media flags for a job's person."""
-    return {"staff": job.staff, "media": job.media_role is not None}
 
 
 def _model_extras(renderer: Renderer, prompt: Prompt) -> dict[str, Any]:

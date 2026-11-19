@@ -45,12 +45,19 @@ Use the web/datasource guides for HTTP, adapters and bundled kit data; use
 - `persistence/jobs.py` owns queue transitions. Claims revalidate revision and eligibility
   under the write transaction; do not render a stale selection. Persist sheet allocation
   before GPU work and retain it across interruptions.
+- `pipeline/worker.py` prepares the same portrait prompt for dry-run previews, encoding
+  upcoming jobs and drawing. Preview reads or samples a sheet without storing it. A
+  running job uses the sheet assigned by `persistence/jobs.py`.
 - Sync ingestion and planning use the settings current inside the write transaction.
-  Commit the pending publication with the sync. Clear it only after publishing the
-  active pack succeeds. Settings changes, Undo and Redo reclassify stored facts.
+  Settings changes, Undo and Redo reclassify stored facts in `pipeline/reclassification.py`.
+- Commit the pending publication with the sync. In `pipeline/publish.py`,
+  `publish_active` clears that marker only after publishing the active pack succeeds.
+  The CLI publish command, worker and restore action call `publish_pack` for a selected career.
 - When holding both locks, take the publish lock before the database transaction.
   Restore commits its sheet/image selection before publishing. Keep both numeric and
   `r-` FM portrait mappings for each published person.
+- `datasource/photos.py` scans FM files. Read stored photo counts and scan status from
+  `persistence/photo_index.py`, the source for the `facegen.photos` compatibility exports.
 
 ## Runtime and rendering gotchas
 

@@ -38,9 +38,16 @@ from facegen.core.settings_values import Paths, Settings
 from facegen.datasource.base import DataSource
 from facegen.datasource.kits import load_kits
 from facegen.persistence import db
+from facegen.persistence.jobs import load_career
 from facegen.persistence.settings import folder_not_set_message, load_settings
 from facegen.pipeline.gallery import write_gallery
-from facegen.pipeline.publish import RELOAD_HINT, PublishError, PublishReport, publish_active
+from facegen.pipeline.publish import (
+    RELOAD_HINT,
+    PublishError,
+    PublishReport,
+    publish_active,
+    publish_pack,
+)
 from facegen.pipeline.sync import SyncReport
 from facegen.pipeline.sync_operation import (
     UNSUPPORTED_ADVICE,
@@ -48,17 +55,11 @@ from facegen.pipeline.sync_operation import (
     SaveUnreadableError,
     sync_save,
 )
-from facegen.pipeline.worker import (
-    Worker,
-    WorkerBusy,
-    load_career,
-)
+from facegen.pipeline.worker import Worker, WorkerBusy
 from facegen.platform import native
 from facegen.platform.output import utf8_output
 from facegen.runtime.dependencies import Gpu
-from facegen.runtime.dependencies import default_renderer as _default_renderer
 from facegen.runtime.dependencies import default_source as _default_source
-from facegen.runtime.dependencies import default_tagger as _default_tagger
 from facegen.setup import hardware, models, native_wheel
 from facegen.setup import operations as setup_operations
 
@@ -446,16 +447,8 @@ def cmd_publish(
     career = _career(conn, args.career, out)
     if career is None:
         return 2
-    worker = Worker(
-        conn,
-        settings,
-        load_kits(),
-        career,
-        renderer_factory=_default_renderer,
-        tagger_factory=_default_tagger,
-    )
     try:
-        report = worker.publish()
+        report = publish_pack(conn, settings, career.id, career.key)
     except PublishError as exc:
         print(f"Publishing failed: {exc}", file=out)
         return 3

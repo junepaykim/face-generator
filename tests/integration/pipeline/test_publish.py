@@ -9,18 +9,34 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
+from facegen.persistence.settings import Settings, load_settings
 from facegen.pipeline.publish import (
     PublishError,
     config_xml,
     deactivate_packs,
     pack_dir,
+    publish_active,
     publish_career,
-    publish_picture,
+    publish_pack,
     unpublish,
     write_config,
 )
 
 SIZES = {"a": 1024, "b": 768, "c": 512}
+
+
+@pytest.fixture
+def pack_settings(config_file: Path) -> Settings:
+    return load_settings(defaults_path=config_file)
+
+
+def _link_directory(path: Path, target: Path) -> None:
+    try:
+        path.symlink_to(target, target_is_directory=True)
+    except OSError as exc:
+        if getattr(exc, "winerror", None) == 1314:
+            pytest.skip("Windows does not grant this process symlink creation privileges")
+        raise
 
 
 def test_config_xml_maps_database_and_generated_people() -> None:
@@ -46,37 +62,101 @@ def test_pack_dir_stays_inside_graphics_facegen(tmp_path: Path) -> None:
             pack_dir(fm, bad)
 
 
-def test_publish_picture_refuses_paths_outside(tmp_path: Path) -> None:
+def test_publish_pack_refuses_paths_outside(
+    conn: sqlite3.Connection, pack_settings: Settings, tmp_path: Path
+) -> None:
     fm = tmp_path / "fm"
     master = tmp_path / "m.png"
     Image.new("RGB", (64, 64)).save(master)
-    with pytest.raises(PublishError):
-        publish_picture(master, fm / "games", 1, 64, fm)
-    with pytest.raises(PublishError):
-        publish_picture(master, fm / "graphics" / "other-pack", 1, 64, fm)
-    with pytest.raises(PublishError):
-        write_config(fm / "graphics", [1], fm)
+    _career(conn)
+    _image(conn, 1, "a", str(master))
+    for key in ("../../games", "../other-pack"):
+        with pytest.raises(PublishError):
+            publish_pack(conn, pack_settings, 1, key)
+    assert not (fm / "games").exists()
+    assert not (fm / "graphics").exists()
 
 
-def test_publish_picture_downscales_to_3_4(tmp_path: Path) -> None:
-    fm = tmp_path / "fm"
+def test_publish_pack_refuses_a_redirected_pack_root(
+    conn: sqlite3.Connection, pack_settings: Settings, tmp_path: Path
+) -> None:
+    graphics = tmp_path / "fm" / "graphics"
+    graphics.mkdir(parents=True)
+    other_pack = graphics / "other-pack"
+    other_pack.mkdir()
+    _link_directory(graphics / "facegen", other_pack)
+    master = tmp_path / "m.png"
+    Image.new("RGB", (64, 64)).save(master)
+    _career(conn)
+    _image(conn, 1, "a", str(master))
+
+    with pytest.raises(PublishError):
+        publish_pack(conn, pack_settings, 1, "k")
+    assert not list(other_pack.iterdir())
+
+
+def test_publish_pack_downscales_to_3_4(
+    conn: sqlite3.Connection, pack_settings: Settings, tmp_path: Path
+) -> None:
     master = tmp_path / "m.png"
     Image.new("RGB", (1296, 1728), (10, 20, 30)).save(master)
-    dest = publish_picture(master, pack_dir(fm, "k"), 42, 768, fm)
-    assert dest == fm / "graphics" / "facegen" / "k" / "42.png"
+    _career(conn)
+    _image(conn, 42, "b", str(master))
+    report = publish_pack(conn, pack_settings, 1, "k")
+    assert report.written == 1
+    dest = tmp_path / "fm" / "graphics" / "facegen" / "k" / "42.png"
     with Image.open(dest) as im:
         assert im.size == (576, 768) and im.format == "PNG"
     assert not list(dest.parent.glob(".*part"))  # no temporary files left
 
 
-def test_a_square_master_from_before_3_4_is_cropped_around_its_centre(tmp_path: Path) -> None:
-    fm = tmp_path / "fm"
+def test_failed_atomic_replacement_keeps_the_previous_portrait_until_retry(
+    conn: sqlite3.Connection,
+    pack_settings: Settings,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    master = tmp_path / "m.png"
+    Image.new("RGB", (48, 64)).save(master)
+    _career(conn)
+    _image(conn, 42, "b", str(master))
+    folder = tmp_path / "fm" / "graphics" / "facegen" / "k"
+    folder.mkdir(parents=True)
+    dest = folder / "42.png"
+    old = master.read_bytes()
+    dest.write_bytes(old)
+    (folder / ".42.png.part").write_bytes(b"interrupted previous write")
+
+    def fail_replace(src: Path, dst: Path) -> None:
+        assert src.parent == dst.parent and dst == dest
+        with Image.open(src) as im:
+            assert im.size == (576, 768)
+        raise OSError("could not replace the portrait")
+
+    with monkeypatch.context() as patch:
+        patch.setattr("facegen.pipeline.publish.os.replace", fail_replace)
+        with pytest.raises(OSError, match="could not replace the portrait"):
+            publish_pack(conn, pack_settings, 1, "k")
+    assert dest.read_bytes() == old
+    assert list(folder.iterdir()) == [dest]
+    assert conn.execute("SELECT published_path FROM images").fetchone()[0] is None
+
+    assert publish_pack(conn, pack_settings, 1, "k").written == 1
+    with Image.open(dest) as im:
+        assert im.size == (576, 768)
+
+
+def test_a_square_master_from_before_3_4_is_cropped_around_its_centre(
+    conn: sqlite3.Connection, pack_settings: Settings, tmp_path: Path
+) -> None:
     master = tmp_path / "m.png"
     img = Image.new("RGB", (1024, 1024), (255, 0, 0))  # red sides
     img.paste((0, 0, 255), (128, 0, 896, 1024))  # a blue 3:4 middle
     img.save(master)
-    dest = publish_picture(master, pack_dir(fm, "k"), 1, 1024, fm)
-    with Image.open(dest) as im:
+    _career(conn)
+    _image(conn, 1, "a", str(master))
+    report = publish_pack(conn, pack_settings, 1, "k")
+    with Image.open(report.folder / "1.png") as im:
         assert im.size == (768, 1024)
         assert im.getpixel((0, 0)) == im.getpixel((767, 1023)) == (0, 0, 255)
 
@@ -89,6 +169,12 @@ def test_write_config_only_when_changed(tmp_path: Path) -> None:
     assert not write_config(folder, [2, 1], fm)
     assert (folder / "config.xml").stat().st_mtime_ns == mtime
     assert write_config(folder, [1], fm)
+
+
+def test_write_config_refuses_paths_outside(tmp_path: Path) -> None:
+    fm = tmp_path / "fm"
+    with pytest.raises(PublishError):
+        write_config(fm / "graphics", [1], fm)
 
 
 def _career(conn: sqlite3.Connection) -> None:
@@ -268,53 +354,39 @@ def test_deactivate_packs_does_not_follow_symlinks(tmp_path: Path) -> None:
     outside = tmp_path / "other-pack"  # stands in for someone else's pack
     outside.mkdir()
     (outside / "config.xml").write_text(config_xml([5]))
-    try:
-        (folder / "link").symlink_to(outside, target_is_directory=True)
-    except OSError as exc:
-        if getattr(exc, "winerror", None) == 1314:
-            pytest.skip("Windows does not grant this process symlink creation privileges")
-        raise
+    _link_directory(folder / "link", outside)
     deactivate_packs(fm, keep=None)
     assert 'from="5"' in (outside / "config.xml").read_text()
 
 
-def test_publish_pack_follows_the_newest_save(conn: sqlite3.Connection, tmp_path: Path) -> None:
-    from support.config import write_config as write_test_config
-
-    from facegen.persistence.settings import load_settings
-    from facegen.pipeline.publish import publish_active, publish_pack
-
-    settings = load_settings(defaults_path=write_test_config(tmp_path))
-    fm, data = settings.paths.fm_user_dir, settings.paths.data_dir
+def test_publish_pack_follows_the_newest_save(
+    conn: sqlite3.Connection, pack_settings: Settings
+) -> None:
+    fm, data = pack_settings.paths.fm_user_dir, pack_settings.paths.data_dir
+    assert fm is not None
     _two_careers(conn, data)
     conn.execute("UPDATE careers SET last_save_mtime = 100 WHERE id = 1")
     conn.execute("UPDATE careers SET last_save_mtime = 200 WHERE id = 2")
 
     # Career 1's worker publishes, but career 2's save is newer: pictures only, no mapping.
-    one = publish_pack(conn, settings, 1, "k")
+    one = publish_pack(conn, pack_settings, 1, "k")
     assert not one.active and one.written == 2 and _mapped(fm, "k") == set()
-    two = publish_active(conn, settings)
+    two = publish_active(conn, pack_settings)
     assert two is not None and two.active and two.folder.name == "k2"
     assert _mapped(fm, "k2") == {10}
 
     # Career 1 is saved again: it becomes the active one and career 2's pack is unmapped.
     conn.execute("UPDATE careers SET last_save_mtime = 300 WHERE id = 1")
-    switched = publish_active(conn, settings)
+    switched = publish_active(conn, pack_settings)
     assert switched is not None and switched.folder.name == "k"
     assert switched.deactivated == ("k2",) and switched.written == 0 and switched.changed
     assert _mapped(fm, "k") == {10, 11} and _mapped(fm, "k2") == set()
     assert (fm / "graphics" / "facegen" / "k2" / "10.png").is_file()  # kept for later
-    assert not publish_active(conn, settings).changed  # type: ignore[union-attr]
+    assert not publish_active(conn, pack_settings).changed  # type: ignore[union-attr]
 
 
-def test_publish_active_without_a_career(conn: sqlite3.Connection, tmp_path: Path) -> None:
-    from support.config import write_config as write_test_config
-
-    from facegen.persistence.settings import load_settings
-    from facegen.pipeline.publish import publish_active
-
-    settings = load_settings(defaults_path=write_test_config(tmp_path))
-    assert publish_active(conn, settings) is None
+def test_publish_active_without_a_career(conn: sqlite3.Connection, pack_settings: Settings) -> None:
+    assert publish_active(conn, pack_settings) is None
 
 
 def test_unpublish_from_an_inactive_pack_keeps_it_unmapped(
