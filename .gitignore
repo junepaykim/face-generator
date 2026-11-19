@@ -29,3 +29,4 @@ config/local.toml
 
 # Design docs stay on this PC; only the README's sample pictures are published
 docs/*.md
+/docs/archive/

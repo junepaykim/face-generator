@@ -9,7 +9,6 @@ from __future__ import annotations
 import argparse
 import io
 import json
-import re
 import sys
 import textwrap
 from collections.abc import Callable
@@ -56,19 +55,44 @@ SMALL = (
 # --- the list ---------------------------------------------------------------------------------
 
 
-def test_the_files_are_the_readmes_three_hf_download_commands() -> None:
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    commands = re.findall(r"uv run hf download (\S+) (.+)", readme)
-    assert [repo for repo, _ in commands] == list(models.REPOS)
-    for repo, rest in commands:
-        listed = [f.filename for f in FILES if f.repo == repo]
-        includes = re.findall(r'--include "([^"]+)"', rest)
-        if includes:  # patterns: every file matches one, every pattern has a file
-            pattern = [re.compile(re.escape(i).replace(r"\*", "[^/]*") + "$") for i in includes]
-            assert all(any(p.match(name) for p in pattern) for name in listed)
-            assert all(any(p.match(name) for name in listed) for p in pattern)
-        else:
-            assert sorted(listed) == sorted(rest.split())
+def test_setup_downloads_the_files_required_by_the_three_models() -> None:
+    # A missing tokenizer or encoder config can leave a completed download unusable offline.
+    expected = {
+        "cagliostrolab/animagine-xl-4.0": {
+            "model_index.json",
+            "scheduler/scheduler_config.json",
+            "text_encoder/config.json",
+            "text_encoder/model.safetensors",
+            "text_encoder_2/config.json",
+            "text_encoder_2/model.safetensors",
+            "tokenizer/merges.txt",
+            "tokenizer/special_tokens_map.json",
+            "tokenizer/tokenizer_config.json",
+            "tokenizer/vocab.json",
+            "tokenizer_2/merges.txt",
+            "tokenizer_2/special_tokens_map.json",
+            "tokenizer_2/tokenizer_config.json",
+            "tokenizer_2/vocab.json",
+            "unet/config.json",
+            "unet/diffusion_pytorch_model.safetensors",
+            "vae/config.json",
+            "vae/diffusion_pytorch_model.safetensors",
+        },
+        "h94/IP-Adapter": {
+            "sdxl_models/ip-adapter-plus-face_sdxl_vit-h.safetensors",
+            "models/image_encoder/config.json",
+            "models/image_encoder/model.safetensors",
+        },
+        "SmilingWolf/wd-eva02-large-tagger-v3": {
+            "config.json",
+            "model.safetensors",
+            "selected_tags.csv",
+        },
+    }
+    assert list(models.REPOS) == list(expected)
+    assert {f.label for f in FILES} == {
+        f"{repo}/{filename}" for repo, filenames in expected.items() for filename in filenames
+    }
 
 
 def test_the_files_are_those_the_code_loads() -> None:
@@ -85,6 +109,7 @@ def test_the_files_are_those_the_code_loads() -> None:
 
 def test_the_whole_download_is_about_eleven_and_a_half_gigabytes() -> None:
     assert gigabytes(total_size(FILES)) == "11.6 GB"
+    assert gigabytes(total_size(FILES)) in (ROOT / "README.md").read_text(encoding="utf-8")
     assert gigabytes(640_000_000) == "640 MB"
     assert len({f.label for f in FILES}) == len(FILES)
 

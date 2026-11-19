@@ -1,89 +1,23 @@
 # FM27 Face Generator
 
-**Every newgen deserves a face.**
+FM27 Face Generator is a Windows desktop app that gives Football Manager 27 players,
+staff and journalists anime-style portraits. It reads a copy of the save, draws on a
+local GPU and publishes a graphics pack the game can load.
 
-This is a local tool. It reads your Football Manager 27 save, picks the players you will
-actually look at, draws an anime-style portrait of each one on your own GPU, and puts the
-pictures into FM27. It needs no cloud service, and you don't copy any files by hand.
+## Engineering Highlights
+
+| Engineering challenge | Implementation | Measured result |
+|---|---|---|
+| [Fit SDXL inference in 8 GiB](src/facegen/render/quantise.py) | Store the UNet’s linear-layer weights in INT8. Keep text encoders and the quality tagger in system RAM between uses. | On an RTX 4080, peak VRAM reserved by PyTorch fell from **10.95 to 6.88 GiB** for a full-quality portrait and from **11.82 to 7.70 GiB** for a reference-guided redraw. |
+| [Keep the UI responsive during save reads](src/facegen/runtime/sync_process.py) | Move save parsing and database sync from a thread in the desktop app to a child process with its own Python interpreter. | During a 320 MB save sync under WSL2, 90th-percentile latency fell on both the Players page (**1,272 → 77 ms**) and the status endpoint (**2,021 → 153 ms**). |
+| [Speed up portrait publishing with Rust](native/src/portrait.rs) | A PyO3 extension releases Python’s GIL and uses Rayon to resize and encode multiple PNGs in parallel. | Republishing a 58-portrait pack took **6.4 s**, down from **57.0 s** (**8.9× faster**), with identical FM portrait mappings. |
+| [Query a SQLite catalogue of 181,315 people](src/facegen/persistence/player_queries.py) | Select the 100 IDs for the requested page before joining their details. For the Review filter, find matching jobs once. | Median time for the first page including its count fell from **136 to 52 ms**. With the Review filter, it fell from **155 to 23 ms**. |
 
 <p align="center">
   <img src="docs/images/hero.jpg" alt="Four generated anime portraits of made-up players in football kits" width="760">
   <br>
   <sub>Four made-up test players, drawn with the same setup the tool uses today.</sub>
 </p>
-
-## Install on Windows
-
-**You need** Windows 10 or 11 (64-bit), FM27, an NVIDIA graphics card with about 8 GB of
-memory, and about 20 GB of free disk: 3 GB for Python and PyTorch, 11.6 GB for the picture
-models, and room for the pictures. The window uses Microsoft Edge WebView2, which Windows 11
-has built in.
-
-1. **Download** `facegen-setup-<version>.exe` from the
-   [Releases page](https://github.com/junepaykim/face-generator/releases) (the newest release
-   whose name starts with "facegen", not "facegen-native").
-2. **Run it.** Windows SmartScreen will probably say *"Windows protected your PC"*: choose
-   **More info**, then **Run anyway**. It says this because the installer is not code-signed
-   (see [below](#why-smartscreen-warns)).
-3. **Install.** It installs for you alone, with no administrator prompt, into
-   `%LOCALAPPDATA%\facegen`, adds facegen to the Start Menu and, if you tick it, to the
-   desktop. It is about 17 MB, most of it [uv](https://docs.astral.sh/uv/), which sets up
-   Python: Python, PyTorch and the models would make it 15 GB, so they are fetched at the
-   first start instead.
-4. **First start.** Leave *Start facegen now* ticked. A console window sets up Python and the
-   libraries (about 3 GB, most of it PyTorch with CUDA; a few minutes), then asks **once**
-   before downloading the picture models (11.6 GB). Then facegen opens in a window of its own.
-   Later starts open the window straight away, with no console.
-5. **Use it.** The dashboard walks you through the rest: it finds FM27's folder (or asks for
-   it), checks the graphics card, and reads your newest save once FM27 saves. facegen draws
-   while FM27 is closed; then, in FM27, choose **Reload Skin** (or restart the game) to see
-   the faces.
-
-Closing the window keeps facegen drawing in the background; its tray icon has Open
-Dashboard, Pause, Sync Latest Save Now, Start with Windows and Quit. Starting facegen again
-brings the window back.
-
-### Updates
-
-facegen looks for a newer version once a day: one request for this repository's list of
-releases on GitHub, which sends nothing about you or your PC. A newer version is offered on
-the dashboard; **Update now** closes facegen, updates it in a window of its own (your
-pictures, settings and database are kept) and starts it again. *Update facegen* in the Start
-Menu does the same at any time. To turn the check off: **Settings → Advanced → Updates**.
-
-### Uninstall
-
-**Windows Settings → Apps → facegen → Uninstall.** It asks two questions, and answering No
-keeps things:
-
-- *Also remove facegen's pictures from FM27?* deletes FM27's `graphics\facegen` folder,
-  facegen's own; FM27 then shows its own photos again. Nothing else in FM27's folder is
-  touched.
-- *Also delete facegen's data?* deletes the pictures, the database and your settings.
-
-The picture models stay in the Hugging Face cache, `%USERPROFILE%\.cache\huggingface\hub`,
-since other programs can share it. To free those 11.6 GB, delete its folders
-`models--cagliostrolab--animagine-xl-4.0`, `models--h94--IP-Adapter` and
-`models--SmilingWolf--wd-eva02-large-tagger-v3`.
-
-### Why SmartScreen warns
-
-SmartScreen warns about programs that are not signed with a code-signing certificate and
-that few people have downloaded yet. A certificate costs money every year, so facegen is not
-signed for now. To check what you downloaded, compare its SHA-256
-(`Get-FileHash .\facegen-setup-<version>.exe` in PowerShell) with `SHA256SUMS.txt` on the
-release page: GitHub's own build made both from the source you can read here
-([the workflow](.github/workflows/release.yml)).
-
-### Without the installer
-
-Download this repository (*Code → Download ZIP*), unpack it anywhere you can write to, and
-double-click **`Start.bat`**. It does what the installer's first start does, and installs
-[`uv`](https://docs.astral.sh/uv/) into the folder first if you don't have it.
-`Start.bat --shortcut` adds the desktop and Start Menu shortcuts; `Start.bat --update`
-updates the folder in place. Windows may mark the unpacked files as downloaded, so
-`Start.bat` can show a security warning too: choose **Run**, or tick **Unblock** in its
-Properties. Start.bat keeps a log in `data\logs\start.log`.
 
 ## The problem
 
@@ -107,7 +41,7 @@ So this tool does the chore:
 4. **It publishes.** It writes the pictures and a `config.xml` into FM27's graphics
    folder. Press *Reload Skin* in FM27 and the faces appear.
 
-## Highlights
+## Portrait features
 
 - **A queue instead of brute force.** The GPU is shared with the game, so the tool spends
   it where you'll look. Group A (your club and the superstars) gets the best of 3 tries
@@ -118,10 +52,6 @@ So this tool does the chore:
   re-draws them from the same sheet. It also shows the model a crop of the old face
   through **IP-Adapter**, a small add-on that lets the model look at a reference picture.
   The result is the same girl in a new kit, a bit older.
-- **It fits next to the game.** It uses INT8 weights, keeps its helper models in system
-  RAM between uses and turns on fp16 accumulation. Peak VRAM went from
-  **10.95 to 6.88 GiB (−37%)** and one render from **5.1 to 4.4 s (−14%)**. You can't
-  see any difference in the pictures.
 - **Nothing leaves your PC.** Models load offline, the web UI answers only on
   `127.0.0.1`, and saves are only ever copied.
 
@@ -130,7 +60,7 @@ So this tool does the chore:
 ```mermaid
 flowchart LR
     save[("FM27 save")] -->|"copy"| snap["Snapshot copy"]
-    snap -->|"fmsave reader"| players["Players<br/>(~22k at men's clubs)"]
+    snap -->|"sync process reads the copy"| players["Players<br/>(~22k at men's clubs)"]
     players --> who{"Who will you<br/>actually look at?"}
     who -->|"my club, superstars"| A["Group A<br/>best of 3 + detail pass"]
     who -->|"academy grads, league stars,<br/>top prospects"| B["Group B<br/>1 try"]
@@ -147,13 +77,16 @@ flowchart LR
     pub --> fm["FM27: Reload Skin"]
 ```
 
-The parts talk to each other only through one SQLite database:
+SQLite holds the roster, portrait history and job queue. The desktop app coordinates two
+child processes through pipes.
 
-- A **poller** watches the saves folder, so every save or autosave starts a sync.
-- A **worker** owns the GPU. It runs in a process of its own, so a graphics driver error
-  costs one restart rather than the session, and quitting or pausing hands every byte of
-  video memory back.
-- A small **FastAPI page** lets you change thresholds and ask for pictures by hand.
+- The **save watcher** starts a sync when a save changes. The **sync process** reads the
+  snapshot, updates the roster and queues portraits. Its memory is released when it exits.
+- The **GPU worker** draws and checks portraits. It can restart independently after a
+  driver error and releases GPU memory when it stops.
+- The **FastAPI dashboard** serves the queue, settings and manual requests while a sync runs.
+  On native Windows, the Players page took a median of 132 ms at idle and 134 ms
+  during a 55-second sync of a 326 MB save.
 
 By default the worker waits while FM27 is running and frees the GPU when you start the
 game. Its log is in `data/logs/facegen.log`.
@@ -273,31 +206,22 @@ than 60 group A players in one sitting before the wait paid off.
 **4. There are no extra dependencies.** SageAttention is a little faster, but it adds a
 package and moves the pictures further from fp16 than bf16 does.
 
-### 3. Picking the model: 8 contestants, 1 judge
+### 3. Picking the model
 
-Before building the real pipeline, I held a bake-off. Every model drew the same 50 test
-characters. A tagger model (WD EVA02-Large) then checked each picture for content rating,
-hair colour, eye colour, kit colours and "exactly one person". The table shows each
-model's version of the same character: black twin tails, purple eyes, a white and navy
-kit, arms crossed.
-
-| Model | Sample | All checks | Time / picture³ | Why it lost |
-|---|---|---|---|---|
-| **Animagine XL 4.0 Opt** ✅ | <img src="docs/images/models/animagine.jpg" width="120" alt="Animagine sample"> | 82–86% | 5.3 s | **The winner.** Tight upper-body framing, and none of its 476 bake-off pictures was flagged for content |
-| Illustrious XL 2.0 | <img src="docs/images/models/illustrious.jpg" width="120" alt="Illustrious sample"> | 42% | 5.3 s | Loves to draw a crowd ("multiple views" in 16 of 50); 6 of 50 failed the content check |
-| NoobAI-XL 1.1 | <img src="docs/images/models/noobai.jpg" width="120" alt="NoobAI sample"> | 64% | 5.7 s | Extra figures in 7 of 50; behind Animagine on every check |
-| Anima Aesthetic v1.1 | <img src="docs/images/models/anima.jpg" width="120" alt="Anima sample"> | 78% | 18.1 s | 3× slower, and clearly worse to the judge's eye |
-| Z-Image (6B, FP8) | <img src="docs/images/models/zimage.jpg" width="120" alt="Z-Image sample"> | 70% | 44.3 s | 8× slower; frames from the thighs up, so faces are smaller; once drew a bare midriff that the tagger still rated "general" |
-| Z-Image-Turbo (FP8) | <img src="docs/images/models/zimage-turbo.jpg" width="120" alt="Z-Image-Turbo sample"> | 76% | 5.9 s | Has no negative prompt; faces look alike across players |
-| WAI-illustrious v17 | <img src="docs/images/models/wai.jpg" width="120" alt="WAI-illustrious sample"> | 84% | 6.6 s | Close on the numbers, but frames from the thighs up twice as often, and failed one content check |
-| Anima-2.9B (preview) | <img src="docs/images/models/anima-2.9b.jpg" width="120" alt="Anima-2.9B sample"> | 86% | 24.5 s | 4× slower, needs ComfyUI, and drew two players as boys |
-
-³ On the 4080 at 1024×1024, each model at its own recommended settings, before the
-speed-ups above.
-
-The numbers narrowed the field, and a **human annotator (n = 1)** made the final call: me,
-looking at the pictures. Animagine won on style. No other model matched its clean content
-record at its speed.
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/models/animagine.jpg" width="120" alt="Animagine sample"><br><strong>Animagine XL 4.0 Opt</strong></td>
+    <td align="center"><img src="docs/images/models/illustrious.jpg" width="120" alt="Illustrious sample"><br>Illustrious XL 2.0</td>
+    <td align="center"><img src="docs/images/models/noobai.jpg" width="120" alt="NoobAI sample"><br>NoobAI-XL 1.1</td>
+    <td align="center"><img src="docs/images/models/anima.jpg" width="120" alt="Anima sample"><br>Anima Aesthetic v1.1</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/images/models/zimage.jpg" width="120" alt="Z-Image sample"><br>Z-Image (6B, FP8)</td>
+    <td align="center"><img src="docs/images/models/zimage-turbo.jpg" width="120" alt="Z-Image-Turbo sample"><br>Z-Image-Turbo (FP8)</td>
+    <td align="center"><img src="docs/images/models/wai.jpg" width="120" alt="WAI-illustrious sample"><br>WAI-illustrious v17</td>
+    <td align="center"><img src="docs/images/models/anima-2.9b.jpg" width="120" alt="Anima-2.9B sample"><br>Anima-2.9B (preview)</td>
+  </tr>
+</table>
 
 ### 4. Spend the GPU where you look: groups A, B and C
 
@@ -335,6 +259,9 @@ the ones you see most often get the best pictures, and everyone else is skipped.
   6.9 GiB of PyTorch memory with the defaults, 5.8 GiB with the 10–11 GB preset and 4.5 GiB
   with the under-10 GB one (7.7, 6.7 and 5.0 GiB for a re-draw with a reference picture);
   they are not yet tried on smaller cards.
+- **Club colours.** A hand-tuned kit table takes priority. For 832 clubs, the app also
+  ships colour estimates from FM27’s home shirt images. Clubs missing from both sources
+  get a neutral kit. [Kit catalogue](src/facegen/data/kit_catalog.json)
 - **A new photo shoot each time.** The character sheet keeps a player's face, hair and
   eyes; each picture draws the rest. The kit is worn with short, long or layered sleeves,
   a collar, or as club training wear: a track jacket, open over the shirt or zipped to a
@@ -384,9 +311,9 @@ picture as the reference.</sub>
 
 ## Numbers
 
-Everything was measured on the RTX 4080 under WSL2, with Windows using the GPU at the same
-time. Because the shared GPU's speed drifted by up to 40% within minutes, the speed tests
-alternated the baseline and the variant in turn and took the median.
+GPU timings were measured under WSL2 on the RTX 4080 while Windows shared the card.
+Its speed drifted by up to 40% within minutes, so render-speed comparisons alternated the
+baseline and variant runs and used the median.
 
 | What | Result |
 |---|---|
@@ -398,186 +325,87 @@ alternated the baseline and the variant in turn and took the median.
 | Peak VRAM for a group A job | 6.9 GiB (7.7 GiB with a reference face) |
 | GPU memory held between jobs | ~3.8 GiB; all freed after 5 idle minutes or when FM27 starts |
 | First real squad run (Colchester, 52 players) | 154 of 156 candidates passed; all 52 players passed in the first round (19 min, before the speed-ups) |
-| Reading and sorting a whole save | ~10 s |
+| Reading and sorting a save | ~10 s for a 59 MB save, 55 s for a 320 MB save |
 | Web UI players list, 33,000-player database | 5–40 ms per page |
-| Web UI players list, 181,000-player database | about 50 ms for the first page, with its count |
 
-**Tests**
+The SQLite benchmark used a copy of a career with 181,315 people and added 40,000 synthetic
+jobs to exercise queue and review filters. Timings are medians of seven warm runs. The
+query rewrite returned identical results across 446 filter, sort and page combinations.
+[SQLite benchmark](scripts/spikes/sqlite_indexes.py)
 
-Tests are organized by tier and domain: `tests/unit/`, `tests/integration/`,
-`tests/parity/` and `tests/opt_in/`. See [the test suite guide](tests/AGENTS.md) for
-shared doubles, targeted commands and isolation rules. The default suite needs no GPU
-or save file; native/Python and CPU encoding parity run when their libraries are installed.
+## Development
 
-Run the prepared environment offline, without synchronizing dependencies:
+See the [project guide](AGENTS.md) for source setup, the repository layout and development
+commands. From a prepared checkout, `uv run facegen sync --dry-run` previews who would get a
+portrait and `uv run facegen status` shows careers and queued work.
+
+### Tests
+
+The default suite runs offline on synthetic data. It covers unit and integration
+behaviour and checks parity between the Python and Rust image paths when both are
+installed. [Test suite guide](tests/AGENTS.md)
 
 ```bash
 env -u FACEGEN_TEST_GPU -u FACEGEN_TEST_SAVE HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
   uv run --no-sync pytest -ra
 ```
 
-The real GPU tests need cached models and explicit opt-in. They check rendering, reference
-faces, encoding equivalence and the 8 GiB peak VRAM limit:
+With cached models, the opt-in GPU tests also check rendering, reference faces, encoding
+equivalence and the 8 GiB budget.
 
 ```bash
 FACEGEN_TEST_GPU=1 uv run --no-sync pytest tests/opt_in/test_gpu.py
 ```
 
-## For developers: WSL2 and Linux
+### Release and source layout
 
-On Windows, the [installer](#install-on-windows) is the way in. For working on facegen, clone
-the repository and use WSL2 (Ubuntu), where every test runs; the same commands work on
-Windows itself. A git checkout updates with `git pull` and `uv sync`, not in place: the
-dashboard says so when a newer release is out.
+The Windows release workflow runs the tests, builds the installer with Inno Setup and
+publishes the executable with a SHA-256 checksum. [Release workflow](.github/workflows/release.yml)
 
-**You need:**
-
-- A Windows PC with FM27. facegen runs on Windows itself, or in WSL2 (Ubuntu); the same
-  commands work in both.
-- An NVIDIA GPU with about 8 GB of free VRAM. It was tested on an RTX 4080 16 GB.
-- Python 3.12 and [`uv`](https://docs.astral.sh/uv/). uv fetches Python if you have none.
-- Optionally, a small Rust extension that republishes a pack about 9× faster. In WSL with
-  Rust from [rustup](https://rustup.rs/), `uv sync` builds it; without Rust there, install
-  with `uv sync --no-group native`. On Windows, or anywhere without Rust,
-  `uv run facegen native --install` installs a prebuilt build of it from this repo's
-  releases, checked against the SHA-256 listed in `native/wheels.sha256`; after that, update
-  with `uv sync --inexact`, since a plain `uv sync` removes it. Without it everything works
-  the same, only slower to publish. `uv run facegen native` says whether it is in use.
-- About 11 GB of disk for the models, plus a few GB for PyTorch with CUDA. On Windows uv
-  takes PyTorch from PyTorch's own CUDA index, since PyPI's Windows build has no CUDA.
-
-**1. Install.** From the cloned repo:
-
-```bash
-uv sync
-```
-
-**2. FM27's folders.** facegen finds FM27's user folder (in your Documents folder, OneDrive
-included) and its Steam install (in any Steam library) by itself; `uv run facegen status`
-shows what it found. If it cannot find the user folder, the web UI asks for it when you start
-it (step 5) and saves it in `config/local.toml`. You can also write that file yourself. It is
-not in git, so your Windows user name stays out of the repo. Write a Windows path in single
-quotes; in WSL it works too.
-
-```toml
-[paths]
-fm_user_dir = 'C:\Users\<you>\Documents\Sports Interactive\Football Manager 27'
-```
-
-**3. Download the models once** (~11.6 GB). After this, everything runs offline. Either let
-facegen do it (it shows the size and asks once; the dashboard offers the same button):
-
-```bash
-uv run facegen models --download
-```
-
-or fetch them yourself:
-
-```bash
-uv run hf download cagliostrolab/animagine-xl-4.0 --include "model_index.json" --include "scheduler/*" --include "text_encoder*/*" --include "tokenizer*/*" --include "unet/*" --include "vae/*"
-```
-
-```bash
-uv run hf download h94/IP-Adapter sdxl_models/ip-adapter-plus-face_sdxl_vit-h.safetensors models/image_encoder/config.json models/image_encoder/model.safetensors
-```
-
-```bash
-uv run hf download SmilingWolf/wd-eva02-large-tagger-v3 config.json model.safetensors selected_tags.csv
-```
-
-**4. Look before you draw.** This command copies your newest save, reads it and prints
-who would get a picture. It stores nothing.
-
-```bash
-uv run facegen sync --dry-run
-```
-
-**5. Start it:**
-
-```bash
-uv run facegen serve
-```
-
-(On Windows, `uv run facegen app` opens the window and the tray icon instead, as the
-installed facegen does.)
-
-Open <http://127.0.0.1:8765/>. The dashboard shows the queue and the worker. The worker
-draws while FM27 is closed; press **Generate now** to draw anyway. Then, in FM27, choose
-**Settings → Reload Skin**.
-
-Other handy commands:
-
-| Command | What it does |
+| Path | Contents |
 |---|---|
-| `uv run facegen run --group a --my-club --dry-run` | Prints each job's character sheet and prompt without drawing |
-| `uv run facegen run --group a --my-club` | Draws your squad from the command line, without the web UI (close FM27 first, or add `--now`) |
-| `uv run facegen status` | Shows careers, group counts and the queue |
-| `uv run facegen serve --no-worker` | Runs only the web UI, with no GPU work |
-| `uv run facegen app` | On Windows: the dashboard in a window, with a tray icon (what Start.bat opens) |
-| `uv run facegen tray` | On Windows: only the tray icon; Open Dashboard opens the browser |
+| [src/facegen/](src/facegen/) | Python pipeline, GPU renderer, FastAPI dashboard and desktop app |
+| [native/](native/) | Rust image processing exposed to Python through PyO3 |
+| [config/](config/) | Default settings and club kit colour overrides |
+| [scripts/spikes/](scripts/spikes/) | Experiments behind the GPU and SQLite measurements |
+| [tests/](tests/) | Unit, integration, parity and opt-in tests |
+| [installer/](installer/) | Windows installer and payload staging |
 
-**Making a release.** Set the version in `pyproject.toml`, run `uv lock`, commit, and push a
-`v<version>` tag. [The release workflow](.github/workflows/release.yml) runs the tests on
-Windows, builds `facegen-setup-<version>.exe` with [Inno Setup](https://jrsoftware.org/isinfo.php)
-from `installer/` and attaches it with its SHA-256 to a GitHub Release; installed copies are
-offered the update the next day. The installer and an update in place write the same files:
-the tagged source without tests, scripts and docs (`src/facegen/setup/update.py`).
+## Known Limits
 
-Club kit colours are in `config/kits.toml`. A club that isn't listed takes the colours
-estimated from FM27's own image of its home shirt: facegen ships these for the 832 clubs
-FM27 has an image for (`src/facegen/data/kit_catalog.json`, colour names only), so there is
-nothing to set up. After a game update you can estimate them again on your PC with
-`scripts/spikes/kit_colour_probe.py --install-dir <FM27 install> --all-home` (it needs
-UnityPy, and writes to `data/kit-colour-probe/`); a newer estimate there comes first, and
-`scripts/build_kit_catalog.py` turns it into the bundled file. A club in neither gets a
-neutral kit.
+- **Platform coverage.** Tested on one RTX 4080 PC with the Steam edition of FM27, under
+  native Windows and WSL2. Other GPUs, fresh installs on other PCs, and the Epic and Game
+  Pass editions are unverified.
+- **Save compatibility.** Game patches can change the save format. The dashboard identifies
+  unreadable builds and keeps existing portraits. The reader is pinned to
+  [fmsave 0.12.6](https://github.com/rhiever/fmsave).
+- **Portrait fidelity.** Animagine XL 4.0 is the supported model. Kits approximate club
+  colours and patterns. A reference face helps preserve a player’s identity across redraws,
+  but the save reader exposes no newgen hair or skin data to match the in-game 3D face.
+- **Coverage and validation.** Group B’s continental-cup rule still needs competition IDs.
+  Automatic save watching and age or transfer redraws still await final in-game verification.
 
-## Known limits
+## Install on Windows
 
-- **Works on my machine™.** It was built and tested on one PC: Windows with WSL2, an
-  RTX 4080 and FM27 build 27.0.0, and since then on the same PC's native Windows, where a
-  picture takes about 8% longer than in WSL. A fresh install on another PC has not been
-  tried yet, and the installer is not code-signed. Other GPUs, plain Linux and macOS are untested. The
-  check for a running FM27 relies on Windows' `tasklist.exe`. facegen finds FM27's folders in
-  the usual places only; the Epic and Game Pass versions are untested.
-- **Only one model is supported.** Animagine XL 4.0 is built in: its settings, its
-  tag-style prompts, and the tagger checks that go with them. There's no setting to switch
-  models yet. For a realistic style, **Z-Image-Turbo** looks like the best next step. It
-  already ran on this 4080 in FP8 at about 6 s per picture. It would need a prompt builder
-  that writes sentences instead of tags. It also has no negative prompt, so the content
-  rule would rest on the checker alone.
-- **The save reader is alpha software.** [`fmsave`](https://github.com/rhiever/fmsave) is
-  pinned at 0.12.6, and a game patch can break reading until fmsave catches up: FM27's 27.1.0
-  update did, until facegen 0.1.1. A save the tool can't read is skipped and the dashboard
-  names its game build; existing pictures stay.
-- **Kits are approximate.** Colours come from a hand-made table or are estimated from
-  FM27's kit images (colours only, no pattern), stripes and hoops are hit-and-miss, and
-  there are no real badges or sponsors.
-- **Faces are similar, not identical.** A re-drawn face stays close to the old one but
-  isn't a copy. Faces also don't match the in-game 3D model, because the save doesn't
-  expose a newgen's hair or skin.
-- **Continental cups aren't wired up yet.** The competition IDs of the Champions League,
-  Europa League and Conference League are still unknown, because my test saves load no
-  European league. Until they're added, group B's "continental cup" rule matches nobody.
-- **Some features are still waiting for sign-off.** Automatic save watching and re-draws
-  of tracked players are built and unit-tested, but haven't had their final in-game test.
+Download and run `facegen-setup-<version>.exe` from the [latest Windows release](https://github.com/junepaykim/face-generator/releases/latest).
 
-## Learn more
+You’ll need 64-bit Windows 10 or 11, FM27, an NVIDIA GPU with about 8 GB of VRAM and about
+20 GB of free disk space. First launch sets up Python and PyTorch (~3 GB), then asks before
+downloading the models (11.6 GB). After the first portraits are published, choose **Reload
+Skin** in FM27 to see them.
 
-[AGENTS.md](AGENTS.md) has the house rules for coding agents in this repo.
+### Updates
 
-```
-config/          default settings and the kit colour table
-docs/images/     the sample pictures on this page
-installer/       the Windows installer (Inno Setup) and what it bundles
-native/          the optional Rust extension, and its released wheels' checksums
-scripts/         the kit colour bundle's builder; spikes/: the experiments behind the numbers
-src/facegen/     the Python package
-tests/           unit tests (no GPU or save needed)
-```
+The dashboard checks daily. **Update now** installs a new version and keeps your portraits,
+database and settings. You can turn off daily checks in **Settings → Advanced → Updates**.
 
-Built with Python 3.12, PyTorch, diffusers, FastAPI, SQLite and
-[`fmsave`](https://github.com/rhiever/fmsave).
+### Uninstall
+
+Remove **facegen** from **Windows Settings → Apps**. The uninstaller lets you keep or remove
+the FM graphics pack and local app data separately. Downloaded models stay in the shared
+Hugging Face cache.
+
+---
 
 The code is under the [MIT License](LICENSE).
 
