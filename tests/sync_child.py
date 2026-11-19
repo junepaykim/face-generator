@@ -32,7 +32,7 @@ from factories import ABROAD, NEWGEN, RIVAL, player, snapshot
 from facegen.cli import main
 from facegen.core.records import Snapshot
 from facegen.datasource.base import UnsupportedSaveError
-from facegen.pipeline import sync, sync_operation
+from facegen.pipeline import reclassification, sync_operation
 from facegen.runtime import sync_process
 
 WAIT = 60.0
@@ -74,9 +74,10 @@ def slow_publish(state: Path):  # type: ignore[no-untyped-def]
 
 
 def slow_write(state: Path):  # type: ignore[no-untyped-def]
-    plan = sync.classify_and_plan
+    plan = reclassification.classify_and_plan
 
     def classify_and_plan(conn, career_id, settings):  # type: ignore[no-untyped-def]
+        assert conn.in_transaction
         (state / "writing").write_text(str(os.getpid()), encoding="utf-8")
         time.sleep(WAIT)
         return plan(conn, career_id, settings)
@@ -128,7 +129,7 @@ if __name__ == "__main__":
     with starts.open("a", encoding="utf-8") as f:
         f.write(step + "\n")
     if step == "slow-write":
-        sync.classify_and_plan = slow_write(state)  # type: ignore[assignment]
+        reclassification.classify_and_plan = slow_write(state)  # type: ignore[assignment]
     if step == "slow-publish":
         sync_operation.publish_active = slow_publish(state)  # type: ignore[assignment]
     if step == "delayed-notice":

@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from facegen.core.problems import UNKNOWN, diagnose
 from facegen.i18n import Translator
 from facegen.pipeline.manual import REFUSAL_CODES, REFUSALS, ActionResult, ManualError
-from facegen.pipeline.sync import GROUP_COUNT_KEYS, ChangeReport
+from facegen.pipeline.reclassification import GROUP_COUNT_KEYS, ChangeReport
 from facegen.runtime.contracts import WorkerStatus
 
 

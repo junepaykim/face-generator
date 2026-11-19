@@ -21,7 +21,8 @@ from facegen.persistence import db
 from facegen.persistence.db import transaction
 from facegen.persistence.settings import Settings, load_settings, set_overrides
 from facegen.pipeline import manual
-from facegen.pipeline.sync import classify_and_plan, run_sync
+from facegen.pipeline.reclassification import classify_and_plan
+from facegen.pipeline.sync import run_sync
 from facegen.pipeline.worker import load_career, worker_lock
 from facegen.runtime.contracts import WORKER_REASONS
 from facegen.service import (

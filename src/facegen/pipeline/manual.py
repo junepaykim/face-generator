@@ -18,7 +18,7 @@ queue from the stored snapshot, as a settings change does. The worker picks the 
 - **Cancel** withdraws a queued request; for a Generate request it also clears the pin.
 - **Restore** makes an earlier picture from the player's history current again and
   publishes it. It then stands for the player as they are now, so it is not re-drawn until
-  their club, age band or group changes again (sync.image_state).
+  their club, age band or group changes again.
 
 Manual jobs run before everything else (spec section 2). Among them the newest request runs
 first, so one "new face" click is drawn next even behind a large selection; within one
@@ -46,7 +46,7 @@ from facegen.persistence.db import active_career_id, transaction
 from facegen.persistence.jobs import queue_manual as _queue
 from facegen.persistence.sheet_store import select_sheet
 from facegen.pipeline.publish import PublishReport, publish_lock, publish_pack, unpublish
-from facegen.pipeline.sync import classify_and_plan
+from facegen.pipeline.reclassification import classify_and_plan
 
 PINS = ("a", "b", "c", "never")
 DEFAULT_GROUP = "b"
@@ -410,6 +410,37 @@ def remove_picture(
     return removed
 
 
+def _queue_retry(
+    conn: sqlite3.Connection,
+    career_id: int,
+    p: sqlite3.Row,
+    settings: Settings,
+    now: float | None,
+    position: int = 0,
+) -> str | None:
+    """Queue the most recent failed job, or return the player's refusal reason."""
+    if why := _refusal(p):
+        return why
+    failed = conn.execute(
+        "SELECT kind, group_name FROM jobs WHERE career_id = ? AND unique_id = ?"
+        " AND status = 'failed' ORDER BY id DESC LIMIT 1",
+        (career_id, p["unique_id"]),
+    ).fetchone()
+    if failed is None:
+        return REFUSALS["no_failed"]
+    _queue(
+        conn,
+        career_id,
+        p,
+        failed["kind"],
+        failed["group_name"],
+        request_rank(now, position),
+        "requested: retry",
+        settings,
+    )
+    return None
+
+
 def retry(
     conn: sqlite3.Connection,
     career_id: int,
@@ -422,27 +453,13 @@ def retry(
     """Queue the player's job from the review list again; it draws with new seeds."""
     with _action_transaction(conn, career_id, active_only):
         p = _player(conn, career_id, uid)
-        if why := _refusal(p):
-            raise _refused(why, name=p["name"])
-        failed = conn.execute(
-            "SELECT kind, group_name FROM jobs WHERE career_id = ? AND unique_id = ?"
-            " AND status = 'failed' ORDER BY id DESC LIMIT 1",
-            (career_id, uid),
-        ).fetchone()
-        if failed is None:
+        why = _queue_retry(conn, career_id, p, settings, now)
+        if why == REFUSALS["no_failed"]:
             raise ManualError(
                 f"{p['name']} has nothing to retry", "nothing_to_retry", name=p["name"]
             )
-        _queue(
-            conn,
-            career_id,
-            p,
-            failed["kind"],
-            failed["group_name"],
-            request_rank(now),
-            "requested: retry",
-            settings,
-        )
+        if why:
+            raise _refused(why, name=p["name"])
         classify_and_plan(conn, career_id, settings)
     return ActionResult(queued=[uid])
 
@@ -464,23 +481,10 @@ def retry_many(
     with _action_transaction(conn, career_id, active_only):
         for uid in dict.fromkeys(uids):
             p = _player(conn, career_id, uid)
-            if why := _refusal(p):
+            if why := _queue_retry(conn, career_id, p, settings, now, len(result.queued)):
                 result.skipped.append((uid, why))
-                continue
-            failed = conn.execute(
-                "SELECT kind, group_name FROM jobs WHERE career_id = ? AND unique_id = ?"
-                " AND status = 'failed' ORDER BY id DESC LIMIT 1",
-                (career_id, uid),
-            ).fetchone()
-            if failed is None:
-                result.skipped.append((uid, REFUSALS["no_failed"]))
-                continue
-            rank = request_rank(now, len(result.queued))
-            _queue(
-                conn, career_id, p, failed["kind"], failed["group_name"], rank,
-                "requested: retry", settings,
-            )  # fmt: skip
-            result.queued.append(uid)
+            else:
+                result.queued.append(uid)
         classify_and_plan(conn, career_id, settings)
     return result
 

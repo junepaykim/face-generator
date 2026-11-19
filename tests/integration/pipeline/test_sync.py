@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import closing
 from dataclasses import replace
 from datetime import date
+from pathlib import Path
 
 import pytest
 from factories import (
@@ -26,8 +28,10 @@ from facegen.core.planner import TIER_B, TIER_C
 from facegen.core.records import Gender, PlayerRecord, Snapshot
 from facegen.core.traits import personality_from_json
 from facegen.datasource.photos import PhotoIndex, PhotoScan
+from facegen.persistence.db import connect
 from facegen.persistence.settings import Settings, load_settings, set_override
-from facegen.pipeline.sync import SyncReport, reclassify, record_failed_sync, run_sync, sync_of_save
+from facegen.pipeline.reclassification import ChangeReport, reclassify, reclassify_with_report
+from facegen.pipeline.sync import SyncReport, record_failed_sync, run_sync, sync_of_save
 
 # A small world: pre-existing players have low IDs, newgens start at NEWGEN.
 MINE_OLD = 1001  # pre-existing, at my club
@@ -203,6 +207,22 @@ def test_dry_run_stores_nothing(conn: sqlite3.Connection, settings: Settings) ->
     assert any(row["unique_id"] == MINE_OLD and row["group"] == "A" for row in report.table)
     for table in ("careers", "players", "clubs", "jobs", "sync_runs"):
         assert conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0, table
+
+
+def test_sync_reads_classification_settings_while_holding_the_write_lock(tmp_path: Path) -> None:
+    path = tmp_path / "state.db"
+    with closing(connect(path)) as conn, closing(connect(path, busy_timeout_ms=0)) as editor:
+        before_parse = load_settings(conn)
+        set_override(editor, "groups.c.league_ca_above", 125)
+
+        def read_settings() -> Settings:
+            with pytest.raises(sqlite3.OperationalError, match="database is locked"):
+                editor.execute("BEGIN IMMEDIATE")
+            return load_settings(conn)
+
+        report = sync(conn, snapshot(world()), before_parse, read_settings=read_settings)
+        assert report.counts["c"] == 0
+        assert RIVAL_C not in queued(conn)
 
 
 def test_player_table_has_the_phase_0_columns(conn: sqlite3.Connection, settings: Settings) -> None:
@@ -606,7 +626,6 @@ def test_reclassify_with_report_says_what_moved(
 ) -> None:
     from facegen.persistence.db import transaction
     from facegen.persistence.settings import set_overrides
-    from facegen.pipeline.sync import ChangeReport, reclassify_with_report
 
     report = sync(conn, snapshot(world()), settings)
     with transaction(conn):
@@ -631,7 +650,6 @@ def test_reclassify_with_report_lists_newly_queued_players(
 ) -> None:
     from facegen.persistence.db import transaction
     from facegen.persistence.settings import set_overrides
-    from facegen.pipeline.sync import reclassify_with_report
 
     report = sync(conn, snapshot(world()), settings)
     with transaction(conn):

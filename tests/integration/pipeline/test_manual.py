@@ -6,6 +6,7 @@ import json
 import sqlite3
 from dataclasses import dataclass, replace
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from factories import ABROAD, NEWGEN, RIVAL, WOMENS, player, snapshot
@@ -279,8 +280,12 @@ def test_nothing_is_queued_for_a_player_being_drawn(env: Env) -> None:
 
 
 def test_retry_queues_a_review_job_again(env: Env) -> None:
-    with pytest.raises(ManualError, match="nothing to retry"):
+    with pytest.raises(ManualError, match="B Newgen has nothing to retry") as refused:
         manual.retry(env.conn, env.cid, B_NEWGEN, env.settings)
+    assert (refused.value.code, refused.value.values) == ("nothing_to_retry", {"name": "B Newgen"})
+    with pytest.raises(ManualError, match="Woman: not in men's football") as refused:
+        manual.retry(env.conn, env.cid, WOMAN, env.settings)
+    assert (refused.value.code, refused.value.values) == ("not_mens", {"name": "Woman"})
     env.draw(JobFilter(groups=frozenset({"b"})), FakeTagger(["sensitive"] * 3))
     assert [i["unique_id"] for i in queries.review_items(env.conn, env.cid)] == [B_NEWGEN]
     manual.retry(env.conn, env.cid, B_NEWGEN, env.settings)
@@ -294,6 +299,33 @@ def test_retry_queues_a_review_job_again(env: Env) -> None:
         ).fetchone()[0]
         == 2
     )  # v1 was the rejected try; the retry draws v2 with new seeds
+
+
+def test_bulk_retry_ranks_only_queued_players_and_uses_their_newest_failure(env: Env) -> None:
+    env.conn.execute("UPDATE jobs SET status = 'failed'")
+    manual.new_face(env.conn, env.cid, B_NEWGEN, env.settings)
+    env.conn.execute(
+        "UPDATE jobs SET status = 'failed', group_name = 'c' WHERE unique_id = ? AND kind = 'reroll'",
+        (B_NEWGEN,),
+    )
+
+    selection = [STAR, B_NEWGEN, WOMAN, A_NEWGEN, B_NEWGEN, WOMAN]
+    with patch.object(manual, "classify_and_plan", wraps=manual.classify_and_plan) as replan:
+        result = manual.retry_many(env.conn, env.cid, selection, env.settings, now=1.0)
+    replan.assert_called_once_with(env.conn, env.cid, env.settings)
+    assert result.queued == [B_NEWGEN, A_NEWGEN]
+    assert result.skipped == [
+        (STAR, "no failed picture to retry"),
+        (WOMAN, "not in men's football"),
+    ]
+    jobs = env.conn.execute(
+        "SELECT unique_id, kind, group_name, rank FROM jobs"
+        " WHERE manual = 1 AND status = 'queued' ORDER BY rank"
+    )
+    assert [tuple(row) for row in jobs] == [
+        (B_NEWGEN, "reroll", "c", -1_000_000),
+        (A_NEWGEN, "initial", "a", -999_999),
+    ]
 
 
 def test_cancelling_a_generate_request_undoes_the_hand_pick(env: Env) -> None:

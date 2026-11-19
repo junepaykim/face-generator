@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from contextlib import closing
 from io import StringIO
@@ -187,6 +188,30 @@ def test_changes_reclassify_and_say_what_they_did(conn: sqlite3.Connection) -> N
     assert conn.execute(queued, (RIVAL_C,)).fetchone()[0] == 1
 
 
+def test_history_reads_a_report_written_before_the_reclassification_move(
+    conn: sqlite3.Connection,
+) -> None:
+    stored = """{
+        "before": {"a": 0, "b": 0, "c": 0, "tracked": 0},
+        "after": {"a": 0, "b": 1, "c": 0, "tracked": 0},
+        "enqueue": [["initial", "b", 1]], "updated": 0, "cancelled": 0, "changed_total": 1,
+        "changes": [{"unique_id": 123, "name": "Player 123", "club": null, "ca": 135, "pa": null,
+                     "before": null, "after": "b", "tracked_before": false, "tracked_after": false,
+                     "reasons": ["CA 135 > 130"]}]
+    }"""
+    conn.execute(
+        "INSERT INTO settings_history (at, label, before, after, report)"
+        " VALUES ('now', 'edit', ?, ?, ?)",
+        ('{"groups.b.any_ca_above":null}', '{"groups.b.any_ca_above":130}', stored),
+    )
+
+    (entry,) = history.entries(conn)
+    assert entry.report is not None
+    assert entry.report.enqueue == {("initial", "b"): 1}
+    assert entry.report.changes[0].reasons == ("CA 135 > 130",)
+    assert entry.report.to_json() == json.loads(stored)
+
+
 def test_settings_the_rules_do_not_read_are_saved_without_reclassifying(
     conn: sqlite3.Connection,
 ) -> None:
@@ -200,9 +225,9 @@ def test_settings_the_rules_do_not_read_are_saved_without_reclassifying(
 def test_youth_and_media_edits_undo_and_redo_keep_groups_and_queue_in_sync(
     conn: sqlite3.Connection,
 ) -> None:
-    youth, journalist, press = 1010, 1011, 1012
+    youth, journalist, press, prospect = 1010, 1011, 1012, 1013
     people = snapshot(
-        [player(youth, team_slot=2)],
+        [player(youth, team_slot=2), player(prospect, team_slot=2, pa=130)],
         media=[
             media_person(journalist),
             media_person(press, role="press officer", club_id=MY_CLUB),
@@ -220,19 +245,27 @@ def test_youth_and_media_edits_undo_and_redo_keep_groups_and_queue_in_sync(
             (uid, group) for uid, group in expected.items() if group is not None
         )
 
-    groups = {youth: "b", journalist: "b", press: "b"}
+    groups = {youth: "b", journalist: "b", press: "b", prospect: "b"}
     assert_groups(groups)
-    for key, uid, disabled_group in (
-        ("youth.enabled", youth, "a"),
-        ("media.journalists", journalist, None),
-        ("media.press_officers", press, None),
+    for key, ordered_ids, disabled_group in (
+        ("youth.enabled", [prospect, youth], "a"),
+        ("media.journalists", [journalist], None),
+        ("media.press_officers", [press], None),
     ):
-        disabled = {**groups, uid: disabled_group}
-        assert history.save(conn, {key: False}).report is not None
+        disabled = {**groups, **dict.fromkeys(ordered_ids, disabled_group)}
+        edited = history.save(conn, {key: False}).report
+        assert edited is not None
+        assert [(c.unique_id, c.before, c.after) for c in edited.changes] == [
+            (uid, "b", disabled_group) for uid in ordered_ids
+        ]
         assert_groups(disabled)
-        assert history.undo(conn).report is not None
+        undone = history.undo(conn).report
+        assert undone is not None
+        assert [(c.unique_id, c.before, c.after) for c in undone.changes] == [
+            (uid, disabled_group, "b") for uid in ordered_ids
+        ]
         assert_groups(groups)
-        assert history.redo(conn).report is not None
+        assert history.redo(conn).report == edited
         assert_groups(disabled)
         groups = disabled
 

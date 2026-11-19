@@ -25,7 +25,7 @@ from facegen.persistence.db import transaction
 from facegen.persistence.jobs import load_career
 from facegen.persistence.settings import load_defaults, load_settings, read_overrides, set_overrides
 from facegen.persistence.settings_store import write_overrides
-from facegen.pipeline.sync import ChangeReport, reclassify_with_report
+from facegen.pipeline.reclassification import ChangeReport, reclassify_with_report
 
 HISTORY_LIMIT = 20
 
