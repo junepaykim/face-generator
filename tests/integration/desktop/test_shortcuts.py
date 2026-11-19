@@ -7,13 +7,15 @@ import base64
 import io
 import os
 import subprocess
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
 
+import facegen
 from facegen.cli import main
-from facegen.desktop import shortcuts
+from facegen.desktop import app_exe, shortcuts
 from facegen.platform import procs
 
 FOLDERS = {
@@ -36,7 +38,7 @@ def test_the_app_command_line() -> None:
 
 
 def test_desktop_and_start_menu_shortcuts() -> None:
-    links = shortcuts.app_shortcuts(FOLDERS, pythonw=PYW, root=ROOT, icon=ICON)
+    links = shortcuts.app_shortcuts(FOLDERS, program=PYW, root=ROOT, icon=ICON)
     assert [link.path for link in links] == [
         r"C:\Users\me\OneDrive\바탕 화면\facegen.lnk",
         r"C:\Users\me\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\facegen.lnk",
@@ -44,13 +46,13 @@ def test_desktop_and_start_menu_shortcuts() -> None:
     assert all(link.target == PYW and link.working_dir == ROOT for link in links)
     assert all(link.arguments == "-m facegen.desktop app" and not link.minimized for link in links)
     only = shortcuts.app_shortcuts(
-        {"programs": FOLDERS["programs"]}, pythonw=PYW, root=ROOT, icon=ICON
+        {"programs": FOLDERS["programs"]}, program=PYW, root=ROOT, icon=ICON
     )
     assert len(only) == 1  # a folder Windows did not name is left out
 
 
 def test_the_startup_shortcut_starts_in_the_tray() -> None:
-    link = shortcuts.startup_shortcut(FOLDERS["startup"], pythonw=PYW, root=ROOT, icon=ICON)
+    link = shortcuts.startup_shortcut(FOLDERS["startup"], program=PYW, root=ROOT, icon=ICON)
     assert link.path.endswith(r"Startup\facegen.lnk")
     assert link.arguments == "-m facegen.desktop app --minimized" and link.minimized
 
@@ -60,7 +62,7 @@ def test_the_powershell_quotes_every_path_as_it_is() -> None:
         r"C:\Users\O'Brien\Desktop\facegen.lnk", PYW, "-m facegen.desktop app", ROOT, ICON
     )
     script = shortcuts.powershell_script(
-        [odd, shortcuts.startup_shortcut(FOLDERS["startup"], pythonw=PYW, root=ROOT, icon=ICON)]
+        [odd, shortcuts.startup_shortcut(FOLDERS["startup"], program=PYW, root=ROOT, icon=ICON)]
     )
     assert "$s = $shell.CreateShortcut('C:\\Users\\O''Brien\\Desktop\\facegen.lnk')" in script
     assert f"$s.IconLocation = '{ICON},0'" in script
@@ -97,7 +99,7 @@ def test_windows_folders_ask_windows_then_fall_back_to_the_profile() -> None:
 
 
 def test_writing_reports_powershell_failing(monkeypatch: pytest.MonkeyPatch) -> None:
-    link = shortcuts.startup_shortcut(FOLDERS["startup"], pythonw=PYW, root=ROOT, icon=ICON)
+    link = shortcuts.startup_shortcut(FOLDERS["startup"], program=PYW, root=ROOT, icon=ICON)
     monkeypatch.setattr(procs, "windows_tool", lambda *a, **k: "powershell.exe")
     calls: list[Sequence[str]] = []
 
@@ -144,11 +146,32 @@ def test_the_shortcuts_command_is_for_windows(config_file: Path) -> None:
     assert "Shortcuts are for Windows" in out.getvalue()
 
 
-def test_this_app_writes_the_icon_once(tmp_path: Path) -> None:
+def test_this_app_writes_the_icon_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    asked: list[tuple[Path, Path, str]] = []
+
+    def no_copy(scripts: Path, icon: Path, version: str) -> Path | None:
+        asked.append((scripts, icon, version))
+        return None  # as off Windows, or when it could not be made
+
+    monkeypatch.setattr(app_exe, "ensure", no_copy)  # not this venv's Scripts folder
     app = shortcuts.this_app(tmp_path)
     icon = Path(app.icon)
     assert icon == tmp_path / "app" / "facegen.ico" and icon.is_file()
-    assert app.pythonw.endswith("pythonw.exe") and app.config is None
+    assert app.program.endswith("pythonw.exe") and app.config is None
+    assert asked == [(Path(sys.executable).parent, icon, facegen.__version__)]
     stamp = icon.stat().st_mtime_ns
     shortcuts.this_app(tmp_path)
     assert icon.stat().st_mtime_ns == stamp
+
+
+def test_the_shortcuts_run_the_copy_once_it_is_made(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    copy = tmp_path / "Scripts" / app_exe.APP_EXE
+    monkeypatch.setattr(app_exe, "ensure", lambda scripts, icon, version: copy)
+    app = shortcuts.this_app(tmp_path)
+    assert app.program == str(copy)
+    [link] = shortcuts.app_shortcuts(
+        {"programs": FOLDERS["programs"]}, program=app.program, root=ROOT, icon=app.icon
+    )
+    assert link.target == str(copy) and link.arguments == "-m facegen.desktop app"

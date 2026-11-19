@@ -7,7 +7,8 @@ rem   3. uv sync: Python 3.12 and the libraries (about 3 GB the first time, PyTo
 rem      packages a setup cut short left half-installed are installed again (venv_check.py).
 rem   4. facegen launch: the prebuilt Rust extension (a failure is only a warning), then the
 rem      model files: their size is shown and they are downloaded only after one "y".
-rem   5. Start facegen's window with pythonw.exe (no console), and close this one.
+rem   5. Start facegen's window with no console, and close this one: facegen-app.exe (the
+rem      venv's pythonw.exe under facegen's name and icon, made by step 4), else pythonw.exe.
 rem
 rem   Start.bat --shortcut   also puts a facegen shortcut on the desktop and in the Start Menu.
 rem   Start.bat --update     first waits for facegen to quit and puts the newest release over
@@ -24,6 +25,7 @@ set "ROOT=%~dp0"
 set "LOG=%ROOT%data\logs\start.log"
 set "PY=%ROOT%.venv\Scripts\python.exe"
 set "PYW=%ROOT%.venv\Scripts\pythonw.exe"
+set "APP=%ROOT%.venv\Scripts\facegen-app.exe"
 set "SHORTCUT="
 set "UPDATE="
 if /i "%~1"=="--shortcut" set "SHORTCUT=1"
@@ -139,7 +141,8 @@ call :log "facegen shortcuts: exit %ERRORLEVEL%"
 rem --- 5. the window ---------------------------------------------------------------------------
 :start_app
 call :log "starting facegen app"
-start "" "%PYW%" -m facegen.desktop app
+if not exist "%APP%" set "APP=%PYW%"
+start "" "%APP%" -m facegen.desktop app
 goto done
 
 :fail_running

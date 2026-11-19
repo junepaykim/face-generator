@@ -180,6 +180,10 @@ def test_the_window_command_runs_this_python() -> None:
         "--hidden",
     ]
     assert "--hidden" not in app_window.window_command(URL, False)
+    assert app_window.window_command(URL, False, r"C:\facegen\data\app\facegen.ico")[-2:] == [
+        "--icon",
+        r"C:\facegen\data\app\facegen.ico",
+    ]
 
 
 @pytest.mark.parametrize("missing", [True, False])
@@ -191,8 +195,9 @@ def test_child_main_in_this_process(missing: bool) -> None:
     made: list[object] = []
 
     class Win:
-        def __init__(self, url: str, *, hidden: bool, on_hide) -> None:  # type: ignore[no-untyped-def]
+        def __init__(self, url: str, *, hidden: bool, on_hide, icon: str | None) -> None:  # type: ignore[no-untyped-def]
             self.closed = threading.Event()
+            self.icon = icon
             made.append(self)
 
         def run(self) -> None:
@@ -207,11 +212,18 @@ def test_child_main_in_this_process(missing: bool) -> None:
             return None
 
     code = app_window.child_main(
-        URL, False, iter(['{"cmd": "close"}\n']), out, missing=lambda: missing, make=Win
+        URL,
+        False,
+        iter(['{"cmd": "close"}\n']),
+        out,
+        icon="facegen.ico",
+        missing=lambda: missing,
+        make=Win,
     )
     if missing:
         assert code == 3 and made == []
         assert '"type":"unavailable"' in out.getvalue()
     else:
         assert code == 0 and len(made) == 1
+        assert made[0].icon == "facegen.ico"  # type: ignore[attr-defined]
         assert out.getvalue().splitlines() == ['{"type":"ready"}']

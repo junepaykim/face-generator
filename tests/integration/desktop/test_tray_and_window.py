@@ -10,6 +10,7 @@ from typing import Any, Self
 
 from support.desktop import FakeStartup, FakeSyncer, FakeWorker, status
 
+from facegen.desktop import app_window
 from facegen.desktop.app_controller import NOTICE_CHARS, NOTICE_TITLE_CHARS, AppController, Notice
 from facegen.desktop.app_window import AppWindow
 from facegen.desktop.tray import TrayIcon
@@ -248,6 +249,17 @@ def test_the_window_shows_the_dashboard() -> None:
     assert kw["min_size"][0] <= kw["width"]
 
 
+def test_the_window_has_facegens_icon_and_app_id() -> None:
+    webview = FakeWebview()
+    win = AppWindow("http://127.0.0.1:8765/", icon=r"C:\facegen\facegen.ico", webview=webview)
+    assert webview.window is not None
+    webview.window.closed.set()
+    win.run()
+    assert webview.started == {"icon": r"C:\facegen\facegen.ico"}
+    assert app_window.APP_ID == "facegen.app"
+    app_window.use_app_id(os_name="posix")  # nothing to do off Windows
+
+
 def test_closing_the_window_hides_it_and_quit_closes_it_for_good() -> None:
     webview = FakeWebview()
     hidden: list[str] = []
@@ -266,7 +278,7 @@ def test_closing_the_window_hides_it_and_quit_closes_it_for_good() -> None:
     win.destroy()  # Quit
     runner.join(5)
     assert not runner.is_alive() and fake.closed.is_set()
-    assert webview.started == {}
+    assert webview.started == {"icon": None}  # no icon given: the program's own
 
 
 def test_browse_uses_the_windows_folder_dialog() -> None:

@@ -117,6 +117,7 @@ class Record:
     def __init__(self, *, webview2: bool = True, tray_error: Exception | None = None) -> None:
         self.trays: list[FakeTray] = []
         self.windows: list[FakeWindow] = []
+        self.icons: list[str | None] = []
         self.browser: list[str] = []
         self.errors: list[tuple[str, str]] = []
         self.webview2 = webview2
@@ -135,7 +136,9 @@ class Record:
         hidden: bool,
         on_hide: Callable[[], None],
         on_unavailable: Callable[[str], None],
+        icon: str | None,
     ) -> FakeWindow:
+        self.icons.append(icon)
         window = FakeWindow(url, hidden, on_hide, on_unavailable)
         self.windows.append(window)
         if not self.webview2:  # the window process says so and ends
@@ -230,6 +233,8 @@ def test_the_app_from_start_to_quit(config_file: Path, tmp_path: Path) -> None:
     (tray,) = record.trays
     url = f"http://127.0.0.1:{port}/"
     assert window.url == url and not window.hidden
+    (icon,) = record.icons  # facegen's .ico for the taskbar, on Windows
+    assert (icon or "").endswith("facegen.ico") if os.name == "nt" else icon is None
     wait_for(lambda: tray.mode == "run")  # the tray has the main thread; the window its process
     assert app.started.url == url and record.browser == []
     wait_for(lambda: len(tray.views) > 2)  # the heartbeat runs
@@ -483,6 +488,8 @@ def test_pythonw_counts_as_no_console_whatever_handles_it_has(
     assert desktop.has_console()  # pytest gives this process stdout and stderr
     monkeypatch.setattr(sys, "executable", r"C:\facegen\.venv\Scripts\pythonw.exe")
     assert not desktop.has_console()  # Start.bat's console closes right after starting it
+    monkeypatch.setattr(sys, "executable", r"C:\facegen\.venv\Scripts\facegen-app.exe")
+    assert not desktop.has_console()  # pythonw.exe's copy under facegen's name
     monkeypatch.setattr(sys, "executable", r"C:\facegen\.venv\Scripts\python.exe")
     assert desktop.has_console()
     monkeypatch.setattr(sys, "stdout", None)

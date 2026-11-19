@@ -620,7 +620,7 @@ def cmd_shortcuts(args: argparse.Namespace, data_dir: Path, out: TextIO) -> int:
     folders = shortcuts.windows_folders()
     app = shortcuts.this_app(data_dir, args.config)
     links = shortcuts.app_shortcuts(
-        folders, pythonw=app.pythonw, root=app.root, icon=app.icon, config=app.config
+        folders, program=app.program, root=app.root, icon=app.icon, config=app.config
     )
     if not links:
         print("Neither the desktop nor the Start Menu folder was found.", file=out)

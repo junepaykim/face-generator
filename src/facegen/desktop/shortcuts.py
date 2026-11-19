@@ -1,14 +1,16 @@
 """Windows desktop, Start Menu and Startup shortcuts for the desktop app.
 
-Shortcuts run `.venv`'s `pythonw.exe -m facegen.desktop app` without a console. Start with
-Windows adds `--minimized`; it is off until enabled in the tray, which creates or deletes
-only our facegen.lnk.
+Shortcuts run `.venv`'s `facegen-app.exe -m facegen.desktop app` without a console. That
+program is pythonw.exe's launcher under facegen's name and icon (app_exe.py); where it
+cannot be made, they run pythonw.exe itself. Start with Windows adds `--minimized`; it is
+off until enabled in the tray, which creates or deletes only our facegen.lnk.
 Known Folders follow relocated directories, including OneDrive. WScript.Shell writes the
 shortcuts through PowerShell's -EncodedCommand so paths need no command-line quoting.
 
 The installer's shortcuts start Start.bat, as there is no .venv until the first setup.
-`refresh` (run by `facegen launch` once that setup is done) points those at pythonw.exe, so
-later starts show no console; a shortcut that targets anything else is left alone.
+`refresh` (run by `facegen launch` once that setup is done) points those, and the ones an
+earlier version pointed at pythonw.exe, at the app, so later starts show no console and
+carry facegen's name; a shortcut that targets anything else is left alone.
 """
 
 from __future__ import annotations
@@ -64,7 +66,7 @@ def quote_arg(text: str) -> str:
 
 
 def app_arguments(*, minimized: bool = False, config: str | None = None) -> str:
-    """The arguments pythonw.exe is given: the desktop app, minimised to the tray or not."""
+    """The arguments the program is given: the desktop app, minimised to the tray or not."""
     parts = ["-m", "facegen.desktop"]
     if config:
         parts += ["--config", quote_arg(config)]
@@ -91,24 +93,24 @@ def link_path(folder: str) -> str:
 
 
 def app_shortcuts(
-    folders: Mapping[str, str], *, pythonw: str, root: str, icon: str, config: str | None = None
+    folders: Mapping[str, str], *, program: str, root: str, icon: str, config: str | None = None
 ) -> list[Shortcut]:
     """The desktop's and the Start Menu's shortcut (each folder that is known)."""
     arguments = app_arguments(config=config)
     return [
-        Shortcut(link_path(folders[name]), pythonw, arguments, root, icon)
+        Shortcut(link_path(folders[name]), program, arguments, root, icon)
         for name in ("desktop", "programs")
         if folders.get(name)
     ]
 
 
 def startup_shortcut(
-    folder: str, *, pythonw: str, root: str, icon: str, config: str | None = None
+    folder: str, *, program: str, root: str, icon: str, config: str | None = None
 ) -> Shortcut:
     """The Startup folder's shortcut: the app minimised to the tray."""
     return Shortcut(
         link_path(folder),
-        pythonw,
+        program,
         app_arguments(minimized=True, config=config),
         root,
         icon,
@@ -214,9 +216,10 @@ def write(shortcuts: Sequence[Shortcut], *, run: Callable[..., object] | None = 
         raise ShortcutError(f"the shortcut could not be written: {last}")
 
 
-def refresh_script(links: Sequence[Shortcut], start_bat: str) -> str:
-    """PowerShell that rewrites each of `links` that exists and starts `start_bat` (compared
-    without case), and prints the paths it rewrote."""
+def refresh_script(links: Sequence[Shortcut], replacing: Sequence[str]) -> str:
+    """PowerShell that rewrites each of `links` that exists and starts one of `replacing`
+    (compared without case), and prints the paths it rewrote."""
+    targets = "@(" + ", ".join(ps_string(t) for t in replacing) + ")"
     lines = [
         "$ErrorActionPreference = 'Stop'",
         "[Console]::OutputEncoding = [Text.Encoding]::UTF8",
@@ -227,12 +230,16 @@ def refresh_script(links: Sequence[Shortcut], start_bat: str) -> str:
         lines += [
             f"if (Test-Path -LiteralPath {ps_string(s.path)}) {{",
             f"  $s = $shell.CreateShortcut({ps_string(s.path)})",
-            f"  if ($s.TargetPath -ieq {ps_string(start_bat)}) {{",
+            f"  if ({targets} -icontains $s.TargetPath) {{",
             f"    $s.TargetPath = {ps_string(s.target)}",
             f"    $s.Arguments = {ps_string(s.arguments)}",
             f"    $s.WorkingDirectory = {ps_string(s.working_dir)}",
             f"    $s.IconLocation = {ps_string(s.icon + ',0')}",
             f"    $s.Description = {ps_string(s.description)}",
+        ]
+        if s.minimized:
+            lines.append(f"    $s.WindowStyle = {WINDOW_MINIMIZED}")
+        lines += [
             "    $s.Save()",
             f"    Write-Output {ps_string(s.path)}",
             "  }",
@@ -243,15 +250,16 @@ def refresh_script(links: Sequence[Shortcut], start_bat: str) -> str:
 
 def refresh(
     links: Sequence[Shortcut],
-    start_bat: str,
+    replacing: Sequence[str],
     *,
     run: Callable[..., object] | None = None,
     exists: Callable[[str], bool] = os.path.isfile,
 ) -> list[str]:
-    """Point the installer's Start.bat shortcuts at pythonw.exe (module docstring). Returns the
-    shortcuts rewritten; raises ShortcutError. Without any of `links` on disk, nothing runs."""
+    """Point those of `links` that start one of `replacing` (Start.bat, an earlier
+    pythonw.exe) at the app (module docstring). Returns the shortcuts rewritten; raises
+    ShortcutError. Without any of `links` on disk, or nothing to replace, nothing runs."""
     present = [s for s in links if exists(s.path)]
-    if not present:
+    if not present or not replacing:
         return []
     powershell = procs.windows_tool(POWERSHELL, "windows", os.environ)
     if powershell is None:
@@ -259,7 +267,7 @@ def refresh(
     runner = run or procs.run_quiet
     try:
         done = runner(
-            powershell_command(powershell, refresh_script(present, start_bat)),
+            powershell_command(powershell, refresh_script(present, replacing)),
             timeout=POWERSHELL_SECONDS,
             capture_output=True,
             text=True,
@@ -282,21 +290,34 @@ class AppPaths:
     """What a shortcut to this checkout of facegen needs."""
 
     root: str
-    pythonw: str
+    program: str
+    """facegen-app.exe, else the venv's pythonw.exe."""
     icon: str
     config: str | None = None
 
 
+def _version() -> str:
+    import facegen
+
+    try:
+        return str(facegen.__version__)
+    except Exception:  # noqa: BLE001 - only the copy's version information shows it
+        return "0"
+
+
 def this_app(data_dir: Path, config: Path | None = None) -> AppPaths:
-    """This checkout: the repository folder, the venv's pythonw.exe, the icon (written into
+    """This checkout: the repository folder, the program the shortcuts run (facegen-app.exe,
+    made or updated here on Windows, else the venv's pythonw.exe) and the icon (written into
     the data folder if it is not there yet)."""
+    from facegen.desktop import app_exe
     from facegen.desktop.app_icon import write_ico
     from facegen.locations import PROJECT_ROOT
 
     icon = write_ico(data_dir / "app")
+    program = app_exe.ensure(Path(sys.executable).parent, icon, _version())
     return AppPaths(
         str(PROJECT_ROOT),
-        pythonw_beside(sys.executable),
+        str(program) if program else pythonw_beside(sys.executable),
         str(icon),
         str(config.resolve()) if config else None,
     )
@@ -313,7 +334,7 @@ class StartupShortcut:
         writer: Callable[[Sequence[Shortcut]], None] = write,
     ) -> None:
         self.shortcut = startup_shortcut(
-            folder, pythonw=app.pythonw, root=app.root, icon=app.icon, config=app.config
+            folder, program=app.program, root=app.root, icon=app.icon, config=app.config
         )
         self._writer = writer
 

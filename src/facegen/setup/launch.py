@@ -198,7 +198,8 @@ def data_dir_of(
 
 
 def refresh_shortcuts(data_dir: Path, config: Path | None, out: TextIO) -> None:
-    """The installer's shortcuts to Start.bat, pointed at pythonw.exe now that it exists."""
+    """The installer's shortcuts to Start.bat, and those an earlier version pointed at
+    pythonw.exe, pointed at the app (facegen-app.exe where it could be made)."""
     import os
 
     if os.name != "nt":
@@ -210,9 +211,21 @@ def refresh_shortcuts(data_dir: Path, config: Path | None, out: TextIO) -> None:
         folders = shortcuts.windows_folders()
         app = shortcuts.this_app(data_dir, config)
         links = shortcuts.app_shortcuts(
-            folders, pythonw=app.pythonw, root=app.root, icon=app.icon, config=app.config
+            folders, program=app.program, root=app.root, icon=app.icon, config=app.config
         )
-        done = shortcuts.refresh(links, str(PROJECT_ROOT / "Start.bat"))
+        if folders.get("startup"):
+            links.append(
+                shortcuts.startup_shortcut(
+                    folders["startup"],
+                    program=app.program,
+                    root=app.root,
+                    icon=app.icon,
+                    config=app.config,
+                )
+            )
+        earlier = (str(PROJECT_ROOT / "Start.bat"), shortcuts.pythonw_beside(sys.executable))
+        replacing = [t for t in earlier if t.lower() != app.program.lower()]
+        done = shortcuts.refresh(links, replacing)
     except Exception as exc:  # noqa: BLE001 - the shortcuts still start Start.bat
         print(f"Warning: the shortcuts were not updated: {exc}", file=out, flush=True)
         return

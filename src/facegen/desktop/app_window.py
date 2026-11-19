@@ -16,6 +16,10 @@ exchanges one JSON object per line over stdin/stdout:
 Closing hides the window while the tray/worker continue; Open Dashboard shows or restarts
 it, and Quit destroys it. Browse opens its folder dialog. Without WebView2, the child
 reports unavailability so the app uses a browser; pywebview's IE fallback cannot run the UI.
+
+The child takes an AppUserModelID of its own (APP_ID) and `--icon`, facegen's .ico. The
+taskbar then shows facegen's icon on the window's button instead of Python's, and does
+not group the window with other Python programs.
 """
 
 from __future__ import annotations
@@ -23,6 +27,7 @@ from __future__ import annotations
 import argparse
 import itertools
 import logging
+import os
 import subprocess
 import sys
 import threading
@@ -36,6 +41,8 @@ from facegen.platform.pipes import JsonWriter, decode, drain_lines
 logger = logging.getLogger("facegen")
 
 TITLE = "facegen"
+APP_ID = "facegen.app"
+"""The window process's AppUserModelID (module docstring)."""
 SIZE = (1280, 860)
 MIN_SIZE = (640, 480)
 """Phase 12b: below 960 px the sidebar keeps only its icons, so pages still fit at 640."""
@@ -48,6 +55,22 @@ QUICK_FAILURE_SECONDS = 5.0
 """A window process that ends sooner than this after starting failed to start."""
 QUICK_FAILURES = 2
 """After this many quick failures in a row the window is given up: the browser is used."""
+
+
+def use_app_id(os_name: str = os.name) -> None:
+    """Give this process APP_ID on Windows (nothing elsewhere). A failure is only logged:
+    the taskbar then shows the window as Python's, as before."""
+    if os_name != "nt":
+        return
+    import ctypes
+
+    try:
+        result = ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)  # type: ignore[attr-defined]
+    except (OSError, AttributeError) as exc:
+        logger.warning("window: no app ID of its own: %s", exc)
+        return
+    if result != 0:
+        logger.warning("window: no app ID of its own (HRESULT 0x%08X)", result & 0xFFFFFFFF)
 
 
 def webview2_missing() -> bool:
@@ -71,6 +94,7 @@ class AppWindow:
         *,
         hidden: bool = False,
         on_hide: Callable[[], None] | None = None,
+        icon: str | None = None,
         webview: Any = None,
     ) -> None:
         if webview is None:
@@ -78,6 +102,7 @@ class AppWindow:
 
         self._webview = webview
         self._on_hide = on_hide
+        self._icon = icon
         self._closing_for_good = False
         self.window = webview.create_window(
             TITLE,
@@ -101,8 +126,9 @@ class AppWindow:
         return False
 
     def run(self) -> None:
-        """The window's loop in this thread (the main one), until `destroy`."""
-        self._webview.start()
+        """The window's loop in this thread (the main one), until `destroy`. pywebview
+        gives the window `icon` (title bar and taskbar), else the running program's."""
+        self._webview.start(icon=self._icon)
 
     def show(self) -> None:
         try:
@@ -146,6 +172,7 @@ def child_main(
     commands: Iterable[str],
     out: TextIO,
     *,
+    icon: str | None = None,
     missing: Callable[[], bool] = webview2_missing,
     make: Callable[..., AppWindow] = AppWindow,
 ) -> int:
@@ -161,7 +188,7 @@ def child_main(
     if missing():
         send({"type": "unavailable", "reason": NO_WEBVIEW2})
         return 3
-    window = make(url, hidden=hidden, on_hide=lambda: send({"type": "hidden"}))
+    window = make(url, hidden=hidden, on_hide=lambda: send({"type": "hidden"}), icon=icon)
 
     def browse(message: dict[str, Any]) -> None:
         start = message.get("start")
@@ -194,12 +221,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m facegen.app_window")
     parser.add_argument("--url", required=True)
     parser.add_argument("--hidden", action="store_true")
+    parser.add_argument("--icon", help="the window's .ico file")
     args = parser.parse_args(argv)
+    use_app_id()
     commands, out = protocol_streams(sys.stdin, sys.stdout)
-    return child_main(args.url, args.hidden, commands, out)
+    return child_main(args.url, args.hidden, commands, out, icon=args.icon)
 
 
-def window_command(url: str, hidden: bool) -> list[str]:
+def window_command(url: str, hidden: bool, icon: str | None = None) -> list[str]:
     return [
         sys.executable,
         "-m",
@@ -207,6 +236,7 @@ def window_command(url: str, hidden: bool) -> list[str]:
         "--url",
         url,
         *(["--hidden"] if hidden else []),
+        *(["--icon", icon] if icon else []),
     ]
 
 

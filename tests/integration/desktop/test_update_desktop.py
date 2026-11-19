@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import base64
 import io
+import os
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
@@ -120,6 +121,8 @@ FOLDERS = {
     "programs": r"C:\Users\me\AppData\Roaming\Microsoft\Windows\Start Menu\Programs",
 }
 PYW = r"C:\Users\me\AppData\Local\facegen\.venv\Scripts\pythonw.exe"
+APP = r"C:\Users\me\AppData\Local\facegen\.venv\Scripts\facegen-app.exe"
+STARTUP = r"C:\Users\me\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup"
 ROOT = r"C:\Users\me\AppData\Local\facegen"
 ICON = ROOT + r"\data\app\facegen.ico"
 START_BAT = ROOT + r"\Start.bat"
@@ -129,10 +132,10 @@ def decoded(args: Sequence[str]) -> str:
     return base64.b64decode(args[args.index("-EncodedCommand") + 1]).decode("utf-16-le")
 
 
-def test_refresh_points_only_start_bat_shortcuts_at_the_app(
+def test_refresh_points_only_our_earlier_shortcuts_at_the_app(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    links = shortcuts.app_shortcuts(FOLDERS, pythonw=PYW, root=ROOT, icon=ICON)
+    links = shortcuts.app_shortcuts(FOLDERS, program=APP, root=ROOT, icon=ICON)
     monkeypatch.setattr(procs, "windows_tool", lambda *a, **k: "powershell.exe")
     calls: list[Sequence[str]] = []
 
@@ -141,31 +144,42 @@ def test_refresh_points_only_start_bat_shortcuts_at_the_app(
         return subprocess.CompletedProcess(args, 0, links[1].path + "\r\n", "")
 
     # Only the Start Menu's is there: only it is looked at.
-    done = shortcuts.refresh(links, START_BAT, run=run, exists=lambda p: p == links[1].path)
+    replacing = [START_BAT, PYW]
+    done = shortcuts.refresh(links, replacing, run=run, exists=lambda p: p == links[1].path)
     assert done == [links[1].path]
     script = decoded(calls[0])
     assert links[0].path not in script and "Test-Path -LiteralPath" in script
-    assert f"if ($s.TargetPath -ieq '{START_BAT}')" in script
-    assert f"$s.TargetPath = '{PYW}'" in script
+    assert f"if (@('{START_BAT}', '{PYW}') -icontains $s.TargetPath)" in script
+    assert f"$s.TargetPath = '{APP}'" in script
     assert "$s.Arguments = '-m facegen.desktop app'" in script
-    # None there: PowerShell is not even started.
-    assert shortcuts.refresh(links, START_BAT, run=run, exists=lambda p: False) == []
+    assert "WindowStyle" not in script
+    # None there, or nothing to replace: PowerShell is not even started.
+    assert shortcuts.refresh(links, replacing, run=run, exists=lambda p: False) == []
+    assert shortcuts.refresh(links, [], run=run, exists=lambda p: True) == []
     assert len(calls) == 1
 
     def fails(args: Sequence[str], **kw: object) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(args, 1, "", "Access is denied.\n")
 
     with pytest.raises(shortcuts.ShortcutError, match="Access is denied"):
-        shortcuts.refresh(links, START_BAT, run=fails, exists=lambda p: True)
+        shortcuts.refresh(links, replacing, run=fails, exists=lambda p: True)
+
+
+def test_the_refreshed_startup_shortcut_stays_minimised() -> None:
+    link = shortcuts.startup_shortcut(STARTUP, program=APP, root=ROOT, icon=ICON)
+    script = shortcuts.refresh_script([link], [PYW])
+    assert "$s.Arguments = '-m facegen.desktop app --minimized'" in script
+    assert f"$s.WindowStyle = {shortcuts.WINDOW_MINIMIZED}" in script
 
 
 def test_paths_with_quotes_stay_whole_in_the_refresh() -> None:
     link = shortcuts.Shortcut(r"C:\Users\O'Neil\Desktop\facegen.lnk", PYW, "-m x", ROOT, ICON)
-    script = shortcuts.refresh_script([link], r"C:\Users\O'Neil\facegen\Start.bat")
+    script = shortcuts.refresh_script([link], [r"C:\Users\O'Neil\facegen\Start.bat"])
     assert r"'C:\Users\O''Neil\Desktop\facegen.lnk'" in script
-    assert r"-ieq 'C:\Users\O''Neil\facegen\Start.bat'" in script
+    assert r"@('C:\Users\O''Neil\facegen\Start.bat') -icontains" in script
 
 
+@pytest.mark.skipif(os.name == "nt", reason="on Windows it would change this PC's shortcuts")
 def test_launch_leaves_shortcuts_alone_off_windows(tmp_path: Path) -> None:
     out = io.StringIO()
     launch.refresh_shortcuts(tmp_path, None, out)

@@ -4,8 +4,9 @@ Both share runtime.composition with `serve`, run the server in a thread and keep
 on the main thread. Closing the window hides it; Quit stops downloads, the save watcher,
 the worker process (releasing the GPU), the server, then the tray and window.
 
-Console-less starts (`pythonw.exe -m facegen.desktop app`) hold data/app.lock, forward a
-second launch to the running app and route stdout/stderr to data/logs/facegen.log.
+Console-less starts (`facegen-app.exe -m facegen.desktop app`, or pythonw.exe) hold
+data/app.lock, forward a second launch to the running app and route stdout/stderr to
+data/logs/facegen.log.
 Startup failures show a message box naming the log. Top-level imports stay standard-library
 only so missing dependencies can reach that error boundary. `Shell` supplies GUI adapters.
 """
@@ -26,6 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PureWindowsPath
 from typing import TYPE_CHECKING, Any, Protocol
 
+from facegen.desktop.app_exe import APP_EXE
 from facegen.locations import PROJECT_ROOT
 
 if TYPE_CHECKING:
@@ -64,7 +66,10 @@ class WindowLike(Protocol):
     def browse(self, start: str | None) -> str | None: ...
 
 
-MakeWindow = Callable[[str, bool, Callable[[], None], Callable[[str], None]], WindowLike]
+MakeWindow = Callable[
+    [str, bool, Callable[[], None], Callable[[str], None], str | None], WindowLike
+]
+"""(url, hidden, on_hide, on_unavailable, icon file)"""
 
 
 def _make_tray(controller: AppController) -> TrayLike:
@@ -74,13 +79,38 @@ def _make_tray(controller: AppController) -> TrayLike:
 
 
 def _make_window(
-    url: str, hidden: bool, on_hide: Callable[[], None], on_unavailable: Callable[[str], None]
+    url: str,
+    hidden: bool,
+    on_hide: Callable[[], None],
+    on_unavailable: Callable[[str], None],
+    icon: str | None,
 ) -> WindowLike:
-    from facegen.desktop.app_window import WindowProcess
+    from functools import partial
 
-    window = WindowProcess(url, hidden=hidden, on_hide=on_hide, on_unavailable=on_unavailable)
+    from facegen.desktop.app_window import WindowProcess, window_command
+
+    window = WindowProcess(
+        url,
+        hidden=hidden,
+        on_hide=on_hide,
+        on_unavailable=on_unavailable,
+        command=partial(window_command, icon=icon),
+    )
     window.start()
     return window
+
+
+def _window_icon(data_dir: Path) -> str | None:
+    """facegen's .ico for the window's title bar and taskbar button, on Windows."""
+    if os.name != "nt":
+        return None
+    from facegen.desktop.app_icon import write_ico
+
+    try:
+        return str(write_ico(data_dir / "app"))
+    except OSError as exc:
+        logger.warning("window: no icon of its own: %s", exc)
+        return None
 
 
 def _startup_switch(data_dir: Path, config: Path | None) -> StartupSwitch | None:
@@ -214,9 +244,10 @@ class LogStream(io.TextIOBase):
 
 
 def has_console() -> bool:
-    """False under pythonw.exe, whatever handles it was given (Start.bat's console closes
-    straight after starting it), and whenever there is no stdout or stderr."""
-    if PureWindowsPath(sys.executable or "").name.lower() == "pythonw.exe":
+    """False under pythonw.exe or its copy facegen-app.exe, whatever handles it was given
+    (Start.bat's console closes straight after starting it), and whenever there is no
+    stdout or stderr."""
+    if PureWindowsPath(sys.executable or "").name.lower() in ("pythonw.exe", APP_EXE):
         return False
     return sys.stdout is not None and sys.stderr is not None
 
@@ -497,7 +528,9 @@ def _run(
         tray = shell.make_tray(controller)
         refresher = Refresher(controller, tray, paths.data_dir)
         if want_window:
-            window = shell.make_window(rt.url, bool(args.minimized), on_hide, on_unavailable)
+            window = shell.make_window(
+                rt.url, bool(args.minimized), on_hide, on_unavailable, _window_icon(paths.data_dir)
+            )
             holder["window"] = window
         started.controller, started.window, started.tray, started.url = (
             controller,
@@ -612,8 +645,8 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 
 
 def main(argv: Sequence[str] | None = None, *, shell: Shell | None = None) -> int:
-    """`pythonw.exe -m facegen.desktop app|tray`: no console, and a message box if starting
-    fails."""
+    """`facegen-app.exe -m facegen.desktop app|tray` (or pythonw.exe): no console, and a
+    message box if starting fails."""
     shell = shell or Shell()
     try:
         args = parse_args(argv)
