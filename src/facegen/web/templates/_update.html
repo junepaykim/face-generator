@@ -9,7 +9,7 @@
     {% if update.how == "app" %}
     <form method="post" action="/update/install"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="primary" title="{{ tr('update.install_title') }}">{{ t("update.install") }}</button></form>
     {% endif %}
-    <form method="post" action="/update/later"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button>{{ t("update.later") }}</button></form>
+    <form method="post" action="/update/later"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="version" value="{{ u.latest }}"><button>{{ t("update.later") }}</button></form>
   </div>
 </section>
 {% endif %}

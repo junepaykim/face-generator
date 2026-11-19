@@ -45,7 +45,8 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
         form = await form_of(request)
         back = _safe_next(str(form.get("next") or ""), "/")
         if ctx.updates is not None:
-            await run_in_threadpool(ctx.updates.later)
+            version = form.get("version")
+            await run_in_threadpool(ctx.updates.later, str(version) if version else None)
         return _redirect(back)
 
     @router.post("/update/install", response_class=HTMLResponse)

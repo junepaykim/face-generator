@@ -16,13 +16,13 @@ def _safe_next(target: str | None, fallback: str) -> str:
 
 
 def _with_message(url: str, msg: str | None = None, err: str | None = None) -> str:
-    base, _, query = url.partition("?")
-    params = [p for p in query.split("&") if p and not p.startswith(("msg=", "err="))]
+    parts = urlsplit(url)
+    params = [p for p in parts.query.split("&") if p and not p.startswith(("msg=", "err="))]
     if msg:
         params.append(f"msg={quote(msg)}")
     if err:
         params.append(f"err={quote(err)}")
-    return base + ("?" + "&".join(params) if params else "")
+    return parts._replace(query="&".join(params)).geturl()
 
 
 def _redirect(url: str, msg: str | None = None, err: str | None = None) -> RedirectResponse:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -87,6 +88,29 @@ def test_the_same_or_an_older_release_is_not_offered(tmp_path: Path) -> None:
     for tags in (("v0.9.0",), ("v0.8.0",), ()):
         s = service(tmp_path, Releases(*tags))
         assert not s.check_now().available
+
+
+def test_later_during_a_check_keeps_that_version_dismissed(tmp_path: Path) -> None:
+    releases = Releases("v1.0.0")
+    fetching, resume = threading.Event(), threading.Event()
+
+    def fetch(url: str) -> Any:
+        if releases.asked:
+            fetching.set()
+            assert resume.wait(5)
+        return releases(url)
+
+    s = UpdateService(tmp_path / "data", lambda: True, root=app_folder(tmp_path), fetch=fetch)
+    assert s.check_now().offered
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        check = pool.submit(s.check_now)
+        try:
+            assert fetching.wait(5)
+            s.later("1.0.0")
+        finally:
+            resume.set()
+        assert not check.result(timeout=5).offered
+    assert s.status().available and not s.status().offered
 
 
 def test_a_failed_check_keeps_what_was_known(tmp_path: Path) -> None:

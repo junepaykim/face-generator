@@ -8,7 +8,7 @@ from collections.abc import Iterator
 from html import unescape
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote
+from urllib.parse import parse_qs, unquote, urlsplit
 
 import pytest
 from fastapi.testclient import TestClient
@@ -123,11 +123,14 @@ def test_without_the_desktop_app_it_says_how_to_update(config_file: Path, tmp_pa
 def test_later_puts_the_offer_off(env: Env) -> None:
     env.updates.check_now()
     with env.client(can_install=True) as client:
-        response = client.post("/update/later", data={"next": "/"})
+        assert 'name="version" value="1.0.0"' in card(client)
+        form = {"next": "/", "version": "1.0.0"}
+        response = client.post("/update/later", data=form)
         assert response.status_code == 303 and response.headers["location"] == "/"
         assert card(client) is None
         env.releases.tags.append("v1.1.0")
         env.updates.check_now()
+        client.post("/update/later", data=form)  # an older dashboard tab
         assert card(client) is not None
 
 
@@ -154,15 +157,18 @@ def test_update_now_needs_the_desktop_app_and_a_newer_release(env: Env) -> None:
 
 def test_check_now_asks_and_says_what_it_found(env: Env) -> None:
     with env.client() as client:
-        response = client.post("/update/check", data={"next": "/settings/advanced#about"})
-        assert response.status_code == 303
-        location = unquote(response.headers["location"])
-        assert (
-            location.startswith("/settings/advanced") and "facegen 1.0.0 is available" in location
+        response = client.post(
+            "/update/check", data={"next": "/settings/advanced?lang=en&err=previous#about"}
         )
+        assert response.status_code == 303
+        parts = urlsplit(response.headers["location"])
+        assert parts.path == "/settings/advanced" and parts.fragment == "about"
+        assert parse_qs(parts.query) == {"lang": ["en"], "msg": ["facegen 1.0.0 is available."]}
         env.releases.error = "could not reach GitHub: timed out"
-        location = unquote(client.post("/update/check").headers["location"])
-        assert "could not ask GitHub" in location and "timed out" not in location
+        parts = urlsplit(client.post("/update/check").headers["location"])
+        assert parts.fragment == "about"
+        error = parse_qs(parts.query)["err"][0]
+        assert "could not ask GitHub" in error and "timed out" not in error
         # The error itself is under Technical details in About this run.
         page = unescape(client.get("/settings/advanced").text)
         assert "could not reach GitHub: timed out" in page

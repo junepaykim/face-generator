@@ -88,11 +88,11 @@ class UpdateService:
             return False
 
     def status(self) -> UpdateStatus:
-        record = update.load_record(self.data_dir)
+        with self._lock:
+            record = update.load_record(self.data_dir)
+            checking = self._checking
         latest = record.latest if record else None
         available = update.is_newer(latest, self.current)
-        with self._lock:
-            checking = self._checking
         return UpdateStatus(
             enabled=self.enabled(),
             current=self.current,
@@ -107,7 +107,8 @@ class UpdateService:
         )
 
     def due(self) -> bool:
-        record = update.load_record(self.data_dir)
+        with self._lock:
+            record = update.load_record(self.data_dir)
         if record is None:
             return True
         wait = RETRY_EVERY if record.error else CHECK_EVERY
@@ -119,17 +120,21 @@ class UpdateService:
             with self._lock:
                 self._checking = True
             try:
-                old = update.load_record(self.data_dir)
                 try:
                     latest = update.latest_release(self._fetch)
                     error = None
                 except update.UpdateError as exc:
-                    latest, error = (old.latest if old else None), str(exc)
+                    latest, error = None, str(exc)
                     logger.info("update check failed: %s", exc)
-                record = update.CheckRecord(
-                    self._clock(), latest, error, old.dismissed if old else None
-                )
-                update.save_record(self.data_dir, record)
+                with self._lock:
+                    # Later may have dismissed the previous offer while the request was in flight.
+                    old = update.load_record(self.data_dir)
+                    if error is not None and old is not None:
+                        latest = old.latest
+                    record = update.CheckRecord(
+                        self._clock(), latest, error, old.dismissed if old else None
+                    )
+                    update.save_record(self.data_dir, record)
                 if error is None:
                     logger.info(
                         "update check: newest release %s (this is %s)",
@@ -141,11 +146,14 @@ class UpdateService:
                     self._checking = False
         return self.status()
 
-    def later(self) -> None:
-        """Put off the offer of the newest version."""
-        record = update.load_record(self.data_dir)
-        if record is not None and record.latest is not None:
-            update.save_record(self.data_dir, replace(record, dismissed=record.latest.version))
+    def later(self, version: str | None = None) -> None:
+        """Put off the displayed offer, provided it is still current."""
+        with self._lock:
+            record = update.load_record(self.data_dir)
+            if record is None or record.latest is None:
+                return
+            if version is None or version == record.latest.version:
+                update.save_record(self.data_dir, replace(record, dismissed=record.latest.version))
 
     def _main(self) -> None:
         if self._stop.wait(self._first_delay):
