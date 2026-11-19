@@ -31,6 +31,8 @@ uv run --no-sync ruff check src/facegen/web
   Every POST form needs `csrf_token`; fetch requests use `X-CSRF-Token`.
 - HTTP tests need a loopback `base_url` and a token obtained from the app's HTML.
   The default TestClient host is rejected; do not disable middleware to make tests pass.
+- Player action forms carry the career ID used to query their rows. Pass that career to
+  manual operations with `active_only=True` so a concurrent sync cannot retarget the edit.
 - Picture routes resolve paths beneath masters; thumbnails go in the thumb cache.
   Redirect targets must pass `_safe_next`.
 - Settings autosaves are serialized and send only dirty fields. Preserve edits made while

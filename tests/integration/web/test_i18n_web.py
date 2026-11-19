@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from factories import NEWGEN, RIVAL, player
 from fastapi.testclient import TestClient
-from support.web import KOREAN_WINDOWS, client_for, fake_worker, synced
+from support.web import KOREAN_WINDOWS, client_for, fake_worker, post_player_action, synced
 
 MINE = 1001
 KID = NEWGEN + 2
@@ -68,13 +68,14 @@ def test_the_language_switch_wins_over_the_window_and_can_be_undone(client: Test
 
 
 def test_flash_messages_follow_the_language(client: TestClient) -> None:
-    r = client.post(
-        "/players/action", data={"action": "pin", "pin": "never"}, headers=KOREAN_WINDOWS
+    r = post_player_action(
+        client, "/players/action", data={"action": "pin", "pin": "never"}, headers=KOREAN_WINDOWS
     )
     assert r.status_code == 303
     page = client.get(r.headers["location"], headers=KOREAN_WINDOWS).text
     assert "먼저 선수를 선택하세요." in page
-    r = client.post(
+    r = post_player_action(
+        client,
         "/players/action",
         data={"action": "pin", "pin": "never", "uid": [str(MINE), str(KID)]},
         headers=KOREAN_WINDOWS,

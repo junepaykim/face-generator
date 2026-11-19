@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from factories import NEWGEN, RIVAL, player
 from fastapi.testclient import TestClient
-from support.web import BASE, KOREAN_WINDOWS, client_for, fake_worker, synced
+from support.web import BASE, KOREAN_WINDOWS, client_for, fake_worker, post_player_action, synced
 
 from facegen.persistence import db
 from facegen.runtime.contracts import WorkerStatus
@@ -137,10 +137,12 @@ def test_review_says_why_in_words_and_folds_the_rest(env: Env) -> None:
 
 def test_a_refused_request_is_worded_in_the_pages_language(env: Env) -> None:
     client = client_for(env.config, env.db_path, fake_worker(env.config, env.db_path))
-    r = client.post(f"/players/{KID}/new-picture", headers=KOREAN_WINDOWS)  # no picture yet
+    r = post_player_action(
+        client, f"/players/{KID}/new-picture", headers=KOREAN_WINDOWS
+    )  # no picture yet
     page = client.get(r.headers["location"], headers=KOREAN_WINDOWS).text
     assert "Kid: 다시 그릴 그림이 없습니다. ‘생성’을 쓰세요" in page
-    r = client.post(f"/players/{KID}/new-picture")
+    r = post_player_action(client, f"/players/{KID}/new-picture")
     assert "Kid: no picture to draw again; use Generate" in client.get(r.headers["location"]).text
     bad = client.post(
         "/settings/save",

@@ -962,6 +962,7 @@ no_group = "in no group; use Generate and choose one"
 no_failed = "no failed picture to retry"
 
 [manual.error]
+career_changed = "This form no longer matches the active career. Reload the page and try again."
 named = "{name}: {why}"
 no_player = "No player {uid} in this career."
 busy = "{name} is being generated right now; try again in a moment."

@@ -13,7 +13,7 @@ import pytest
 from factories import NEWGEN, RIVAL, player
 from fakes import FakeRenderer, FakeTagger
 from fastapi.testclient import TestClient
-from support.web import KOREAN_WINDOWS, client_for, synced
+from support.web import KOREAN_WINDOWS, client_for, post_player_action, synced
 
 from facegen.datasource.kits import load_kits
 from facegen.i18n import Translator
@@ -80,7 +80,8 @@ def listed(page: str) -> list[int]:
 
 
 def post(env: Env, action: str, *uids: int) -> str:
-    r = env.client.post(
+    r = post_player_action(
+        env.client,
         "/players/action",
         data={"action": action, "uid": [str(u) for u in uids], "next": "/review", "pin": "never"},
     )

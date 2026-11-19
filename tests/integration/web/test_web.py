@@ -14,6 +14,7 @@ import pytest
 from factories import ABROAD, NEWGEN, PLAIN_PERSONALITY, RIVAL, WOMENS, player, snapshot
 from fakes import FakeRenderer, FakeTagger
 from fastapi.testclient import TestClient
+from support.web import post_player_action
 
 from facegen.core.records import Snapshot
 from facegen.datasource.kits import load_kits
@@ -191,7 +192,8 @@ def test_find_tick_and_generate_a_pre_existing_player(env: Env) -> None:
     """Phase 3 exit test: a pre-existing player from another club, found, ticked, drawn."""
     found = env.client.get("/players?q=famous").text
     assert f'name="uid" value="{STAR}"' in found
-    r = env.client.post(
+    r = post_player_action(
+        env.client,
         "/players/action",
         data={"uid": [str(STAR)], "action": "generate", "group": "b", "next": "/players?q=famous"},
     )
@@ -212,23 +214,65 @@ def test_find_tick_and_generate_a_pre_existing_player(env: Env) -> None:
     assert env.client.get(f"/pictures/{image_id}?size=50").status_code == 400
 
 
+@pytest.mark.parametrize("detail", [False, True], ids=["list", "detail"])
+def test_stale_player_form_never_writes_to_either_career(env: Env, detail: bool) -> None:
+    path = f"/players/{STAR}" if detail else "/players"
+    field = re.search(r'name="career_id" value="(\d+)"', env.client.get(path).text)
+    assert field is not None
+    conn = env.conn()
+    try:
+        run_sync(
+            conn,
+            snapshot(world(), career="two", file_name="two.fm"),
+            env.settings,
+            save_file="two.fm",
+            save_mtime=1_800_000_000.0,
+        )
+        target = load_career(conn)
+        assert target is not None and str(target.id) != field[1]
+        action = f"{path}/pin" if detail else "/players/action"
+        for token in ({"career_id": field[1]}, {}):  # includes forms opened before this update
+            response = env.client.post(
+                action, data={**token, "uid": str(STAR), "action": "pin", "pin": "b"}
+            )
+            assert (
+                "This form no longer matches the active career. Reload the page and try again"
+                in follow(env, response)
+            )
+        assert [
+            r[0] for r in conn.execute("SELECT pin FROM players WHERE unique_id = ?", (STAR,))
+        ] == [None, None]
+        assert not conn.execute(
+            "SELECT 1 FROM jobs WHERE unique_id = ? AND manual = 1", (STAR,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+
 def test_generate_needs_a_tick_and_skips_womens_players(env: Env) -> None:
-    text = follow(env, env.client.post("/players/action", data={"action": "generate"}))
+    text = follow(
+        env, post_player_action(env.client, "/players/action", data={"action": "generate"})
+    )
     assert "Tick at least one player" in text
-    r = env.client.post(
-        "/players/action", data={"uid": [str(WOMAN)], "action": "generate", "group": "a"}
+    r = post_player_action(
+        env.client,
+        "/players/action",
+        data={"uid": [str(WOMAN)], "action": "generate", "group": "a"},
     )
     assert "not in men&#39;s football" in follow(env, r)
 
 
 def test_bulk_pin(env: Env) -> None:
-    r = env.client.post(
-        "/players/action", data={"uid": [str(STAR), str(B_NEWGEN)], "action": "pin", "pin": "c"}
+    r = post_player_action(
+        env.client,
+        "/players/action",
+        data={"uid": [str(STAR), str(B_NEWGEN)], "action": "pin", "pin": "c"},
     )
     assert "Pin to Light: 2 queued" in follow(env, r)
     assert env.one("SELECT COUNT(*) FROM players WHERE pin = 'c'") == 2
     assert env.one("SELECT COUNT(*) FROM jobs WHERE status = 'queued' AND manual = 1") == 2
-    r = env.client.post(
+    r = post_player_action(
+        env.client,
         "/players/action",
         data={"uid": [str(STAR), str(B_NEWGEN)], "action": "pin", "pin": "never"},
     )
@@ -241,23 +285,23 @@ def test_player_page_actions(env: Env) -> None:
     assert env.client.get(f"/players/{MINE}").status_code == 200
     assert env.client.get("/players/424242").status_code == 404
 
-    text = follow(env, env.client.post(f"/players/{STAR}/new-picture"))
+    text = follow(env, post_player_action(env.client, f"/players/{STAR}/new-picture"))
     assert "no picture to draw again" in text
-    text = follow(env, env.client.post(f"/players/{MINE}/new-face"))
+    text = follow(env, post_player_action(env.client, f"/players/{MINE}/new-face"))
     assert "New face queued" in text
     assert "queued: new face" in env.client.get(f"/players/{MINE}").text
-    text = follow(env, env.client.post(f"/players/{MINE}/cancel"))
+    text = follow(env, post_player_action(env.client, f"/players/{MINE}/cancel"))
     assert "Request cancelled" in text
 
-    text = follow(env, env.client.post(f"/players/{STAR}/pin", data={"pin": "a"}))
+    text = follow(env, post_player_action(env.client, f"/players/{STAR}/pin", data={"pin": "a"}))
     assert "Pinned to Detailed and queued" in text
-    text = follow(env, env.client.post(f"/players/{STAR}/pin", data={"pin": ""}))
+    text = follow(env, post_player_action(env.client, f"/players/{STAR}/pin", data={"pin": ""}))
     assert "Pin cleared" in text
 
-    text = follow(env, env.client.post(f"/players/{MINE}/remove"))
+    text = follow(env, post_player_action(env.client, f"/players/{MINE}/remove"))
     assert "Picture removed" in text and "Reload Skin" in text
     assert env.one("SELECT pin FROM players WHERE unique_id = ?", MINE) == "never"
-    assert env.client.post(f"/players/{MINE}/bogus").status_code == 303
+    assert post_player_action(env.client, f"/players/{MINE}/bogus").status_code == 303
 
 
 def test_player_page_shows_personality_and_what_it_weights(env: Env) -> None:
@@ -273,26 +317,33 @@ def test_player_page_shows_personality_and_what_it_weights(env: Env) -> None:
 
 def test_restore_an_earlier_picture_from_the_history(env: Env) -> None:
     env.drain()
-    follow(env, env.client.post(f"/players/{MINE}/new-picture"))
+    follow(env, post_player_action(env.client, f"/players/{MINE}/new-picture"))
     env.drain()
     v1 = env.one("SELECT id FROM images WHERE unique_id = ? AND version = 1", MINE)
     page = env.client.get(f"/players/{MINE}").text
     assert "History" in page and f'name="image_id" value="{v1}"' in page
     assert "Drawn with v1's face as a reference" in page  # at my club: v1 was the reference
 
-    text = follow(env, env.client.post(f"/players/{MINE}/restore", data={"image_id": str(v1)}))
+    text = follow(
+        env, post_player_action(env.client, f"/players/{MINE}/restore", data={"image_id": str(v1)})
+    )
     assert "v1 is the current picture again" in text and "Reload Skin" in text
     assert env.one("SELECT version FROM images WHERE unique_id = ? AND is_current = 1", MINE) == 1
     assert "current (restored)" in env.client.get(f"/players/{MINE}").text
-    text = follow(env, env.client.post(f"/players/{MINE}/restore", data={"image_id": str(v1)}))
+    text = follow(
+        env, post_player_action(env.client, f"/players/{MINE}/restore", data={"image_id": str(v1)})
+    )
     assert "already the current picture" in text
-    text = follow(env, env.client.post(f"/players/{MINE}/restore", data={"image_id": "x"}))
+    text = follow(
+        env, post_player_action(env.client, f"/players/{MINE}/restore", data={"image_id": "x"})
+    )
     assert "Bad picture ID" in text
 
 
 def test_new_picture_for_ticked_players(env: Env) -> None:
     env.drain()
-    r = env.client.post(
+    r = post_player_action(
+        env.client,
         "/players/action",
         data={"action": "new-picture", "uid": [str(MINE), str(STAR)], "next": "/players"},
     )
@@ -324,7 +375,7 @@ def test_review_page_and_retry(env: Env) -> None:
     assert candidate is not None
     assert env.client.get(f"/files?path={candidate.group(1)}&size=192").status_code == 200
     assert '<span class="count">1</span>' in env.client.get("/").text
-    r = env.client.post(f"/players/{B_NEWGEN}/retry", data={"next": "/review"})
+    r = post_player_action(env.client, f"/players/{B_NEWGEN}/retry", data={"next": "/review"})
     assert r.headers["location"].startswith("/review?msg=")
     assert "No players to review right now." in follow(env, r)
 
@@ -633,7 +684,8 @@ def test_csrf_is_required_even_with_no_origin_or_same_origin(env: Env) -> None:
     assert page.headers["X-Frame-Options"] == "DENY"
     assert page.headers["Cache-Control"] == "no-store"
     # Real browser form submission, including downstream body parsing, without a header.
-    r = env.client.post(
+    r = post_player_action(
+        env.client,
         "/players/action",
         data={
             "csrf_token": token,
@@ -653,6 +705,8 @@ def test_every_post_form_carries_the_token(env: Env) -> None:
             r'<form\b[^>]*method="post"[^>]*>.*?</form>', env.client.get(url).text, re.DOTALL
         ):
             assert 'name="csrf_token"' in form, url
+            if 'action="/players/' in form:
+                assert 'name="career_id"' in form, url
 
 
 def test_pictures_come_only_from_the_masters_folder(env: Env) -> None:
@@ -668,7 +722,8 @@ def test_pictures_come_only_from_the_masters_folder(env: Env) -> None:
 
 def test_redirects_stay_on_this_site(env: Env) -> None:
     for target in ("//evil.example/x", "http://evil.example/", "javascript:alert(1)"):
-        r = env.client.post(
+        r = post_player_action(
+            env.client,
             "/players/action",
             data={"uid": [str(STAR)], "action": "pin", "pin": "b", "next": target},
         )

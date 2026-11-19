@@ -108,6 +108,25 @@ def env(conn: sqlite3.Connection, settings: Settings, tmp_path: Path) -> Env:
     return Env(conn, s, tmp_path)
 
 
+def test_career_switch_before_manual_write_refuses_previously_valid_target(env: Env) -> None:
+    form_career_id = env.cid
+    # The route has already validated the submitted ID when a sync wins the writer lock.
+    run_sync(
+        env.conn,
+        snapshot(world(), career="two", file_name="two.fm"),
+        env.settings,
+        save_file="two.fm",
+        save_mtime=1_800_000_000.0,
+    )
+    assert env.cid != form_career_id
+    with pytest.raises(manual.CareerChanged):
+        manual.set_pin(env.conn, form_career_id, [STAR], "b", env.settings, active_only=True)
+    assert [
+        r[0] for r in env.conn.execute("SELECT pin FROM players WHERE unique_id = ?", (STAR,))
+    ] == [None, None]
+    assert env.active(STAR) == []
+
+
 def test_generate_hand_picks_a_pre_existing_player_from_another_club(env: Env) -> None:
     r = manual.generate(env.conn, env.cid, [STAR], env.settings)
     assert r.queued == [STAR] and r.summary() == "1 queued"

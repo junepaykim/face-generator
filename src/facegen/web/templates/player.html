@@ -46,30 +46,30 @@
     <div class="actions">
       {% if p.present and p.in_scope and p.job_status != "running" %}
         {% if not cur %}
-        <form method="post" action="/players/{{ p.unique_id }}/generate" class="inline"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <form method="post" action="/players/{{ p.unique_id }}/generate" class="inline">{% include "_player_action_fields.html" %}
           <label>{{ t("players.bulk.as_group") }} <select name="group">{% for g in groups %}<option value="{{ g }}" {{ "selected" if g == (p.group_name or "b") }}>{{ tr("group." ~ g) }}</option>{% endfor %}</select></label>
           <button class="primary">{{ t("players.generate") }}</button>
         </form>
         {% endif %}
         {% if p.pin != "never" and (group_for_redraw or p.latest_job == "failed") %}
-        <form method="post" action="/players/{{ p.unique_id }}/new-face"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button title="{{ t('player.new_face_title') }}">{{ t("player.new_face") }}</button></form>
+        <form method="post" action="/players/{{ p.unique_id }}/new-face">{% include "_player_action_fields.html" %}<button title="{{ t('player.new_face_title') }}">{{ t("player.new_face") }}</button></form>
         {% endif %}
         {% if cur and p.pin != "never" %}
-        <form method="post" action="/players/{{ p.unique_id }}/new-picture"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button title="{{ t('player.new_picture_title_ref' if redraw_reference else 'player.new_picture_title') }}">{{ t("players.new_picture") }}</button></form>
+        <form method="post" action="/players/{{ p.unique_id }}/new-picture">{% include "_player_action_fields.html" %}<button title="{{ t('player.new_picture_title_ref' if redraw_reference else 'player.new_picture_title') }}">{{ t("players.new_picture") }}</button></form>
         {% endif %}
         {% if p.latest_job == "failed" %}
-        <form method="post" action="/players/{{ p.unique_id }}/retry"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button>{{ t("player.retry") }}</button></form>
+        <form method="post" action="/players/{{ p.unique_id }}/retry">{% include "_player_action_fields.html" %}<button>{{ t("player.retry") }}</button></form>
         {% endif %}
       {% endif %}
       {% if p.job_status == "queued" and p.job_manual %}
-        <form method="post" action="/players/{{ p.unique_id }}/cancel"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button>{{ t("player.cancel_request") }}</button></form>
+        <form method="post" action="/players/{{ p.unique_id }}/cancel">{% include "_player_action_fields.html" %}<button>{{ t("player.cancel_request") }}</button></form>
       {% endif %}
       {% if cur %}
-        <form method="post" action="/players/{{ p.unique_id }}/remove" data-confirm="{{ tr('player.remove_confirm', name=p.name) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="danger">{{ t("player.remove") }}</button></form>
+        <form method="post" action="/players/{{ p.unique_id }}/remove" data-confirm="{{ tr('player.remove_confirm', name=p.name) }}">{% include "_player_action_fields.html" %}<button class="danger">{{ t("player.remove") }}</button></form>
       {% endif %}
     </div>
 
-    <form method="post" action="/players/{{ p.unique_id }}/pin" class="inline pin"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <form method="post" action="/players/{{ p.unique_id }}/pin" class="inline pin">{% include "_player_action_fields.html" %}
       <label>{{ t("players.pin") }}
         <select name="pin">
           <option value="" {{ "selected" if not p.pin }}>{{ tr("player.pin_none") }}</option>
@@ -150,7 +150,7 @@ negative: {{ cur.negative_prompt }}</pre></details>
         <td>{% if im.is_current %}<span class="st ok">{{ t("player.state_current_restored" if im.restored_at else "player.state_current") }}</span>{% elif im.rejected %}<span class="st bad">{{ t("player.state_failed") }}</span>{% else %}<span class="muted">{{ t("player.state_replaced") }}</span>{% endif %}</td>
         <td>{{ im.created_at[:16]|replace("T", " ") }}</td>
         <td>{% if im.restorable and p.job_status != "running" %}
-          <form method="post" action="/players/{{ p.unique_id }}/restore" data-confirm="{{ tr('player.restore_confirm', version=im.version) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="image_id" value="{{ im.id }}"><button>{{ t("player.restore") }}</button></form>
+          <form method="post" action="/players/{{ p.unique_id }}/restore" data-confirm="{{ tr('player.restore_confirm', version=im.version) }}">{% include "_player_action_fields.html" %}<input type="hidden" name="image_id" value="{{ im.id }}"><button>{{ t("player.restore") }}</button></form>
         {% endif %}</td>
       </tr>
     {% endfor %}

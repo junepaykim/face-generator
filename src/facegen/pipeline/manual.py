@@ -32,7 +32,8 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -60,6 +61,25 @@ class ManualError(ValueError):
         super().__init__(message)
         self.code = code
         self.values = values
+
+
+class CareerChanged(ManualError):
+    def __init__(self) -> None:
+        super().__init__(
+            "This form no longer matches the active career. Reload the page and try again.",
+            "career_changed",
+        )
+
+
+@contextmanager
+def _action_transaction(
+    conn: sqlite3.Connection, career_id: int, active_only: bool
+) -> Iterator[None]:
+    """A form's target must still be active when the writer acquires the database."""
+    with transaction(conn):
+        if active_only and active_career_id(conn) != career_id:
+            raise CareerChanged()
+        yield
 
 
 REFUSALS: dict[str, str] = {
@@ -161,6 +181,7 @@ def generate(
     group: str = DEFAULT_GROUP,
     *,
     now: float | None = None,
+    active_only: bool = False,
 ) -> ActionResult:
     """Pin the players to `group` and queue a picture for those who need one."""
     if group not in ("a", "b", "c"):
@@ -168,7 +189,7 @@ def generate(
     result = ActionResult()
     if now is None:
         now = time.time()
-    with transaction(conn):
+    with _action_transaction(conn, career_id, active_only):
         for uid in dict.fromkeys(uids):
             p = _player(conn, career_id, uid)
             if why := _refusal(p):
@@ -221,8 +242,9 @@ def _redraw(
     settings: Settings,
     kind: str,
     now: float | None,
+    active_only: bool,
 ) -> ActionResult:
-    with transaction(conn):
+    with _action_transaction(conn, career_id, active_only):
         p = _player(conn, career_id, uid)
         try:
             group = _redraw_group(conn, career_id, p, kind)
@@ -240,9 +262,10 @@ def new_face(
     settings: Settings,
     *,
     now: float | None = None,
+    active_only: bool = False,
 ) -> ActionResult:
     """Re-roll the character sheet and draw a picture from the new one."""
-    return _redraw(conn, career_id, uid, settings, "reroll", now)
+    return _redraw(conn, career_id, uid, settings, "reroll", now, active_only)
 
 
 def new_picture(
@@ -252,9 +275,10 @@ def new_picture(
     settings: Settings,
     *,
     now: float | None = None,
+    active_only: bool = False,
 ) -> ActionResult:
     """Keep the character sheet and draw a new picture."""
-    return _redraw(conn, career_id, uid, settings, "redraw", now)
+    return _redraw(conn, career_id, uid, settings, "redraw", now, active_only)
 
 
 def _redraw_many(
@@ -264,13 +288,14 @@ def _redraw_many(
     settings: Settings,
     kind: str,
     now: float | None,
+    active_only: bool,
 ) -> ActionResult:
     """A re-draw for many players at once; those who cannot have one are skipped with the
     reason. Players run in the order given."""
     result = ActionResult()
     if now is None:
         now = time.time()
-    with transaction(conn):
+    with _action_transaction(conn, career_id, active_only):
         for uid in dict.fromkeys(uids):
             p = _player(conn, career_id, uid)
             try:
@@ -292,9 +317,10 @@ def new_pictures(
     settings: Settings,
     *,
     now: float | None = None,
+    active_only: bool = False,
 ) -> ActionResult:
     """New picture for many players at once (the players page)."""
-    return _redraw_many(conn, career_id, uids, settings, "redraw", now)
+    return _redraw_many(conn, career_id, uids, settings, "redraw", now, active_only)
 
 
 def new_faces(
@@ -304,9 +330,10 @@ def new_faces(
     settings: Settings,
     *,
     now: float | None = None,
+    active_only: bool = False,
 ) -> ActionResult:
     """New face for many players at once (the review page, Phase 12i)."""
-    return _redraw_many(conn, career_id, uids, settings, "reroll", now)
+    return _redraw_many(conn, career_id, uids, settings, "reroll", now, active_only)
 
 
 def set_pin(
@@ -317,14 +344,15 @@ def set_pin(
     settings: Settings,
     *,
     now: float | None = None,
+    active_only: bool = False,
 ) -> ActionResult:
     """Pin players to a group (a hand-pick: Generate), to "never", or clear the pin (None)."""
     if pin in ("a", "b", "c"):
-        return generate(conn, career_id, uids, settings, pin, now=now)
+        return generate(conn, career_id, uids, settings, pin, now=now, active_only=active_only)
     if pin is not None and pin not in PINS:
         raise ManualError(f"unknown pin {pin!r}")
     result = ActionResult()
-    with transaction(conn):
+    with _action_transaction(conn, career_id, active_only):
         for uid in dict.fromkeys(uids):
             _player(conn, career_id, uid)
             _set_pin(conn, career_id, uid, pin)
@@ -352,6 +380,8 @@ def remove_picture(
     career_key: str,
     uid: int,
     settings: Settings,
+    *,
+    active_only: bool = False,
 ) -> bool:
     """Take the player's picture out of FM27 and keep them from being drawn again.
 
@@ -360,7 +390,7 @@ def remove_picture(
     """
     fm_user_dir = settings.paths.fm_user_dir
     # The publish lock before the transaction, as publish_pack takes them.
-    with publish_lock(settings.paths.data_dir), transaction(conn):
+    with publish_lock(settings.paths.data_dir), _action_transaction(conn, career_id, active_only):
         p = _player(conn, career_id, uid)
         if p["job_status"] == "running":
             raise ManualError(
@@ -387,9 +417,10 @@ def retry(
     settings: Settings,
     *,
     now: float | None = None,
+    active_only: bool = False,
 ) -> ActionResult:
     """Queue the player's job from the review list again; it draws with new seeds."""
-    with transaction(conn):
+    with _action_transaction(conn, career_id, active_only):
         p = _player(conn, career_id, uid)
         if why := _refusal(p):
             raise _refused(why, name=p["name"])
@@ -423,13 +454,14 @@ def retry_many(
     settings: Settings,
     *,
     now: float | None = None,
+    active_only: bool = False,
 ) -> ActionResult:
     """`retry` for many players at once (the review page, Phase 12i): each one's failed job
     queued again with new seeds; those who cannot be retried are skipped with the reason."""
     result = ActionResult()
     if now is None:
         now = time.time()
-    with transaction(conn):
+    with _action_transaction(conn, career_id, active_only):
         for uid in dict.fromkeys(uids):
             p = _player(conn, career_id, uid)
             if why := _refusal(p):
@@ -453,13 +485,20 @@ def retry_many(
     return result
 
 
-def cancel(conn: sqlite3.Connection, career_id: int, uid: int, settings: Settings) -> bool:
+def cancel(
+    conn: sqlite3.Connection,
+    career_id: int,
+    uid: int,
+    settings: Settings,
+    *,
+    active_only: bool = False,
+) -> bool:
     """Cancel the player's queued manual request, then let the rules decide again.
 
     Cancelling a Generate request also clears the pin it set, so the hand-pick is undone;
     any other pin stays.
     """
-    with transaction(conn):
+    with _action_transaction(conn, career_id, active_only):
         job = conn.execute(
             "SELECT id, group_name, reason FROM jobs WHERE career_id = ? AND unique_id = ?"
             " AND status = 'queued' AND manual = 1",
@@ -496,6 +535,8 @@ def restore_picture(
     uid: int,
     image_id: int,
     settings: Settings,
+    *,
+    active_only: bool = False,
 ) -> Restored:
     """Make an earlier picture from the player's history current again, and publish it.
 
@@ -506,7 +547,7 @@ def restore_picture(
     requests are left alone.
     """
     data_dir: Path = settings.paths.data_dir
-    with transaction(conn):
+    with _action_transaction(conn, career_id, active_only):
         p = _player(conn, career_id, uid)
         if p["job_status"] == "running":
             raise ManualError(

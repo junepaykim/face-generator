@@ -10,6 +10,7 @@ from typing import Any
 from factories import snapshot
 from fakes import FakeRenderer, FakeTagger
 from fastapi.testclient import TestClient
+from httpx import Response
 
 from facegen.core.records import PlayerRecord
 from facegen.datasource.kits import load_kits
@@ -53,3 +54,12 @@ def client_for(config_file: Path, db_path: Path, worker: Any = None) -> TestClie
     assert token is not None
     client.headers["X-CSRF-Token"] = token[1]
     return client
+
+
+def post_player_action(
+    client: TestClient, path: str, *, data: dict[str, Any] | None = None, **kwargs: Any
+) -> Response:
+    """Submit the career field from this client's player list, as its forms do."""
+    field = re.search(r'name="career_id" value="(\d+)"', client.get("/players").text)
+    assert field is not None
+    return client.post(path, data={"career_id": field[1], **(data or {})}, **kwargs)

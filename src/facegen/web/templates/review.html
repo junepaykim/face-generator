@@ -7,7 +7,7 @@
 {% if items %}
 {# One form for the list: the ticked players go to the bar's buttons; each player's own buttons
    post to their page's action (formaction). Phase 12i. #}
-<form method="post" action="/players/action" id="bulk"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<form method="post" action="/players/action" id="bulk">{% include "_player_action_fields.html" %}
   <input type="hidden" name="next" value="/review"><input type="hidden" name="pin" value="never">
   <div class="bulk sticky">
     <label class="tick-all"><input type="checkbox" data-tick-all> {{ t("review.tick_all") }}</label>

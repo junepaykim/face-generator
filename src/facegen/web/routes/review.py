@@ -7,7 +7,7 @@ import sqlite3
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, Response
 
-from facegen.pipeline.worker import load_career
+from facegen.persistence.jobs import load_career
 from facegen.web import queries
 from facegen.web.dependencies import AppDependencies
 from facegen.web.messages import check_failure_text, review_problem
@@ -28,6 +28,6 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             it["problem"] = review_problem(f"review-{it['unique_id']}", it.get("error"), t)
             for c in it["image"]["check"].get("candidates", []) if it["image"] else []:
                 c["why"] = [check_failure_text(f, t) for f in c.get("failures", [])]
-        return page(request, "review.html", conn, items=items)
+        return page(request, "review.html", conn, career=career, items=items)
 
     return router

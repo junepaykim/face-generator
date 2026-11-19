@@ -27,7 +27,7 @@
 <p class="muted small">{{ t("players.photos_unknown_sync" if photo_status else "players.photos_unknown_next") }}</p>
 {% endif %}
 
-<form method="post" action="/players/action" id="bulk"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<form method="post" action="/players/action" id="bulk">{% include "_player_action_fields.html" %}
   <input type="hidden" name="next" value="{{ here }}">
   <div class="bulk">
     <span class="ticked" data-ticked>{{ t("js.ticked", count=0) }}</span>
