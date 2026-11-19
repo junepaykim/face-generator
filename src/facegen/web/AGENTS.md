@@ -22,8 +22,9 @@ uv run --no-sync ruff check src/facegen/web
 - Each request or blocking work function owns and closes its SQLite connection.
   Put blocking operations behind `run_in_threadpool`; never share a request connection
   with long-lived services.
-- `queries.py` builds read models; mutations use pipeline/settings-history APIs.
-  Wake the worker after changes that affect its queue.
+- `queries.py` builds page read models and handles roster query strings.
+  `persistence/player_queries.py` owns roster filtering, ordering and pagination in SQLite.
+  Mutations use pipeline/settings-history APIs. Wake the worker after changes that affect its queue.
 
 ## Gotchas
 

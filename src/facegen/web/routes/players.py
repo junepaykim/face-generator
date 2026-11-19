@@ -14,7 +14,7 @@ from facegen.core.job_records import Career
 from facegen.core.planner import REFERENCE_KINDS
 from facegen.core.traits import eyes_drawn_round
 from facegen.i18n import Translator
-from facegen.persistence import photo_index
+from facegen.persistence import photo_index, player_queries
 from facegen.persistence.jobs import load_career
 from facegen.pipeline import manual
 from facegen.pipeline.manual import CareerChanged, ManualError
@@ -25,7 +25,7 @@ from facegen.web.dependencies import AppDependencies, need_career, translator_fo
 from facegen.web.forms import form_of
 from facegen.web.messages import manual_error_text, manual_summary, problem_line, review_problem
 from facegen.web.presentation import Presentation, uses_reference
-from facegen.web.queries import PlayerFilter
+from facegen.web.queries import PlayerPageFilter
 from facegen.web.responses import _redirect, _safe_next
 
 
@@ -47,16 +47,14 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
     @router.get("/players", response_class=HTMLResponse)
     def players(request: Request, conn: sqlite3.Connection = Conn) -> Response:
         career = load_career(conn)
-        f = PlayerFilter.from_query(request.query_params)
-        rows, total = queries.players_page(conn, career.id, f) if career else ([], 0)
+        f = PlayerPageFilter.from_query(request.query_params)
+        rows, total = player_queries.players_page(conn, career.id, f) if career else ([], 0)
         club_name = None
         if f.club_id is not None and career is not None:
-            r = conn.execute(
-                "SELECT name FROM clubs WHERE career_id = ? AND club_id = ?",
-                (career.id, f.club_id),
-            ).fetchone()
-            club_name = r[0] if r else str(f.club_id)
-        pages = max(1, -(-total // queries.PER_PAGE))
+            club_name = player_queries.club_name(conn, career.id, f.club_id)
+            if club_name is None:
+                club_name = str(f.club_id)
+        pages = max(1, -(-total // player_queries.PER_PAGE))
         return page(
             request,
             "players.html",

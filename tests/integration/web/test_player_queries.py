@@ -1,7 +1,4 @@
-"""The Players page's queries after the SQLite follow-up (web/queries.py): the page chosen
-first and then read in full, and the Review and club-name filters as lists looked up once.
-They must give exactly what the one-step queries gave; checked here on made-up rows, and on a
-copy of a 181,000-player database while measuring (docs/research.md)."""
+"""Check roster pagination, indexed lookups and agreement with the web Review count."""
 
 from __future__ import annotations
 
@@ -12,9 +9,9 @@ from itertools import count
 
 import pytest
 
-from facegen.persistence import db
-from facegen.web import queries
-from facegen.web.queries import PlayerFilter
+from facegen.persistence import db, player_queries
+from facegen.persistence.player_queries import PlayerFilter, players_page
+from facegen.web.queries import review_count
 
 CAREER = 1
 _ids = count(1)
@@ -64,7 +61,8 @@ def all_pages(c: sqlite3.Connection, f: PlayerFilter, per_page: int) -> list[int
     seen: list[int] = []
     page = 1
     while True:
-        rows, total = queries.players_page(c, CAREER, replace(f, page=page), per_page)
+        rows, total = players_page(c, CAREER, replace(f, page=page), per_page)
+        assert len(rows) == min(per_page, total - len(seen))
         if not rows:
             break
         seen += [r["unique_id"] for r in rows]
@@ -89,7 +87,7 @@ def test_sorting_by_club_is_by_its_name_without_case(conn: sqlite3.Connection) -
     b = add(conn, 150, 150, 11)  # telford town
     c = add(conn, 90, 90, 10)  # Telford United
     d = add(conn, 95, 95, None)  # no club: first, as NULL sorts first
-    rows, _ = queries.players_page(conn, CAREER, PlayerFilter(sort="club"))
+    rows, _ = players_page(conn, CAREER, PlayerFilter(sort="club"))
     assert [r["unique_id"] for r in rows] == [d, a, b, c]
     assert [r["club"] for r in rows] == [None, "AFC Wrexham", "telford town", "Telford United"]
 
@@ -101,9 +99,9 @@ def test_the_club_name_filter_matches_without_case(conn: sqlite3.Connection) -> 
     add(conn, 100, 100, None)
     add(conn, 100, 100, 99)  # a club that is not stored
     add(conn, 100, 100, 10, career=2)
-    rows, total = queries.players_page(conn, CAREER, PlayerFilter(club="TELFORD"))
+    rows, total = players_page(conn, CAREER, PlayerFilter(club="TELFORD"))
     assert total == 2 and {r["unique_id"] for r in rows} == {united, town}
-    rows, total = queries.players_page(conn, CAREER, PlayerFilter(club="town"))
+    rows, total = players_page(conn, CAREER, PlayerFilter(club="town"))
     assert total == 1 and rows[0]["unique_id"] == town and rows[0]["club"] == "telford town"
 
 
@@ -124,17 +122,29 @@ def test_the_review_filter_is_the_players_whose_latest_job_failed(
     elsewhere = add(conn, 100, 100, 10, career=2)
     job(conn, elsewhere, "failed", career=2)
     add(conn, 100, 100, 10)
-    rows, total = queries.players_page(conn, CAREER, PlayerFilter(picture="review"))
+    rows, total = players_page(conn, CAREER, PlayerFilter(picture="review"))
     assert {r["unique_id"] for r in rows} == {failed, failed_then_cancelled}
-    assert total == 2 == queries.review_count(conn, CAREER)
+    assert total == 2 == review_count(conn, CAREER)
     assert {r["latest_job"] for r in rows} == {"failed"}
-    rows, total = queries.players_page(conn, CAREER, PlayerFilter(picture="queued"))
+    rows, total = players_page(conn, CAREER, PlayerFilter(picture="queued"))
     assert [r["unique_id"] for r in rows] == [queued_again] and rows[0]["job_status"] == "queued"
 
 
 def test_counting_joins_nothing_for_the_lookups() -> None:
     for f in (PlayerFilter(picture="review"), PlayerFilter(club="tel")):
-        where, _ = queries._where(f)
-        assert queries._count_from(where) == " FROM players p"
-    where, _ = queries._where(PlayerFilter(sort="club"))
-    assert "JOIN clubs c" in queries._count_from(f"{where} {queries.SORTS['club']}")
+        where, _ = player_queries._where(f)
+        assert player_queries._count_from(where) == " FROM players p"
+    where, _ = player_queries._where(PlayerFilter(sort="club"))
+    assert "JOIN clubs c" in player_queries._count_from(f"{where} {player_queries.SORTS['club']}")
+
+
+def test_page_looks_up_selected_players_and_their_job_history_by_index(
+    conn: sqlite3.Connection,
+) -> None:
+    statements: list[str] = []
+    conn.set_trace_callback(statements.append)
+    players_page(conn, CAREER, PlayerFilter())
+    conn.set_trace_callback(None)
+    plan = [row["detail"] for row in conn.execute("EXPLAIN QUERY PLAN " + statements[-1])]
+    assert any("SEARCH p " in step and "career_id=? AND unique_id=?" in step for step in plan)
+    assert any("SEARCH jj " in step and "jobs_by_player" in step for step in plan)

@@ -31,8 +31,9 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
+from facegen.persistence import player_queries
+from facegen.persistence.player_queries import PER_PAGE, PlayerFilter
 from facegen.web import queries
-from facegen.web.queries import PlayerFilter
 
 REPEATS = 7
 
@@ -130,40 +131,23 @@ REVIEW_IN = (
 SQLite builds the list once instead of asking the jobs for every player."""
 
 
-COLUMNS = (
-    "SELECT p.unique_id, p.name, p.age, p.ca, p.pa, p.is_newgen, p.academy, p.at_my_club,"
-    " p.in_my_league, p.in_continental, p.in_scope, p.group_name, p.tracked, p.reasons,"
-    " p.pin, p.club_id, p.is_goalkeeper, p.is_staff, p.staff_job, p.media_role,"
-    " p.youth_team, p.local_media, c.name AS club,"
-    " i.id AS image_id, ph.game AS photo_game, ph.facepack AS photo_facepack,"
-    " i.published_path, i.group_name AS image_group, j.status AS job_status,"
-    f" j.kind AS job_kind, j.manual AS job_manual, {queries._LATEST_JOB} AS latest_job"
-)
-SORTS = {**queries.SORTS, "club": "c.name COLLATE NOCASE, p.ca DESC"}
-"""The order by the club's name, not the column's alias: the same order, which the deferred
-page's inner query (without the alias) can use too."""
-
-
 def player_sql(f: PlayerFilter, rewrite: bool, deferred: bool) -> tuple[str, str, list[Any]]:
-    """The count and the page as players_page runs them (web/queries.py), the review filter
-    optionally rewritten as a lookup in the jobs table, the page optionally deferred. The
-    page's parameters are the count's, then the window, then (deferred) the career again."""
-    where, args = queries._where(f)
+    """Build the count and page using the roster's filters and columns. The page's parameters
+    are the count's, then the window, then (deferred) the career again."""
+    where, args = player_queries._where(f)
     if rewrite:
-        where = where.replace(f"{queries._LATEST_JOB} = 'failed'", REVIEW_IN)
-    count = f"SELECT COUNT(*){queries._count_from(where)} WHERE {where}"
-    order = f"{SORTS[f.sort]}, p.unique_id"
+        where = where.replace(f"{player_queries._LATEST_JOB} = 'failed'", REVIEW_IN)
+    count = f"SELECT COUNT(*){player_queries._count_from(where)} WHERE {where}"
+    order = f"{player_queries.SORTS[f.sort]}, p.unique_id"
+    select = player_queries._COLUMNS + player_queries._FROM
     if not deferred:
-        page = f"{COLUMNS}{queries._FROM} WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?"
+        page = f"{select} WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?"
         return count, page, args
     window = (
-        f"SELECT p.unique_id{queries._count_from(where + ' ' + order)} WHERE {where}"
+        f"SELECT p.unique_id{player_queries._count_from(where + ' ' + order)} WHERE {where}"
         f" ORDER BY {order} LIMIT ? OFFSET ?"
     )
-    page = (
-        f"{COLUMNS}{queries._FROM} WHERE p.unique_id IN ({window}) AND p.career_id = ?"
-        f" ORDER BY {order}"
-    )
+    page = f"{select} WHERE p.unique_id IN ({window}) AND p.career_id = ? ORDER BY {order}"
     return count, page, args
 
 
@@ -333,7 +317,7 @@ def run_variant(source: Path, work: Path, variant: Variant, career_id: int) -> d
     for label, f in filters(conn, career_id).items():
         count_sql, page_sql, args = player_sql(f, variant.review_rewrite, variant.deferred_page)
         count_args = [career_id, *args]
-        page_args = [career_id, *args, queries.PER_PAGE, (f.page - 1) * queries.PER_PAGE]
+        page_args = [career_id, *args, PER_PAGE, (f.page - 1) * PER_PAGE]
         if variant.deferred_page:
             page_args.append(career_id)
         count_ms, total = timed(

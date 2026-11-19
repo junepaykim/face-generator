@@ -188,6 +188,28 @@ def test_players_list_filters(env: Env) -> None:
     assert env.client.get("/players?ca_min=abc&league=bogus").status_code == 200
 
 
+def test_players_pager_preserves_filter_and_sort(env: Env) -> None:
+    people = [player(2000 - i, name=f"Trial player {i:03d}", club_id=ABROAD) for i in range(101)]
+    conn = env.conn()
+    try:
+        run_sync(conn, snapshot(people), env.settings, save_file="career.fm")
+    finally:
+        conn.close()
+
+    first_url = "/players?q=Trial+player&sort=name"
+    second_url = f"{first_url}&page=2"
+    rows = r'<a href="/players/(\d+)">([^<]+)</a>'
+    expected = [(str(p.unique_id), p.name) for p in people]
+    first = unescape(env.client.get(first_url).text)
+    assert "101 players" in first and "page 1 of 2" in first
+    assert re.findall(rows, first) == expected[:100]
+    assert f'href="{second_url}">next ›</a>' in first
+    second = unescape(env.client.get(second_url).text)
+    assert "page 2 of 2" in second
+    assert re.findall(rows, second) == expected[100:]
+    assert f'href="{first_url}">‹ previous</a>' in second
+
+
 def test_find_tick_and_generate_a_pre_existing_player(env: Env) -> None:
     """Phase 3 exit test: a pre-existing player from another club, found, ticked, drawn."""
     found = env.client.get("/players?q=famous").text
