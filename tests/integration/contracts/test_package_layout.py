@@ -63,6 +63,31 @@ assert callable(venv_check.main)
     assert result.returncode == 0, result.stderr
 
 
+def test_package_version_tracks_the_checkout_and_installed_distribution(tmp_path: Path) -> None:
+    import tomllib
+
+    expected = tomllib.loads((ROOT / "pyproject.toml").read_text("utf-8"))["project"]["version"]
+    result = run_python(tmp_path, "-c", "from facegen import __version__; print(__version__)")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == expected
+
+    # A regular wheel includes distribution metadata and no source-tree pyproject.toml.
+    metadata = tmp_path / "facegen-2.0.1.dist-info"
+    metadata.mkdir()
+    (metadata / "METADATA").write_text("Name: facegen\nVersion: 2.0.1\n", encoding="utf-8")
+    result = run_python(
+        tmp_path,
+        "-c",
+        "from pathlib import Path\n"
+        "from facegen import locations\n"
+        "locations.PROJECT_ROOT = Path.cwd()\n"
+        "from facegen import __version__\n"
+        "print(__version__)",
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "2.0.1"
+
+
 @pytest.mark.parametrize("module", ["facegen.cli", "facegen.desktop", "facegen.app_window"])
 def test_published_module_help_without_installed_dependencies(tmp_path: Path, module: str) -> None:
     result = run_python(tmp_path, "-m", module, "--help")
