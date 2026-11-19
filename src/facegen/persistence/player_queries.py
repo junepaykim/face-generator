@@ -60,16 +60,22 @@ class PlayerFilter:
     page: int = 1
 
 
+def _substring_pattern(term: str) -> str:
+    escaped = term.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+    return f"%{escaped}%"
+
+
 def _where(f: PlayerFilter) -> tuple[str, list[Any]]:
     clauses = ["p.career_id = ?", "p.present = 1"]
     args: list[Any] = []
     if f.q:
-        if f.q.isdigit():
-            clauses.append("(p.unique_id = ? OR p.name LIKE ?)")
-            args += [int(f.q), f"%{f.q}%"]
-        else:
-            clauses.append("p.name LIKE ?")
-            args.append(f"%{f.q}%")
+        name_match = "p.name LIKE ? ESCAPE '!'"
+        if f.q.isdecimal():
+            name_match = f"(p.unique_id = ? OR {name_match})"
+            # Bind decimal text so an ID outside SQLite's integer range can still match a name.
+            args.append("".join(str(int(digit)) for digit in f.q))
+        clauses.append(name_match)
+        args.append(_substring_pattern(f.q))
     if f.club_id is not None:
         clauses.append("p.club_id = ?")
         args.append(f.club_id)
@@ -77,9 +83,10 @@ def _where(f: PlayerFilter) -> tuple[str, list[Any]]:
         # The matching clubs found once, as with the Review filter; a player without a club
         # (or whose club is not stored) matches neither way.
         clauses.append(
-            "(p.career_id, p.club_id) IN (SELECT career_id, club_id FROM clubs WHERE name LIKE ?)"
+            "(p.career_id, p.club_id) IN"
+            " (SELECT career_id, club_id FROM clubs WHERE name LIKE ? ESCAPE '!')"
         )
-        args.append(f"%{f.club}%")
+        args.append(_substring_pattern(f.club))
     match f.league:
         case "mine":
             clauses.append("p.in_my_league = 1")

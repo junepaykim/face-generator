@@ -11,6 +11,7 @@ download. Finished files are skipped; huggingface_hub resumes partial files.
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import os
@@ -126,6 +127,13 @@ def hub_cache_root(env: Mapping[str, str] | None = None) -> Path:
     return Path(home).expanduser() / "hub"
 
 
+def _snapshot_has(snapshot: Path | None, filename: str) -> bool:
+    try:
+        return snapshot is not None and (snapshot / filename).is_file()
+    except OSError:
+        return False
+
+
 class HubCache:
     """The Hugging Face cache at `root`, read directly (layout: models--<org>--<name>/refs/main,
     snapshots/<commit>/<file>, blobs/)."""
@@ -144,11 +152,12 @@ class HubCache:
         return self.repo_dir(repo) / "snapshots" / commit if commit else None
 
     def has(self, f: ModelFile) -> bool:
-        snapshot = self.snapshot(f.repo)
-        try:
-            return snapshot is not None and (snapshot / f.filename).is_file()
-        except OSError:
-            return False
+        return _snapshot_has(self.snapshot(f.repo), f.filename)
+
+    def missing_files(self, files: Iterable[ModelFile]) -> list[ModelFile]:
+        """Resolve each repository's main reference once for this check."""
+        snapshot = functools.cache(self.snapshot)
+        return missing(files, lambda f: _snapshot_has(snapshot(f.repo), f.filename))
 
     def partial_bytes(self, repo: str) -> int:
         """Bytes in the repository's unfinished downloads (`blobs/*.incomplete`)."""
@@ -213,7 +222,7 @@ def status(cache: HubCache | None = None, files: Sequence[ModelFile] = FILES) ->
     cache = cache or HubCache(hub_cache_root())
     return ModelsStatus(
         cache=cache.root,
-        missing=tuple(missing(files, cache.has)),
+        missing=tuple(cache.missing_files(files)),
         total_bytes=total_size(files),
         free_bytes=free_space(cache.root),
     )

@@ -13,6 +13,7 @@ import sys
 import textwrap
 from collections.abc import Callable
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 from support.paths import ROOT
@@ -197,6 +198,47 @@ def test_status_says_what_is_missing_and_the_space(tmp_path: Path) -> None:
     for f in SMALL[1:]:
         put(tmp_path, f)
     assert status(HubCache(tmp_path), SMALL).ready
+
+
+def test_status_reads_each_repository_reference_once_per_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache = HubCache(tmp_path)
+    snapshot = Mock(wraps=cache.snapshot)
+    monkeypatch.setattr(cache, "snapshot", snapshot)
+    files = (SMALL[1], SMALL[2], SMALL[0])  # interleave the two repositories
+
+    assert status(cache, files).missing == files
+    assert sorted(c.args[0] for c in snapshot.call_args_list) == ["org/one", "org/two"]
+
+    snapshot.reset_mock()
+    for f in files:
+        put(tmp_path, f)
+    assert status(cache, files).ready
+    assert sorted(c.args[0] for c in snapshot.call_args_list) == ["org/one", "org/two"]
+
+
+def test_status_rechecks_files_reference_changes_and_disk_space(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache = HubCache(tmp_path)
+    for f in SMALL:
+        put(tmp_path, f)
+    monkeypatch.setattr(models, "free_space", Mock(side_effect=[3000, 2000, 1000]))
+    first = status(cache, SMALL)
+    assert first.ready and first.free_bytes == 3000
+
+    repo = cache.repo_dir("org/one")
+    (repo / "snapshots" / COMMIT / SMALL[0].filename).unlink()
+    second = status(cache, SMALL)
+    assert second.missing == (SMALL[0],) and second.free_bytes == 2000
+
+    other = repo / "snapshots" / "other"
+    other.mkdir()
+    (other / SMALL[0].filename).write_bytes(b"x")
+    (repo / "refs" / "main").write_text("other", encoding="utf-8")
+    third = status(cache, SMALL)
+    assert third.missing == (SMALL[1],) and third.free_bytes == 1000
 
 
 def test_free_space_is_asked_where_the_cache_will_be(tmp_path: Path) -> None:

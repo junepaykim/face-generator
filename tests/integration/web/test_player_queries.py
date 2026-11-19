@@ -103,6 +103,49 @@ def test_the_club_name_filter_matches_without_case(conn: sqlite3.Connection) -> 
     assert total == 2 and {r["unique_id"] for r in rows} == {united, town}
     rows, total = players_page(conn, CAREER, PlayerFilter(club="town"))
     assert total == 1 and rows[0]["unique_id"] == town and rows[0]["club"] == "telford town"
+    rows, total = players_page(conn, CAREER, PlayerFilter(club="town", club_id=10))
+    assert total == 1 and rows[0]["unique_id"] == united
+
+
+@pytest.mark.parametrize(("search_field", "row_field"), [("q", "name"), ("club", "club")])
+@pytest.mark.parametrize(
+    ("term", "expected"), [("a_", "A_B"), ("%", "A%B"), ("!", "A!B"), ("Xb", "AxB")]
+)
+def test_literal_name_substrings(
+    conn: sqlite3.Connection, search_field: str, row_field: str, term: str, expected: str
+) -> None:
+    names = ["A_B", "A%B", "AxB", "A!B"]
+    for club_id, (player, club) in enumerate(zip(names, reversed(names), strict=True), start=20):
+        conn.execute(
+            "INSERT INTO clubs (career_id, club_id, name, gender) VALUES (?, ?, ?, 'men')",
+            (CAREER, club_id, club),
+        )
+        add(conn, 100, 100, club_id, name=player)
+
+    rows, total = players_page(conn, CAREER, PlayerFilter(**{search_field: term}))
+    assert total == 1
+    assert [row[row_field] for row in rows] == [expected]
+
+
+def test_numeric_player_search_matches_id_or_name(conn: sqlite3.Connection) -> None:
+    exact_id = add(conn, 100, 100, None, name="Captain")
+    padded = f"00{exact_id}"
+    arabic_digits = str(exact_id).translate(str.maketrans("0123456789", "٠١٢٣٤٥٦٧٨٩"))
+    named = add(conn, 100, 100, None, name=f"Player {padded} ({arabic_digits})")
+    add(conn, 100, 100, None, name="Teammate")
+    for term in (str(exact_id), padded, arabic_digits):
+        rows, total = players_page(conn, CAREER, PlayerFilter(q=term))
+        assert total == 2
+        assert {row["unique_id"] for row in rows} == {exact_id, named}
+
+
+@pytest.mark.parametrize("term", ["9223372036854775808", "²"])
+def test_digits_outside_the_id_format_match_names(conn: sqlite3.Connection, term: str) -> None:
+    named = add(conn, 100, 100, None, name=f"Player {term}")
+    add(conn, 100, 100, None, name="Teammate")
+    rows, total = players_page(conn, CAREER, PlayerFilter(q=term))
+    assert total == 1
+    assert [row["unique_id"] for row in rows] == [named]
 
 
 def test_the_review_filter_is_the_players_whose_latest_job_failed(

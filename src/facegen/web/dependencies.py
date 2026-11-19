@@ -6,6 +6,7 @@ import sqlite3
 import threading
 import time
 from collections.abc import Callable, Iterator
+from concurrent.futures import Future
 from typing import Any
 
 from fastapi import Depends, HTTPException, Request
@@ -29,41 +30,57 @@ class CardProbe:
     def __init__(self, ask: Callable[[], Hardware] | None) -> None:
         self._ask = ask
         self._lock = threading.Lock()
-        self._card: Hardware | None = None
-        self._thread: threading.Thread | None = None
+        self._attempt: Future[Hardware] | None = None
 
     @property
     def available(self) -> bool:
         """This process can ask the card (the GPU worker's setup is part of it)."""
         return self._ask is not None
 
-    def get(self, again: bool = False) -> Hardware | None:
-        """The card, asking now if not yet asked (or `again`); None where it cannot be asked."""
+    def _begin(self, again: bool = False) -> Future[Hardware] | None:
         if self._ask is None:
             return None
         with self._lock:
-            if again or self._card is None:
-                self._card = self._ask()
-            return self._card
+            if self._attempt is None or (again and self._attempt.done()):
+                attempt = Future[Hardware]()
+                threading.Thread(
+                    target=self._detect, args=(self._ask, attempt), name="facegen-card", daemon=True
+                ).start()
+                self._attempt = attempt
+            return self._attempt
+
+    @staticmethod
+    def _detect(ask: Callable[[], Hardware], attempt: Future[Hardware]) -> None:
+        try:
+            card = ask()
+        except Exception as exc:  # noqa: BLE001 - detector failures are shown in the guide
+            card = Hardware(reason=str(exc) or type(exc).__name__)
+        attempt.set_result(card)
+
+    def get(self, again: bool = False) -> Hardware | None:
+        """Wait for the shared answer, starting a new check on an explicit retry."""
+        attempt = self._begin(again)
+        return attempt.result() if attempt is not None else None
 
     def start(self) -> None:
         """Ask in the background, once."""
-        with self._lock:
-            if self._ask is None or self._card is not None or self._thread is not None:
-                return
-            self._thread = threading.Thread(target=self.get, name="facegen-card", daemon=True)
-        self._thread.start()
+        self._begin()
 
     def known(self) -> Hardware | None:
         """The answer if there is one yet; never waits."""
-        return self._card
+        with self._lock:
+            attempt = self._attempt
+            return attempt.result() if attempt is not None and attempt.done() else None
 
     def state(self) -> tuple[Any, ...]:
         """For the live fingerprint: not asked, asking, or the answer."""
-        card = self._card
-        if card is not None:
+        with self._lock:
+            if self._attempt is None:
+                return ("not asked",)
+            if not self._attempt.done():
+                return ("asking",)
+            card = self._attempt.result()
             return ("known", card.name, card.total_bytes, card.reason)
-        return ("asking",) if self._thread is not None else ("not asked",)
 
 
 class AppDependencies:

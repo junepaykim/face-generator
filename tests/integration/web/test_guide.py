@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from threading import Event
 
 import pytest
 from factories import player, snapshot
@@ -125,7 +128,9 @@ class Source:
         return snapshot([player(1001, name="Mine Player", age=29)], file_name=path.name)
 
 
-def make_client(tmp: Path, card: Hardware | None) -> tuple[TestClient, Path, WorkerService]:
+def make_client(
+    tmp: Path, detect: Callable[[], Hardware] | None
+) -> tuple[TestClient, Path, WorkerService]:
     text = DEFAULTS_PATH.read_text(encoding="utf-8")
     text = text.replace('data_dir = "data"', f'data_dir = "{(tmp / "data").as_posix()}"')
     config = tmp / "config" / "test.toml"
@@ -139,7 +144,7 @@ def make_client(tmp: Path, card: Hardware | None) -> tuple[TestClient, Path, Wor
     syncer = SyncService(settings.paths.db_path, Source, defaults_path=config)
     ctx = AppContext(
         settings.paths.db_path, config, worker, syncer,
-        hardware=(lambda: card) if card is not None else None,
+        hardware=detect,
         # Real temporary folders: this system's path rules (Linux's on Linux and WSL).
         platform="windows" if os.name == "nt" else "linux",
     )  # fmt: skip
@@ -166,7 +171,7 @@ def step_head(page: str, title: str) -> str:
 
 
 def test_from_nothing_to_the_first_picture_on_one_page(tmp_path: Path) -> None:
-    client, data_dir, worker = make_client(tmp_path, Hardware("RTX 4080", 16 * GIB))
+    client, data_dir, worker = make_client(tmp_path, lambda: Hardware("RTX 4080", 16 * GIB))
     page = client.get("/").text
     assert "Getting started" in page and 'id="now"' not in page  # the guide stands alone
     assert step_head(page, "FM27's folder") == "Not found. Choose it below."
@@ -200,7 +205,7 @@ def test_from_nothing_to_the_first_picture_on_one_page(tmp_path: Path) -> None:
 
 
 def test_the_cards_suggestion_is_applied_from_the_guide(tmp_path: Path) -> None:
-    client, _, _ = make_client(tmp_path, Hardware("Fake 8 GB", 8 * GIB))
+    client, _, _ = make_client(tmp_path, lambda: Hardware("Fake 8 GB", 8 * GIB))
     for _ in range(50):
         page = client.get("/status").text
         if "should change" in page:
@@ -212,6 +217,71 @@ def test_the_cards_suggestion_is_applied_from_the_guide(tmp_path: Path) -> None:
     assert "Fake 8 GB, 8 GB: the settings suit it." in client.get("/status").text
 
 
+def test_pages_share_one_background_card_check(tmp_path: Path) -> None:
+    entered, release = Event(), Event()
+    calls = 0
+
+    def detect() -> Hardware:
+        nonlocal calls
+        calls += 1
+        entered.set()
+        if not release.wait(15):
+            raise TimeoutError("test did not release the detector")
+        return Hardware("Shared card", 16 * GIB)
+
+    client, _, _ = make_client(tmp_path, detect)
+    with ThreadPoolExecutor(max_workers=2) as requests:
+        try:
+            checking = requests.submit(client.get, "/").result(timeout=5)
+            assert step_head(checking.text, "Graphics card") == "Checking the graphics card…"
+            assert entered.wait(5)
+            hardware = requests.submit(client.get, "/hardware")
+            basic = requests.submit(client.get, "/settings/basic").result(timeout=5)
+            assert basic.status_code == 200
+            checking = requests.submit(client.get, "/").result(timeout=5)
+            assert step_head(checking.text, "Graphics card") == "Checking the graphics card…"
+            assert not hardware.done()
+        finally:
+            release.set()
+        assert "Shared card" in hardware.result(timeout=5).text
+    assert "Shared card" in step_head(client.get("/status").text, "Graphics card")
+    assert calls == 1
+
+
+def test_card_failure_updates_the_guide_until_an_explicit_retry(tmp_path: Path) -> None:
+    calls = 0
+    release = Event()
+
+    def detect() -> Hardware:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            if not release.wait(15):
+                raise TimeoutError("test did not release the detector")
+            raise RuntimeError("driver check interrupted")
+        return Hardware("Recovered card", 16 * GIB)
+
+    client, _, _ = make_client(tmp_path, detect)
+    try:
+        client.get("/settings/basic")
+        checking = client.get("/").text
+        assert step_head(checking, "Graphics card") == "Checking the graphics card…"
+        checking_rev = re.search(r'data-rev="([^"]+)"', checking)[1]
+    finally:
+        release.set()
+    assert "driver check interrupted" in client.get("/hardware").text
+    failed = client.get("/").text
+    assert "No NVIDIA graphics card" in step_head(failed, "Graphics card")
+    assert "driver check interrupted" in failed
+    assert re.search(r'data-rev="([^"]+)"', failed)[1] != checking_rev
+    assert calls == 1
+
+    assert "Recovered card" in client.get("/hardware?again=1").text
+    assert "Recovered card" in step_head(client.get("/status").text, "Graphics card")
+    assert "Recovered card" in client.get("/hardware").text
+    assert calls == 2
+
+
 def test_a_half_typed_folder_survives_a_live_update(tmp_path: Path) -> None:
     client, _, _ = make_client(tmp_path, None)
     script = client.get(re.search(r'src="(/static/app.js[^"]*)"', client.get("/").text)[1]).text
@@ -220,7 +290,7 @@ def test_a_half_typed_folder_survives_a_live_update(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("closed", [False, True])
 def test_the_live_fingerprint_follows_the_card_and_the_close(tmp_path: Path, closed: bool) -> None:
-    client, data_dir, _ = make_client(tmp_path, Hardware("RTX 4080", 16 * GIB))
+    client, data_dir, _ = make_client(tmp_path, lambda: Hardware("RTX 4080", 16 * GIB))
     if closed:
         guide.close(data_dir)
     first = re.search(r'data-rev="([^"]+)"', client.get("/").text)[1]
