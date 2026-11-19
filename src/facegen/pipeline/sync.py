@@ -29,7 +29,8 @@ from facegen.core.planner import ImageState, JobState, Plan, PlayerPlanState, pl
 from facegen.core.records import Gender, Snapshot
 from facegen.core.settings_values import Settings
 from facegen.core.traits import personality_to_json
-from facegen.datasource import photos as photo_index
+from facegen.datasource.photos import PhotoScan
+from facegen.persistence import photo_index
 from facegen.persistence.db import transaction
 from facegen.persistence.jobs import apply_plan
 
@@ -788,7 +789,7 @@ def run_sync(
     preview: int = 20,
     with_table: bool = False,
     trigger: str | None = None,
-    photos: photo_index.PhotoScan | None = None,
+    photos: PhotoScan | None = None,
 ) -> SyncReport:
     """Run one sync in a transaction; a dry run rolls everything back.
 

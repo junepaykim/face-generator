@@ -11,8 +11,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
 from facegen.core import presets
-from facegen.datasource import photos
 from facegen.i18n import Translator
+from facegen.persistence import photo_index
 from facegen.persistence.settings import SettingsError, folder_not_set_message, load_defaults
 from facegen.pipeline import settings_history
 from facegen.pipeline.settings_history import Outcome
@@ -214,7 +214,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                 # Moved here from the dashboard (Phase 12): about this run, not the pictures.
                 "worker": ctx.worker.status() if ctx.worker else None,
                 "watching": ctx.poller is not None,
-                "photos": photos.status(conn),
+                "photos": photo_index.status(conn),
             },
             update=deps.update_offer(),
             folders=folders_of(request, current),

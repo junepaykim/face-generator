@@ -22,7 +22,7 @@ from urllib.parse import urlencode
 
 from facegen.core.estimate import Drawn
 from facegen.core.traits import CharacterSheet, personality_from_json, personality_leans
-from facegen.datasource import photos
+from facegen.persistence import photo_index
 from facegen.pipeline.manual import restorable
 
 PER_PAGE = 100
@@ -401,7 +401,7 @@ def counts(conn: sqlite3.Connection, career_id: int) -> dict[str, int]:
     ).fetchone()
     out.update(pictures=pics["current"], published=pics["published"])
     out["review"] = review_count(conn, career_id)
-    out.update(photos.player_counts(conn, career_id))
+    out.update(photo_index.player_counts(conn, career_id))
     jobs = dict(
         conn.execute(
             "SELECT status, COUNT(*) FROM jobs WHERE career_id = ?"

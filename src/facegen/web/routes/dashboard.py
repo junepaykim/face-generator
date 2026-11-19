@@ -11,8 +11,8 @@ from fastapi.responses import HTMLResponse, Response
 
 from facegen.core.estimate import estimate_queue, seconds_per_picture
 from facegen.core.settings_values import Settings
-from facegen.datasource import photos
 from facegen.i18n import Translator
+from facegen.persistence import photo_index
 from facegen.pipeline.worker import Career, load_career
 from facegen.runtime.contracts import ERROR_REASONS, WorkerStatus
 from facegen.web import guide, live, queries
@@ -145,7 +145,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             "poller": ctx.poller.status() if ctx.poller else None,
             "settings": settings,
             "auto_groups": sorted(settings.schedule.auto_groups),
-            "photo_status": photos.status(conn),
+            "photo_status": photo_index.status(conn),
             "setup": setup,
         }
 

@@ -11,6 +11,7 @@ from support.photos import catalog, config_xml
 
 from facegen.datasource import photos
 from facegen.datasource.photos import CATALOG_DIR, facepack_ids, game_photo_ids, scan
+from facegen.persistence import photo_index
 from facegen.persistence.settings import Paths
 
 # --- parsing --------------------------------------------------------------------------------
@@ -177,28 +178,107 @@ def test_no_graphics_folder_means_no_facepacks(tmp_path: Path) -> None:
 
 
 def test_store_writes_the_ids_and_status(conn: sqlite3.Connection, paths: Paths) -> None:
-    assert photos.status(conn) is None
+    assert photo_index.status(conn) is None
     install_catalog(paths, 1, 2)
     write(paths.graphics_dir / "pack" / "config.xml", config_xml(2, 3))
-    assert photos.store(conn, scan(paths))
+    assert photo_index.store(conn, scan(paths))
     rows = conn.execute("SELECT unique_id, game, facepack FROM photos ORDER BY 1").fetchall()
     assert [tuple(r) for r in rows] == [(1, 1, 0), (2, 1, 1), (3, 0, 1)]
-    s = photos.status(conn)
+    s = photo_index.status(conn)
     assert s is not None
     assert (s.game_known, s.game, s.facepack, s.facepack_files) == (True, 2, 2, 1)
 
 
 def test_an_unchanged_scan_keeps_the_stored_ids(conn: sqlite3.Connection, paths: Paths) -> None:
     install_catalog(paths, 1)
-    photos.store(conn, scan(paths))
+    photo_index.store(conn, scan(paths))
     changed_at = conn.execute("SELECT changed_at FROM photo_scan").fetchone()[0]
-    again = scan(paths, photos.stored_state(conn))
-    assert not photos.store(conn, again)
+    again = scan(paths, photo_index.stored_state(conn))
+    assert not photo_index.store(conn, again)
     assert conn.execute("SELECT COUNT(*) FROM photos").fetchone()[0] == 1
     assert conn.execute("SELECT changed_at FROM photo_scan").fetchone()[0] == changed_at
 
 
 def test_an_unreadable_catalog_is_stored_as_unknown(conn: sqlite3.Connection, paths: Paths) -> None:
-    photos.store(conn, scan(paths))
-    s = photos.status(conn)
+    photo_index.store(conn, scan(paths))
+    s = photo_index.status(conn)
     assert s is not None and not s.game_known and s.warnings
+
+
+@pytest.mark.parametrize("fail_at", ["read_bytes", "stat", "scandir"])
+def test_transient_pack_failure_preserves_the_index_until_retry(
+    conn: sqlite3.Connection, paths: Paths, monkeypatch: pytest.MonkeyPatch, fail_at: str
+) -> None:
+    install_catalog(paths, 1)
+    pack = paths.graphics_dir / "pack"
+    mapping = pack / "config.xml"
+    write(mapping, config_xml(2))
+    assert photo_index.store(conn, scan(paths))
+    before = photo_index.status(conn)
+    write(mapping, config_xml(3, 4))
+    os.utime(pack, ns=(1, 1))  # Exercise fresh folder enumeration as well as file reads.
+
+    owner, name, target = (
+        (os, "scandir", pack) if fail_at == "scandir" else (Path, fail_at, mapping)
+    )
+    original = getattr(owner, name)
+
+    def locked(path, *args, **kwargs):
+        if path == target:
+            raise PermissionError(f"mapping locked: {path}")
+        return original(path, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(owner, name, locked)
+        failed = scan(paths, photo_index.stored_state(conn))
+        assert not photo_index.store(conn, failed)
+    during = photo_index.status(conn)
+    assert during.game_known and (during.game, during.facepack) == (1, 1)
+    assert during.changed_at == before.changed_at and "mapping locked" in during.warnings[0]
+    assert [r[0] for r in conn.execute("SELECT unique_id FROM photos ORDER BY 1")] == [1, 2]
+
+    # Removing the lock does not touch the file. The failed fingerprint must still be retried.
+    assert photo_index.store(conn, scan(paths, photo_index.stored_state(conn)))
+    assert [r[0] for r in conn.execute("SELECT unique_id FROM photos ORDER BY 1")] == [1, 3, 4]
+    assert photo_index.status(conn).warnings == ()
+    assert scan(paths, photo_index.stored_state(conn)).index is None
+
+    mapping.unlink()
+    assert photo_index.store(conn, scan(paths, photo_index.stored_state(conn)))
+    assert [r[0] for r in conn.execute("SELECT unique_id FROM photos")] == [1]
+
+
+def test_incomplete_first_scan_reports_unknown_until_retry(
+    conn: sqlite3.Connection, paths: Paths, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_catalog(paths, 1)
+    pack = paths.graphics_dir / "pack" / "config.xml"
+    write(pack, config_xml(2))
+    real_read = Path.read_bytes
+
+    def locked(path: Path) -> bytes:
+        if path == pack:
+            raise PermissionError("locked mapping")
+        return real_read(path)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "read_bytes", locked)
+        assert not photo_index.store(conn, scan(paths))
+    assert not photo_index.status(conn).game_known
+    assert photo_index.status(conn).warnings
+    assert photo_index.store(conn, scan(paths, photo_index.stored_state(conn)))
+    assert photo_index.status(conn).game_known
+    assert photo_index.status(conn).facepack == 1
+
+
+def test_legacy_scan_rereads_generated_person_mappings(paths: Paths) -> None:
+    install_catalog(paths, 1)
+    write(
+        paths.graphics_dir / "pack" / "config.xml",
+        config_xml(2, 3).replace(b"person/3/portrait", b"person/r-3/portrait"),
+    )
+    legacy_state = scan(paths).state
+    del legacy_state["format"]
+    upgraded = scan(paths, legacy_state)
+    assert upgraded.index.facepack == {2, 3}
+    assert scan(paths, upgraded.state).index is None

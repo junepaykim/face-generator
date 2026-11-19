@@ -12,7 +12,7 @@ from facegen.core.age import audience, table_name
 from facegen.core.classify import Group
 from facegen.core.planner import REFERENCE_KINDS
 from facegen.core.traits import eyes_drawn_round
-from facegen.datasource import photos
+from facegen.persistence import photo_index
 from facegen.pipeline import manual
 from facegen.pipeline.manual import ManualError
 from facegen.pipeline.publish import PublishError
@@ -63,7 +63,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             group_filters=queries.GROUP_FILTERS,
             picture_filters=queries.PICTURE_FILTERS,
             photo_filters=queries.PHOTO_FILTERS,
-            photo_status=photos.status(conn),
+            photo_status=photo_index.status(conn),
             scopes=queries.SCOPES,
             sorts=list(queries.SORTS),
             here=str(request.url.path) + ("?" + request.url.query if request.url.query else ""),
@@ -154,7 +154,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                 settings.my_club.round_eyes,
             ),
             group_for_redraw=group_for_redraw,
-            photo_status=photos.status(conn),
+            photo_status=photo_index.status(conn),
             reference_kinds=REFERENCE_KINDS,
             groups=[g.value for g in Group],
         )

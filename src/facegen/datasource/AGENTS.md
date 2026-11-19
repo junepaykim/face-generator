@@ -30,7 +30,8 @@ uv run --no-sync python scripts/spikes/kit_colour_probe.py --help
 - `people.py` parses synthetic-testable bytes, not fmsave objects. Reject chance byte
   matches with the existing ID/name/date/personality checks.
 - `PhotoIndex.game is None` means unknown; an empty set means known absent.
-  `PhotoScan.index is None` means unchanged inputs, so keep stored IDs.
+  `PhotoScan.index is None` keeps stored IDs. An incomplete external pack scan records a
+  warning and retries; `persistence/photo_index.py` owns the SQLite state and counts.
 - Photo scans exclude our own pack and reuse folder/catalog fingerprints; avoid
   rescanning hundreds of thousands of unchanged picture files.
 - Kit values belong in `core.kit_values`; this layer loads config/catalogs.
