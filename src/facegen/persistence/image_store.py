@@ -108,22 +108,23 @@ class ImageStore:
         model: str,
         render_settings: dict[str, Any],
     ) -> None:
-        from PIL.PngImagePlugin import PngInfo
+        meta = {
+            "model": model,
+            "prompt": prompt.positive,
+            "negative": prompt.negative,
+            "seed": seed,
+            **render_settings,
+        }
+        save_png(path, image, meta)
 
-        path.parent.mkdir(parents=True, exist_ok=True)
-        meta = PngInfo()
-        meta.add_text(
-            "facegen",
-            json.dumps(
-                {
-                    "model": model,
-                    "prompt": prompt.positive,
-                    "negative": prompt.negative,
-                    "seed": seed,
-                    **render_settings,
-                }
-            ),
-        )
-        tmp = path.with_name(f".{path.name}.part")
-        image.convert("RGB").save(tmp, format="PNG", pnginfo=meta)
-        os.replace(tmp, path)
+
+def save_png(path: Path, image: Image, meta: dict[str, Any]) -> None:
+    """A master picture as RGB PNG with facegen's metadata, written atomically."""
+    from PIL.PngImagePlugin import PngInfo
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    info = PngInfo()
+    info.add_text("facegen", json.dumps(meta))
+    tmp = path.with_name(f".{path.name}.part")
+    image.convert("RGB").save(tmp, format="PNG", pnginfo=info)
+    os.replace(tmp, path)

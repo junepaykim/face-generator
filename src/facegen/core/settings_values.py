@@ -235,6 +235,14 @@ class DisplaySettings:
 
 
 @dataclass(frozen=True, slots=True)
+class NotificationSettings:
+    """Which of the tray's notifications are shown; the others are always shown."""
+
+    new_pictures: bool
+    """"New pictures" once drawing stops."""
+
+
+@dataclass(frozen=True, slots=True)
 class UpdateSettings:
     """Whether the app asks GitHub for a newer release (Phase 13)."""
 
@@ -265,6 +273,7 @@ class Settings:
     schedule: Schedule
     render: RenderSettings
     display: DisplaySettings
+    notifications: NotificationSettings
     updates: UpdateSettings
     ui: UI
     values: Mapping[str, Any]

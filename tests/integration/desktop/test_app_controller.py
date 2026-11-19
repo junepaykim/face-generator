@@ -303,6 +303,45 @@ def test_new_pictures_are_announced_once_when_a_run_of_drawing_ends() -> None:
     ]
 
 
+def test_the_new_pictures_notice_can_be_switched_off() -> None:
+    clock, wanted, asked = Clock(), [False], []
+
+    def setting() -> bool:
+        asked.append(clock.now)
+        return wanted[0]
+
+    w = FakeWorker(status("idle", done=0, paused=False))
+    c = controller(w, clock=clock, quiet_seconds=10, pictures_notice=setting)
+    assert c.notices() == []
+    w.s = dataclasses.replace(w.s, done=2)
+    assert c.notices() == []  # seen now; said once quiet for 10 s
+    for _ in range(3):
+        clock.now += 11
+        assert c.notices() == []  # off: those two are not said, now or later
+    assert len(asked) == 1  # read only when the notice is due, not every tick
+    wanted[0] = True
+    w.s = dataclasses.replace(w.s, done=3)
+    assert c.notices() == []
+    clock.now += 11
+    assert [n.message for n in c.notices()] == [
+        "1 new picture: restart FM27 or reload the skin to see them."
+    ]
+
+
+def test_the_new_pictures_notice_is_shown_when_its_setting_cannot_be_read() -> None:
+    def broken() -> bool:
+        raise OSError("database is locked")
+
+    clock = Clock()
+    w = FakeWorker(status("idle", done=0, paused=False))
+    c = controller(w, clock=clock, quiet_seconds=10, pictures_notice=broken)
+    c.notices()
+    w.s = dataclasses.replace(w.s, done=1)
+    assert c.notices() == []
+    clock.now += 11
+    assert [n.kind for n in c.notices()] == ["pictures"]
+
+
 @pytest.mark.parametrize(
     ("state", "kind", "title"),
     [

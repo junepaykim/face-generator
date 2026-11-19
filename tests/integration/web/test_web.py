@@ -362,6 +362,38 @@ def test_restore_an_earlier_picture_from_the_history(env: Env) -> None:
     assert "Bad picture ID" in text
 
 
+def test_pick_another_candidate_on_the_player_page(env: Env) -> None:
+    env.drain()
+    page = env.client.get(f"/players/{MINE}").text
+    forms = re.findall(
+        rf'<form method="post" action="/players/{MINE}/pick">.*?</form>', page, re.DOTALL
+    )
+    assert len(forms) == 2  # group A's other two candidates passed; the chosen one is a link
+    found = re.search(
+        r'name="attempt" value="(\d+)".*?name="index" value="(\d+)"', forms[0], re.DOTALL
+    )
+    assert found is not None
+    pick = {"attempt": found[1], "index": found[2]}
+    image_id = env.one("SELECT id FROM images WHERE unique_id = ? AND is_current = 1", MINE)
+    first = env.client.get(f"/pictures/{image_id}", params={"size": 96})
+    assert first.headers["cache-control"] == "private, no-cache"
+    etag = first.headers["etag"]
+    asked = {"If-None-Match": etag}
+    assert env.client.get(f"/pictures/{image_id}?size=96", headers=asked).status_code == 304
+
+    text = follow(env, post_player_action(env.client, f"/players/{MINE}/pick", data=pick))
+    assert "v1 now uses the picture you picked" in text and "Reload Skin" in text
+    assert "picked by hand" in text and "automatic pick" in text
+    again = env.client.get(f"/pictures/{image_id}?size=96", headers=asked)
+    assert again.status_code == 200 and again.headers["etag"] != etag  # the picked file
+
+    text = follow(env, post_player_action(env.client, f"/players/{MINE}/pick", data=pick))
+    assert "already in use for v1" in text
+    bad = {"attempt": "x", "index": "0"}
+    text = follow(env, post_player_action(env.client, f"/players/{MINE}/pick", data=bad))
+    assert "Bad picture ID" in text
+
+
 def test_new_picture_for_ticked_players(env: Env) -> None:
     env.drain()
     r = post_player_action(

@@ -265,6 +265,11 @@ vae_tiling = false
 language = "auto"                   # auto, en (English) or ko (한국어)
 theme = "auto"                      # auto, light or dark
 
+[notifications]
+# The tray's "New pictures" notification once drawing stops (Windows app). false: not shown;
+# the other notifications (errors, unsupported saves, syncs from the tray) stay.
+new_pictures = true
+
 [updates]
 # Look for a newer facegen once a day (Phase 13): one request for this repository's list of
 # releases on GitHub, which sends nothing about this PC or its user. A newer one is offered on

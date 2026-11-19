@@ -20,7 +20,7 @@ from facegen.web.messages import band_name
 # (most sections have none: Phase 12 keeps the page short), its ⓘ tip "settings.tip.<top>".
 SECTION_ORDER = (
     "groups", "staff", "youth", "media", "no_photo", "age", "schedule", "display",
-    "eligibility", "my_club", "body", "personality", "reference", "render", "updates",
+    "notifications", "eligibility", "my_club", "body", "personality", "reference", "render", "updates",
     "newgen",
 )  # fmt: skip
 LABELLED_IN_FULL = frozenset(
@@ -39,6 +39,7 @@ LABELLED_IN_FULL = frozenset(
         "reference.enabled",
         "display.language",
         "display.theme",
+        "notifications.new_pictures",
         "updates.check",
     }
 )

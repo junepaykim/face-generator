@@ -12,12 +12,14 @@ import pytest
 from fakes import FakeRenderer, FakeTagger
 
 from facegen.cli import Gpu
-from facegen.persistence.settings import load_settings
+from facegen.persistence import db
+from facegen.persistence.settings import load_settings, set_override
 from facegen.runtime.composition import (
     CannotStart,
     ServerStartError,
     ServerThread,
     build_runtime,
+    pictures_notice_enabled,
     port_answers,
 )
 
@@ -149,3 +151,14 @@ def test_an_open_page_does_not_hold_the_server_when_it_stops(config_file: Path) 
         assert not server.running
     finally:
         page.close()
+
+
+def test_the_tray_reads_the_new_pictures_switch_as_saved_now(config_file: Path) -> None:
+    db_path = load_settings(defaults_path=config_file).paths.db_path
+    assert pictures_notice_enabled(db_path, config_file) is True
+    conn = db.connect(db_path)
+    try:
+        set_override(conn, "notifications.new_pictures", False, config_file)
+    finally:
+        conn.close()
+    assert pictures_notice_enabled(db_path, config_file) is False

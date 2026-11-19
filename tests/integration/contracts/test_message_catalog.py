@@ -132,7 +132,8 @@ def vocabulary_keys() -> list[str]:
         f"manual.error.{code}"
         for code in (
             "no_player", "busy", "nothing_to_retry", "no_image", "already_current",
-            "failed_check", "file_missing", "career_changed",
+            "failed_check", "file_missing", "career_changed", "no_current", "no_candidate",
+            "candidate_failed", "already_picked", "candidate_missing",
         )
     ]  # fmt: skip
     keys += [f"problem.link.{k}" for k in ("log", "autoconfig", "models", "settings")]

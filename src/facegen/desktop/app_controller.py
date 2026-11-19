@@ -1,8 +1,9 @@
 """GUI-independent desktop state and actions for the tray and window.
 
 `view()` provides menu availability, the running/paused/fault dot and a tooltip clipped to
-Windows's 127-character buffer. Notifications are emitted once for completed drawing runs,
-GPU faults, job errors, unsupported saves and syncs requested from the tray.
+Windows's 127-character buffer. Notifications are emitted once for completed drawing runs
+(unless `pictures_notice` says no), GPU faults, job errors, unsupported saves and syncs
+requested from the tray.
 Quit runs supplied cleanup steps in order on a thread, continuing after errors, then calls
 `on_quit_done` to close the shell. Dependencies are plain values and callables.
 """
@@ -177,6 +178,7 @@ class AppController:
         updates: UpdatesView | None = None,
         clock: Callable[[], float] = time.monotonic,
         quiet_seconds: float = PICTURES_QUIET_SECONDS,
+        pictures_notice: Callable[[], bool] | None = None,
     ) -> None:
         self.worker = worker
         self.syncer = syncer
@@ -190,6 +192,7 @@ class AppController:
         self._on_quit_done = on_quit_done
         self._clock = clock
         self._quiet = quiet_seconds
+        self._pictures_notice = pictures_notice
         self._lock = threading.Lock()
         self._quitting = False
         self._quit_step: str | None = None
@@ -371,12 +374,15 @@ class AppController:
             self._done_seen, self._done_changed_at = w.done, now
         new = w.done - self._announced_done
         if new > 0 and w.state != "running" and now - self._done_changed_at >= self._quiet:
-            self._announced_done = w.done
-            out.append(
-                Notice(
-                    "pictures", "New pictures", f"{plural(new, 'new picture')}: {PICTURES_ADVICE}"
+            self._announced_done = w.done  # counted as said when switched off, too
+            if self._pictures_wanted():
+                out.append(
+                    Notice(
+                        "pictures",
+                        "New pictures",
+                        f"{plural(new, 'new picture')}: {PICTURES_ADVICE}",
+                    )
                 )
-            )
         elif new < 0:  # a counter that went back (cannot happen with one worker); start afresh
             self._announced_done = w.done
         previous, self._last_state = self._last_state, w.state
@@ -409,6 +415,17 @@ class AppController:
                     )
                 )
         return [self._clipped(n) for n in out]
+
+    def _pictures_wanted(self) -> bool:
+        """`notifications.new_pictures`, read only when the notification is due; on when it
+        cannot be read."""
+        if self._pictures_notice is None:
+            return True
+        try:
+            return bool(self._pictures_notice())
+        except Exception as exc:  # noqa: BLE001 - said rather than lost
+            logger.warning("could not read notifications.new_pictures: %s", exc)
+            return True
 
     def _sync_notices(self, s: SyncStatus) -> list[Notice]:
         out: list[Notice] = []

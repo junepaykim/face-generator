@@ -184,6 +184,16 @@ img.thumb { width: 48px; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 
         border-radius: 6px; overflow: hidden; }
 .cand.chosen { border: 2px solid var(--accent); }
 .cand img { width: 100%; display: block; aspect-ratio: 3 / 4; object-fit: cover; }
+.cand form { margin: 0; }
+.cand button.pick { display: block; width: 100%; padding: 0; border: 0; border-radius: 0;
+                    background: none; cursor: pointer; }
+.cand:has(button.pick:hover), .cand:has(button.pick:focus-visible) { border-color: var(--accent); }
+.cand button.pick:hover img { opacity: .85; }
+.cand:has(.full) { position: relative; }
+.cand a.full { position: absolute; top: 4px; right: 4px; display: block; padding: 0 5px;
+               border-radius: 4px; background: var(--card); color: var(--muted); opacity: .85;
+               font-size: 13px; line-height: 20px; text-decoration: none; }
+.cand a.full:hover { color: var(--accent); opacity: 1; }
 .ref { display: flex; gap: 10px; align-items: center; margin: 6px 0; }
 .ref img { width: 72px; height: 72px; border-radius: 4px; display: block; }
 .ref p { margin: 0; }

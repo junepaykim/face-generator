@@ -237,6 +237,28 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                         )
                         note = t("msg.player.still_never") if r.pinned_never else ""
                         return t("msg.player.restored", version=r.version, note=note, where=where)
+                    case "pick":
+                        try:
+                            attempt = int(str(form.get("attempt") or ""))
+                            index = int(str(form.get("index") or ""))
+                        except ValueError:
+                            raise ManualError(t("msg.player.bad_picture")) from None
+                        picked = manual.pick_candidate(
+                            conn,
+                            career.id,
+                            career.key,
+                            uid,
+                            attempt,
+                            index,
+                            settings,
+                            active_only=True,
+                        )
+                        where = t(
+                            "msg.reload_hint"
+                            if picked.publish.active
+                            else "msg.player.other_career"
+                        )
+                        return t("msg.player.picked", version=picked.version, where=where)
                     case "cancel":
                         done = manual.cancel(conn, career.id, uid, settings, active_only=True)
                         return t("msg.player.cancelled" if done else "msg.player.nothing_to_cancel")

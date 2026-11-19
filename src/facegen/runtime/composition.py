@@ -195,6 +195,18 @@ def updates_enabled(db_path: Path, config: Path | None) -> bool:
         conn.close()
 
 
+def pictures_notice_enabled(db_path: Path, config: Path | None) -> bool:
+    """`notifications.new_pictures` as saved now (it can change while facegen runs)."""
+    from facegen.persistence import db
+    from facegen.persistence.settings import load_settings
+
+    conn = db.connect(db_path)
+    try:
+        return load_settings(conn, defaults_path=config).notifications.new_pictures
+    finally:
+        conn.close()
+
+
 def port_answers(host: str, port: int, *, timeout: float = 0.5) -> bool:
     """Whether something already listens on host:port (another facegen, or another program)."""
     family = socket.AF_INET6 if ":" in host else socket.AF_INET

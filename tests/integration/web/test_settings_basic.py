@@ -58,6 +58,7 @@ def test_basic_holds_who_quality_and_when_and_advanced_holds_everything(
     for key in (
         "staff.enabled", "media.journalists", "media.press_officers", "no_photo.enabled",
         "schedule.generate_while_fm_running", "schedule.auto_groups",
+        "notifications.new_pictures",
     ):  # fmt: skip
         assert f'name="{key}" data-key' in page, key
     assert 'name="groups.a.ca_above"' not in page and "About this run" not in page
@@ -106,6 +107,9 @@ def test_basic_switches_and_quality_save_like_advanced_fields(
 ) -> None:
     data = client.post("/settings/save", data={"staff.enabled": ""}).json()
     assert data["ok"] and data["fields"]["staff.enabled"]["changed"]
+    data = client.post("/settings/save", data={"notifications.new_pictures": ""}).json()
+    assert data["ok"] and values(config_file)["notifications.new_pictures"] is False
+    assert load_settings(defaults_path=config_file).notifications.new_pictures is True
     data = client.post("/settings/save", data={"preset.quality": "low"}).json()
     assert data["ok"] and data["presets"]["quality"] == "low"
     assert {k: values(config_file)[k] for k in presets.QUALITY["low"]} == hardware.LOW.changes
@@ -116,7 +120,7 @@ def test_basic_switches_and_quality_save_like_advanced_fields(
         labels = [e.label for e in settings_history.entries(conn)]
     finally:
         conn.close()
-    assert labels == ["preset.quality.low", "edit"]
+    assert labels == ["preset.quality.low", "edit", "edit"]
 
 
 def test_without_the_script_basic_saves_what_it_shows(

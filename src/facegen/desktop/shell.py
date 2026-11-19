@@ -384,6 +384,7 @@ def _run(
         CannotStart,
         ServerThread,
         build_runtime,
+        pictures_notice_enabled,
         port_answers,
     )
     from facegen.runtime.dependencies import Gpu
@@ -481,6 +482,7 @@ def _run(
             on_quit_done=close_shell,
             startup=shell.startup(paths.data_dir, config),
             updates=rt.updates,
+            pictures_notice=lambda: pictures_notice_enabled(paths.db_path, config),
         )
         if shell.can_update():
             quitting_for_update = controller

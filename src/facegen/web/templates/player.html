@@ -102,8 +102,9 @@
 
 {% if cur %}
 <section class="card">
-  <h2>{{ t("player.current") }}</h2>
-  <p class="small">{{ t("player.kit", kit=cur.render.kit) }}{% if cur.render.kit_source == "catalog" %} <em>{{ t("player.kit_catalog") }}</em>{% elif cur.render.kit_source == "bundled" %} <em>{{ t("player.kit_bundled") }}</em>{% elif cur.render.kit_known == false %} <em>{{ t("player.kit_fallback") }}</em>{% endif %} · {{ t("player.pose", pose=cur.render.pose) }}{% if cur.render.backdrop %} · {{ t("player.backdrop", backdrop=cur.render.backdrop) }}{% endif %}{% if cur.render.shoot and cur.render.shoot.style != "none" %} · {{ t("player.style", style=cur.render.shoot.style) }}{% endif %}{% if cur.render.shoot and cur.render.shoot.season != "unknown" %} · {{ cur.render.shoot.season }}{% endif %} · {{ t("player.seed", seed=cur.seed) }} · {{ cur.model }}{% if cur.render.seconds %} · {{ t("player.took", time=dur(cur.render.seconds)) }}{% endif %}{% if cur.render.detail %} · {{ t("player.detail_used" if cur.render.detail.used else "player.detail_rejected") }}{% endif %}</p>
+  {% set pickable_any = p.job_status != "running" and (cur.check.candidates or [])|selectattr("passed")|list|length > 1 %}
+  <h2>{{ t("player.current") }}{% if pickable_any %} {{ tip(t("player.pick_tip_detail" if cur.render.detail and cur.render.detail.used else "player.pick_tip")) }}{% endif %}</h2>
+  <p class="small">{{ t("player.kit", kit=cur.render.kit) }}{% if cur.render.kit_source == "catalog" %} <em>{{ t("player.kit_catalog") }}</em>{% elif cur.render.kit_source == "bundled" %} <em>{{ t("player.kit_bundled") }}</em>{% elif cur.render.kit_known == false %} <em>{{ t("player.kit_fallback") }}</em>{% endif %} · {{ t("player.pose", pose=cur.render.pose) }}{% if cur.render.backdrop %} · {{ t("player.backdrop", backdrop=cur.render.backdrop) }}{% endif %}{% if cur.render.shoot and cur.render.shoot.style != "none" %} · {{ t("player.style", style=cur.render.shoot.style) }}{% endif %}{% if cur.render.shoot and cur.render.shoot.season != "unknown" %} · {{ cur.render.shoot.season }}{% endif %} · {{ t("player.seed", seed=cur.seed) }} · {{ cur.model }}{% if cur.render.seconds %} · {{ t("player.took", time=dur(cur.render.seconds)) }}{% endif %}{% if cur.check.auto %} · {{ t("player.picked_by_hand") }}{% elif cur.render.detail %} · {{ t("player.detail_used" if cur.render.detail.used else "player.detail_rejected") }}{% endif %}</p>
   {% set ref = cur.render.reference %}
   {% if ref and ref.used %}
   <div class="ref">
@@ -117,10 +118,20 @@
   <div class="cands">
     {% for c in cur.check.candidates %}
       {% set chosen = cur.check.chosen and c.attempt == cur.check.chosen.attempt and c.index == cur.check.chosen.index %}
+      {% set auto = cur.check.auto and c.attempt == cur.check.auto.attempt and c.index == cur.check.auto.index %}
+      {% set pickable = pickable_any and c.passed and not chosen %}
       <figure class="cand {{ 'chosen' if chosen }}">
+        {% if pickable %}
+        <form method="post" action="/players/{{ p.unique_id }}/pick">{% include "_player_action_fields.html" %}<input type="hidden" name="attempt" value="{{ c.attempt }}"><input type="hidden" name="index" value="{{ c.index }}">
+          <button class="pick" title="{{ tr('player.pick_title') }}"><img src="/files?path={{ c.path|urlencode }}&amp;size=192" loading="lazy" alt="{{ tr('player.pick_title') }}"></button>
+        </form>
+        <a class="full" href="/files?path={{ c.path|urlencode }}" target="_blank" title="{{ tr('player.full_size') }}" aria-label="{{ tr('player.full_size') }}">⤢</a>
+        {% else %}
         <a href="/files?path={{ c.path|urlencode }}" target="_blank"><img src="/files?path={{ c.path|urlencode }}&amp;size=192" loading="lazy" alt=""></a>
+        {% endif %}
         <figcaption>
           {% if chosen %}<span class="b ok">{{ t("player.chosen") }}</span>{% endif %}
+          {% if auto %}<span class="b">{{ t("player.auto_pick") }}</span>{% endif %}
           <span class="b {{ 'ok' if c.passed else 'bad' }}">{{ t("player.passed" if c.passed else "player.failed") }}</span>
           <span class="b">{{ t("player.score", score="%.2f"|format(c.score)) }}</span>
           {% for fl in c.failures %}<span class="b bad">{{ fl }}</span>{% endfor %}

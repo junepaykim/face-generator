@@ -445,3 +445,101 @@ def test_restore_after_remove_keeps_the_never_pin(env: Env) -> None:
     r = manual.restore_picture(env.conn, env.cid, env.key, MINE, v1["id"], env.settings)
     assert r.pinned_never and _image(env, MINE, 1)["is_current"]
     assert env.player(MINE)["pin"] == "never" and env.active(MINE) == []
+
+
+def _check(row: sqlite3.Row) -> dict:
+    return json.loads(row["check_result"])
+
+
+def _picked_draw(env: Env) -> sqlite3.Row:
+    """MINE's v2: candidate 0 failed the check, 1 and 2 passed; one of them chosen."""
+    env.draw(JobFilter(groups=frozenset({"a"})))
+    manual.new_picture(env.conn, env.cid, MINE, env.settings)
+    env.draw(ONLY_MANUAL, FakeTagger(["sensitive", "pass", "pass"]))
+    return _image(env, MINE, 2)
+
+
+def test_pick_shows_another_candidate_and_the_automatic_pick_comes_back(env: Env) -> None:
+    v2 = _picked_draw(env)
+    data = env.settings.paths.data_dir
+    check = _check(v2)
+    auto = check["chosen"]
+    other = next(c for c in check["candidates"] if c["passed"] and c["index"] != auto["index"])
+    published = Path(v2["published_path"])
+    before = published.read_bytes()
+
+    r = manual.pick_candidate(
+        env.conn, env.cid, env.key, MINE, other["attempt"], other["index"], env.settings
+    )
+    assert r.version == 2 and r.publish.written == 1 and r.publish.active
+    row = _image(env, MINE, 2)
+    assert row["is_current"] and row["seed"] == other["seed"]
+    assert row["master_path"].endswith(f"v002-pick-a0c{other['index']}.png")
+    assert row["published_path"] == str(published) and published.read_bytes() != before
+    from PIL import Image
+
+    with Image.open(data / row["master_path"]) as im, Image.open(data / other["path"]) as cand:
+        assert im.format == "PNG" and im.size == cand.size
+        assert json.loads(im.info["facegen"])["seed"] == other["seed"]
+    check = _check(row)
+    assert check["chosen"] == {
+        "attempt": other["attempt"],
+        "index": other["index"],
+        "seed": other["seed"],
+    }
+    assert check["auto"]["master"] == v2["master_path"] and check["auto"]["seed"] == v2["seed"]
+    assert manual.restorable(row["master_path"], check)
+
+    # Picking the check's own choice again puts its master (the detail pass) back.
+    manual.pick_candidate(
+        env.conn, env.cid, env.key, MINE, auto["attempt"], auto["index"], env.settings
+    )
+    row = _image(env, MINE, 2)
+    assert (row["master_path"], row["seed"]) == (v2["master_path"], v2["seed"])
+    assert "auto" not in _check(row) and _check(row)["chosen"] == auto
+    assert published.read_bytes() == before
+
+    # The next picture replaces a hand pick like any other.
+    manual.pick_candidate(
+        env.conn, env.cid, env.key, MINE, other["attempt"], other["index"], env.settings
+    )
+    manual.new_picture(env.conn, env.cid, MINE, env.settings)
+    env.draw(ONLY_MANUAL)
+    assert _image(env, MINE, 3)["is_current"] and not _image(env, MINE, 2)["is_current"]
+
+
+def test_pick_refuses_what_must_not_be_shown(env: Env) -> None:
+    v2 = _picked_draw(env)
+    check = _check(v2)
+    failed = next(c for c in check["candidates"] if not c["passed"])
+    chosen = check["chosen"]
+    other = next(c for c in check["candidates"] if c["passed"] and c["index"] != chosen["index"])
+
+    def pick(uid: int, attempt: int, index: int) -> None:
+        manual.pick_candidate(env.conn, env.cid, env.key, uid, attempt, index, env.settings)
+
+    with pytest.raises(ManualError) as e:
+        pick(MINE, failed["attempt"], failed["index"])
+    assert e.value.code == "candidate_failed"
+    with pytest.raises(ManualError) as e:
+        pick(MINE, chosen["attempt"], chosen["index"])
+    assert e.value.code == "already_picked"
+    with pytest.raises(ManualError) as e:
+        pick(MINE, 9, 9)
+    assert e.value.code == "no_candidate"
+    with pytest.raises(ManualError) as e:
+        pick(OTHER, 0, 0)
+    assert e.value.code == "no_current"
+
+    (env.settings.paths.data_dir / other["path"]).unlink()
+    with pytest.raises(ManualError) as e:
+        pick(MINE, other["attempt"], other["index"])
+    assert e.value.code == "candidate_missing"
+
+    manual.new_picture(env.conn, env.cid, MINE, env.settings)
+    env.conn.execute("UPDATE jobs SET status = 'running' WHERE status = 'queued'")
+    with pytest.raises(ManualError) as e:
+        pick(MINE, other["attempt"], other["index"])
+    assert e.value.code == "busy"
+    row = _image(env, MINE, 2)
+    assert (row["master_path"], row["seed"]) == (v2["master_path"], v2["seed"])

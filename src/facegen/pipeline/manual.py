@@ -19,6 +19,9 @@ queue from the stored snapshot, as a settings change does. The worker picks the 
 - **Restore** makes an earlier picture from the player's history current again and
   publishes it. It then stands for the player as they are now, so it is not re-drawn until
   their club, age band or group changes again.
+- **Pick** shows another candidate of the current picture in FM27 instead of the one the
+  check chose. Only a candidate that passed the check can be picked; picking the check's
+  own choice again puts its master back.
 
 Manual jobs run before everything else (spec section 2). Among them the newest request runs
 first, so one "new face" click is drawn next even behind a large selection; within one
@@ -43,6 +46,7 @@ from facegen.core.age import age_wording, audience
 from facegen.core.classify import GROUP_RANK, Group
 from facegen.core.settings_values import Settings
 from facegen.persistence.db import active_career_id, transaction
+from facegen.persistence.image_store import save_png
 from facegen.persistence.jobs import queue_manual as _queue
 from facegen.persistence.sheet_store import select_sheet
 from facegen.pipeline.publish import PublishReport, publish_lock, publish_pack, unpublish
@@ -606,6 +610,135 @@ def restore_picture(
         classify_and_plan(conn, career_id, settings)
     report = publish_pack(conn, settings, career_id, career_key)
     return Restored(img["version"], p["pin"] == "never", report)
+
+
+@dataclass(frozen=True, slots=True)
+class Picked:
+    version: int
+    publish: PublishReport
+
+
+def pick_candidate(
+    conn: sqlite3.Connection,
+    career_id: int,
+    career_key: str,
+    uid: int,
+    attempt: int,
+    index: int,
+    settings: Settings,
+    *,
+    active_only: bool = False,
+) -> Picked:
+    """Show another candidate of the current picture in FM27, and publish it.
+
+    Only a candidate that passed the quality check can be picked (spec section 3). It is
+    written as `vNNN-pick-aAcI.png` beside the master and becomes the picture's master; the
+    check's own choice is kept under `auto` in the check result, so picking it again puts its
+    master (with the detail pass, when there was one) back. Group, club and age band stay the
+    same, so nothing is re-planned.
+    """
+    data_dir: Path = settings.paths.data_dir
+    with _action_transaction(conn, career_id, active_only):
+        p = _player(conn, career_id, uid)
+        if p["job_status"] == "running":
+            raise ManualError(
+                f"{p['name']} is being drawn right now; try again in a moment",
+                "busy",
+                name=p["name"],
+            )
+        img = conn.execute(
+            "SELECT * FROM images WHERE career_id = ? AND unique_id = ? AND is_current = 1",
+            (career_id, uid),
+        ).fetchone()
+        if img is None:
+            raise ManualError(f"{p['name']} has no picture", "no_current", name=p["name"])
+        version = img["version"]
+        check = json.loads(img["check_result"] or "{}")
+        cand = next(
+            (
+                c
+                for c in check.get("candidates", [])
+                if c.get("attempt") == attempt and c.get("index") == index
+            ),
+            None,
+        )
+        if cand is None:
+            raise ManualError(
+                f"v{version} has no candidate {attempt}/{index}", "no_candidate", version=version
+            )
+        if not cand.get("passed") or not restorable(img["master_path"], check):
+            raise ManualError(
+                "that candidate failed the quality check; it is never published",
+                "candidate_failed",
+            )
+        chosen = check.get("chosen") or {}
+        if (chosen.get("attempt"), chosen.get("index")) == (attempt, index):
+            raise ManualError(
+                f"that candidate is already v{version}'s picture",
+                "already_picked",
+                version=version,
+            )
+        auto = check.get("auto")
+        if auto is not None and (auto.get("attempt"), auto.get("index")) == (attempt, index):
+            master, seed = auto["master"], auto["seed"]
+            if not (data_dir / master).is_file():
+                raise ManualError(
+                    f"v{version}'s picture file is missing from data/",
+                    "file_missing",
+                    version=version,
+                )
+            del check["auto"]
+        else:
+            folder = Path(img["master_path"]).parent
+            master = (folder / f"v{version:03d}-pick-a{attempt}c{index}.png").as_posix()
+            seed = int(cand["seed"])
+            if not (data_dir / master).is_file():
+                source = Path(str(cand.get("path") or ""))
+                if (
+                    source.is_absolute()
+                    or ".." in source.parts
+                    or source.parts[:1] != ("masters",)
+                    or not (data_dir / source).is_file()
+                ):
+                    raise ManualError(
+                        f"v{version}'s candidate file is missing from data/",
+                        "candidate_missing",
+                        version=version,
+                    )
+                _write_pick(data_dir / source, data_dir / master, img, seed, attempt, index)
+            if auto is None:
+                check["auto"] = {
+                    "attempt": chosen.get("attempt"),
+                    "index": chosen.get("index"),
+                    "seed": img["seed"],
+                    "master": img["master_path"],
+                }
+        check["chosen"] = {"attempt": attempt, "index": index, "seed": seed}
+        conn.execute(
+            "UPDATE images SET master_path = ?, seed = ?, published_path = NULL,"
+            " check_result = ? WHERE id = ?",
+            (master, seed, json.dumps(check), img["id"]),
+        )
+    report = publish_pack(conn, settings, career_id, career_key)
+    return Picked(version, report)
+
+
+def _write_pick(
+    source: Path, dest: Path, img: sqlite3.Row, seed: int, attempt: int, index: int
+) -> None:
+    """The picked candidate (WebP, already 3:4) as a PNG master, as the publisher reads."""
+    from PIL import Image
+
+    with Image.open(source) as im:
+        picture = im.convert("RGB")
+    meta = {
+        "model": img["model"],
+        "prompt": img["prompt"],
+        "negative": img["negative_prompt"],
+        "seed": seed,
+        "picked": {"attempt": attempt, "index": index},
+    }
+    save_png(dest, picture, meta)
 
 
 def restorable(master_path: str | None, check: dict) -> bool:
