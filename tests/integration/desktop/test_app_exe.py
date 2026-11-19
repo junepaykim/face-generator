@@ -128,6 +128,23 @@ def test_a_copy_in_use_is_kept_until_a_later_start(
     assert leftovers(venv) == []
 
 
+def test_a_copy_already_running_is_not_made_again_first(
+    venv: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    maker = Maker()
+    exe = ensure(venv, maker)
+    monkeypatch.setattr(app_exe, "in_use", lambda path: path == exe)
+    assert ensure(venv, maker, "0.1.3") == exe
+    assert len(maker.calls) == 1  # no copy made only to find it cannot replace this one
+
+
+def test_a_file_nobody_holds_is_not_in_use(tmp_path: Path) -> None:
+    free = tmp_path / "facegen-app.exe"
+    free.write_bytes(b"copy")
+    assert not app_exe.in_use(free)
+    assert not app_exe.in_use(tmp_path / "missing.exe")
+
+
 def test_make_appends_what_followed_the_sections_and_checks_the_start(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -349,6 +349,17 @@ def make(
         raise
 
 
+def in_use(path: Path) -> bool:
+    """Whether a running program has `path` open: Windows refuses to open it for writing."""
+    try:
+        with path.open("r+b"):
+            return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+
+
 def _read_stamp(path: Path) -> str:
     try:
         return path.read_text(encoding="ascii").strip()
@@ -381,6 +392,9 @@ def ensure(
         return existing
     key = stamp_key(data, ico, version)
     if existing is not None and _read_stamp(stamp) == key:
+        return existing
+    if existing is not None and in_use(existing):
+        logger.info("%s is in use, so it is made again at a later start", APP_EXE)
         return existing
     part = scripts / f".{APP_EXE.removesuffix('.exe')}-{os.getpid()}.exe"
     try:

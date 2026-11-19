@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -33,6 +34,29 @@ def no_release_requests(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr("facegen.setup.update.fetch_json", refuse)
     monkeypatch.setattr("facegen.setup.update.download", refuse)
+
+
+@pytest.fixture(autouse=True)
+def no_real_shortcuts_or_app_exe(monkeypatch: pytest.MonkeyPatch) -> None:
+    """On Windows, `facegen launch` would rewrite this PC's facegen shortcuts and put
+    facegen-app.exe in the venv running the tests. Asked without arguments, the shortcut
+    folders are unknown; the copy is never made in this interpreter's own Scripts folder.
+    Tests that need either pass their own folders or a temporary venv."""
+    from facegen.desktop import app_exe, shortcuts
+
+    folders, ensure = shortcuts.windows_folders, app_exe.ensure
+    own_scripts = Path(sys.executable).parent.resolve()
+
+    def no_real_folders(env: object = None, ask: object = None) -> dict[str, str]:
+        return {} if env is None and ask is None else folders(env, ask)  # type: ignore[arg-type]
+
+    def not_this_venv(scripts: Path, *args: object, **kwargs: object) -> Path | None:
+        if Path(scripts).resolve() == own_scripts:
+            return None
+        return ensure(scripts, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(shortcuts, "windows_folders", no_real_folders)
+    monkeypatch.setattr(app_exe, "ensure", not_this_venv)
 
 
 @pytest.fixture
