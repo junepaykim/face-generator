@@ -6,7 +6,7 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from factories import NEWGEN, RIVAL, player, snapshot
+from factories import MY_CLUB, NEWGEN, RIVAL, media_person, player, snapshot
 
 from facegen.persistence.settings import SettingsError, load_settings, read_overrides, set_override
 from facegen.pipeline import settings_history as history
@@ -180,3 +180,43 @@ def test_settings_the_rules_do_not_read_are_saved_without_reclassifying(
     assert out.changed and out.report is None
     assert history.save(conn, {"staff.enabled": False}).report is not None
     assert history.save(conn, {"no_photo.enabled": False}).report is not None
+
+
+def test_youth_and_media_edits_undo_and_redo_keep_groups_and_queue_in_sync(
+    conn: sqlite3.Connection,
+) -> None:
+    youth, journalist, press = 1010, 1011, 1012
+    people = snapshot(
+        [player(youth, team_slot=2)],
+        media=[
+            media_person(journalist),
+            media_person(press, role="press officer", club_id=MY_CLUB),
+        ],
+    )
+    run_sync(conn, people, load_settings(conn), save_file="career.fm")
+
+    def assert_groups(expected: dict[int, str | None]) -> None:
+        people = dict(conn.execute("SELECT unique_id, group_name FROM players"))
+        assert {uid: people[uid] for uid in expected} == expected
+        queued = conn.execute(
+            "SELECT unique_id, group_name FROM jobs WHERE status = 'queued' ORDER BY unique_id"
+        )
+        assert [tuple(row) for row in queued] == sorted(
+            (uid, group) for uid, group in expected.items() if group is not None
+        )
+
+    groups = {youth: "b", journalist: "b", press: "b"}
+    assert_groups(groups)
+    for key, uid, disabled_group in (
+        ("youth.enabled", youth, "a"),
+        ("media.journalists", journalist, None),
+        ("media.press_officers", press, None),
+    ):
+        disabled = {**groups, uid: disabled_group}
+        assert history.save(conn, {key: False}).report is not None
+        assert_groups(disabled)
+        assert history.undo(conn).report is not None
+        assert_groups(groups)
+        assert history.redo(conn).report is not None
+        assert_groups(disabled)
+        groups = disabled

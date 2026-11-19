@@ -29,7 +29,7 @@ from facegen.pipeline.sync import ChangeReport, reclassify_with_report
 
 HISTORY_LIMIT = 20
 
-_RECLASSIFY_PREFIXES = ("groups.", "age.", "staff.", "no_photo.")
+_RECLASSIFY_PREFIXES = ("groups.", "age.", "staff.", "no_photo.", "youth.", "media.")
 
 
 @dataclass(frozen=True, slots=True)
