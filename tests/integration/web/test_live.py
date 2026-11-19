@@ -10,16 +10,19 @@ import json
 import re
 import threading
 from collections.abc import Iterator
+from itertools import chain, repeat
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 from factories import NEWGEN, RIVAL, player
 from fastapi.testclient import TestClient
-from support.web import KOREAN_WINDOWS, client_for, fake_worker, synced
+from support.web import BASE, KOREAN_WINDOWS, client_for, fake_worker, synced
 
+from facegen.runtime.contracts import SyncControl, SyncStatus
 from facegen.service import WorkerService
 from facegen.web import live
-from facegen.web.app import close_streams
+from facegen.web.app import AppContext, close_streams, create_app
 
 
 @pytest.fixture(autouse=True)
@@ -78,6 +81,30 @@ def test_a_change_sends_the_part_again(setup: tuple[TestClient, WorkerService]) 
     assert len(statuses) >= 2 and statuses[0]["rev"] != statuses[-1]["rev"]
     assert statuses[-1]["state"] == "running"
     assert len(logs) >= 2  # the worker's log grew
+
+
+def test_sync_is_read_once_per_render_and_again_on_each_live_tick(config_file: Path) -> None:
+    db_path = synced(config_file, [player(1001)])
+    running = SyncStatus(running=True, started="12:34:56")
+    finished = SyncStatus(message="Sync finished.")
+    syncer = Mock(spec=SyncControl)
+    # The initial render and first event see the same state. The next event sees it finish.
+    syncer.status.side_effect = chain([running, running], repeat(finished))
+    app = create_app(AppContext(db_path, config_file, syncer=syncer))
+    with TestClient(app, base_url=BASE) as client:
+        page = client.get("/").text
+        syncer.status.assert_called_once_with()
+        assert "12:34:56" in page
+
+        revisions = [
+            data["rev"] for topic, data in events(client.get("/events").text) if topic == "status"
+        ]
+        assert len(revisions) == 2 and revisions[0] != revisions[1]
+        assert f'data-topic="status" data-rev="{revisions[0]}"' in page
+
+        syncer.status.reset_mock()
+        assert "Sync finished." in client.get("/status").text
+        syncer.status.assert_called_once_with()
 
 
 def test_the_state_is_named_in_the_pages_language(setup: tuple[TestClient, WorkerService]) -> None:

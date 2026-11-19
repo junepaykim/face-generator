@@ -386,8 +386,7 @@ def counts(conn: sqlite3.Connection, career_id: int) -> dict[str, int]:
     row = conn.execute(
         "SELECT SUM(group_name = 'a') AS a, SUM(group_name = 'a' AND at_my_club) AS a_my_club,"
         " SUM(group_name = 'b') AS b, SUM(group_name = 'c') AS c, SUM(tracked) AS tracked,"
-        " SUM(at_my_club) AS at_my_club, SUM(pin IS NOT NULL) AS pinned,"
-        " SUM(is_staff AND at_my_club) AS staff, SUM(group_name = 'a' AND is_staff) AS a_staff,"
+        " SUM(pin IS NOT NULL) AS pinned, SUM(group_name = 'a' AND is_staff) AS a_staff,"
         " SUM(youth_team) AS youth, SUM(group_name IS NOT NULL AND media_role IS NOT NULL)"
         " AS media"
         " FROM players WHERE career_id = ? AND present = 1",
@@ -402,18 +401,6 @@ def counts(conn: sqlite3.Connection, career_id: int) -> dict[str, int]:
     out.update(pictures=pics["current"], published=pics["published"])
     out["review"] = review_count(conn, career_id)
     out.update(photo_index.player_counts(conn, career_id))
-    jobs = dict(
-        conn.execute(
-            "SELECT status, COUNT(*) FROM jobs WHERE career_id = ?"
-            " AND status IN ('queued', 'running') GROUP BY status",
-            (career_id,),
-        ).fetchall()
-    )
-    out.update(queued=jobs.get("queued", 0), running=jobs.get("running", 0))
-    out["manual"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs WHERE career_id = ? AND status = 'queued' AND manual = 1",
-        (career_id,),
-    ).fetchone()[0]
     return out
 
 
@@ -580,11 +567,6 @@ def gallery_page(
         (*args, per_page, (f.page - 1) * per_page),
     ).fetchall()
     return [dict(r) for r in rows], total
-
-
-def game_date(conn: sqlite3.Connection, career_id: int) -> str | None:
-    row = conn.execute("SELECT last_game_date FROM careers WHERE id = ?", (career_id,)).fetchone()
-    return row[0] if row else None
 
 
 def first_picture_at(conn: sqlite3.Connection, career_id: int) -> str | None:

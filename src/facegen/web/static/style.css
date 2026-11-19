@@ -233,8 +233,6 @@ ul.what { margin: 2px 0; padding-left: 16px; }
 
 /* First-run setup (Phase 10) */
 .flash.setup { background: var(--warnbg); color: var(--warn); }
-.card.setup-panel { border-color: var(--warn); }
-.card.setup-panel h2 { color: var(--warn); }
 .folder-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 10px 0 6px; }
 .folder-form input[type=text] { flex: 1 1 360px; min-width: 0; }
 progress { width: min(420px, 100%); height: 14px; vertical-align: middle; accent-color: var(--accent); }
@@ -255,7 +253,6 @@ a.button:hover { border-color: var(--accent); text-decoration: none; }
 .now-main h2 { display: flex; align-items: center; gap: 8px; }
 .now-text { font-size: 15px; margin: 4px 0 8px; }
 .now-progress { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 8px; }
-.now-eta { margin: 6px 0; }
 @media (max-width: 600px) {
   .card.now { grid-template-columns: 72px minmax(0, 1fr); gap: 12px; }
   .now-pic img, .now-pic-none { width: 72px; }
@@ -281,7 +278,6 @@ a.button:hover { border-color: var(--accent); text-decoration: none; }
 .thumb-meta time { white-space: nowrap; }
 h2 .small { font-weight: 400; margin-left: 6px; }
 h2.inline { display: inline; }
-.queue-groups { margin-bottom: 8px; }
 
 /* What a group or a term means, on hover (app.js places one box by the word). */
 .hover-tip { position: fixed; z-index: 50; max-width: min(300px, 80vw); padding: 7px 10px;

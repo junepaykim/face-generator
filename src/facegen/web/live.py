@@ -14,7 +14,8 @@ import json
 import sqlite3
 from typing import Any
 
-from facegen.pipeline.worker import load_career
+from facegen.persistence.jobs import load_career
+from facegen.runtime.contracts import SyncStatus
 from facegen.web import queries
 from facegen.web.context import AppContext
 
@@ -37,15 +38,16 @@ def _digest(value: Any) -> str:
 
 
 def snapshot(
-    ctx: AppContext, conn: sqlite3.Connection, extra: Any = None
+    ctx: AppContext, conn: sqlite3.Connection, extra: Any = None, *, sync: SyncStatus | None = None
 ) -> dict[str, dict[str, Any]]:
     """Per topic, what its event carries; "rev" changes when the part would look different.
 
     Cheap on purpose: the services' status in memory and a few MAX/COUNT lookups, about once
-    a second for each open page.
+    a second for each open page. The initial dashboard supplies the sync status it renders.
     """
     worker = ctx.worker.status() if ctx.worker else None
-    sync = ctx.syncer.status() if ctx.syncer else None
+    if sync is None and ctx.syncer is not None:
+        sync = ctx.syncer.status()
     download = ctx.download.status() if ctx.download else None
     poller = ctx.poller.status() if ctx.poller else None
     career = load_career(conn)

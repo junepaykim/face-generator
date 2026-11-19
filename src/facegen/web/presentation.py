@@ -15,9 +15,8 @@ from markupsafe import Markup
 from facegen.core.planner import reference_scale
 from facegen.core.settings_values import Settings
 from facegen.core.traits import TRAIT_TABLES
-from facegen.i18n import GROUPS, LANGUAGES, Translator
-from facegen.persistence.settings import local_label
-from facegen.pipeline.worker import Career, load_career
+from facegen.i18n import GROUPS, Translator
+from facegen.persistence.jobs import load_career
 from facegen.setup.models import REPOS, gigabytes
 from facegen.web import queries
 from facegen.web.dependencies import AppDependencies, translator_for
@@ -88,7 +87,6 @@ def text_context(tr: Translator, settings: Settings) -> dict[str, Any]:
         "t": HtmlText(tr),
         "tr": tr,
         "lang": tr.lang,
-        "languages": LANGUAGES,
         "display": settings.display,
         "js_texts": {key: tr.template(key) for key in JS_TEXTS},
         "dur": lambda seconds: duration(seconds, tr),
@@ -126,7 +124,7 @@ class Presentation:
         self, request: Request, name: str, conn: sqlite3.Connection, **context: Any
     ) -> Response:
         """A part of a page (the dashboard's status), in the request's language."""
-        settings = self.dependencies.settings_now(conn)
+        settings = context.get("settings") or self.dependencies.settings_now(conn)
         return self.templates.TemplateResponse(
             request, name, {**self.texts(request, settings), **context}
         )
@@ -135,25 +133,23 @@ class Presentation:
         self, request: Request, name: str, conn: sqlite3.Connection, **context: Any
     ) -> Response:
         ctx = self.dependencies.ctx
-        career = load_career(conn)
-        settings = self.dependencies.settings_now(conn)
+        career = context["career"] if "career" in context else load_career(conn)
+        settings = context.get("settings") or self.dependencies.settings_now(conn)
         return self.templates.TemplateResponse(
             request,
             name,
             {
                 **self.texts(request, settings),
                 "career": career,
-                "game_date": _game_date(conn, career),
+                "game_date": career.game_date if career else None,
                 "review_count": queries.review_count(conn, career.id) if career else 0,
                 "msg": request.query_params.get("msg"),
                 "err": request.query_params.get("err"),
                 "path": request.url.path,
                 "here": _here(request),
-                "setup": ctx.setup(settings),
+                "setup": context["setup"] if "setup" in context else ctx.setup(settings),
                 "folder_text": request.query_params.get("folder"),
                 "folder_now": settings.paths.fm_user_dir,
-                "folder_origin": settings.paths.describe("paths.fm_user_dir"),
-                "local_file": local_label(ctx.defaults_path),
                 "worker_state": ctx.worker.status().state if ctx.worker else None,
                 **context,
             },
@@ -163,10 +159,3 @@ class Presentation:
 def _here(request: Request) -> str:
     """This page's local address, to come back to after a form."""
     return str(request.url.path) + ("?" + request.url.query if request.url.query else "")
-
-
-def _game_date(conn: sqlite3.Connection, career: Career | None) -> str | None:
-    if career is None:
-        return None
-    row = conn.execute("SELECT last_game_date FROM careers WHERE id = ?", (career.id,)).fetchone()
-    return row[0] if row else None

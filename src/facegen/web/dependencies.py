@@ -10,11 +10,12 @@ from typing import Any
 
 from fastapi import Depends, HTTPException, Request
 
+from facegen.core.job_records import Career
 from facegen.core.settings_values import Settings
 from facegen.i18n import Translator, negotiate
 from facegen.persistence import db
+from facegen.persistence.jobs import load_career
 from facegen.persistence.settings import load_settings
-from facegen.pipeline.worker import Career, load_career
 from facegen.runtime.policy import BUSY_TIMEOUT_MS
 from facegen.setup.hardware import Hardware
 from facegen.web.context import AppContext

@@ -23,7 +23,7 @@ from facegen.persistence.settings import Settings, is_fixed, load_defaults, load
 from facegen.pipeline.sync import run_sync
 from facegen.pipeline.worker import JobFilter, Worker, load_career
 from facegen.service import SyncService, WorkerService
-from facegen.web.app import AppContext, create_app
+from facegen.web.app import AppContext, SetupState, create_app
 
 MINE = 1001  # my club: A
 STAR = 1002  # pre-existing at another club: hand-picked only
@@ -695,6 +695,22 @@ def test_dashboard_reports_an_unsupported_build(env: Env) -> None:
     assert "FM27 build <strong>27.2.0+999</strong>" in text
     assert "bump the pin" in text
     assert "Started by</th><td>the save watcher" in env.client.get("/log").text
+
+
+def test_dashboard_checks_setup_once_per_request(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+    original = AppContext.setup
+    checks = 0
+
+    def counted(ctx: AppContext, settings: Settings) -> SetupState:
+        nonlocal checks
+        checks += 1
+        return original(ctx, settings)
+
+    monkeypatch.setattr(AppContext, "setup", counted)
+    assert env.client.get("/").status_code == 200
+    assert checks == 1
+    assert env.client.get("/status").status_code == 200
+    assert checks == 2
 
 
 def test_dashboard_names_the_career_fm27_is_shown(env: Env) -> None:

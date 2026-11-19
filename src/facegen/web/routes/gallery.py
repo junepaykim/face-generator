@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, Response
 
-from facegen.pipeline.worker import load_career
+from facegen.persistence.jobs import load_career
 from facegen.web import live, queries
 from facegen.web.dependencies import AppDependencies
 from facegen.web.presentation import Presentation
@@ -29,6 +29,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             "total": total,
             "pages": max(1, -(-total // queries.GALLERY_PER_PAGE)),
             "has_career": career is not None,
+            "career": career,
         }
 
     @router.get("/gallery", response_class=HTMLResponse)
