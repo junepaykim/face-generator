@@ -51,13 +51,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from facegen import qc
 from facegen.core.prompt import Prompt, build_prompt
 from facegen.core.traits import pick_pose, picture_seed, sample_sheet
 from facegen.datasource.kits import Kit, load_kits
 from facegen.persistence.settings import load_settings
+from facegen.render import quality_checks as qc
 from facegen.render.gpu import prepare_environment
 from facegen.render.picture import face_box
+from facegen.render.tagger import Eva02Tagger
 
 prepare_environment()
 
@@ -458,7 +459,7 @@ def report(shown: list[str]) -> None:
         if missing:
             sys.exit(f"not rendered: {sorted(missing)}")
         variants = shown
-    tagger = qc.Eva02Tagger()
+    tagger = Eva02Tagger()
     base_timing = json.loads((RUN / BASE / "timing.json").read_text())
 
     def checks(name: str) -> dict[str, Any]:

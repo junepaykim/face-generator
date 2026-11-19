@@ -42,14 +42,14 @@ def one_cap(
     prepare_environment()
     import torch
 
-    from facegen import qc
     from facegen.core.prompt import build_prompt
     from facegen.core.traits import sample_sheet
     from facegen.datasource.kits import Kit
     from facegen.persistence.settings import DETAIL_SIZES
     from facegen.pipeline.worker import AnimagineRenderer, Reference
-    from facegen.qc import Eva02Tagger
+    from facegen.render import quality_checks as qc
     from facegen.render.picture import crop_to_aspect, face_box
+    from facegen.render.tagger import Eva02Tagger
     from facegen.setup import hardware
 
     total = torch.cuda.get_device_properties(0).total_memory

@@ -16,7 +16,7 @@ from facegen.datasource.kits import load_kits
 from facegen.persistence import db
 from facegen.persistence.settings import load_settings
 from facegen.pipeline.sync import run_sync
-from facegen.service import WorkerService
+from facegen.runtime.worker_service import WorkerService
 from facegen.web.app import AppContext, create_app
 
 BASE = "http://127.0.0.1:8765"

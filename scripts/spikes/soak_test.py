@@ -48,8 +48,8 @@ from facegen.pipeline import manual
 from facegen.pipeline.manual import ManualError
 from facegen.pipeline.sync import run_sync
 from facegen.pipeline.worker import load_career
+from facegen.runtime.logging import log_to_file
 from facegen.runtime.worker_process import WorkerProxy, worker_command
-from facegen.service import log_to_file
 
 CHILD = Path(__file__).resolve().parent / "soak_child.py"
 LINES = {

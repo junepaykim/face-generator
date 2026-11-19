@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 
-from facegen.service import SyncStatus, WorkerStatus
+from facegen.runtime.contracts import SyncStatus, WorkerStatus
 
 
 def status(state: str = "idle", **kw: object) -> WorkerStatus:

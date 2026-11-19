@@ -23,15 +23,16 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from facegen import qc
 from facegen.core.prompt import build_prompt
 from facegen.core.shoot import LOOKS, Shoot, shoot_for
 from facegen.core.traits import picture_seed, sample_sheet
 from facegen.datasource.kits import load_kits
 from facegen.persistence.settings import load_settings
 from facegen.pipeline.worker import fm_running
+from facegen.render import quality_checks as qc
 from facegen.render.gpu import prepare_environment
 from facegen.render.picture import face_box
+from facegen.render.tagger import Eva02Tagger
 
 ROOT = Path(__file__).resolve().parents[2]
 RUN = ROOT / "data" / "shoot-test"
@@ -114,7 +115,7 @@ def main() -> None:
         prompt = build_prompt(sheet, wording, shoot.wear, shoot.pose, backdrop=shoot.backdrop)
         if not path.exists():
             if renderer is None:
-                renderer, tagger = AnimagineRenderer(), qc.Eva02Tagger()
+                renderer, tagger = AnimagineRenderer(), Eva02Tagger()
             t0 = time.perf_counter()
             image = renderer.render(prompt, picture_seed(sheet.base_seed, 1, 0, 0))
             image.save(path)

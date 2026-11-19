@@ -30,12 +30,12 @@ import time
 from pathlib import Path
 from typing import Any
 
-from facegen import qc
 from facegen.core.prompt import Prompt, build_prompt
 from facegen.core.traits import pick_pose, picture_seed, sample_sheet
 from facegen.datasource.kits import Kit
 from facegen.render.gpu import on_gpu, prepare_environment
 from facegen.render.picture import face_box
+from facegen.render.tagger import Eva02Tagger
 
 prepare_environment()
 
@@ -66,7 +66,7 @@ def main(args: list[str]) -> None:
     RUN.mkdir(parents=True, exist_ok=True)
     t0 = time.perf_counter()
     renderer = AnimagineRenderer(offload_text_encoders=mode != "resident")
-    tagger = qc.Eva02Tagger()
+    tagger = Eva02Tagger()
     load_s = time.perf_counter() - t0
     prepare = getattr(renderer, "prepare", None)
     if mode == "batch" and prepare is None:
