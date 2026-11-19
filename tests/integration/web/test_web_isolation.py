@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 import sqlite3
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,8 +24,32 @@ from facegen.pipeline.sync import run_sync
 from facegen.runtime.policy import BUSY_TIMEOUT_MS
 from facegen.setup.hardware import Hardware
 from facegen.web.app import AppContext, create_app
+from facegen.web.routes.assets import make_thumb
 
 BASE = "http://127.0.0.1:8765"
+
+
+def test_concurrent_thumbnail_misses_publish_the_same_complete_image(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source, cache = tmp_path / "portrait.png", tmp_path / "thumbs"
+    Image.new("RGB", (150, 200), "red").save(source)
+    both_saved = threading.Barrier(2)
+    save = Image.Image.save
+
+    def overlapping_save(image, *args, **kwargs):
+        save(image, *args, **kwargs)
+        both_saved.wait(timeout=5)
+
+    monkeypatch.setattr(Image.Image, "save", overlapping_save)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        requests = [pool.submit(make_thumb, source, 96, cache) for _ in range(2)]
+        first, second = (request.result(timeout=10) for request in requests)
+    assert first == second
+    with Image.open(first) as thumb:
+        thumb.load()
+        assert thumb.size == (72, 96) and thumb.format == "WEBP"
+    assert list(cache.iterdir()) == [first]
 
 
 def token(client: TestClient) -> str:

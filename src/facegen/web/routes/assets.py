@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import sqlite3
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, Response
@@ -37,9 +37,17 @@ def make_thumb(source: Path, size: int, cache_dir: Path) -> Path:
     with Image.open(source) as im:
         img = im.convert("RGB")
     img.thumbnail((size, size), Image.Resampling.LANCZOS)
-    tmp = dest.with_name(f".{dest.name}.{os.getpid()}.part")
-    img.save(tmp, format="WEBP", quality=85)
-    os.replace(tmp, dest)
+    tmp = dest.with_name(f".{dest.name}.{uuid4().hex}.part")
+    try:
+        img.save(tmp, format="WEBP", quality=85)
+        try:
+            tmp.replace(dest)
+        except PermissionError:
+            # On Windows another request can already be serving the completed thumbnail.
+            if not dest.is_file():
+                raise
+    finally:
+        tmp.unlink(missing_ok=True)
     return dest
 
 
