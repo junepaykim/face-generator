@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from facegen.datasource import snapshots
 from facegen.datasource.base import SaveReadError
 from facegen.runtime import poller
 
@@ -58,7 +59,7 @@ def test_copy_snapshot_retries_a_save_being_written(
             with open(src, "ab") as f:
                 f.write(b" and the rest")
 
-    monkeypatch.setattr(poller.shutil, "copyfile", copy_while_growing)
+    monkeypatch.setattr(snapshots.shutil, "copyfile", copy_while_growing)
     sleeps: list[float] = []
     dest = poller.copy_snapshot(src, tmp_path / "snap", sleep=sleeps.append)
     assert dest.read_bytes() == b"part and the rest"
@@ -76,7 +77,7 @@ def test_copy_snapshot_gives_up_on_a_save_that_keeps_changing(
         with open(src, "ab") as f:
             f.write(b"!")
 
-    monkeypatch.setattr(poller.shutil, "copyfile", copy_and_grow)
+    monkeypatch.setattr(snapshots.shutil, "copyfile", copy_and_grow)
     with pytest.raises(SaveReadError, match="kept changing"):
         poller.copy_snapshot(src, tmp_path / "snap", attempts=2, sleep=lambda _: None)
     assert not list((tmp_path / "snap").iterdir())
@@ -153,6 +154,6 @@ def test_copy_snapshot_reports_a_busy_save(tmp_path: Path, monkeypatch: pytest.M
         with open(src, "ab") as f:
             f.write(b"!")
 
-    monkeypatch.setattr(poller.shutil, "copyfile", copy_and_grow)
+    monkeypatch.setattr(snapshots.shutil, "copyfile", copy_and_grow)
     with pytest.raises(SaveBusyError):
         poller.copy_snapshot(src, tmp_path / "snap", attempts=1)

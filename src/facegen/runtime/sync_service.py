@@ -8,15 +8,19 @@ the calling thread: the tests' fake sources, as WorkerService stays beside Worke
 from __future__ import annotations
 
 import logging
+import sqlite3
 import threading
 from collections.abc import Callable, Sequence
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
 from facegen.datasource.base import DataSource
+from facegen.persistence import db, publication
 from facegen.pipeline.sync_operation import execute_sync
 from facegen.runtime.contracts import FAILED, SyncOutcome, SyncRequest, SyncResult, SyncStatus
 from facegen.runtime.logging import stamp
+from facegen.runtime.policy import BUSY_TIMEOUT_MS
 from facegen.runtime.sync_process import SyncProcess
 
 STOP_JOIN_SECONDS = 10.0
@@ -49,10 +53,11 @@ class SyncService:
         )
         self._on_done = on_done
         self._log = log
-        self._lock = threading.Lock()
+        self._lock = threading.Condition()
         self._status = SyncStatus()
         self._stopped = False
         self._thread: threading.Thread | None = None
+        self._recovery_thread: threading.Thread | None = None
 
     @property
     def process(self) -> SyncProcess | None:
@@ -63,12 +68,34 @@ class SyncService:
         with self._lock:
             return SyncStatus(**vars(self._status))
 
-    def _claim(self, trigger: str) -> bool:
+    def _claim(self, trigger: str, *, wait: bool = False) -> bool:
         with self._lock:
+            if wait:
+                self._lock.wait_for(lambda: self._stopped or not self._status.running)
             if self._status.running or self._stopped:
                 return False
             self._status = SyncStatus(running=True, started=stamp(), trigger=trigger)
             return True
+
+    def recover_if_pending(self) -> None:
+        """For starts without a watcher, check for an unfinished pack in the background."""
+
+        def recover() -> None:
+            try:
+                with closing(db.connect(self.db_path, busy_timeout_ms=BUSY_TIMEOUT_MS)) as conn:
+                    pending = publication.pending(conn)
+                if pending and self._claim("publish recovery", wait=True):
+                    self._run(None, "publish recovery")
+            except (OSError, sqlite3.Error):
+                logger.exception("could not check for an interrupted publication at startup")
+
+        with self._lock:
+            if self._stopped or self._recovery_thread is not None:
+                return
+            self._recovery_thread = threading.Thread(
+                target=recover, name="facegen-publish-recovery", daemon=True
+            )
+            self._recovery_thread.start()
 
     def start(self) -> bool:
         """Start a sync of the newest save in the background; False if one is running, or
@@ -84,6 +111,8 @@ class SyncService:
     def join(self, timeout: float | None = None) -> None:
         if self._thread is not None:
             self._thread.join(timeout)
+        if self._recovery_thread is not None:
+            self._recovery_thread.join(timeout)
 
     def run(self, save: Path | None = None, trigger: str = "sync now") -> SyncOutcome | None:
         """Sync `save` (default: the newest) in this thread. Returns SYNCED, UNREADABLE or
@@ -99,10 +128,10 @@ class SyncService:
         (the tests' fakes) cannot be ended."""
         with self._lock:
             self._stopped = True
+            self._lock.notify_all()
         if self._process is not None:
             self._process.stop()
-        if self._thread is not None:
-            self._thread.join(timeout)
+        self.join(timeout)
 
     def _run(self, save: Path | None, trigger: str) -> SyncOutcome:
         request = SyncRequest(
@@ -138,3 +167,4 @@ class SyncService:
                 warnings=list(result.warnings),
                 notice=result.notice,
             )
+            self._lock.notify_all()

@@ -3,14 +3,29 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
+from io import StringIO
 from pathlib import Path
 
 import pytest
-from factories import MY_CLUB, NEWGEN, RIVAL, media_person, player, snapshot
+from factories import MY_CLUB, NEWGEN, RIVAL, media_person, player, snapshot, staff_member
 
-from facegen.persistence.settings import SettingsError, load_settings, read_overrides, set_override
+from facegen.cli import main
+from facegen.core.records import Snapshot
+from facegen.persistence import db
+from facegen.persistence.settings import (
+    SettingsError,
+    load_settings,
+    local_path,
+    read_overrides,
+    set_override,
+)
 from facegen.pipeline import settings_history as history
+from facegen.pipeline.publish import config_xml, pack_dir, write_config
 from facegen.pipeline.sync import run_sync
+from facegen.pipeline.sync_operation import execute_sync
+from facegen.runtime.contracts import SYNCED, SyncRequest
+from facegen.setup.folder_setup import write_local_path
 
 RIVAL_C = NEWGEN + 3  # my league, CA 120: group C until C's bar passes 120
 
@@ -220,3 +235,53 @@ def test_youth_and_media_edits_undo_and_redo_keep_groups_and_queue_in_sync(
         assert history.redo(conn).report is not None
         assert_groups(disabled)
         groups = disabled
+
+
+@pytest.mark.parametrize("entrypoint", ["desktop", "cli"])
+def test_save_sync_keeps_a_settings_edit_made_while_reading_the_snapshot(
+    config_file: Path,
+    entrypoint: str,
+) -> None:
+    settings = load_settings(defaults_path=config_file)
+    save = settings.paths.snapshots_dir / "career.fm"
+    save.parent.mkdir(parents=True)
+    save.write_bytes(b"synthetic save")
+    coach = 1122
+    people = snapshot(staff=[staff_member(coach)])
+    new_fm_folder = config_file.parent / "other-fm-folder"
+    obsolete_pack = pack_dir(new_fm_folder, "previous-career")
+    write_config(obsolete_pack, [coach], new_fm_folder)
+    active_jobs = "SELECT COUNT(*) FROM jobs WHERE unique_id = ? AND status = 'queued'"
+    with closing(db.connect(settings.paths.db_path)) as editor:
+        run_sync(editor, people, settings, save_file=save.name)
+        assert editor.execute(active_jobs, (coach,)).fetchone()[0] == 1
+
+        class Source:
+            def load(self, path: Path) -> Snapshot:
+                history.save(editor, {"staff.enabled": False}, defaults_path=config_file)
+                write_local_path(local_path(config_file), "fm_user_dir", str(new_fm_folder))
+                assert editor.execute(active_jobs, (coach,)).fetchone()[0] == 0
+                return people
+
+        if entrypoint == "desktop":
+            request = SyncRequest(str(settings.paths.db_path), str(config_file), str(save))
+            assert execute_sync(request, Source).outcome == SYNCED
+        else:
+            out = StringIO()
+            assert (
+                main(
+                    ["--config", str(config_file), "sync", "--save", str(save)],
+                    source_factory=Source,
+                    out=out,
+                )
+                == 0
+            ), out.getvalue()
+        assert not load_settings(editor, config_file).staff.enabled
+        assert (
+            editor.execute(
+                "SELECT group_name FROM players WHERE unique_id = ?", (coach,)
+            ).fetchone()[0]
+            is None
+        )
+        assert editor.execute(active_jobs, (coach,)).fetchone()[0] == 0
+        assert (obsolete_pack / "config.xml").read_text(encoding="utf-8") == config_xml([])

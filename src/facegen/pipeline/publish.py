@@ -15,12 +15,13 @@ from __future__ import annotations
 import os
 import shutil
 import sqlite3
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from facegen.persistence import publication
 from facegen.persistence.db import active_career_id, transaction
 from facegen.platform import native
 from facegen.platform.locking import file_lock
@@ -302,42 +303,60 @@ def publish_lock(data_dir: Path) -> Iterator[None]:
         yield
 
 
-def publish_pack(
-    conn: sqlite3.Connection, settings: Settings, career_id: int, career_key: str
+def _publish_locked(
+    conn: sqlite3.Connection, settings: Settings, career_id: int, career_key: str, *, active: bool
 ) -> PublishReport:
-    """Publish one career's pictures. If it is the active career, its config.xml maps them
-    and every other pack is unmapped; otherwise its config.xml maps nothing. Raises
-    FolderNotSetError without FM27's folder."""
     fm_user_dir = settings.paths.fm_user_dir
     if fm_user_dir is None:
         raise FolderNotSetError()
-    with publish_lock(settings.paths.data_dir), transaction(conn):
-        active = active_career_id(conn) == career_id
-        report = publish_career(
-            conn,
-            career_id,
-            career_key,
-            fm_user_dir,
-            settings.groups.published_sizes(),
-            data_dir=settings.paths.data_dir,
-            active=active,
-        )
-        if active:
-            report = replace(report, deactivated=deactivate_packs(fm_user_dir, career_key))
+    report = publish_career(
+        conn,
+        career_id,
+        career_key,
+        fm_user_dir,
+        settings.groups.published_sizes(),
+        data_dir=settings.paths.data_dir,
+        active=active,
+    )
+    if active:
+        report = replace(report, deactivated=deactivate_packs(fm_user_dir, career_key))
     return report
 
 
-def publish_active(conn: sqlite3.Connection, settings: Settings) -> PublishReport | None:
+def publish_pack(
+    conn: sqlite3.Connection, settings: Settings, career_id: int, career_key: str
+) -> PublishReport:
+    """Publish one career's pictures. If it is active, unmap every other career's pack."""
+    with publish_lock(settings.paths.data_dir), transaction(conn):
+        return _publish_locked(
+            conn, settings, career_id, career_key, active=active_career_id(conn) == career_id
+        )
+
+
+def publish_active(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    *,
+    read_settings: Callable[[], Settings] | None = None,
+) -> PublishReport | None:
     """Show FM27 the active career's pack and no other; None if there is no career yet.
 
     Run after every sync: a save from another career switches the pack.
     """
-    row = conn.execute(
-        "SELECT id, key FROM careers WHERE id = ?", (active_career_id(conn),)
-    ).fetchone()
-    if row is None:
-        return None
-    return publish_pack(conn, settings, row["id"], row["key"])
+    with publish_lock(settings.paths.data_dir), transaction(conn):
+        row = conn.execute(
+            "SELECT id, key FROM careers WHERE id = ?", (active_career_id(conn),)
+        ).fetchone()
+        if row is None:
+            return None
+        # Settings edits and career changes cannot race the writer while it applies and
+        # acknowledges the committed sync. An ordinary worker publishing an older job
+        # does not acknowledge this marker with its own snapshot of the settings.
+        if read_settings is not None:
+            settings = read_settings()
+        report = _publish_locked(conn, settings, row["id"], row["key"], active=True)
+        publication.finish(conn)
+        return report
 
 
 def unpublish(

@@ -39,35 +39,42 @@ def fake_gpu(**kw: object) -> Gpu:
 
 def test_the_parts_stop_in_order(config_file: Path) -> None:
     settings = load_settings(defaults_path=config_file)
-    rt = build_runtime(settings, NoSource, fake_gpu(), config=config_file, paused=True)
+    rt = build_runtime(
+        settings, fake_gpu(), inline_source=NoSource, config=config_file, paused=True
+    )
     # A running sync ends first: the save watcher's thread may be waiting for it (Phase 14).
     assert [name for name, _ in rt.stop_steps()] == ["sync", "save watcher", "worker"]
     assert rt.url == f"http://127.0.0.1:{settings.ui.port}/"
     assert rt.context.browse is None or callable(rt.context.browse)
     # With the real worker's model check, the download is stopped first.
     rt = build_runtime(
-        settings, NoSource, fake_gpu(models_ready=lambda: True), config=config_file, paused=True
+        settings,
+        fake_gpu(models_ready=lambda: True),
+        inline_source=NoSource,
+        config=config_file,
+        paused=True,
     )
     assert [name for name, _ in rt.stop_steps()] == [
         "model download", "sync", "save watcher", "worker",
     ]  # fmt: skip
-    rt = build_runtime(settings, NoSource, fake_gpu(), worker=False, watch=False, browse=None)
+    rt = build_runtime(
+        settings, fake_gpu(), inline_source=NoSource, worker=False, watch=False, browse=None
+    )
     assert [name for name, _ in rt.stop_steps()] == ["sync"] and rt.context.browse is None
 
 
 def test_the_real_save_reader_syncs_in_a_process_of_its_own(config_file: Path) -> None:
     """Phase 14: with the real reader each sync runs in `facegen sync-process`; a test's fake
     source syncs in the calling thread, as WorkerService stays beside WorkerProxy."""
-    from facegen.runtime.dependencies import default_source
     from facegen.runtime.sync_process import sync_command
 
     settings = load_settings(defaults_path=config_file)
-    real = build_runtime(settings, default_source, fake_gpu(), worker=False, browse=None)
+    real = build_runtime(settings, fake_gpu(), worker=False, browse=None)
     assert real.syncer.process is not None
     assert real.syncer.process.command == sync_command() == [
         sys.executable, "-m", "facegen.cli", "sync-process",
     ]  # fmt: skip
-    fake = build_runtime(settings, NoSource, fake_gpu(), worker=False, browse=None)
+    fake = build_runtime(settings, fake_gpu(), inline_source=NoSource, worker=False, browse=None)
     assert fake.syncer.process is None
 
 
@@ -78,12 +85,14 @@ def test_an_address_beyond_this_pc_is_refused(config_file: Path) -> None:
     )
     settings = load_settings(defaults_path=config_file)
     with pytest.raises(CannotStart, match="this PC only"):
-        build_runtime(settings, NoSource, fake_gpu())
+        build_runtime(settings, fake_gpu(), inline_source=NoSource)
 
 
 def test_the_server_thread_answers_and_stops(config_file: Path) -> None:
     settings = load_settings(defaults_path=config_file)
-    rt = build_runtime(settings, NoSource, fake_gpu(), worker=False, watch=False, browse=None)
+    rt = build_runtime(
+        settings, fake_gpu(), inline_source=NoSource, worker=False, watch=False, browse=None
+    )
     port = free_port()
     assert not port_answers("127.0.0.1", port)
     server = ServerThread(rt.app, "127.0.0.1", port)
@@ -99,7 +108,9 @@ def test_the_server_thread_answers_and_stops(config_file: Path) -> None:
 
 def test_a_taken_port_is_a_clear_error(config_file: Path) -> None:
     settings = load_settings(defaults_path=config_file)
-    rt = build_runtime(settings, NoSource, fake_gpu(), worker=False, watch=False, browse=None)
+    rt = build_runtime(
+        settings, fake_gpu(), inline_source=NoSource, worker=False, watch=False, browse=None
+    )
     with socket.socket() as taken:
         taken.bind(("127.0.0.1", 0))
         taken.listen()
@@ -117,7 +128,9 @@ def test_an_open_page_does_not_hold_the_server_when_it_stops(config_file: Path) 
     import time
 
     settings = load_settings(defaults_path=config_file)
-    rt = build_runtime(settings, NoSource, fake_gpu(), worker=False, watch=False, browse=None)
+    rt = build_runtime(
+        settings, fake_gpu(), inline_source=NoSource, worker=False, watch=False, browse=None
+    )
     port = free_port()
     server = ServerThread(rt.app, "127.0.0.1", port)
     server.start()

@@ -70,7 +70,7 @@ def test_sync_commits_before_publishing_and_closes_before_completion(
         connections.append(connection)
         return connection
 
-    def publish(connection: sqlite3.Connection, settings: Settings) -> None:
+    def publish(connection: sqlite3.Connection, settings: Settings, **kwargs: object) -> None:
         events.append("publish")
         with closing(connect(settings.paths.db_path)) as reader:
             assert reader.execute("SELECT name FROM players WHERE unique_id=1001").fetchone()

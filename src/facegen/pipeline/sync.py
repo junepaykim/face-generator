@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, date, datetime
 from typing import Any, NamedTuple
@@ -790,15 +791,21 @@ def run_sync(
     with_table: bool = False,
     trigger: str | None = None,
     photos: PhotoScan | None = None,
+    read_settings: Callable[[], Settings] | None = None,
+    before_commit: Callable[[], None] | None = None,
 ) -> SyncReport:
     """Run one sync in a transaction; a dry run rolls everything back.
 
     `save_mtime` is the save's modification time as read. The career keeps the newest it has
     seen; the career with the newest save is the active one (spec section 8). `trigger` says
     who started the sync: 'poller', 'sync now' or 'command'. `photos` is a fresh look at who
-    FM27 shows a photo for (photos.scan); without it the stored one stands.
+    FM27 shows a photo for (photos.scan); without it the stored one stands. File-based sync
+    supplies `read_settings` so changes saved while parsing are seen under the write lock.
+    `before_commit` runs inside the transaction, once a non-dry run is ready to commit.
     """
     with transaction(conn, rollback=dry_run):
+        if read_settings is not None:
+            settings = read_settings()
         if photos is not None:
             photo_index.store(conn, photos)
         career, warnings = resolve_career(conn, snapshot, settings)
@@ -849,7 +856,7 @@ def run_sync(
             warnings.extend(photo_status.warnings)
         warnings.extend(snapshot.meta.warnings)
 
-        return SyncReport(
+        report = SyncReport(
             dry_run=dry_run,
             career=career,
             save_file=save_file,
@@ -869,6 +876,9 @@ def run_sync(
             new_at_my_club=stats.arrivals_at_my_club,
             new_staff=stats.staff_arrivals,
         )
+        if not dry_run and before_commit is not None:
+            before_commit()
+        return report
 
 
 def reclassify(

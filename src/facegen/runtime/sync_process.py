@@ -23,8 +23,9 @@ through a `.part` file, parsing only reads, and SQLite rolls an unfinished trans
 so the database stays as it was and the save watcher reads that save again at the next start.
 After the commit only publication remains (each file is written whole, then renamed), and it
 is let finish. So a stop command, or the end of stdin (the parent is gone), ends the child at
-once before the commit and is ignored after it. The parent kills a child that has not ended
-within `STOP_SECONDS`, or `PUBLISH_SECONDS` once committed.
+once while reading/planning. The child protects its final commit from a simultaneous stop.
+The parent kills a child that has not ended within `STOP_SECONDS`, extending the deadline
+when it receives the commit notification. SQLite retains pending publication across a kill.
 
 `SyncProcess` is the parent's side; runtime.sync_service.SyncService claims and reports.
 """
@@ -37,6 +38,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from typing import TYPE_CHECKING, Any, TextIO
@@ -66,7 +68,7 @@ STOPPED_ERROR = (
 )
 STOPPED_PUBLISHING_ERROR = (
     "facegen quit while the sync was publishing: the sync is stored, and FM27's pack is"
-    " brought up to date by the next sync or picture"
+    " published again at the next start"
 )
 
 OUTCOMES = (SYNCED, UNREADABLE, FAILED)
@@ -159,9 +161,10 @@ class _Progress:
         with self._lock:
             self._stage = stage
 
-    def can_abandon(self) -> bool:
+    def stop_if_reading(self, exit_now: Callable[[int], Any]) -> None:
         with self._lock:
-            return self._stage == "reading"
+            if self._stage == "reading":
+                exit_now(STOPPED_EXIT)
 
 
 def _watch_parent(
@@ -175,8 +178,7 @@ def _watch_parent(
                 break
     except (OSError, ValueError):
         pass  # the pipe broke: the parent is gone
-    if progress.can_abandon():
-        exit_now(STOPPED_EXIT)
+    progress.stop_if_reading(exit_now)
 
 
 def serve_child(
@@ -219,7 +221,12 @@ def serve_child(
         link.send({"type": "result", "result": result_to_json(result)})
 
     return execute_sync(
-        request, source_factory, log=link.line, on_committed=committed, on_result=finished
+        request,
+        source_factory,
+        log=link.line,
+        before_commit=lambda: progress.enter("committing"),
+        on_committed=committed,
+        on_result=finished,
     )
 
 
@@ -246,7 +253,7 @@ class SyncProcess:
         self._lock = threading.Lock()
         self._writer = JsonWriter()
         self._child: subprocess.Popen[str] | None = None
-        self._committed = False
+        self._committed_at: float | None = None
         self._stopped = False
         self.starts = 0
         """Sync processes started so far."""
@@ -272,7 +279,7 @@ class SyncProcess:
                 failed: OSError | None = exc
             else:
                 failed = None
-                self._child, self._committed = child, False
+                self._child, self._committed_at = child, None
                 self.starts += 1
         if failed is not None:
             logger.error("could not start the sync process", exc_info=failed)
@@ -300,7 +307,7 @@ class SyncProcess:
                             self._log(str(message["text"]))
                         case "committed":
                             with self._lock:
-                                self._committed = True
+                                self._committed_at = time.monotonic()
                         case "result":
                             result = result_from_json(message["result"])
                         case _:
@@ -314,7 +321,7 @@ class SyncProcess:
                 procs.close_streams(child.stdin, child.stdout, child.stderr)
             with self._lock:
                 self._child = None
-                stopped, committed = self._stopped, self._committed
+                stopped, committed = self._stopped, self._committed_at is not None
         logger.info("sync process %d ended (%s)", child.pid, procs.describe_exit(code))
         if result is not None:
             return result
@@ -324,7 +331,7 @@ class SyncProcess:
             return SyncResult(FAILED, error=error)
         text = f"the sync process ended unexpectedly ({procs.describe_exit(code)})"
         if committed:
-            text += "; the sync is stored, but FM27's pack may not be up to date until the next one"
+            text += "; the sync is stored and unfinished publication will be retried"
         self._log(f"Sync failed: {text}.")
         if tail:
             logger.error("sync process's last output:\n%s", "\n".join(tail))
@@ -336,20 +343,34 @@ class SyncProcess:
         `publish_seconds` once committed) is killed."""
         with self._lock:
             self._stopped = True
-            child, committed = self._child, self._committed
+            child = self._child
         if child is None:
             return
+        started = time.monotonic()
         self._send(child, {"cmd": "stop"})
         with self._writer.lock:
             procs.close_streams(child.stdin)
-        grace = self.publish_seconds if committed else self.stop_seconds
-        if committed:
+        with self._lock:
+            committed_at = self._committed_at
+        grace = self.stop_seconds
+        if committed_at is None:
+            try:
+                child.wait(timeout=self.stop_seconds)
+                return
+            except subprocess.TimeoutExpired:
+                # The child can commit after Quit starts waiting.
+                with self._lock:
+                    committed_at = self._committed_at
+        remaining = 0.0
+        if committed_at is not None:
+            grace = self.publish_seconds
+            remaining = max(0.0, max(started, committed_at) + grace - time.monotonic())
             logger.info("the sync is stored; waiting up to %.0f s for it to publish", grace)
 
         def killing() -> None:
             logger.warning("the sync process did not stop within %.0f s; ended it", grace)
 
-        procs.wait_or_kill(child, timeout=grace, on_timeout=killing)
+        procs.wait_or_kill(child, timeout=remaining, on_timeout=killing)
 
     def _send(self, child: subprocess.Popen[str], message: dict[str, Any]) -> bool:
         if child.stdin is None:

@@ -3,11 +3,11 @@
 `build_runtime` constructs without starting; `Runtime.start` starts the watcher, the worker
 and the update check. The update check is not a quit step (it only waits between checks):
 `Runtime.stop_updates` ends it when facegen stops.
-`Runtime.stop_steps` stops downloads, a running sync (its process ends within a few seconds,
-leaving the database as it was: sync_process), the watcher, then the worker, allowing its
+`Runtime.stop_steps` stops downloads, a running sync (a committed sync gets time to
+publish its pack), the watcher, then the worker, allowing its
 current job up to `worker_process.STOP_TIMEOUT` seconds before releasing the GPU by ending
-the process. With the real save reader each sync runs in a process of its own; the tests'
-fake sources sync in the calling thread.
+the process. Each sync runs in a process of its own by default. Tests can explicitly
+select in-thread execution by injecting an inline source.
 `serve` runs uvicorn in the main thread and cleans up afterward. The desktop shell runs
 `ServerThread` and stops it after the runtime steps.
 """
@@ -74,6 +74,8 @@ class Runtime:
         """Start the save watcher, the GPU worker process and the update check."""
         if self.poller is not None:
             self.poller.start()
+        else:
+            self.syncer.recover_if_pending()
         if self.worker is not None:
             self.worker.start()
         if self.updates is not None:
@@ -102,9 +104,9 @@ class Runtime:
 
 def build_runtime(
     settings: Settings,
-    source_factory: Callable[[], DataSource],
     gpu: Gpu,
     *,
+    inline_source: Callable[[], DataSource] | None = None,
     config: Path | None = None,
     port: int | None = None,
     paused: bool = False,
@@ -116,7 +118,6 @@ def build_runtime(
     """The parts of a running facegen, none started. Raises CannotStart when it cannot run
     as configured (an address beyond this PC, a broken kit table)."""
     from facegen.runtime import sync_process
-    from facegen.runtime.dependencies import default_source
     from facegen.runtime.poller_service import PollerService
     from facegen.runtime.sync_service import SyncService
     from facegen.runtime.update_service import UpdateService
@@ -140,12 +141,10 @@ def build_runtime(
             start_paused=paused,
             echo_stderr=echo_stderr,
         )
-    # The real reader parses in a process of its own; a test's fake source in this one.
-    own_process = source_factory is default_source
     syncer = SyncService(
         db_path,
-        None if own_process else source_factory,
-        command=sync_process.sync_command() if own_process else None,
+        inline_source,
+        command=sync_process.sync_command() if inline_source is None else None,
         defaults_path=config,
         on_done=proxy.wake if proxy else (lambda: None),
         log=proxy.log if proxy else (lambda line: None),

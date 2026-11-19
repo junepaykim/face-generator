@@ -45,19 +45,22 @@ Use the web/datasource guides for HTTP, adapters and bundled kit data; use
 - `persistence/jobs.py` owns queue transitions. Claims revalidate revision and eligibility
   under the write transaction; do not render a stale selection. Persist sheet allocation
   before GPU work and retain it across interruptions.
-- Sync ingestion/planning commits before publication. A later failure cannot roll back
-  committed sync state or already published files. Threshold edits reclassify stored facts.
+- Sync ingestion and planning use the settings current inside the write transaction.
+  Commit the pending publication with the sync. Clear it only after publishing the
+  active pack succeeds. Settings changes, Undo and Redo reclassify stored facts.
 - When holding both locks, take the publish lock before the database transaction.
   Restore commits its sheet/image selection before publishing. Keep both numeric and
   `r-` FM portrait mappings for each published person.
 
 ## Runtime and rendering gotchas
 
-- `runtime.composition.build_runtime` constructs without starting; serve/app/tray share
-  its lifecycle. Stop downloads, watcher, worker, then the desktop server and GUI.
-- Worker, window and each sync own a child process. `SyncService` runs the sync in the
-  calling thread only for a test's fake source; the real reader goes to `facegen
-  sync-process`. A stop may end that child only before its commit (`on_committed`).
+- `runtime.composition.build_runtime` constructs without starting. Desktop, tray and
+  development server share its lifecycle. Quit stops downloads, active sync, watcher
+  and worker in order, then closes the desktop server and UI.
+- The GPU worker, WebView2 window and each production sync own a child process.
+  Tests opt into inline sync explicitly. Snapshot access belongs in `datasource/snapshots.py`,
+  orchestration in `pipeline/sync_operation.py`, and shutdown timing in
+  `runtime/sync_process.py`. A committed sync gets a publication grace period on Quit.
   A fatal CUDA fault requires worker exit/restart, not another render in the same context.
 - Child stdout carries JSON lines only; diagnostics go to stderr. Use
   `platform.pipes.JsonWriter` for atomic write/flush; status read-and-send share its lock.

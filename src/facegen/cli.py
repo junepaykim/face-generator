@@ -42,6 +42,12 @@ from facegen.persistence.settings import folder_not_set_message, load_settings
 from facegen.pipeline.gallery import write_gallery
 from facegen.pipeline.publish import RELOAD_HINT, PublishError, PublishReport, publish_active
 from facegen.pipeline.sync import SyncReport
+from facegen.pipeline.sync_operation import (
+    UNSUPPORTED_ADVICE,
+    NoSaveError,
+    SaveUnreadableError,
+    sync_save,
+)
 from facegen.pipeline.worker import (
     Worker,
     WorkerBusy,
@@ -53,7 +59,6 @@ from facegen.runtime.dependencies import Gpu
 from facegen.runtime.dependencies import default_renderer as _default_renderer
 from facegen.runtime.dependencies import default_source as _default_source
 from facegen.runtime.dependencies import default_tagger as _default_tagger
-from facegen.runtime.poller import UNSUPPORTED_ADVICE, NoSaveError, SaveUnreadableError, sync_save
 from facegen.setup import hardware, models, native_wheel
 from facegen.setup import operations as setup_operations
 
@@ -160,6 +165,7 @@ def cmd_sync(
             preview=args.show,
             with_table=args.csv is not None,
             trigger="command",
+            read_settings=lambda: load_settings(conn, args.config),
         )
     except NoSaveError as exc:
         print(str(exc), file=out)
@@ -180,8 +186,10 @@ def cmd_sync(
     if not args.dry_run:
         # The newest save decides which career's pack FM27 is shown (spec section 8).
         try:
-            activation = publish_active(conn, settings)
-        except PublishError as exc:
+            activation = publish_active(
+                conn, settings, read_settings=lambda: load_settings(conn, args.config)
+            )
+        except (PublishError, OSError) as exc:
             print(f"Publishing failed: {exc}", file=out)
             return 3
         if activation is not None and activation.changed:
@@ -470,7 +478,7 @@ def cmd_gallery(
 def cmd_serve(
     args: argparse.Namespace,
     settings: Settings,
-    source_factory: Callable[[], DataSource],
+    source_factory: Callable[[], DataSource] | None,
     gpu: Gpu,
     out: TextIO,
     *,
@@ -489,8 +497,8 @@ def cmd_serve(
     try:
         rt = build_runtime(
             settings,
-            source_factory,
             gpu,
+            inline_source=source_factory,
             config=args.config,
             port=args.port,
             paused=args.paused,
@@ -592,7 +600,7 @@ def cmd_sync_process(source_factory: Callable[[], DataSource], out: TextIO) -> i
 
 def cmd_desktop(
     args: argparse.Namespace,
-    source_factory: Callable[[], DataSource],
+    source_factory: Callable[[], DataSource] | None,
     gpu: Gpu | None,
 ) -> int:
     """`facegen app` and `facegen tray` (desktop.py). A failure while starting is written to
@@ -750,7 +758,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(
     argv: Sequence[str] | None = None,
     *,
-    source_factory: Callable[[], DataSource] = _default_source,
+    source_factory: Callable[[], DataSource] | None = None,
     gpu: Gpu | None = None,
     out: TextIO | None = None,
     run_server: Callable[..., None] | None = None,
@@ -766,7 +774,7 @@ def main(
     if args.command == "hardware" and args.json:
         return cmd_hardware(args, out)
     if args.command == "sync-process":  # the request names the database and defaults
-        return cmd_sync_process(source_factory, out)
+        return cmd_sync_process(source_factory or _default_source, out)
     if args.command in ("app", "tray"):  # takes its lock before it opens the database
         return cmd_desktop(args, source_factory, gpu)
     if args.command == "launch":  # Start.bat's: no database; it reads the settings itself
@@ -786,7 +794,7 @@ def main(
     try:
         settings = load_settings(conn, defaults_path=args.config)
         if args.command == "sync":
-            return cmd_sync(args, settings, conn, source_factory(), out)
+            return cmd_sync(args, settings, conn, (source_factory or _default_source)(), out)
         if args.command == "run":
             return cmd_run(args, settings, conn, gpu or Gpu(), out)
         if args.command == "publish":

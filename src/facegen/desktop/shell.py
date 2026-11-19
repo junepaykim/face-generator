@@ -355,7 +355,7 @@ def _run(
         build_runtime,
         port_answers,
     )
-    from facegen.runtime.dependencies import Gpu, default_source
+    from facegen.runtime.dependencies import Gpu
     from facegen.runtime.logging import log_to_file
 
     shell = shell or Shell()
@@ -407,8 +407,8 @@ def _run(
 
         rt = build_runtime(
             settings,
-            source_factory or default_source,
             gpu or Gpu(),
+            inline_source=source_factory,
             config=config,
             port=args.port,
             paused=args.paused,

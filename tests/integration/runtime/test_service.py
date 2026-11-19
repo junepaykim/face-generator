@@ -786,10 +786,10 @@ def test_an_unsupported_build_is_reported_once_and_the_queue_is_kept(watch: Watc
 def test_a_save_still_being_copied_is_tried_again(
     watch: Watch, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from facegen.datasource import snapshots
     from facegen.datasource.base import SaveBusyError
-    from facegen.runtime import poller as poller_module
 
-    real = poller_module.copy_snapshot
+    real = snapshots.copy_snapshot
     calls: list[int] = []
 
     def busy_once(*args: object, **kw: object) -> Path:
@@ -798,7 +798,7 @@ def test_a_save_still_being_copied_is_tried_again(
             raise SaveBusyError("career.fm kept changing while it was copied; is FM27 saving?")
         return real(*args, **kw)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(poller_module, "copy_snapshot", busy_once)
+    monkeypatch.setattr(snapshots, "copy_snapshot", busy_once)
     watch.save()
     watch.poll_until_synced()
     assert watch.runs()[-1]["save_mtime"] is None  # recorded, but not "dealt with"

@@ -24,7 +24,7 @@ from support.paths import ROOT, TESTS
 from support.processes import has_exited
 
 from facegen.core.records import Snapshot
-from facegen.persistence import db
+from facegen.persistence import db, publication
 from facegen.persistence.settings import Settings, load_settings
 from facegen.pipeline.sync import run_sync
 from facegen.platform import procs
@@ -380,7 +380,7 @@ def test_quit_during_a_sync_ends_it_at_once_with_the_database_as_it_was(
 
 
 def test_quit_after_the_commit_lets_publication_finish_for_a_while(
-    child: Child, caplog: pytest.LogCaptureFixture
+    child: Child, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     write_save(child.settings)
     before = len(child.runs())
@@ -400,6 +400,64 @@ def test_quit_after_the_commit_lets_publication_finish_for_a_while(
     assert pid is not None and has_exited(pid)
     assert syncer.status().error == STOPPED_PUBLISHING_ERROR
     assert len(child.runs()) == before + 1  # the stored sync stays
+
+    # Even with no further FM save, restart must unmap the previous career. A reader
+    # that always crashes also proves recovery never parses the synthetic save again.
+    fm = child.settings.paths.fm_user_dir
+    assert fm is not None
+    old_config = fm / "graphics" / "facegen" / "old" / "config.xml"
+    old_config.parent.mkdir(parents=True)
+    old_config.write_text('<record from="2" to="graphics/pictures/person/2/portrait"/>')
+    restarted = child.syncer("die")
+    poller = child.poller(restarted, Clock())
+
+    def unavailable(folder: Path) -> None:
+        raise OSError("games listing unavailable")
+
+    monkeypatch.setattr("facegen.runtime.poller_service.find_latest_save", unavailable)
+    poller.step()
+    assert "games listing unavailable" in poller.status().detail
+    assert restarted.status().trigger == "publish recovery" and restarted.status().error is None
+    assert "person/2" not in old_config.read_text()
+    assert len(child.runs()) == before + 1
+    with closing(db.connect(child.settings.paths.db_path)) as conn:
+        assert not publication.pending(conn)
+    poller.step()
+    assert restarted.process is not None and restarted.process.starts == 1
+
+
+def test_start_without_a_watcher_finishes_a_committed_pack_without_a_save(child: Child) -> None:
+    with closing(db.connect(child.settings.paths.db_path)) as conn, db.transaction(conn):
+        publication.mark_pending(conn)
+    service = child.syncer("die")
+    service.recover_if_pending()
+    service.join(30)
+    assert service.status().trigger == "publish recovery" and service.status().error is None
+    with closing(db.connect(child.settings.paths.db_path)) as conn:
+        assert not publication.pending(conn)
+
+
+def test_quit_in_the_commit_notification_gap_uses_the_publication_deadline(child: Child) -> None:
+    write_save(child.settings)
+    service = child.syncer("delayed-notice")
+    assert service.process is not None
+    service.process.stop_seconds = 1.0
+    service.process.publish_seconds = 10.0
+    assert service.start()
+    wait_for(lambda: (child.state / "stored").exists())
+    stopping = threading.Thread(target=service.stop)
+    stopping.start()
+    try:
+        wait_for(lambda: (child.state / "publishing").exists() or not service.status().running)
+        assert (child.state / "publishing").exists()
+        stopping.join(1.2)  # a parent using its original short deadline has already killed it
+        assert stopping.is_alive()
+    finally:
+        (child.state / "finish-publication").touch()
+        stopping.join(15)
+    assert not stopping.is_alive() and service.status().error is None
+    with closing(db.connect(child.settings.paths.db_path)) as conn:
+        assert not publication.pending(conn)
 
 
 def test_a_sync_process_that_cannot_start_is_a_failed_sync(child: Child, tmp_path: Path) -> None:

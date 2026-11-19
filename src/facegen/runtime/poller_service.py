@@ -8,13 +8,14 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from facegen.persistence import db
+from facegen.datasource.snapshots import SaveVersion, find_latest_save
+from facegen.persistence import db, publication
 from facegen.persistence.settings import folder_not_set_message, load_settings
 from facegen.pipeline.sync import sync_of_save
 from facegen.runtime.contracts import FAILED, SYNCED, PollerStatus, SyncControl, SyncOutcome
 from facegen.runtime.logging import stamp
 from facegen.runtime.policy import BUSY_TIMEOUT_MS, FM_POLL_SECONDS
-from facegen.runtime.poller import SaveVersion, SaveWatcher, find_latest_save
+from facegen.runtime.poller import SaveWatcher
 
 
 class PollerService:
@@ -61,9 +62,19 @@ class PollerService:
         conn = self._connection()
         settings = load_settings(conn, self.defaults_path)
         interval = float(settings.schedule.poll_seconds)
+        recovery_error = None
+        if publication.pending(conn):
+            self._set("syncing", "finishing publication of the active career's pack")
+            recovered = self._syncer.run(trigger="publish recovery")
+            if recovered is None:
+                return self._watcher.settle_seconds
+            if recovered == FAILED:
+                recovery_error = self._syncer.status().error or "could not publish the pack"
+                self._set("error", recovery_error)
         games = settings.paths.games_dir
         if games is None:
-            self._set("not set", folder_not_set_message())
+            if recovery_error is None:
+                self._set("not set", folder_not_set_message())
             return interval
         try:
             newest_path = find_latest_save(games)
@@ -74,6 +85,8 @@ class PollerService:
         done = sync_of_save(conn, newest.path.name, newest.mtime) if newest else None
         decision = self._watcher.look(newest, done is not None, self._clock(), interval)
         if decision.due is None:
+            if recovery_error is not None:
+                return decision.wait
             if newest is not None and done is not None and done["error"]:
                 why = "its game build is not supported" if done["unsupported"] else done["error"]
                 self._set(

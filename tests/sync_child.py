@@ -33,6 +33,7 @@ from facegen.cli import main
 from facegen.core.records import Snapshot
 from facegen.datasource.base import UnsupportedSaveError
 from facegen.pipeline import sync, sync_operation
+from facegen.runtime import sync_process
 
 WAIT = 60.0
 
@@ -65,7 +66,7 @@ class PlannedSource:
 
 
 def slow_publish(state: Path):  # type: ignore[no-untyped-def]
-    def publish(conn, settings):  # type: ignore[no-untyped-def]
+    def publish(conn, settings, **kwargs):  # type: ignore[no-untyped-def]
         (state / "publishing").write_text(str(os.getpid()), encoding="utf-8")
         time.sleep(WAIT)
 
@@ -83,6 +84,40 @@ def slow_write(state: Path):  # type: ignore[no-untyped-def]
     return classify_and_plan
 
 
+def delayed_commit_notice(state: Path) -> None:
+    """Let the test deliver Quit between the SQLite commit and its wire notification."""
+    sync_save = sync_operation.sync_save
+    publish_active = sync_operation.publish_active
+    stop_if_reading = sync_process._Progress.stop_if_reading
+
+    def after_sync(*args, **kwargs):  # type: ignore[no-untyped-def]
+        report = sync_save(*args, **kwargs)
+        (state / "stored").write_text(str(os.getpid()), encoding="utf-8")
+        wait_for_file(state / "quit-received")
+        return report
+
+    def receive_stop(progress, exit_now):  # type: ignore[no-untyped-def]
+        stop_if_reading(progress, exit_now)
+        (state / "quit-received").touch()
+
+    def publish(conn, settings, **kwargs):  # type: ignore[no-untyped-def]
+        (state / "publishing").write_text(str(os.getpid()), encoding="utf-8")
+        wait_for_file(state / "finish-publication")
+        return publish_active(conn, settings, **kwargs)
+
+    sync_operation.sync_save = after_sync  # type: ignore[assignment]
+    sync_process._Progress.stop_if_reading = receive_stop
+    sync_operation.publish_active = publish
+
+
+def wait_for_file(path: Path) -> None:
+    deadline = time.monotonic() + WAIT
+    while not path.exists():
+        if time.monotonic() >= deadline:
+            raise TimeoutError(path)
+        time.sleep(0.01)
+
+
 if __name__ == "__main__":
     state = Path(sys.argv[1])
     state.mkdir(parents=True, exist_ok=True)
@@ -96,4 +131,6 @@ if __name__ == "__main__":
         sync.classify_and_plan = slow_write(state)  # type: ignore[assignment]
     if step == "slow-publish":
         sync_operation.publish_active = slow_publish(state)  # type: ignore[assignment]
+    if step == "delayed-notice":
+        delayed_commit_notice(state)
     raise SystemExit(main(sys.argv[3:], source_factory=lambda: PlannedSource(step, state)))
