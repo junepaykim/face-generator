@@ -50,3 +50,52 @@ def file_lock(path: Path, *, blocking: bool = True) -> Iterator[None]:
                 yield
             finally:
                 fcntl.flock(stream, fcntl.LOCK_UN)
+
+
+@contextmanager
+def installation_lock(root: Path, *, app: bool = False) -> Iterator[None]:
+    """Installed apps share this lock. An updater needs exclusive use of the source tree.
+
+    The lock belongs to the installation even if its configured data folder changes.
+    Never unlink its file: a process may already have opened the same inode.
+    """
+    path = root / "data" / "install.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        create = kernel.CreateFileW
+        create.argtypes = (
+            wintypes.LPCWSTR,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.LPVOID,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.HANDLE,
+        )
+        create.restype = wintypes.HANDLE
+        kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
+        # GENERIC_READ, FILE_SHARE_READ (apps only), OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL.
+        handle = create(str(path), 0x80000000, int(app), None, 4, 0x80, None)
+        if handle == wintypes.HANDLE(-1).value:
+            error = ctypes.get_last_error()
+            if error == 32:  # ERROR_SHARING_VIOLATION
+                raise LockBusy(str(path))
+            raise ctypes.WinError(error)
+        try:
+            yield
+        finally:
+            kernel.CloseHandle(handle)
+    else:
+        import fcntl
+
+        with path.open("a+b") as stream:
+            mode = fcntl.LOCK_SH if app else fcntl.LOCK_EX
+            try:
+                fcntl.flock(stream, mode | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                raise LockBusy(str(path)) from exc
+            yield

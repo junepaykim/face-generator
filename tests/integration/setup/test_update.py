@@ -6,12 +6,14 @@ releases list and archive. The folders updated are made-up trees under tmp_path.
 
 from __future__ import annotations
 
+import argparse
 import io
 import json
 import os
 import shutil
 import stat
 import subprocess
+import sys
 import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -137,6 +139,9 @@ def test_the_record_of_a_check_survives_a_restart(tmp_path: Path) -> None:
         ("installer/facegen.iss", False),
         (".github/workflows/ci.yml", False),
         ("AGENTS.md", False),
+        ("src/facegen/web/AGENTS.md", False),
+        ("native/AGENTS.md", False),
+        ("future/runtime.dat", True),
         ("src/facegen/__pycache__/cli.cpython-312.pyc", False),
         ("native/target/release/x.dll", False),
     ],
@@ -145,11 +150,16 @@ def test_the_payload_is_the_release_without_developer_files(path: str, shipped: 
     assert update.in_payload(PurePosixPath(path)) is shipped
 
 
-def test_the_repositorys_payload_has_what_a_start_needs() -> None:
+def test_the_repositorys_payload_has_what_a_start_needs(tmp_path: Path) -> None:
     """From git's own list of this repository's files (skipped without git)."""
     try:
         listed = subprocess.run(
-            ["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True, timeout=30
+            ["git", "--git-dir", str(ROOT / ".git"), "--work-tree", str(ROOT), "ls-files"],
+            cwd=tmp_path,  # Windows Git cannot use a WSL UNC path as its working directory.
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=30,
         ).stdout.splitlines()
     except (OSError, subprocess.SubprocessError):
         pytest.skip("git is not available here")
@@ -382,10 +392,196 @@ def test_an_update_puts_the_newest_release_over_the_folder(tmp_path: Path) -> No
     assert update.installed_version(root) == "1.0.0"
     assert (root / "data/facegen.db").is_file()  # the app's own data folder is not root/data
     # The work folder keeps only the backup; the check is recorded as up to date.
-    work = tmp_path / "data" / "update"
+    work = root / "data" / "update"
+    assert not (tmp_path / "data/update").exists()
     assert sorted(p.name for p in work.iterdir()) == ["backup-0.9.0"]
     record = update.load_record(tmp_path / "data")
     assert record is not None and record.latest is not None and record.latest.version == "1.0.0"
+
+
+def test_interrupted_replacement_is_recovered_before_version_comparison(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = installed(tmp_path / "app")
+    original_replace = os.replace
+
+    def interrupt_after_version(source: Path, destination: Path) -> None:
+        original_replace(source, destination)
+        if destination == root / "pyproject.toml":
+            # Publishing the version must be the final file change.
+            assert (root / "uv.lock").read_bytes() == b"lock 1.0.0\n"
+            assert not (root / "src/facegen/old_module.py").exists()
+            raise KeyboardInterrupt
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "replace", interrupt_after_version)
+        with pytest.raises(KeyboardInterrupt):
+            run(tmp_path, root)
+    assert update.installed_version(root) == "1.0.0"
+    code, message = run(tmp_path, root)
+    assert code == update.UPDATED and "Restored the previous installation" in message
+    assert "Updated facegen 0.9.0 to 1.0.0" in message
+    assert (root / "data/facegen.db").read_bytes() == b"the database"
+
+
+def test_another_installation_sharing_settings_cannot_overwrite_pending_recovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from facegen.setup.install_transaction import recover_update
+
+    first, second = installed(tmp_path / "a"), installed(tmp_path / "b")
+    (first / "README.md").write_bytes(b"first installation")
+    (second / "README.md").write_bytes(b"second installation")
+    original_replace = os.replace
+
+    def interrupt(source: Path, destination: Path) -> None:
+        original_replace(source, destination)
+        if destination == first / "pyproject.toml":
+            raise KeyboardInterrupt
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "replace", interrupt)
+        with pytest.raises(KeyboardInterrupt):
+            run(tmp_path, first)
+    assert run(tmp_path, second)[0] == update.UPDATED
+    assert recover_update(first)
+    assert (first / "README.md").read_bytes() == b"first installation"
+    assert update.installed_version(first) == "0.9.0"
+    assert update.installed_version(second) == "1.0.0"
+
+
+def test_bootstrap_can_undo_an_interruption_without_importing_the_installed_app(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from facegen.platform.procs import run_quiet
+
+    root = installed(tmp_path / "app")
+    stage, files = staged(tmp_path)
+    original_replace = os.replace
+
+    def interrupt_before_source(source: Path, destination: Path) -> None:
+        if destination == root / "src/facegen/new_module.py":
+            raise KeyboardInterrupt
+        original_replace(source, destination)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "replace", interrupt_before_source)
+        with pytest.raises(KeyboardInterrupt):
+            update.apply_payload(root, stage, files, tmp_path / "backup")
+    helper = root / "data/update-recovery/repair.py"
+    repaired = run_quiet(
+        [sys.executable, "-E", "-B", "-S", str(helper), str(root)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert repaired.returncode == 0, repaired.stderr
+    assert update.installed_version(root) == "0.9.0"
+    assert (root / "src/facegen/old_module.py").read_bytes() == b"OLD = True\n"
+    assert not helper.with_name("pending.json").exists()
+
+
+@pytest.mark.parametrize("interrupt", ["removing", "writing", "version"])
+def test_file_directory_transitions_can_be_rolled_back_and_retried(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, interrupt: str
+) -> None:
+    from facegen.setup import install_transaction
+
+    root = installed(tmp_path / "app")
+    (root / "src/facegen/flat").write_bytes(b"old file")
+    (root / "src/facegen/tree").mkdir()
+    (root / "src/facegen/tree/old.py").write_bytes(b"old child")
+    archive = Archive(
+        tmp_path, **{"src/facegen/flat/new.py": "new child", "src/facegen/tree": "new file"}
+    )
+    before = {p.relative_to(root): p.read_bytes() for p in (root / "src").rglob("*") if p.is_file()}
+    original_replace, original_unlink = os.replace, Path.unlink
+
+    def replace(source: Path, destination: Path) -> None:
+        original_replace(source, destination)
+        if destination == root / {
+            "writing": "src/facegen/flat/new.py",
+            "version": "pyproject.toml",
+        }.get(interrupt, "-"):
+            raise KeyboardInterrupt
+
+    def unlink(path: Path, *args: Any, **kwargs: Any) -> None:
+        original_unlink(path, *args, **kwargs)
+        if interrupt == "removing" and path == root / "src/facegen/flat":
+            raise KeyboardInterrupt
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "replace", replace)
+        patch.setattr(Path, "unlink", unlink)
+        with pytest.raises(KeyboardInterrupt):
+            run(tmp_path, root, archive=archive)
+    assert install_transaction.recover_update(root)
+    after = {p.relative_to(root): p.read_bytes() for p in (root / "src").rglob("*") if p.is_file()}
+    assert after == before
+    assert run(tmp_path, root, archive=archive)[0] == update.UPDATED
+    assert (root / "src/facegen/tree").read_bytes() == b"new file"
+    assert (root / "src/facegen/flat/new.py").read_bytes() == b"new child"
+
+
+def test_a_directory_with_unmanaged_contents_is_kept_on_failed_replacement(tmp_path: Path) -> None:
+    root = installed(tmp_path / "app")
+    cache = root / "src/facegen/gone/__pycache__/cache.pyc"
+    cache.parent.mkdir()
+    cache.write_bytes(b"local")
+    archive = Archive(tmp_path, **{"src/facegen/gone": "new file"})
+    code, message = run(tmp_path, root, archive=archive)
+    assert code == update.FAILED and "nothing changed" in message
+    assert cache.read_bytes() == b"local"
+    assert (root / "src/facegen/gone/only.py").read_bytes() == b"x\n"
+
+
+def test_apps_and_other_updates_cannot_enter_an_updating_installation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from facegen.desktop import shell
+    from facegen.platform.locking import installation_lock
+
+    root = installed(tmp_path / "app")
+    monkeypatch.setattr(shell, "PROJECT_ROOT", root)
+    second = Updater(root=root, fetch=lambda _: pytest.fail("contending update fetched a release"))
+    archive = Archive(tmp_path)
+
+    def download_while_contended(url: str, destination: Path) -> None:
+        # A second configuration for this installation can point at another data folder.
+        assert update.run_update(io.StringIO(), tmp_path / "other", wait=0, steps=second) == (
+            update.STILL_RUNNING
+        )
+        with pytest.raises(RuntimeError, match="updating"):
+            shell.run("app", argparse.Namespace())
+        archive(url, destination)
+
+    # A second app can still acquire a read lock and forward its window.
+    with installation_lock(root, app=True), installation_lock(root, app=True):
+        assert update.run_update(io.StringIO(), tmp_path / "other", wait=0, steps=second) == (
+            update.STILL_RUNNING
+        )
+    code, message = run(tmp_path, root, archive=download_while_contended)
+    assert code == update.UPDATED, message
+
+
+@pytest.mark.skipif(os.name != "nt", reason="native Windows batch startup")
+def test_start_bat_stops_before_setup_while_an_update_owns_the_installation(tmp_path: Path) -> None:
+    from facegen.platform.locking import installation_lock
+    from facegen.platform.procs import run_quiet
+
+    root = installed(tmp_path / "app")
+    shutil.copyfile(ROOT / "Start.bat", root / "Start.bat")
+    with installation_lock(root):
+        result = run_quiet(
+            ["cmd.exe", "/d", "/c", "Start.bat"],
+            cwd=root,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            timeout=10,
+        )
+    assert result.returncode != 0
+    assert b"Installing uv" not in result.stdout
 
 
 def test_the_newest_version_is_left_alone(tmp_path: Path) -> None:

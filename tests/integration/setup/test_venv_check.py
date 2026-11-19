@@ -47,8 +47,8 @@ def test_this_environment_is_whole() -> None:
 def test_start_bat_runs_the_check_after_uv_sync() -> None:
     text = (PROJECT_ROOT / "Start.bat").read_bytes().decode("ascii")
     assert text.count("\r\n") == text.count("\n")  # CRLF throughout
-    sync = text.index('"%UV%" sync --locked --inexact --no-group native\r\n')
+    sync = text.index('"%UV%" sync --locked --inexact --no-group native --no-group dev\r\n')
     check = text.index("""('call "%PY%" -m facegen.venv_check')""")
-    repair = text.index('"%UV%" sync --locked --inexact --no-group native %REPAIR%')
+    repair = text.index('"%UV%" sync --locked --inexact --no-group native --no-group dev %REPAIR%')
     launch = text.index('"%PY%" -m facegen.cli launch --log')
     assert sync < check < repair < launch

@@ -19,21 +19,21 @@ needs is imported before the first file is replaced.
 
 from __future__ import annotations
 
-import filecmp
 import json
 import os
 import re
 import shutil
-import stat
 import tomllib
 import urllib.request
-import zipfile
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any
 
 from facegen.locations import PROJECT_ROOT
+from facegen.platform.locking import LockBusy, installation_lock
+from facegen.setup.install_transaction import Applied, apply_payload, recover_update
+from facegen.setup.release_payload import UpdateError, in_payload, unpack_payload  # noqa: F401 (installer API)
 
 REPOSITORY = "junepaykim/face-generator"
 RELEASES_API = f"https://api.github.com/repos/{REPOSITORY}/releases?per_page=30"
@@ -45,29 +45,9 @@ CHECK_TIMEOUT = 20.0
 DOWNLOAD_TIMEOUT = 120.0
 MAX_LIST_BYTES = 2 * 1024 * 1024
 MAX_ARCHIVE_BYTES = 200 * 1024 * 1024
-MAX_UNPACKED_BYTES = 400 * 1024 * 1024
-MAX_ENTRIES = 20_000
-
 TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 
-LEFT_OUT = frozenset(
-    {".github", "tests", "scripts", "docs", "installer", ".gitignore", ".gitattributes",
-     "AGENTS.md", "CLAUDE.md"}
-)  # fmt: skip
-"""Top-level entries of the source that a release does not ship: developer files."""
-NEVER_WRITTEN = (".git", ".venv", ".bin", "data", "config/local.toml")
-"""This PC's own: an archive that had them is refused rather than written over them."""
-MANAGED_DIRS = ("src", "native")
-"""Folders whose files are the release's alone: a file the new release lacks is removed."""
-SKIPPED_PARTS = frozenset({"__pycache__", ".pytest_cache", ".ruff_cache"})
-SKIPPED_UNDER = (PurePosixPath("native/target"),)
-"""Build output, never part of a payload and never removed by an update."""
-
 Version = tuple[int, int, int]
-
-
-class UpdateError(Exception):
-    """The check or the update could not be done (the message says why)."""
 
 
 def parse_version(text: str | None) -> Version | None:
@@ -204,176 +184,6 @@ def save_record(data_dir: Path, record: CheckRecord) -> None:
         pass  # only saves asking again after a restart
 
 
-# --- the payload ---------------------------------------------------------------------------
-
-
-def _skipped(rel: PurePosixPath) -> bool:
-    return any(part in SKIPPED_PARTS for part in rel.parts) or any(
-        rel == under or under in rel.parents for under in SKIPPED_UNDER
-    )
-
-
-def never_written(rel: PurePosixPath) -> bool:
-    return any(rel == PurePosixPath(p) or PurePosixPath(p) in rel.parents for p in NEVER_WRITTEN)
-
-
-def in_payload(rel: PurePosixPath) -> bool:
-    """Whether a file of the source (relative, '/'-separated) is shipped in a release."""
-    if not rel.parts or rel.parts[0] in LEFT_OUT or _skipped(rel):
-        return False
-    return not never_written(rel)
-
-
-def safe_relative(name: str) -> PurePosixPath:
-    """An archive member's path, refused when it would land outside the folder."""
-    if "\\" in name or name.startswith("/") or re.match(r"^[A-Za-z]:", name):
-        raise UpdateError(f"the archive has an unsafe path: {name!r}")
-    rel = PurePosixPath(name)
-    if any(part in ("..", "") for part in rel.parts):
-        raise UpdateError(f"the archive has an unsafe path: {name!r}")
-    return rel
-
-
-def unpack_payload(archive: Path, dest: Path) -> list[PurePosixPath]:
-    """Unpack the release payload of a GitHub source archive (one top folder) into `dest`.
-    Returns the payload's files. Raises UpdateError for anything unexpected."""
-    try:
-        zf = zipfile.ZipFile(archive)
-    except (OSError, zipfile.BadZipFile) as exc:
-        raise UpdateError(f"the downloaded archive cannot be read: {exc}") from exc
-    with zf:
-        members = [m for m in zf.infolist() if not m.is_dir()]
-        if not members or len(members) > MAX_ENTRIES:
-            raise UpdateError("the archive is empty or has too many files")
-        if sum(m.file_size for m in members) > MAX_UNPACKED_BYTES:
-            raise UpdateError("the archive unpacks to more than facegen's source can be")
-        tops = {safe_relative(m.filename).parts[0] for m in members}
-        if len(tops) != 1:
-            raise UpdateError("the archive is not one folder of facegen's source")
-        files: list[PurePosixPath] = []
-        for m in members:
-            rel = PurePosixPath(*safe_relative(m.filename).parts[1:])
-            if stat.S_ISLNK(m.external_attr >> 16):
-                raise UpdateError(f"the archive has a link: {m.filename!r}")
-            if not rel.parts:
-                continue
-            if never_written(rel):
-                raise UpdateError(f"the archive has {rel}, which is this PC's own")
-            if not in_payload(rel):
-                continue
-            target = dest.joinpath(*rel.parts)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            with zf.open(m) as src, target.open("wb") as out:
-                shutil.copyfileobj(src, out)
-            files.append(rel)
-    if PurePosixPath("pyproject.toml") not in files or PurePosixPath("Start.bat") not in files:
-        raise UpdateError("the archive is not facegen's source (no pyproject.toml or Start.bat)")
-    return sorted(files)
-
-
-def payload_files(root: Path) -> list[PurePosixPath]:
-    """The payload of a source folder on disk (the installer's staging, a test's tree)."""
-    out = []
-    for path in sorted(root.rglob("*")):
-        if path.is_file() and not path.is_symlink():
-            rel = PurePosixPath(path.relative_to(root).as_posix())
-            if in_payload(rel):
-                out.append(rel)
-    return out
-
-
-def managed_files(root: Path) -> list[PurePosixPath]:
-    """This folder's files that belong to the release alone (MANAGED_DIRS)."""
-    out = []
-    for top in MANAGED_DIRS:
-        base = root / top
-        if not base.is_dir():
-            continue
-        for path in sorted(base.rglob("*")):
-            rel = PurePosixPath(path.relative_to(root).as_posix())
-            if path.is_file() and not _skipped(rel):
-                out.append(rel)
-    return out
-
-
-@dataclass(frozen=True, slots=True)
-class Applied:
-    written: int
-    unchanged: int
-    removed: int
-    backup: Path
-
-
-def apply_payload(
-    root: Path, staged: Path, files: Sequence[PurePosixPath], backup: Path
-) -> Applied:
-    """Put the staged payload over `root` (module docstring). On any failure, every file
-    already replaced or removed is put back, and UpdateError is raised."""
-    new = set(files)
-    if any(never_written(rel) for rel in new):
-        raise UpdateError("the new files include this PC's own folders")
-    gone = [rel for rel in managed_files(root) if rel not in new]
-    if backup.exists():
-        shutil.rmtree(backup)
-    backed_up: list[PurePosixPath] = []
-    created: list[PurePosixPath] = []
-    written = unchanged = 0
-
-    def keep(rel: PurePosixPath) -> None:
-        target = backup.joinpath(*rel.parts)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(root.joinpath(*rel.parts), target)
-        backed_up.append(rel)
-
-    try:
-        for rel in sorted(new):
-            source = staged.joinpath(*rel.parts)
-            target = root.joinpath(*rel.parts)
-            if target.is_file() and filecmp.cmp(source, target, shallow=False):
-                unchanged += 1
-                continue
-            if target.is_file():
-                keep(rel)
-            else:
-                created.append(rel)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            part = target.with_name(f".{target.name}.update-part")
-            shutil.copyfile(source, part)
-            os.replace(part, target)
-            written += 1
-        for rel in gone:
-            keep(rel)
-            root.joinpath(*rel.parts).unlink()
-        _remove_empty_dirs(root, gone)
-    except (OSError, UpdateError) as exc:
-        _put_back(root, backup, backed_up, created)
-        raise UpdateError(f"the files could not be replaced, so nothing changed: {exc}") from exc
-    return Applied(written, unchanged, len(gone), backup)
-
-
-def _put_back(
-    root: Path, backup: Path, backed_up: Sequence[PurePosixPath], created: Sequence[PurePosixPath]
-) -> None:
-    for rel in created:
-        root.joinpath(*rel.parts).unlink(missing_ok=True)
-    for rel in backed_up:
-        target = root.joinpath(*rel.parts)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(backup.joinpath(*rel.parts), target)
-
-
-def _remove_empty_dirs(root: Path, removed: Iterable[PurePosixPath]) -> None:
-    dirs = {rel.parent for rel in removed}
-    for rel in sorted(dirs, key=lambda d: len(d.parts), reverse=True):
-        path = root.joinpath(*rel.parts)
-        while rel.parts and rel.parts[0] in MANAGED_DIRS and len(rel.parts) > 1:
-            try:
-                path.rmdir()  # only when empty
-            except OSError:
-                break
-            rel, path = rel.parent, path.parent
-
-
 def download(url: str, dest: Path, *, timeout: float = DOWNLOAD_TIMEOUT) -> None:
     """Fetch the release's source archive into `dest` (at most MAX_ARCHIVE_BYTES)."""
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -431,10 +241,8 @@ def run_update(
     from facegen.desktop import instance
 
     steps = steps or Updater()
-    running = steps.running or instance.held_elsewhere
     sleep = steps.sleep or time.sleep
     clock = steps.clock or time.monotonic
-    now = steps.now or time.time
 
     def say(text: str) -> None:
         print(text, file=out, flush=True)
@@ -446,22 +254,36 @@ def run_update(
             " Nothing was changed."
         )
         return CHECKOUT
-    try:
-        current = installed_version(root)
-    except UpdateError as exc:
-        say(f"Cannot update: {exc}")
-        return FAILED
+    running = steps.running or instance.held_elsewhere
     end = clock() + wait
-    if running(data_dir):
-        say("Waiting for facegen to quit (Quit is in its tray icon's menu)...")
-        while running(data_dir):
-            if clock() >= end:
-                say(
-                    "facegen is still running, so its files cannot be replaced. Quit it from"
-                    " the tray icon and start the update again."
-                )
-                return STILL_RUNNING
-            sleep(1.0)
+    waiting = False
+    while True:
+        try:
+            with installation_lock(root):
+                if not running(data_dir):
+                    return _update_locked(steps, data_dir, say)
+        except LockBusy:
+            pass
+        except (UpdateError, OSError) as exc:
+            say(f"Cannot update: {exc}")
+            return FAILED
+        if not waiting:
+            say("Waiting for facegen to quit (or for another update to finish)...")
+            waiting = True
+        if clock() >= end:
+            say("facegen is still in use. Quit it from the tray icon and try the update again.")
+            return STILL_RUNNING
+        sleep(1.0)
+
+
+def _update_locked(steps: Updater, data_dir: Path, say: Callable[[str], None]) -> int:
+    import time
+
+    root = steps.root
+    now = steps.now or time.time
+    if recover_update(root):
+        say("Restored the previous installation after an interrupted update.")
+    current = installed_version(root)
     say(f"facegen {current}: looking for a newer version on GitHub...")
     try:
         latest = latest_release(steps.fetch)
@@ -474,7 +296,9 @@ def run_update(
         save_record(data_dir, CheckRecord(now(), latest, None, old.dismissed if old else None))
         return UPDATED
     assert latest is not None
-    work = data_dir / "update"
+    # A configured data folder can be shared by different installations. Neither
+    # installation may replace the other one's archive or pending rollback backup.
+    work = root / "data" / "update"
     staged = work / latest.tag
     archive = work / f"facegen-{latest.tag}.zip"
     backup = work / f"backup-{current}"
@@ -490,9 +314,9 @@ def run_update(
         found = project_version((staged / "pyproject.toml").read_text(encoding="utf-8"))
         if found != latest.version:
             raise UpdateError(f"the {latest.tag} archive says it is version {found}")
-        applied = apply_payload(root, staged, files, backup)
+        applied: Applied = apply_payload(root, staged, files, backup)
     except (UpdateError, OSError) as exc:
-        say(f"The update did not work, and facegen {current} is left as it was: {exc}")
+        say(f"The update did not finish: {exc}")
         return FAILED
     finally:
         shutil.rmtree(staged, ignore_errors=True)

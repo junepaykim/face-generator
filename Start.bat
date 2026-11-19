@@ -33,7 +33,32 @@ if not exist "%ROOT%data\logs" mkdir "%ROOT%data\logs"
 call :log "Start.bat %*"
 
 rem --- 1. facegen running already? ---------------------------------------------------------
+rem Recover interrupted file replacement before importing the installed Python package.
+if exist "%ROOT%data\update-recovery\pending.json" (
+  "%PY%" -B "%ROOT%data\update-recovery\repair.py" "%ROOT%."
+  if errorlevel 1 goto pause_and_fail
+)
 if defined UPDATE goto update
+:ordinary_start
+if exist "%ROOT%.git" goto launch_ready
+rem Keep a read handle through setup and launch. An updater needs exclusive access.
+if not exist "%ROOT%data\install.lock" type nul >>"%ROOT%data\install.lock"
+set "ENTERED="
+call :launch_locked 9<"%ROOT%data\install.lock"
+if not defined ENTERED (
+  echo Cannot start facegen while its installation is in use. Try again after the update.
+  exit /b 1
+)
+exit /b %ERRORLEVEL%
+
+:launch_locked
+set "ENTERED=1"
+setlocal
+:launch_ready
+if exist "%ROOT%data\update-recovery\pending.json" (
+  echo An update was interrupted. Start facegen again to complete the repair.
+  goto pause_and_fail
+)
 if not exist "%PY%" goto find_uv
 "%PY%" -m facegen.cli launch --open-running --log "%LOG%"
 set "CODE=%ERRORLEVEL%"
@@ -44,7 +69,7 @@ goto find_uv
 rem --- 1b. Start.bat --update ------------------------------------------------------------
 :update
 rem Not set up yet: set up the files here first; the update can come later.
-if not exist "%PY%" goto find_uv
+if not exist "%PY%" goto ordinary_start
 echo Updating facegen. This window waits for facegen to quit, downloads the newest release
 echo and replaces facegen's files; your pictures, settings and data folder are kept.
 call :log "update"
@@ -80,7 +105,7 @@ call :log "uv: %UV%"
 rem --- 3. Python and the libraries ----------------------------------------------------------
 echo Getting Python and facegen's libraries ready. The first time this downloads about 3 GB
 echo (PyTorch with CUDA is most of it) and takes a while; later starts take seconds.
-"%UV%" sync --locked --inexact --no-group native
+"%UV%" sync --locked --inexact --no-group native --no-group dev
 set "CODE=%ERRORLEVEL%"
 call :log "uv sync: exit %CODE%"
 if not "%CODE%"=="0" goto fail_sync
@@ -93,7 +118,7 @@ for /f "delims=" %%a in ('call "%PY%" -m facegen.venv_check') do set "REPAIR=%%a
 if not defined REPAIR goto setup_done
 echo An earlier setup was cut short; installing again: %REPAIR%
 call :log "repair: %REPAIR%"
-"%UV%" sync --locked --inexact --no-group native %REPAIR%
+"%UV%" sync --locked --inexact --no-group native --no-group dev %REPAIR%
 set "CODE=%ERRORLEVEL%"
 call :log "uv sync (repair): exit %CODE%"
 if not "%CODE%"=="0" goto fail_sync

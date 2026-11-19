@@ -21,6 +21,7 @@ import threading
 import time
 import traceback
 from collections.abc import Callable, Sequence
+from contextlib import ExitStack
 from dataclasses import dataclass, field
 from pathlib import Path, PureWindowsPath
 from typing import TYPE_CHECKING, Any, Protocol
@@ -316,6 +317,32 @@ def run(
     """`facegen app` (mode "app") or `facegen tray` (mode "tray"), until Quit. Raises on a
     failure while starting (`main` shows it); returns 0 after Quit, and when another facegen
     app was asked to open its window instead."""
+    from facegen.platform.locking import LockBusy, installation_lock
+
+    if (PROJECT_ROOT / ".git").exists() or not (PROJECT_ROOT / "Start.bat").is_file():
+        return _run(mode, args, source_factory, gpu, shell, started)
+    with ExitStack() as stack:
+        try:
+            stack.enter_context(installation_lock(PROJECT_ROOT, app=True))
+        except LockBusy as exc:
+            raise RuntimeError(
+                "facegen is updating. Start the app after the update finishes."
+            ) from exc
+        if (PROJECT_ROOT / "data" / "update-recovery" / "pending.json").exists():
+            raise RuntimeError(
+                "An update was interrupted. Run Start.bat to repair the installation."
+            )
+        return _run(mode, args, source_factory, gpu, shell, started)
+
+
+def _run(
+    mode: str,
+    args: argparse.Namespace,
+    source_factory: Callable[[], DataSource] | None,
+    gpu: Gpu | None,
+    shell: Shell | None,
+    started: Started | None,
+) -> int:
     from facegen.desktop import instance
     from facegen.desktop.app_controller import AppController, Notice
     from facegen.desktop.app_window import NO_WEBVIEW2
