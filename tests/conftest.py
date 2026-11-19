@@ -13,9 +13,11 @@ from facegen.persistence.settings import Settings, load_settings
 
 
 @pytest.fixture(autouse=True)
-def no_folder_detection(monkeypatch: pytest.MonkeyPatch) -> None:
-    """FM27's folders are not looked for on the PC running the tests: a folder that no file
-    sets is "not set". Tests of detection replace this or call fm_paths directly."""
+def no_folder_detection(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Ignore the checkout's local paths and real FM folders; tests can supply their own."""
+    monkeypatch.setattr(
+        "facegen.persistence.settings.LOCAL_PATH", tmp_path / "config" / "local.toml"
+    )
     monkeypatch.setattr("facegen.persistence.settings.detect_folder", lambda key: None)
 
 

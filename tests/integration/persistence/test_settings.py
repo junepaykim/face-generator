@@ -139,7 +139,7 @@ def test_a_windows_path_in_double_quotes_gets_a_hint(pc: dict[str, Any]) -> None
 
 
 def test_local_file_sets_this_pcs_paths(tmp_path: Path) -> None:
-    defaults = load_defaults(PROJECT_ROOT / "config" / "default.toml")
+    defaults = load_defaults()
     assert load_local(defaults, tmp_path / "missing.toml") == {}
     local = tmp_path / "local.toml"
     local.write_text('[paths]\nfm_user_dir = "/mnt/c/Users/me/FM27"\n', encoding="utf-8")
@@ -155,7 +155,7 @@ def test_local_file_sets_this_pcs_paths(tmp_path: Path) -> None:
     ],
 )
 def test_local_file_refuses_anything_but_paths(tmp_path: Path, text: str) -> None:
-    defaults = load_defaults(PROJECT_ROOT / "config" / "default.toml")
+    defaults = load_defaults()
     local = tmp_path / "local.toml"
     local.write_text(text, encoding="utf-8")
     with pytest.raises(SettingsError):
