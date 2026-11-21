@@ -162,7 +162,7 @@ def test_download_stdout_eof_waits_for_exit_and_cancellation_does_not_wait_for_r
     monkeypatch.setattr(procs, "popen_quiet", lambda *args, **kwargs: child.process)
     completed = threading.Event()
     download = ModelDownload(child.args, on_done=completed.set)
-    assert download.start()
+    assert download.start("animagine")
     try:
         assert child.waiting.wait(3)
         assert child.timeouts == [None]

@@ -8,12 +8,13 @@ from datetime import UTC, date, datetime
 from facegen.core.age import age_wording, audience
 from facegen.core.domain import FinishedStatus, JobKind
 from facegen.core.job_records import Career, Job, JobFilter
+from facegen.core.man_traits import ManSheet
 from facegen.core.planner import TIER_MANUAL, Plan
 from facegen.core.records import is_first_team_manager
 from facegen.core.settings_values import Settings
 from facegen.core.traits import BodyThresholds, CharacterSheet, personality_from_json
 from facegen.persistence.db import ACTIVE_CAREER_ORDER, transaction
-from facegen.persistence.sheet_store import load_sheet, sheet_for
+from facegen.persistence.sheet_store import load_sheet, man_sheet_for, sheet_for
 
 
 def now() -> str:
@@ -55,7 +56,7 @@ def queued_jobs(
         "SELECT j.id, j.unique_id, j.kind, j.group_name, j.target_club_id, j.target_band,"
         " j.manual, j.traits_version, j.revision, p.name, p.at_my_club, p.is_goalkeeper,"
         " p.height_cm, p.strength, p.age, p.personality, p.is_staff,"
-        " p.staff_job, p.media_role"
+        " p.staff_job, p.media_role, p.nation"
         " FROM jobs j JOIN players p ON p.career_id = j.career_id AND p.unique_id = j.unique_id"
         " WHERE j.career_id = ? AND j.status = 'queued'"
         + (" AND j.id = ?" if job_id is not None else "")
@@ -83,6 +84,7 @@ def queued_jobs(
             staff=bool(r["is_staff"]),
             staff_job=r["staff_job"],
             media_role=r["media_role"],
+            nation=r["nation"],
         )
         for r in rows
     ]
@@ -201,6 +203,31 @@ def allocate_sheet(
         )
         conn.execute("UPDATE jobs SET traits_version = ? WHERE id = ?", (version, job.id))
         return version, sheet
+
+
+def allocate_man_sheet(
+    conn: sqlite3.Connection, career: Career, job: Job, version: int, personality_weight: int
+) -> ManSheet:
+    """The men's sheet of the job's assigned sheet version (`allocate_sheet`), stored with it
+    before GPU work starts, so an interrupted job draws the same man again."""
+    with transaction(conn):
+        row = conn.execute(
+            "SELECT traits_version FROM jobs WHERE id = ? AND status = 'running'", (job.id,)
+        ).fetchone()
+        if row is None:
+            raise JobGone(f"job {job.id} is no longer running")
+        if row[0] != version:
+            raise RuntimeError(f"job {job.id} is assigned sheet {row[0]}, not {version}")
+        return man_sheet_for(
+            conn,
+            career.id,
+            career.key,
+            job.unique_id,
+            version,
+            nation=job.nation,
+            personality=job.personality,
+            personality_weight=personality_weight,
+        )
 
 
 def apply_plan(conn: sqlite3.Connection, career_id: int, p: Plan) -> None:

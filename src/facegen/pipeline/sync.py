@@ -201,6 +201,8 @@ class _PlayerRow(NamedTuple):
     media_role: str | None
     local_media: int
     female: int | None
+    nation: int | None
+    """The nation's database ID (core/nations.py); kept from an earlier sync when not read."""
 
 
 _PLAYER_COLUMNS = _PlayerRow._fields
@@ -211,6 +213,13 @@ _UPSERT_PLAYER = (
     " ON CONFLICT (career_id, unique_id) DO UPDATE SET "
     + ", ".join(f"{c} = excluded.{c}" for c in _PLAYER_COLUMNS if c not in _KEEP_ON_UPDATE)
 )
+
+
+def _nation(read: int | None, old: sqlite3.Row | None) -> int | None:
+    """The nation read now, or the one an earlier sync read when this one could not."""
+    if read is not None:
+        return read
+    return old["nation"] if old is not None else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -240,7 +249,7 @@ def ingest(
         r["unique_id"]: r
         for r in conn.execute(
             "SELECT unique_id, is_newgen, in_scope, first_club_id, club_id, club_since,"
-            " at_my_club, present, academy, is_staff, media_role, female FROM players"
+            " at_my_club, present, academy, is_staff, media_role, female, nation FROM players"
             " WHERE career_id = ?",
             (cid,),
         )
@@ -327,6 +336,7 @@ def ingest(
                 media_role=None,
                 local_media=0,
                 female=None,
+                nation=_nation(p.nation, old),
             )
         )
     staff_rows = _staff_rows(
@@ -451,6 +461,7 @@ def _staff_rows(
                 media_role=None,
                 local_media=0,
                 female=None if female is None else int(female),
+                nation=_nation(s.nation, old),
             )
         )
     return rows
@@ -509,6 +520,7 @@ def _media_rows(
                 media_role=m.role,
                 local_media=int(local and my_nation is not None),
                 female=None if m.female is None else int(m.female),
+                nation=_nation(m.nation, old),
             )
         )
     return rows

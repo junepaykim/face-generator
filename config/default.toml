@@ -258,6 +258,18 @@ auto_groups = ["a", "b", "c"]
 # Settings page turns it on for such a card. Applies from the next picture.
 vae_tiling = false
 
+[style]
+# How pictures look, for everyone drawn: players, staff and media (user, 2026-11-20). The model
+# draws: "animagine" (anime, Animagine XL 4.0), "realvis" (photos, RealVisXL V5.0 with INT8
+# weights) or "zimage_turbo" (photos, Z-Image-Turbo with NF4 weights; it keeps no face from the
+# current picture on a re-draw). Only the chosen model's files are downloaded. A change applies
+# to pictures drawn from then on; existing pictures stay as they are until they are drawn again
+# for another reason, and a re-draw keeps the face only from a picture of the same model.
+model = "animagine"
+# "woman" or "man": everyone is drawn as one or the other. The same applies on a change, and a
+# re-draw keeps the face only from a picture of the same gender.
+gender = "woman"
+
 [display]
 # How the window looks (Phase 12). "auto" follows Windows: the display language the window
 # reports, and Windows's light or dark app mode. The switches at the foot of the window's

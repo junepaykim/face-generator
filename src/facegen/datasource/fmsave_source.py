@@ -78,7 +78,21 @@ def convert_personality(personality: Any) -> Personality | None:
     return Personality(**{f.name: getattr(personality, f.name) for f in fields(Personality)})
 
 
-def convert_player(p: Any, uid_map: Mapping[int, int], game_date: date | None) -> PlayerRecord:
+def nation_of(local_id: int | None, nations: Mapping[int, int] | None) -> int | None:
+    """A save-local nation ID as the game's database ID (core/nations.py); None if unknown."""
+    if local_id is None or not nations:
+        return None
+    return nations.get(local_id)
+
+
+def convert_player(
+    p: Any,
+    uid_map: Mapping[int, int],
+    game_date: date | None,
+    nations: Mapping[int, int] | None = None,
+) -> PlayerRecord:
+    """`nations` maps the save-local nation IDs to database IDs (`Save.nations()`)."""
+
     def club(uid: int | None) -> int | None:
         return None if uid is None else uid_map.get(uid)
 
@@ -105,11 +119,15 @@ def convert_player(p: Any, uid_map: Mapping[int, int], game_date: date | None) -
         strength=attributes.strength if attributes is not None else None,
         personality=convert_personality(getattr(p, "personality", None)),
         team_slot=getattr(p, "team_slot", None),
+        nation=nation_of(getattr(p, "nation_id", None), nations),
     )
 
 
 def convert_players(
-    players: Iterable[Any], uid_map: Mapping[int, int], game_date: date | None
+    players: Iterable[Any],
+    uid_map: Mapping[int, int],
+    game_date: date | None,
+    nations: Mapping[int, int] | None = None,
 ) -> tuple[tuple[PlayerRecord, ...], int]:
     """Players with a unique ID, first record wins on a repeat; and how many were skipped."""
     seen: set[int] = set()
@@ -120,7 +138,7 @@ def convert_players(
             skipped += 1
             continue
         seen.add(p.unique_id)
-        out.append(convert_player(p, uid_map, game_date))
+        out.append(convert_player(p, uid_map, game_date, nations))
     return tuple(out), skipped
 
 
@@ -139,6 +157,7 @@ def convert_staff(
     game_date: date | None,
     *,
     manager_club_ids: frozenset[int] = frozenset(),
+    nations: Mapping[int, int] | None = None,
 ) -> tuple[StaffRecord, ...]:
     """My club's staff and first-team managers of the supplied stable club IDs."""
     seen: set[int] = set()
@@ -170,6 +189,7 @@ def convert_staff(
                 club_join_date=s.contract_start,
                 is_human_manager=bool(s.is_human_manager),
                 personality=convert_personality(s.personality),
+                nation=nation_of(getattr(s, "nation_id", None), nations),
             )
         )
     return tuple(out)
@@ -347,12 +367,18 @@ class FmsaveDataSource:
 
     def _read(self, save: Any, fmsave: Any) -> Snapshot:
         info = save.info
+        notes: list[str] = []
+        # Nations only choose a man's look; without them the world's mix is drawn from.
+        nations: dict[int, int] = {}
+        try:
+            nations = {n.nation_id: n.database_id for n in save.nations()}
+        except fmsave.FmsaveError as exc:
+            notes.append(f"nations unavailable, so men's looks ignore nationality: {exc}")
         clubs, uid_map = convert_clubs(save.clubs())
-        players, skipped = convert_players(save.players(), uid_map, info.game_date)
+        players, skipped = convert_players(save.players(), uid_map, info.game_date, nations)
         managed = list(save.managed_clubs())
         managed_id = uid_map.get(managed[0].club_uid) if managed else None
 
-        notes: list[str] = []
         if len(managed) > 1:
             notes.append(f"{len(managed)} managed clubs; using the first")
         # League and fixture data only decide "my league" and continental membership; a
@@ -380,6 +406,7 @@ class FmsaveDataSource:
                     managed[0].club_uid,
                     info.game_date,
                     manager_club_ids=league_clubs,
+                    nations=nations,
                 )
                 selected = {s.unique_id for s in staff}
                 first_names = {
@@ -402,6 +429,7 @@ class FmsaveDataSource:
                 info.game_date,
             )
             staff = tuple(replace(s, female=female.get(s.unique_id)) for s in staff)
+            media = tuple(replace(m, nation=nation_of(m.nation_id, nations)) for m in media)
         except Exception as exc:  # noqa: BLE001 - experimental reader; the sync goes on
             media_read = False
             notes.append(

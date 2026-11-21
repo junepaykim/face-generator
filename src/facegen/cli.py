@@ -9,7 +9,7 @@ facegen serve [--port N] [--paused] [--no-worker] [--no-watch]
 facegen worker [--generate-now]   (started by serve: the GPU worker in its own process)
 facegen sync-process              (started by serve and the app: one sync in its own process)
 facegen native [--install [--from DIR]]
-facegen models [--download [--yes]]
+facegen models [--model KEY] [--download [--yes]]
 facegen hardware [--json]
 facegen app [--minimized] [--port N] [--paused]   (the dashboard in a window, with a tray icon)
 facegen tray [--port N] [--paused]                (the tray icon; the dashboard in the browser)
@@ -39,7 +39,11 @@ from facegen.datasource.base import DataSource
 from facegen.datasource.kits import load_kits
 from facegen.persistence import db
 from facegen.persistence.jobs import load_career
-from facegen.persistence.settings import folder_not_set_message, load_settings
+from facegen.persistence.settings import (
+    folder_not_set_message,
+    load_saved_settings,
+    load_settings,
+)
 from facegen.pipeline.gallery import write_gallery
 from facegen.pipeline.publish import (
     RELOAD_HINT,
@@ -205,7 +209,7 @@ def cmd_status(settings: Settings, conn: sqlite3.Connection, out: TextIO) -> int
     print(f"FM27 install  {settings.paths.describe('paths.fm_install_dir')}", file=out)
     print(f"Rust code     {native.status().describe()}", file=out)
     try:
-        print(f"Models        {models.status().describe()}", file=out)
+        print(f"Models        {models.status(settings.style.model).describe()}", file=out)
     except Exception as exc:  # noqa: BLE001 - a status line, never a reason to stop
         print(f"Models        unknown ({type(exc).__name__}: {exc})", file=out)
     if settings.paths.fm_user_dir is None:
@@ -294,15 +298,17 @@ def cmd_models(
     ask: Callable[[str], str] = input,
     interactive: Callable[[], bool] = lambda: sys.stdin is not None and sys.stdin.isatty(),
 ) -> int:
+    model = args.model or load_saved_settings(args.config).style.model
     if args.child:
-        return models.run_child(out)
+        return models.run_child(out, files=models.files_for(model))
     return setup_operations.prepare_models(
+        model=model,
         download=args.download,
         confirmed=args.yes,
         report=partial(print, file=out),
         ask=ask,
         interactive=interactive,
-        run_download=lambda: models.wait_and_print(models.ModelDownload(command), out),
+        run_download=lambda m: models.wait_and_print(models.ModelDownload(command), m, out),
         cache=cache,
     )
 
@@ -390,10 +396,12 @@ def cmd_run(
     )
     f = JobFilter(groups=frozenset(args.group) if args.group else None, my_club_only=args.my_club)
     check = gpu.models_check()
-    if not args.dry_run and check is not None and not check():
+    model = settings.style.model
+    if not args.dry_run and check is not None and not check(model):
         print(
-            "The models are not downloaded yet. Run `facegen models --download` (about"
-            f" {models.gigabytes(models.total_size(models.FILES))}), or use the dashboard.",
+            f"The {model} model is not downloaded yet. Run `facegen models --download` (about"
+            f" {models.gigabytes(models.total_size(models.files_for(model)))}), or use the"
+            " dashboard.",
             file=out,
         )
         return 2
@@ -409,7 +417,7 @@ def cmd_run(
                 f"{'' if p.reference_scale is None else f', reference {p.reference_scale}'}",
                 file=out,
             )
-            print(f"      sheet: {p.sheet.describe()}", file=out)
+            print(f"      sheet: {(p.man or p.sheet).describe()}", file=out)
             if p.prompt is not None:
                 print(f"      + {p.prompt.positive}", file=out)
                 print(f"      - {p.prompt.negative}", file=out)
@@ -712,6 +720,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     m = sub.add_parser("models", help="the model files: what is missing; download them once")
     m.add_argument(
+        "--model",
+        choices=list(models.MODELS),
+        help="the image model whose files to check (default: the one chosen in Settings)",
+    )
+    m.add_argument(
         "--download", action="store_true", help="download the missing files (asks first)"
     )
     m.add_argument("--yes", action="store_true", help="with --download: do not ask")
@@ -762,7 +775,7 @@ def main(
     args = build_parser().parse_args(argv)
     if args.command == "native":  # needs no settings or database
         return cmd_native(args, out)
-    if args.command == "models":  # neither do these
+    if args.command == "models":  # reads the saved settings; never creates the database
         return cmd_models(args, out)
     if args.command == "hardware" and args.json:
         return cmd_hardware(args, out)

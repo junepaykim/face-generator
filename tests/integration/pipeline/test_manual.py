@@ -68,7 +68,7 @@ class Env:
             self.settings,
             load_kits(),
             career,
-            renderer_factory=lambda: renderer,
+            renderer_factory=lambda _model: renderer,
             tagger_factory=lambda: tags,
             fm_check=lambda: False,
             log=lambda line: None,

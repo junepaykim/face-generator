@@ -339,6 +339,28 @@ def test_a_picture_of_a_man_gets_a_new_face_tracked_or_not() -> None:
     assert kind_of(state(B, age_band="W06", image=ImageState(Group.B, 10, "W05"))) is None
 
 
+def test_a_picture_of_a_man_keeps_its_face_while_everyone_is_drawn_as_a_man() -> None:
+    """The M1-M4 rule holds only while `style.gender` is woman (Phase 15g): the old men's
+    pictures already show men, and nobody is re-drawn for the setting alone (user,
+    2026-11-20)."""
+    for band in ("M1", "M2", "M3", "M4"):
+        s = state(B, age_band="W05", image=ImageState(Group.B, 10, band))
+        assert kind_of(s) == "reroll"
+        assert desired_job(s, "woman") == desired_job(s)
+        assert desired_job(s, "man") is None
+        assert plan_player(s, "man") is None and plan([s], "man").empty
+        assert isinstance(plan_player(s, "woman"), Enqueue)
+    journalist = state(B, club_id=None, media=True, image=ImageState(Group.B, None, "M2"))
+    assert desired_job(journalist, "man") is None
+    # Other rules are the same for both: a woman's picture is not re-drawn as a man's, and a
+    # tracked player is re-drawn by age band.
+    woman = state(A, age_band="W05", at_my_club=True, image=ImageState(Group.A, 10, "W05"))
+    assert desired_job(woman, "man") is None
+    older = replace(woman, age_band="W06")
+    want = desired_job(older, "man")
+    assert want is not None and (want.kind, want.reason) == ("age", "age band W05 to W06")
+
+
 def test_a_regular_journalist_is_redrawn_without_a_club() -> None:
     """A journalist pinned to A is tracked (classify.py) though they have no club or kit."""
     regular = Classification(Group.A, True, ("pinned to A", "tracked: a regular at my club"))

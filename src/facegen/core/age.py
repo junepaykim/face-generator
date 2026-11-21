@@ -5,8 +5,10 @@ staff use working-age bands from W02, and media bands start at W04. Settings cho
 wording's first age; ages below the first row use that row. Tracked players are redrawn
 when their wording changes.
 
-Everyone is drawn as a woman or girl. Historical M1-M4 pictures show men and require a
-new face, detected by drawn_as_man. Prompt text is fixed, independent of table settings.
+The wording key is everyone's age band: a woman's prompt uses its words, a man's states his
+age in years (`style.gender`, core/style.py). Historical M1-M4 pictures show men and get a new
+face while everyone is drawn as a woman, detected by drawn_as_man. Prompt text is fixed,
+independent of table settings.
 """
 
 from __future__ import annotations

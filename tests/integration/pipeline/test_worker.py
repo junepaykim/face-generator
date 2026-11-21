@@ -13,6 +13,7 @@ from fakes import FakeRenderer, FakeTagger
 from PIL import Image
 
 from facegen.core.prompt import CONTENT_NEGATIVE, YOUNG_NEGATIVE
+from facegen.core.settings_values import StyleSettings
 from facegen.core.traits import personality_to_json, sample_sheet
 from facegen.datasource.kits import load_kits
 from facegen.persistence.settings import Paths, PersonalitySettings, Settings
@@ -65,15 +66,18 @@ class Env:
         fm: bool | None = False,
         settings: Settings | None = None,
     ) -> tuple[Worker, FakeRenderer, FakeTagger]:
-        r, t = renderer or FakeRenderer(), tagger or FakeTagger()
+        s = settings or self.settings
+        # The fake tagger sees whom the settings draw: one girl, or one man.
+        r = renderer or FakeRenderer()
+        t = tagger or FakeTagger(default="boy" if s.style.gender == "man" else "pass")
         career = load_career(self.conn)
         assert career is not None
         w = Worker(
             self.conn,
-            settings or self.settings,
+            s,
             load_kits(),
             career,
-            renderer_factory=lambda: r,
+            renderer_factory=lambda _model: r,
             tagger_factory=lambda: t,
             fm_check=lambda: fm,
             log=lambda line: None,
@@ -413,7 +417,7 @@ def test_fm_running_stops_before_any_job(env: Env) -> None:
             env.settings,
             load_kits(),
             career,
-            renderer_factory=lambda: loaded.append(1) or FakeRenderer(),
+            renderer_factory=lambda _model: loaded.append(1) or FakeRenderer(),
             tagger_factory=FakeTagger,
             fm_check=lambda s=state: s,
             log=lambda line: None,
@@ -425,6 +429,40 @@ def test_fm_running_stops_before_any_job(env: Env) -> None:
     # "Generate now" overrides.
     w, _r, _ = env.worker(fm=True)
     assert len(w.run(MINE, generate_now=True).done) == 2
+
+
+def test_a_new_model_setting_unloads_the_old_model_before_the_next_job(env: Env) -> None:
+    """`style.model` is read again before each job (user, 2026-11-20): the loaded model is
+    let go and the selected one loaded, and pictures record the model that drew them."""
+    built: list[FakeRenderer] = []
+
+    def factory(model: str) -> FakeRenderer:
+        built.append(FakeRenderer(model))
+        return built[-1]
+
+    career = load_career(env.conn)
+    assert career is not None
+    w = Worker(
+        env.conn,
+        env.settings,
+        load_kits(),
+        career,
+        renderer_factory=factory,
+        tagger_factory=FakeTagger,
+        fm_check=lambda: False,
+        log=lambda line: None,
+    )
+    first = w.renderer
+    assert first.model == "fake/animagine" and w.renderer is first  # kept between uses
+    w.settings = replace(env.settings, style=StyleSettings(model="realvis", gender="woman"))
+    assert w.renderer.model == "fake/realvis"
+    assert first.closed == 1 and [r.key for r in built] == ["animagine", "realvis"]
+
+    assert len(w.run(MINE).done) == 2
+    models = {r[0] for r in env.conn.execute("SELECT model FROM images")}
+    assert models == {"fake/realvis"}
+    assert w.unload() and w.renderer.model == "fake/realvis"  # reloads the selected one
+    assert [r.key for r in built] == ["animagine", "realvis", "realvis"]
 
 
 def test_an_interrupted_job_goes_back_to_the_queue(env: Env) -> None:
@@ -494,10 +532,11 @@ def test_a_redraw_at_my_club_uses_the_current_picture_as_a_reference(env: Env) -
 def test_a_picture_of_a_man_is_never_a_reference(env: Env) -> None:
     w, _, _ = env.worker()
     w.run(MINE)
-    # The current picture was drawn as a man (2026-11-13): a new picture of her uses no
-    # reference, so no man's face carries over.
+    # The current picture was drawn as a man (2026-11-13; migration 13 records it as one): a
+    # new picture of her uses no reference, so no man's face carries over.
     env.conn.execute(
-        "UPDATE images SET age_band = 'M2' WHERE unique_id = ? AND is_current = 1", (OLD_HAND,)
+        "UPDATE images SET age_band = 'M2', gender = 'man' WHERE unique_id = ? AND is_current = 1",
+        (OLD_HAND,),
     )
     _queue_job(env, OLD_HAND, "redraw", MY_CLUB, "W08")
     w2, r2, _ = env.worker()
@@ -887,3 +926,215 @@ def test_vae_tiling_follows_the_setting_for_each_job(env: Env) -> None:
     w.settings = env.settings  # changed in the UI: the next job draws without tiling
     w.run(MINE, limit=1)
     assert r.vae_tiling is False
+
+
+# --- the model and gender settings (Phase 15g) -------------------------------------------------
+
+
+def _style(settings: Settings, model: str = "animagine", gender: str = "woman") -> Settings:
+    return replace(settings, style=StyleSettings(model=model, gender=gender))
+
+
+def test_everyone_drawn_as_a_man_is_recorded_with_his_sheet_and_age(env: Env) -> None:
+    """A man's sheet is stored with his sheet version before GPU work; the picture records
+    its gender and its band, and the photo prompt states his age in years."""
+    from facegen.core.man_prompt import PHOTO_NEGATIVE
+    from facegen.core.man_traits import ManSheet, sample_man_sheet
+
+    env.conn.execute("UPDATE players SET nation = 765 WHERE unique_id = ?", (OLD_HAND,))
+    men = _style(env.settings, "realvis", "man")
+    w, r, _ = env.worker(renderer=FakeRenderer("realvis"), settings=men)
+    previews = w.preview(MINE)
+    assert env.conn.execute("SELECT COUNT(*) FROM traits").fetchone()[0] == 0
+    assert all(p.man is not None for p in previews)
+    w.run(MINE, publish=False)
+    # The preview showed what the run drew.
+    assert r.prompts == [
+        p.prompt for p in previews for _ in range(env.settings.groups.a.candidates)
+    ]
+    career = load_career(env.conn)
+    assert career is not None
+    for uid, band, age, who in ((OLD_HAND, "W08", 29, "player"), (KEEPER, "W02", 17, "goalkeeper")):
+        image = env.current(uid)
+        assert image is not None and image["gender"] == "man" and image["age_band"] == band
+        assert f"{age}-year-old" in image["prompt"] and f"football {who}" in image["prompt"]
+        assert image["negative_prompt"] == PHOTO_NEGATIVE
+        row = env.conn.execute(
+            "SELECT base_seed, man_sheet FROM traits WHERE unique_id = ?", (uid,)
+        ).fetchone()
+        man = ManSheet.from_json(row["man_sheet"], row["base_seed"])
+        nation = 765 if uid == OLD_HAND else None
+        assert man == sample_man_sheet(career.key, uid, 1, nation=nation)
+        assert man == next(p.man for p in previews if p.job.unique_id == uid)
+        assert json.loads(image["render"])["man_sheet"] == man.describe()
+
+
+def test_a_mans_look_stays_when_his_nation_changes(env: Env) -> None:
+    from facegen.core.man_traits import ManSheet
+
+    men = _style(env.settings, "realvis", "man")
+    w, _, _ = env.worker(renderer=FakeRenderer("realvis"), settings=men)
+    w.run(MINE, publish=False)
+
+    def stored() -> ManSheet:
+        row = env.conn.execute(
+            "SELECT base_seed, man_sheet FROM traits WHERE unique_id = ?", (OLD_HAND,)
+        ).fetchone()
+        return ManSheet.from_json(row["man_sheet"], row["base_seed"])
+
+    first = stored()
+    env.conn.execute("UPDATE players SET nation = 135 WHERE unique_id = ?", (OLD_HAND,))
+    _queue_job(env, OLD_HAND, "kit", RIVAL, "W08")
+    w2, r2, _ = env.worker(renderer=FakeRenderer("realvis"), settings=men)
+    preview = w2.preview(MINE)[0]
+    assert preview.man == first
+    w2.run(MINE, publish=False)
+    assert stored() == first and r2.prompts[0] == preview.prompt
+    assert env.conn.execute("SELECT COUNT(*) FROM traits").fetchone()[0] == 2  # no new face
+
+
+def test_an_interrupted_man_is_drawn_again_from_the_same_sheet(env: Env) -> None:
+    men = _style(env.settings, "realvis", "man")
+    w, r, _ = env.worker(renderer=FakeRenderer("realvis", fail_on_call=2), settings=men)
+    with pytest.raises(KeyboardInterrupt):
+        w.run(MINE)
+    assert env.conn.execute("SELECT COUNT(*) FROM traits WHERE man_sheet IS NOT NULL").fetchone()
+    stored = env.conn.execute("SELECT man_sheet FROM traits WHERE man_sheet IS NOT NULL").fetchall()
+    assert len(stored) == 1  # stored before the GPU work started
+    env.conn.execute("UPDATE players SET nation = 1651")  # read again by the next sync
+    w2, r2, _ = env.worker(renderer=FakeRenderer("realvis"), settings=men)
+    assert len(w2.run(MINE).done) == 2
+    assert r2.calls[0] == r.calls[0] and r2.prompts[0] == r.prompts[0]
+
+
+def test_animagine_draws_a_man_with_the_approved_negative(env: Env) -> None:
+    from facegen.core.man_prompt import BOY_NEGATIVE, MAN_CONTENT_NEGATIVE, MAN_SUBJECT
+
+    w, _, _ = env.worker(settings=_style(env.settings, "animagine", "man"))
+    w.run(MINE, publish=False)
+    for uid in (OLD_HAND, KEEPER):
+        image = env.current(uid)
+        assert image is not None and image["gender"] == "man"
+        assert image["prompt"].startswith(MAN_SUBJECT + ", ")
+        assert image["negative_prompt"].startswith(CONTENT_NEGATIVE + ", " + MAN_CONTENT_NEGATIVE)
+        assert (BOY_NEGATIVE in image["negative_prompt"]) is (uid == KEEPER)  # 17
+
+
+def test_women_are_drawn_as_before_on_every_model(env: Env) -> None:
+    """The gender setting's default draws the women's prompt on every model, and the
+    pictures record it (Phase 15 exit test: Animagine women unchanged)."""
+    w, r, _ = env.worker()
+    w.run(MINE, publish=False)
+    women = list(r.prompts)
+    env.conn.execute("DELETE FROM images")
+    env.conn.execute("UPDATE jobs SET status = 'queued'")
+    w2, r2, _ = env.worker(
+        renderer=FakeRenderer("realvis"), settings=_style(env.settings, "realvis")
+    )
+    w2.run(MINE, publish=False)
+    assert r2.prompts == women
+    assert {r["gender"] for r in env.conn.execute("SELECT gender FROM images")} == {"woman"}
+
+
+def test_a_man_passes_the_mens_check_and_is_published(env: Env) -> None:
+    """The men's check (user, 2026-11-20), for every model: one man, and the content gate."""
+    w, _, tagger = env.worker(settings=_style(env.settings, "realvis", "man"))
+    summary = w.run(MINE)
+    assert len(summary.done) == 2 and not summary.failed
+    assert {v for _, v in tagger.seen} == {"boy"}
+    assert summary.publish is not None and summary.publish.written == 2
+    for uid in (OLD_HAND, KEEPER):
+        image = env.current(uid)
+        assert image is not None and image["gender"] == "man"
+        result = json.loads(image["check_result"])["result"]
+        assert result["passed"] and "hair_colour" in result["traits"]
+
+
+@pytest.mark.parametrize("model", ["animagine", "realvis", "zimage_turbo"])
+def test_a_man_seen_as_a_girl_or_shirtless_goes_to_review(env: Env, model: str) -> None:
+    """A picture the tagger sees as a girl fails the men's check, and so does a man without
+    his shirt, though rated general; nothing of him is published."""
+    from fakes import FakeZImageRenderer
+
+    renderer = FakeZImageRenderer() if model == "zimage_turbo" else FakeRenderer(model)
+    tagger = FakeTagger(["pass", "shirtless"] * 50)
+    w, _, _ = env.worker(
+        renderer=renderer, tagger=tagger, settings=_style(env.settings, model, "man")
+    )
+    summary = w.run(MINE)
+    assert not summary.done and len(summary.failed) == 2
+    for outcome in summary.failed:
+        assert "not one man: no 1boy, 1girl" in outcome.message
+        assert "content: topless male, shirtless" in outcome.message
+    rejected = env.conn.execute("SELECT gender, is_current FROM images").fetchall()
+    assert [tuple(r) for r in rejected] == [("man", 0), ("man", 0)]
+    assert not env.pack.exists() or not any(env.pack.rglob("*.png"))
+
+
+def test_women_are_still_checked_as_women(env: Env) -> None:
+    """The women's check is unchanged: a picture seen as one man fails it."""
+    w, _, _ = env.worker(tagger=FakeTagger(["boy"] * 100))
+    summary = w.run(MINE)
+    assert not summary.done and len(summary.failed) == 2
+    assert all("not one girl: no 1girl" in o.message for o in summary.failed)
+
+
+def test_a_reference_only_from_a_picture_of_the_same_model_and_gender(env: Env) -> None:
+    w, _, _ = env.worker()
+    w.run(MINE)  # women, by Animagine
+    men = _style(env.settings, "animagine", "man")
+
+    _queue_job(env, OLD_HAND, "kit", RIVAL, "W08")
+    w2, r2, _ = env.worker(settings=men)
+    message = w2.run(MINE).done[0].message
+    assert (
+        set(r2.references) == {None}
+        and "no reference (the current picture is of a woman)" in message
+    )
+    info = json.loads(env.current(OLD_HAND)["render"])["reference"]
+    assert info["used"] is False and info["why"] == "the current picture is of a woman"
+    assert env.current(OLD_HAND)["gender"] == "man"
+
+    _queue_job(env, OLD_HAND, "age", RIVAL, "W09")
+    w3, r3, _ = env.worker(settings=men)
+    w3.run(MINE)
+    assert r3.references[0] is not None  # a man's picture for a man, by the same model
+    assert json.loads(env.current(OLD_HAND)["render"])["reference"]["version"] == 2
+
+    _queue_job(env, OLD_HAND, "redraw", RIVAL, "W09")
+    w4, r4, _ = env.worker(renderer=FakeRenderer("realvis"), settings=_style(men, "realvis", "man"))
+    w4.run(MINE)
+    assert set(r4.references) == {None}
+    info = json.loads(env.current(OLD_HAND)["render"])["reference"]
+    assert info["why"] == "the current picture was drawn by fake/animagine"
+
+
+def test_z_image_turbo_draws_without_a_reference_and_says_why(env: Env) -> None:
+    """It has no IP-Adapter (user, 2026-11-20); it reads no negative, so none is stored, and
+    the prompt's length is recorded in tokens."""
+    from fakes import FakeZImageRenderer
+
+    from facegen.web.presentation import uses_reference
+
+    w, _, _ = env.worker()
+    w.run(MINE)
+    turbo = _style(env.settings, "zimage_turbo", "woman")
+    assert uses_reference("kit", True, env.settings) and not uses_reference("kit", True, turbo)
+    _queue_job(env, OLD_HAND, "kit", RIVAL, "W08")
+    w2, r2, _ = env.worker(renderer=FakeZImageRenderer(), settings=turbo)
+    assert w2.preview(MINE)[0].reference_scale is None
+    assert env.worker()[0].preview(MINE)[0].reference_scale == 0.1
+    summary = w2.run(MINE)
+    assert len(summary.done) == 1 and set(r2.references) == {None}
+    assert "no reference (Z-Image-Turbo takes no reference picture)" in summary.done[0].message
+    image = env.current(OLD_HAND)
+    render = json.loads(image["render"])
+    assert render["reference"] == {
+        "used": False,
+        "why": "Z-Image-Turbo takes no reference picture",
+        "scale": 0.1,
+    }
+    assert image["model"] == "fake/zimage_turbo" and image["negative_prompt"] == ""
+    assert render["prompt_tokens"] == len(image["prompt"].split())
+    assert "prompt_chunks" not in render
+    assert all(p.negative == "" for p in r2.prompts)

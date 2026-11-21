@@ -47,5 +47,7 @@ class FaultOnThirdJob(FakeRenderer):
 
 if __name__ == "__main__":
     marker = Path(sys.argv[1])
-    gpu = Gpu(renderer=lambda: FaultOnThirdJob(marker), tagger=FakeTagger, fm_check=lambda: False)
+    gpu = Gpu(
+        renderer=lambda _model: FaultOnThirdJob(marker), tagger=FakeTagger, fm_check=lambda: False
+    )
     raise SystemExit(main(sys.argv[2:], gpu=gpu))

@@ -7,6 +7,7 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
 from support.paths import ROOT
 
 from facegen.platform import procs
@@ -49,3 +50,20 @@ assert Gpu(renderer=lambda: None).models_check() is None
         timeout=10,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_default_renderer_builds_the_selected_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Each `style.model` key names a renderer; the classes are stand-ins, so nothing loads."""
+    from facegen.core.settings_values import MODEL_CHOICES
+    from facegen.render import renderer, zimage
+    from facegen.runtime.dependencies import default_renderer
+
+    monkeypatch.setattr(renderer, "AnimagineRenderer", lambda: "animagine")
+    monkeypatch.setattr(renderer, "SdxlRenderer", lambda spec: spec.repo)
+    monkeypatch.setattr(zimage, "ZImageRenderer", lambda: "zimage")
+    assert default_renderer() == default_renderer("animagine") == "animagine"
+    assert default_renderer("realvis") == renderer.REALVIS_REPO
+    assert default_renderer("zimage_turbo") == "zimage"
+    assert all(default_renderer(key) for key in MODEL_CHOICES)
+    with pytest.raises(ValueError, match="no image model called 'flux'"):
+        default_renderer("flux")

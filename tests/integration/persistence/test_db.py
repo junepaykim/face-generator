@@ -66,7 +66,9 @@ def test_state_migration_preserves_history_constraints_and_restored_sheet() -> N
     images_before = [tuple(r) for r in conn.execute("SELECT * FROM images ORDER BY id")]
     jobs_before = [tuple(r) for r in conn.execute("SELECT * FROM jobs")]
     db.migrate(conn)
-    assert [tuple(r) for r in conn.execute("SELECT * FROM images ORDER BY id")] == images_before
+    images_after = [tuple(r) for r in conn.execute("SELECT * FROM images ORDER BY id")]
+    assert [r[:-1] for r in images_after] == images_before
+    assert [r[-1] for r in images_after] == ["woman", "woman"]  # gender (migration 13)
     assert [tuple(r)[:-2] for r in conn.execute("SELECT * FROM jobs")] == jobs_before
     assert conn.execute("SELECT active_traits_version FROM players").fetchone()[0] == 1
     for table, column in (("images", "age_band"), ("jobs", "target_band")):
@@ -228,11 +230,60 @@ def test_migration_11_drops_drawn_male_and_the_mens_targets() -> None:
     for uid, status, band in ((7, "queued", "M2"), (8, "queued", "W05"), (9, "done", "M3")):
         _job(conn, status, uid)
         conn.execute("UPDATE jobs SET target_band = ? WHERE unique_id = ?", (band, uid))
-    assert db.migrate(conn) == len(db.MIGRATIONS) == 11
+    assert db.migrate(conn) == len(db.MIGRATIONS)
     columns = {r["name"] for r in conn.execute("PRAGMA table_info(players)")}
     assert "drawn_male" not in columns and "female" in columns
     bands = dict(conn.execute("SELECT unique_id, target_band FROM jobs").fetchall())
     assert bands == {7: None, 8: "W05", 9: "M3"}  # finished jobs keep their record
+
+
+def test_migration_12_adds_the_nation_empty_until_a_sync_reads_it() -> None:
+    """Phase 15f: the nation's database ID, which picks a man's look."""
+    conn = sqlite3.connect(":memory:", isolation_level=None)
+    conn.row_factory = sqlite3.Row
+    for script in db.MIGRATIONS[:11]:
+        conn.executescript(script)
+    conn.execute("PRAGMA user_version = 11")
+    conn.execute(
+        "INSERT INTO careers (id, key, display_name, fingerprint, created_at, updated_at)"
+        " VALUES (1, 'c1', 'Career', '[]', 'now', 'now')"
+    )
+    assert db.migrate(conn) == len(db.MIGRATIONS)
+    column = {r["name"]: r for r in conn.execute("PRAGMA table_info(players)")}["nation"]
+    assert column["type"] == "INTEGER" and not column["notnull"] and column["dflt_value"] is None
+
+
+def test_migration_13_records_who_each_picture_shows() -> None:
+    """Phase 15g: pictures drawn with the 2026-11-13 men's wordings show men, every other
+    earlier picture a woman; a sheet version keeps no men's sheet until drawn as a man."""
+    conn = sqlite3.connect(":memory:", isolation_level=None)
+    conn.row_factory = sqlite3.Row
+    for script in db.MIGRATIONS[:12]:
+        conn.executescript(script)
+    conn.execute("PRAGMA user_version = 12")
+    conn.execute(
+        "INSERT INTO careers (id, key, display_name, fingerprint, created_at, updated_at)"
+        " VALUES (1, 'c1', 'Career', '[]', 'now', 'now')"
+    )
+    for version, band in enumerate(("W05", "M2", None, "M4", "W10"), start=1):
+        conn.execute(
+            "INSERT INTO images (career_id, unique_id, version, reason, group_name, model,"
+            " prompt, negative_prompt, seed, age_band, created_at)"
+            " VALUES (1, 7, ?, 'initial', 'a', 'm', 'p', 'n', 1, ?, 'now')",
+            (version, band),
+        )
+    conn.execute(
+        "INSERT INTO traits (career_id, unique_id, version, base_seed, sheet, created_at)"
+        " VALUES (1, 7, 1, 5, '{}', 'now')"
+    )
+    assert db.migrate(conn) == len(db.MIGRATIONS) == 13
+    genders = [r[0] for r in conn.execute("SELECT gender FROM images ORDER BY version")]
+    assert genders == ["woman", "man", "woman", "man", "woman"]
+    assert conn.execute("SELECT man_sheet FROM traits").fetchone()[0] is None
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("UPDATE images SET gender = 'other'")
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("UPDATE images SET gender = NULL")
 
 
 def _history(conn: sqlite3.Connection, before: dict, after: dict) -> None:

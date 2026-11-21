@@ -224,7 +224,7 @@ def run_gpu(env: dict[str, Path], *args: str, fm: bool | None = False) -> tuple[
 
     out = io.StringIO()
     renderer, tagger = FakeRenderer(), FakeTagger()
-    gpu = Gpu(renderer=lambda: renderer, tagger=lambda: tagger, fm_check=lambda: fm)
+    gpu = Gpu(renderer=lambda _model: renderer, tagger=lambda: tagger, fm_check=lambda: fm)
     code = main(
         ["--config", str(env["config"]), *args],
         source_factory=lambda: FakeSource(world()),
@@ -402,12 +402,14 @@ def test_run_without_the_models_says_how_to_get_them(env: dict[str, Path]) -> No
     run(env, "sync")
     out = io.StringIO()
     renderer = FakeRenderer()
+    asked: list[str] = []
     gpu = Gpu(
-        renderer=lambda: renderer, tagger=FakeTagger, fm_check=lambda: False,
-        models_ready=lambda: False,
+        renderer=lambda _model: renderer, tagger=FakeTagger, fm_check=lambda: False,
+        models_ready=lambda model: asked.append(model) and False,
     )  # fmt: skip
     code = main(["--config", str(env["config"]), "run"], gpu=gpu, out=out)
     assert code == 2 and "facegen models --download" in out.getvalue()
+    assert asked == ["animagine"] and "about 11.6 GB" in out.getvalue()
     assert renderer.calls == []
     # A dry run needs no models.
     out = io.StringIO()
@@ -423,7 +425,7 @@ def test_only_the_real_renderer_asks_for_the_model_files() -> None:
 
     assert Gpu().models_check() is models.ready_now
     assert Gpu(renderer=FakeRenderer).models_check() is None  # the tests' fakes need none
-    check = lambda: True
+    check = lambda model: True
     assert Gpu(renderer=FakeRenderer, models_ready=check).models_check() is check
 
 
@@ -437,9 +439,12 @@ def test_serve_with_the_real_worker_offers_the_model_download(
     from facegen.setup import models
 
     run(env, "sync")
-    monkeypatch.setattr(
-        models, "status", lambda: models.ModelsStatus(env["data"], models.FILES, 0, 10**12)
-    )
+
+    def nothing_here(model: str) -> models.ModelsStatus:
+        files = models.files_for(model)
+        return models.ModelsStatus(model, env["data"], files, files, 10**12)
+
+    monkeypatch.setattr(models, "status", nothing_here)
     seen: dict[str, str] = {}
 
     def fake_server(app, host: str, port: int) -> None:  # type: ignore[no-untyped-def]
@@ -448,7 +453,7 @@ def test_serve_with_the_real_worker_offers_the_model_download(
 
     gpu = Gpu(
         renderer=FakeRenderer, tagger=FakeTagger, fm_check=lambda: True,
-        models_ready=lambda: False,
+        models_ready=lambda model: False,
     )  # fmt: skip
     code = main(
         ["--config", str(env["config"]), "serve", "--paused", "--no-watch"],

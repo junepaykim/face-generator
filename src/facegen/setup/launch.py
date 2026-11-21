@@ -2,9 +2,10 @@
 
 `--open-running` runs before uv sync to avoid replacing files in use: exit 0 means the
 running app accepted activation, 1 means no app, and 4 means an app did not answer.
-Normal launch installs the optional native wheel, then offers missing models after
-showing their size and obtaining consent. Either step may fail without blocking startup
-(exit 0); declining models leaves the dashboard's download option available.
+Normal launch installs the optional native wheel, then offers the selected image model's
+missing files (`style.model`) after showing their size and obtaining consent. Either step
+may fail without blocking startup (exit 0); declining models leaves the dashboard's
+download option available.
 
 Unreadable settings produce a plain error (exit 2). Converting a copied WSL folder path
 to Windows form requires confirmation and preserves the local file's other text.
@@ -235,6 +236,7 @@ def refresh_shortcuts(data_dir: Path, config: Path | None, out: TextIO) -> None:
 
 def cmd_launch(args: argparse.Namespace, out: TextIO) -> int:
     """`facegen launch` (module docstring)."""
+    from facegen.persistence.settings import load_saved_settings
     from facegen.setup import models
     from facegen.setup import operations as setup_operations
 
@@ -270,12 +272,13 @@ def cmd_launch(args: argparse.Namespace, out: TextIO) -> int:
                 install=True, report=partial(print, file=o)
             ),
             models_step=lambda o: setup_operations.prepare_models(
+                model=load_saved_settings(args.config).style.model,  # only the chosen one's
                 download=True,
                 confirmed=False,
                 report=partial(print, file=o),
                 ask=asker(o),
                 interactive=interactive,
-                run_download=lambda: models.wait_and_print(models.ModelDownload(), o),
+                run_download=lambda m: models.wait_and_print(models.ModelDownload(), m, o),
             ),
         )
         refresh_shortcuts(data_dir, args.config, tee)

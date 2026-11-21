@@ -44,6 +44,16 @@ VERDICTS: dict[str, TagResult] = {
     "two": TagResult(
         GENERAL, {"solo": 0.1, "2girls": 0.9, "1girl": 0.2, **dict.fromkeys(_COLOUR_TAGS, 0.6)}
     ),
+    # One man, as the tagger saw the made-up men of Phase 15 (docs/research.md section 20).
+    "boy": TagResult(
+        GENERAL,
+        {"solo": 0.98, "1boy": 0.99, "male focus": 0.9, **dict.fromkeys(_COLOUR_TAGS, 0.6)},
+    ),
+    # One man with no shirt: rated general, but the men's content tags catch it.
+    "shirtless": TagResult(
+        GENERAL,
+        {"solo": 0.98, "1boy": 0.99, "shirtless": 0.8, "topless male": 0.7},
+    ),
 }
 
 
@@ -95,9 +105,16 @@ def figure(width: int = 56, height: int = 72, top: float = 0.04, kind: str = "gr
 
 
 class FakeRenderer:
-    model = "fake/animagine"
+    """Built by the worker as `renderer_factory(model)`; `model` reads "fake/<key>"."""
 
-    def __init__(self, fail_on_call: int | None = None, exc: BaseException | None = None) -> None:
+    def __init__(
+        self,
+        key: str = "animagine",
+        fail_on_call: int | None = None,
+        exc: BaseException | None = None,
+    ) -> None:
+        self.key = key
+        self.model = f"fake/{key}"
         self.calls: list[tuple[str, int]] = []
         self.prompts: list[Prompt] = []
         self.references: list[Any] = []
@@ -188,13 +205,36 @@ class FakeRenderer:
         return sum(1 for kind, _ in self.calls if kind == "detail")
 
 
+class FakeZImageRenderer(FakeRenderer):
+    """As Z-Image-Turbo: no reference adapter (a reference is an error), no negative prompt,
+    and the prompt's length in tokens rather than SDXL's chunks."""
+
+    reference_adapter = False
+    negative_prompt = False
+
+    def __init__(self, key: str = "zimage_turbo", **kw: Any) -> None:
+        super().__init__(key, **kw)
+
+    def render(self, prompt: Prompt, seed: int, reference: Any = None) -> Image.Image:
+        if reference is not None:
+            raise ValueError("Z-Image-Turbo has no reference adapter")
+        return super().render(prompt, seed)
+
+    def prompt_tokens(self, prompt: Prompt) -> int:
+        return len(prompt.positive.split())
+
+    def reference_settings(self) -> dict[str, Any]:
+        raise AssertionError("Z-Image-Turbo has no reference settings")
+
+
 class FakeTagger:
-    """Answers with the given verdicts in order, then "pass"."""
+    """Answers with the given verdicts in order, then `default` ("pass"; "boy" for men)."""
 
     name = "fake/tagger"
 
-    def __init__(self, verdicts: Sequence[str] = ()) -> None:
+    def __init__(self, verdicts: Sequence[str] = (), default: str = "pass") -> None:
         self.verdicts = list(verdicts)
+        self.default = default
         self.seen: list[tuple[int | None, str]] = []
 
     closed = 0
@@ -205,7 +245,7 @@ class FakeTagger:
     def __call__(self, images: Sequence[Image.Image]) -> list[TagResult]:
         out = []
         for im in images:
-            verdict = self.verdicts.pop(0) if self.verdicts else "pass"
+            verdict = self.verdicts.pop(0) if self.verdicts else self.default
             self.seen.append((im.info.get("seed"), verdict))
             out.append(VERDICTS[verdict])
         return out

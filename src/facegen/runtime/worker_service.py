@@ -47,7 +47,7 @@ class WorkerService:
         self,
         db_path: Path,
         *,
-        renderer_factory: Callable[[], Renderer],
+        renderer_factory: Callable[[str], Renderer],
         tagger_factory: Callable[[], Tagger],
         defaults_path: Path | None = None,
         kits: KitTable | None = None,
@@ -57,12 +57,12 @@ class WorkerService:
         clock: Callable[[], float] = time.monotonic,
         conn: sqlite3.Connection | None = None,
         link: Link | None = None,
-        models_ready: Callable[[], bool] | None = None,
+        models_ready: Callable[[str], bool] | None = None,
     ) -> None:
         self.db_path = db_path
         self._models_ready = models_ready
-        """Whether the model files are on this PC (models.ready_now); None: not asked, as
-        with the tests' fake renderers."""
+        """Whether the selected model's files are on this PC (models.ready_now), asked with
+        `style.model` before each job; None: not asked, as with the tests' fake renderers."""
         self.defaults_path = defaults_path
         self._kits = kits
         self._renderer_factory = renderer_factory
@@ -389,7 +389,7 @@ class WorkerService:
             return IDLE_POLL_SECONDS
         self._idle_since = None
 
-        if self._models_ready is not None and not self._models_ready():
+        if self._models_ready is not None and not self._models_ready(settings.style.model):
             self._publish_pending(worker)
             self._set(
                 "setup",

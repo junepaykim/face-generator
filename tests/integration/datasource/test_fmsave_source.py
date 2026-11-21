@@ -300,6 +300,7 @@ class FakeSave:
         fail: Exception | None = None,
         staff_fail: Exception | None = None,
         people: bool = False,
+        nations_fail: Exception | None = None,
     ) -> None:
         if people:
             self._context = FakeContext()
@@ -313,7 +314,13 @@ class FakeSave:
         )
         self._fail = fail
         self._staff_fail = staff_fail
+        self._nations_fail = nations_fail
         self.closed = False
+
+    def nations(self) -> list[NS]:
+        if self._nations_fail is not None:
+            raise self._nations_fail
+        return [NS(nation_id=i, database_id=d) for i, d in ((7, 1651), (139, 765), (140, 769))]
 
     def clubs(self) -> list[NS]:
         return [fm_club(10, 1010)]
@@ -321,7 +328,7 @@ class FakeSave:
     def players(self) -> list[NS]:
         if self._fail is not None:
             raise self._fail
-        return [fm_player(2_002_100_000)]
+        return [fm_player(2_002_100_000, nation_id=7)]
 
     def managed_clubs(self) -> list[NS]:
         return [NS(club_uid=10)]
@@ -339,9 +346,9 @@ class FakeSave:
         if self._staff_fail is not None:
             raise self._staff_fail
         return [
-            fm_staff(3001, first_name="Emma"),
+            fm_staff(3001, first_name="Emma", nation_id=139),
             fm_staff(3002, club_uid=11),
-            fm_staff(3003, first_name="Jake"),
+            fm_staff(3003, first_name="Jake", nation_id=99),  # a nation the table lacks
         ]
 
     def close(self) -> None:
@@ -467,6 +474,29 @@ def test_journalists_press_officers_and_genders(monkeypatch: pytest.MonkeyPatch)
     assert (jake.name, jake.age, jake.birth_date) == ("Jake Diaz", 55, date(1970, 10, 24))
     # My club's staff: Emma is a woman's name, Jake a man's.
     assert [(s.unique_id, s.female) for s in snap.staff] == [(3001, True), (3003, False)]
+    # Nations as the game's database IDs (Phase 15f): 139 is England's here, 140 France's.
+    assert [m.nation for m in snap.media] == [765, 769, 765]
+    assert [s.nation for s in snap.staff] == [765, None]
+    assert [p.nation for p in snap.players] == [1651]
+
+
+def test_without_the_nation_table_nobody_has_a_nation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Men's looks then come from the world's mix; the sync goes on."""
+    import fmsave
+
+    _patch_open(monkeypatch, FakeSave(people=True, nations_fail=fmsave.FmsaveError("no table")))
+    snap = FmsaveDataSource().load(Path("Career.fm"))
+    assert snap.players and snap.staff and snap.media
+    assert {r.nation for r in (*snap.players, *snap.staff, *snap.media)} == {None}
+    assert any("nations unavailable" in w for w in snap.meta.warnings)
+
+
+def test_a_nation_is_its_database_id() -> None:
+    nations = {7: 1651}
+    assert convert_player(fm_player(1, nation_id=7), UID_MAP, None, nations).nation == 1651
+    assert convert_player(fm_player(1, nation_id=8), UID_MAP, None, nations).nation is None
+    assert convert_player(fm_player(1, nation_id=None), UID_MAP, None, nations).nation is None
+    assert convert_player(fm_player(1), UID_MAP, None).nation is None  # no table, no field
 
 
 def test_without_the_people_reader_the_sync_goes_on(monkeypatch: pytest.MonkeyPatch) -> None:

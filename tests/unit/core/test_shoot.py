@@ -11,6 +11,7 @@ from datetime import date
 import pytest
 
 from facegen.core.age import WORDINGS
+from facegen.core.man_traits import HAIR_COLOUR as MAN_HAIR_COLOUR
 from facegen.core.prompt import CONTENT_NEGATIVE, CONTENT_POSITIVE, QUALITY, build_prompt
 from facegen.core.shoot import (
     ANGLES,
@@ -227,10 +228,11 @@ def test_front_is_the_most_common_angle_and_from_below_the_rarest() -> None:
 
 
 def test_every_hair_colour_has_backdrop_families() -> None:
-    assert set(HAIR_FAMILIES) == set(HAIR_COLOUR)
+    """Women's and men's (Phase 15g); a colour with both names blends with the same."""
+    assert set(HAIR_FAMILIES) == set(HAIR_COLOUR) | set(MAN_HAIR_COLOUR)
 
 
-@pytest.mark.parametrize("hair", sorted(HAIR_COLOUR))
+@pytest.mark.parametrize("hair", sorted(set(HAIR_COLOUR) | set(MAN_HAIR_COLOUR)))
 @pytest.mark.parametrize(
     "kit",
     [COLCHESTER, KEEPER, RED, Kit(shirt=("amber",), trim="black", shorts="black"),

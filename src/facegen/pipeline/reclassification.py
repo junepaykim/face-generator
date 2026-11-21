@@ -173,7 +173,7 @@ def _classify(
                 media=who["media"],
             )
         )
-    return PlanResult(plan(states), classifications, tuple(moved)), changed
+    return PlanResult(plan(states, settings.style.gender), classifications, tuple(moved)), changed
 
 
 def classify_and_plan(conn: sqlite3.Connection, career_id: int, settings: Settings) -> PlanResult:

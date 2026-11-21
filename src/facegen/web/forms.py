@@ -10,7 +10,13 @@ from typing import Any
 from fastapi import Request
 from starlette.datastructures import FormData
 
-from facegen.core.settings_values import DETAIL_SIZES, LANGUAGE_CHOICES, THEME_CHOICES
+from facegen.core.settings_values import (
+    DETAIL_SIZES,
+    GENDER_CHOICES,
+    LANGUAGE_CHOICES,
+    MODEL_CHOICES,
+    THEME_CHOICES,
+)
 from facegen.i18n import ENGLISH, Translator
 from facegen.persistence.settings import SKIP_WORDING, is_age_wording, is_fixed
 from facegen.web.messages import band_name
@@ -19,7 +25,7 @@ from facegen.web.messages import band_name
 # title is the catalog's "settings.title.<section>", its note "settings.note.<top section>"
 # (most sections have none: Phase 12 keeps the page short), its ⓘ tip "settings.tip.<top>".
 SECTION_ORDER = (
-    "groups", "staff", "youth", "media", "no_photo", "age", "schedule", "display",
+    "groups", "staff", "youth", "media", "no_photo", "style", "age", "schedule", "display",
     "notifications", "eligibility", "my_club", "body", "personality", "reference", "render", "updates",
     "newgen",
 )  # fmt: skip
@@ -50,6 +56,8 @@ CHOICES: dict[str, tuple[str, ...]] = {
     "detail_size": tuple(DETAIL_SIZES),
     "language": LANGUAGE_CHOICES,
     "theme": THEME_CHOICES,
+    "model": MODEL_CHOICES,
+    "gender": GENDER_CHOICES,
 }
 """Text settings with a fixed set of values, by the key's last part, shown as a drop-down list;
 each value's label is the catalog's "settings.choice.<name>.<value>"."""

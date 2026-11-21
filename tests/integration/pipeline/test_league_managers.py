@@ -101,7 +101,7 @@ def test_manager_preview_and_worker_use_the_same_sheet_and_role(conn, settings):
         settings,
         load_kits(),
         career,
-        renderer_factory=lambda: None,
+        renderer_factory=lambda _model: None,
         tagger_factory=lambda: None,
     )
     preview = worker.preview(JobFilter())[0]

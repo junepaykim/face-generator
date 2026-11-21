@@ -21,6 +21,7 @@ from facegen.web.dependencies import AppDependencies
 from facegen.web.forms import (
     blamed_keys,
     change_lines,
+    choices_of,
     describe_key,
     form_of,
     input_text,
@@ -178,6 +179,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             hardware.recommend(card.vram_gib).name if card is not None and card.has_gpu else None
         )
         values = current.values
+        t = deps.translator(request, conn)
         return page(
             request,
             "settings_basic.html",
@@ -189,6 +191,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             quality_options=list(presets.QUALITY),
             recommended=recommended,
             card=card,
+            style_choices={name: choices_of(f"style.{name}", t) for name in ("model", "gender")},
             values=values,
             can_undo=settings_history.can_undo(conn),
             can_redo=settings_history.can_redo(conn),

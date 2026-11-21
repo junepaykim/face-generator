@@ -340,8 +340,27 @@ UPDATE jobs SET target_band = NULL
     WHERE status IN ('queued', 'running') AND target_band IN ('M1', 'M2', 'M3', 'M4');
 """
 
+# nation: the game's editor database ID of the person's nation (core/nations.py), which picks
+# a man's look (Phase 15f); NULL until a sync reads it, or where the save does not give it.
+_V12 = """
+ALTER TABLE players ADD COLUMN nation INTEGER;
+"""
 
-MIGRATIONS: tuple[str, ...] = (_V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10, _V11)
+
+# images.gender: who a picture shows, "woman" or "man" (`style.gender`, Phase 15g). Pictures
+# drawn with the 2026-11-13 men's wordings (M1-M4) show men; every other earlier picture a woman.
+# traits.man_sheet: the men's sheet (core/man_traits.py) of the same version, JSON, stored the
+# first time that version is drawn as a man; NULL until then.
+_V13 = """
+ALTER TABLE images ADD COLUMN gender TEXT NOT NULL DEFAULT 'woman' CHECK (gender IN ('woman', 'man'));
+UPDATE images SET gender = 'man' WHERE age_band IN ('M1', 'M2', 'M3', 'M4');
+ALTER TABLE traits ADD COLUMN man_sheet TEXT;
+"""
+
+
+MIGRATIONS: tuple[str, ...] = (
+    _V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10, _V11, _V12, _V13
+)  # fmt: skip
 
 # The active career: the one whose save was written last (spec section 8). A career synced
 # without a save time (tests, old rows) falls back to when it was synced.

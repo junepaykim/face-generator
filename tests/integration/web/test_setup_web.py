@@ -24,11 +24,11 @@ from fastapi.testclient import TestClient
 from facegen.core.records import Snapshot
 from facegen.datasource.kits import load_kits
 from facegen.persistence import db
-from facegen.persistence.settings import DEFAULTS_PATH, load_settings
+from facegen.persistence.settings import DEFAULTS_PATH, load_settings, set_overrides
 from facegen.service import SyncService, WorkerService
 from facegen.setup import models
 from facegen.setup.hardware import Hardware
-from facegen.setup.models import DownloadStatus, HubCache
+from facegen.setup.models import DownloadStatus, HubCache, files_for
 from facegen.web.app import AppContext, create_app
 
 BASE = "http://127.0.0.1:8765"
@@ -57,12 +57,15 @@ class Download:
 
     started: int = 0
     now: DownloadStatus = field(default_factory=DownloadStatus)
+    models: list[str] = field(default_factory=list)
+    """The model of each download started."""
 
-    def start(self) -> bool:
+    def start(self, model: str) -> bool:
         if self.now.running:
             return False
         self.started += 1
-        self.now = DownloadStatus(running=True, total_bytes=1000, files=3)
+        self.models.append(model)
+        self.now = DownloadStatus(running=True, model=model, total_bytes=1000, files=3)
         return True
 
     def status(self) -> DownloadStatus:
@@ -123,7 +126,7 @@ def fm27(root: Path) -> Path:
 def make_env(
     tmp: Path,
     *,
-    models_status: Callable[[], models.ModelsStatus] | None = None,
+    models_status: Callable[[str], models.ModelsStatus] | None = None,
     download: Download | None = None,
     card: Hardware | None = None,
     browse: Callable[[str | None], str | None] | None = None,
@@ -313,7 +316,7 @@ def test_missing_models_ask_for_one_confirmation(tmp_path: Path) -> None:
     hub = HubCache(tmp_path / "hub")
     download = Download()
     folder = fm27(tmp_path)
-    env = make_env(tmp_path, models_status=lambda: models.status(hub), download=download)
+    env = make_env(tmp_path, models_status=lambda m: models.status(m, hub), download=download)
     env.follow(env.client.post("/setup/folder", data={"folder": str(folder), "next": "/"}))
     env.syncer.join(10)
 
@@ -324,14 +327,16 @@ def test_missing_models_ask_for_one_confirmation(tmp_path: Path) -> None:
     # Nothing starts without the confirmation (AGENTS.md hard rule 4).
     text = env.follow(env.client.post("/setup/models", data={}))
     assert "Not downloaded" in text and download.started == 0
-    text = env.follow(env.client.post("/setup/models", data={"confirm": "download"}))
-    assert "Downloading the models (11.6 GB)" in text and download.started == 1
+    assert 'name="model" value="animagine"' in env.client.get("/").text
+    yes = {"confirm": "download", "model": "animagine"}
+    text = env.follow(env.client.post("/setup/models", data=yes))
+    assert "Downloading the models (11.6 GB)" in text and download.models == ["animagine"]
     assert "<progress" in env.client.get("/status").text
-    text = env.follow(env.client.post("/setup/models", data={"confirm": "download"}))
+    text = env.follow(env.client.post("/setup/models", data=yes))
     assert "running already" in text and download.started == 1
 
     # Finished: the files are there, the panel says so once and the banner goes.
-    for f in models.FILES:
+    for f in files_for("animagine"):
         repo = hub.repo_dir(f.repo)
         (repo / "refs").mkdir(parents=True, exist_ok=True)
         (repo / "refs" / "main").write_text("c0", encoding="utf-8")
@@ -345,15 +350,63 @@ def test_missing_models_ask_for_one_confirmation(tmp_path: Path) -> None:
 
 
 def test_not_enough_space_disables_the_download(tmp_path: Path) -> None:
-    def short() -> models.ModelsStatus:
-        return models.ModelsStatus(tmp_path, models.FILES, 0, free_bytes=10**9)
+    def short(model: str) -> models.ModelsStatus:
+        files = files_for(model)
+        return models.ModelsStatus(model, tmp_path, files, files, free_bytes=10**9)
 
     download = Download()
     env = make_env(tmp_path, models_status=short, download=download)
     text = env.client.get("/status").text
     assert "Not enough free space" in text and "disabled" in text
-    text = env.follow(env.client.post("/setup/models", data={"confirm": "download"}))
+    yes = {"confirm": "download", "model": "animagine"}
+    text = env.follow(env.client.post("/setup/models", data=yes))
     assert "Not enough free space" in text and download.started == 0
+
+
+def put_files(hub: HubCache, model: str) -> None:
+    for f in files_for(model):
+        target = hub.repo_dir(f.repo) / "snapshots" / "c0" / f.filename
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"x")
+        (hub.repo_dir(f.repo) / "refs").mkdir(exist_ok=True)
+        (hub.repo_dir(f.repo) / "refs" / "main").write_text("c0", encoding="utf-8")
+
+
+def test_only_the_selected_models_files_are_offered(tmp_path: Path) -> None:
+    """Phase 15e: with Animagine's files here, choosing RealVisXL offers its files alone; the
+    confirmation names the model shown, and a model changed meanwhile is not downloaded."""
+    hub = HubCache(tmp_path / "hub")
+    put_files(hub, "animagine")
+    download = Download()
+    env = make_env(tmp_path, models_status=lambda m: models.status(m, hub), download=download)
+    env.follow(env.client.post("/setup/folder", data={"folder": str(fm27(tmp_path)), "next": "/"}))
+    env.syncer.join(10)
+    text = env.client.get("/status").text
+    assert re.search(r"<strong>Picture models</strong>\s*Downloaded\.", text)  # all here
+    assert "Set up:" not in env.client.get("/players").text
+
+    conn = env.conn()
+    set_overrides(conn, {"style.model": "realvis"}, env.config)
+    text = env.client.get("/status").text
+    assert "<strong>Picture models</strong>" in text and "Download 6.9 GB" in text
+    assert "SG161222/RealVisXL_V5.0" in text and "RealVisXL V5.0, the image model" in text
+    assert "h94/IP-Adapter" not in text and "The rest is here already." in text
+    assert 'name="model" value="realvis"' in text
+    assert "the models are not downloaded yet (6.9 GB)" in env.client.get("/players").text
+
+    # A page shown before the model was changed: its size was another model's.
+    old = {"confirm": "download", "model": "animagine"}
+    text = env.follow(env.client.post("/setup/models", data=old))
+    assert "The model was changed in Settings" in text and download.started == 0
+    text = env.follow(env.client.post("/setup/models", data={"confirm": "download"}))
+    assert "The model was changed in Settings" in text and download.started == 0
+    yes = {"confirm": "download", "model": "realvis"}
+    text = env.follow(env.client.post("/setup/models", data=yes))
+    assert "Downloading the models (6.9 GB)" in text and download.models == ["realvis"]
+
+    set_overrides(conn, {"style.model": "animagine"}, env.config)
+    conn.close()
+    assert "Set up:" not in env.client.get("/players").text  # back to the model that is here
 
 
 def test_without_a_gpu_worker_the_models_are_not_part_of_the_setup(env: Env) -> None:

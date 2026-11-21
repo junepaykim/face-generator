@@ -16,7 +16,13 @@ from support.paths import ROOT
 from facegen.core import presets
 from facegen.core.domain import JOB_KINDS
 from facegen.core.problems import KINDS as PROBLEM_KINDS
-from facegen.core.settings_values import DETAIL_SIZES, LANGUAGE_CHOICES, THEME_CHOICES
+from facegen.core.settings_values import (
+    DETAIL_SIZES,
+    GENDER_CHOICES,
+    LANGUAGE_CHOICES,
+    MODEL_CHOICES,
+    THEME_CHOICES,
+)
 from facegen.i18n import LANGUAGES, Translator, catalog
 from facegen.persistence.settings import load_defaults
 from facegen.pipeline.manual import REFUSALS
@@ -115,6 +121,8 @@ def vocabulary_keys() -> list[str]:
     keys += [f"settings.choice.detail_size.{k}" for k in DETAIL_SIZES]
     keys += [f"settings.choice.language.{k}" for k in LANGUAGE_CHOICES]
     keys += [f"settings.choice.theme.{k}" for k in THEME_CHOICES]
+    keys += [f"settings.choice.model.{k}" for k in MODEL_CHOICES]
+    keys += [f"settings.choice.gender.{k}" for k in GENDER_CHOICES]
     for preset in (hardware.HIGH, hardware.MEDIUM, hardware.LOW, hardware.NONE):
         keys += [f"hardware.preset.{preset.name}.title", f"hardware.preset.{preset.name}.note"]
     keys += [f"tag.media.{role}" for role in ("journalist", "press officer")]

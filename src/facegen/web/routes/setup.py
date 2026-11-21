@@ -108,16 +108,27 @@ def create_router(deps: AppDependencies) -> APIRouter:
         await run_in_threadpool(guide.close, deps.data_dir)
         return _redirect("/")
 
+    def selected_model() -> str:
+        conn = deps.connect()
+        try:
+            return deps.settings_now(conn).style.model
+        finally:
+            conn.close()
+
     @router.post("/setup/models")
     async def setup_models(request: Request) -> Response:
-        """The one confirmation before the model download (AGENTS.md hard rule 4)."""
+        """The one confirmation before the model download (AGENTS.md hard rule 4). It names
+        the model whose files were shown; the selected model's files alone are downloaded."""
         form = await form_of(request)
         t = await run_in_threadpool(deps.translator, request)
         if ctx.download is None or ctx.models is None:
             return _redirect("/", err=t("msg.models.absent"))
         if form.get("confirm") != "download":
             return _redirect("/", err=t("msg.models.confirm"))
-        now = await run_in_threadpool(ctx.models)
+        model = await run_in_threadpool(selected_model)
+        if form.get("model") != model:  # changed in Settings since the page was shown
+            return _redirect("/", err=t("msg.models.changed"))
+        now = await run_in_threadpool(ctx.models, model)
         if now.ready:
             return _redirect("/", msg=t("msg.models.here"))
         if not now.enough_space:
@@ -125,7 +136,7 @@ def create_router(deps: AppDependencies) -> APIRouter:
                 "/",
                 err=t("msg.models.space", size=gigabytes(now.missing_bytes), folder=now.cache),
             )
-        if not ctx.download.start():
+        if not ctx.download.start(model):
             return _redirect("/", err=t("msg.models.running"))
         return _redirect("/", msg=t("msg.models.started", size=gigabytes(now.missing_bytes)))
 

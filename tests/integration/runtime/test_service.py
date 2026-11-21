@@ -69,9 +69,9 @@ class Gpu:
     taggers: list[FakeTagger] = field(default_factory=list)
     fail_first_render: BaseException | None = None
 
-    def renderer(self) -> FakeRenderer:
+    def renderer(self, model: str = "animagine") -> FakeRenderer:
         fail = self.fail_first_render if not self.renderers else None
-        r = FakeRenderer(fail_on_call=1, exc=fail) if fail else FakeRenderer()
+        r = FakeRenderer(model, fail_on_call=1, exc=fail) if fail else FakeRenderer(model)
         self.renderers.append(r)
         return r
 
@@ -287,8 +287,8 @@ def test_a_gpu_fault_whose_cleanup_fails_too_leaves_no_closed_model(env: Env) ->
 
     original = env.gpu.renderer
 
-    def renderer():  # type: ignore[no-untyped-def]
-        r = original()
+    def renderer(model):  # type: ignore[no-untyped-def]
+        r = original(model)
         r.close = broken_close  # type: ignore[method-assign]
         return r
 
@@ -985,7 +985,8 @@ def test_missing_models_are_a_setup_state_not_an_error(env: Env) -> None:
     """Phase 10b: with the models not downloaded the worker waits and loads nothing; once the
     download has finished it draws."""
     present = [False]
-    svc = env.service(models_ready=lambda: present[0])
+    asked: list[str] = []
+    svc = env.service(models_ready=lambda model: asked.append(model) or present[0])
     assert svc.step() == FM_POLL_SECONDS
     status = svc.status()
     assert status.state == "setup" and "not downloaded" in status.detail
@@ -996,11 +997,25 @@ def test_missing_models_are_a_setup_state_not_an_error(env: Env) -> None:
     present[0] = True
     assert svc.step() == 0.0
     assert env.drawn() == [(MINE_2, "initial")]
+    assert set(asked) == {"animagine"}  # the selected model's files (Phase 15e)
+
+
+def test_the_models_check_follows_the_selected_model(env: Env) -> None:
+    """Phase 15e: the files asked about are those of `style.model` as saved before the job."""
+    asked: list[str] = []
+    svc = env.service(models_ready=lambda model: asked.append(model) or model == "animagine")
+    set_overrides(env.conn, {"style.model": "realvis"}, env.config)
+    assert svc.step() == FM_POLL_SECONDS
+    assert asked == ["realvis"] and svc.status().reason == "models_missing"
+    assert env.gpu.renderers == [] and env.drawn() == []
+    set_overrides(env.conn, {"style.model": "animagine"}, env.config)
+    assert svc.step() == 0.0
+    assert asked == ["realvis", "animagine"] and len(env.drawn()) == 1
 
 
 def test_an_empty_queue_does_not_ask_for_the_models(env: Env) -> None:
     asked = []
-    svc = env.service(models_ready=lambda: asked.append(1) or True)
+    svc = env.service(models_ready=lambda model: asked.append(1) or True)
     run_until_idle(svc)
     n = len(asked)
     assert svc.step() > 0 and svc.status().state == "idle"

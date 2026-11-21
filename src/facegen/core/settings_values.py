@@ -16,6 +16,31 @@ LANGUAGE_CHOICES = ("auto", "en", "ko")
 THEME_CHOICES = ("auto", "light", "dark")
 """`display.theme`: auto follows Windows's light or dark app mode (Phase 12b)."""
 
+
+@dataclass(frozen=True, slots=True)
+class ImageModel:
+    """What a `style.model` choice means for the pictures it draws."""
+
+    name: str
+    photo: bool
+    """Draws photos: a man gets the photo prompt in sentences (core/man_prompt.py)."""
+    reference: bool
+    """Takes the current picture as a reference on a re-draw (an IP-Adapter)."""
+    negative: bool
+    """Uses a negative prompt. Z-Image-Turbo draws without guidance, so it has none."""
+
+
+IMAGE_MODELS: dict[str, ImageModel] = {
+    "animagine": ImageModel("Animagine XL 4.0", photo=False, reference=True, negative=True),
+    "realvis": ImageModel("RealVisXL V5.0", photo=True, reference=True, negative=True),
+    "zimage_turbo": ImageModel("Z-Image-Turbo", photo=True, reference=False, negative=False),
+}
+MODEL_CHOICES = tuple(IMAGE_MODELS)
+"""`style.model`: the image model everyone is drawn with (user, 2026-11-20)."""
+WOMAN, MAN = "woman", "man"
+GENDER_CHOICES = (WOMAN, MAN)
+"""`style.gender`: everyone is drawn as a woman or as a man (user, 2026-11-20)."""
+
 DETAIL_SIZES: dict[str, tuple[int, int] | None] = {
     "1344x1728": (1344, 1728),
     "1152x1472": (1152, 1472),
@@ -227,6 +252,17 @@ class RenderSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class StyleSettings:
+    """How everyone is drawn: one model and one gender for players, staff and media alike.
+    A change applies to pictures drawn from then on; it re-draws nobody by itself."""
+
+    model: str
+    """A key of MODEL_CHOICES."""
+    gender: str
+    """A key of GENDER_CHOICES."""
+
+
+@dataclass(frozen=True, slots=True)
 class DisplaySettings:
     """How the UI looks: its language and theme; "auto" follows Windows."""
 
@@ -272,6 +308,7 @@ class Settings:
     personality: PersonalitySettings
     schedule: Schedule
     render: RenderSettings
+    style: StyleSettings
     display: DisplaySettings
     notifications: NotificationSettings
     updates: UpdateSettings

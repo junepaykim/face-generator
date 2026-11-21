@@ -172,7 +172,7 @@ file = "Downloading file {index} of {files}: <code>{name}</code>"
 starting = "Downloading: starting"
 progress = "{percent}% · {done} of {total}"
 stop_note = "Closing facegen stops it; the next Download goes on where it stopped."
-intro = "facegen needs three models from Hugging Face: {size}, downloaded once."
+intro = "facegen needs these models from Hugging Face: {size}, downloaded once."
 rest_here = " The rest is here already."
 saved_in = "Saved in"
 free = "Free space there"
@@ -594,6 +594,7 @@ body = "Height and build"
 personality = "Personality"
 schedule = "Running"
 render = "Rendering"
+style = "Picture style"
 display = "Language and look"
 notifications = "Notifications"
 updates = "Updates"
@@ -602,14 +603,16 @@ updates = "Updates"
 eligibility = "Applies from the next sync."
 staff = "Staff are drawn at {a} quality."
 youth = "Players outside the first team are drawn in the {b} group, and in {a} once they join it."
-media = "Journalists and press officers are drawn as women in the {b} group."
+media = "Journalists and press officers are drawn in the {b} group."
 my_club = "Applies to new pictures."
 body = "Applies to new characters."
+style = "Z-Image-Turbo needs a graphics card with 10 GB or more."
 
 [settings.tip]
 age = "The age each look starts at; it lasts until the next one used. - leaves a look out of this table."
 personality = "How much a new character's expression follows their personality. 0: not at all. 1: a fitting expression is twice as likely. 2: three times as likely."
 reference = "When a picture is drawn again (a new kit, an older look, a new picture), the current face guides the new one so the player still looks the same. A stronger reference keeps the face closer but can blur the kit."
+style = "Applies to pictures drawn from now on. Existing pictures stay as they are until they are drawn again."
 newgen = "Used only for a career's first sync, if facegen cannot tell newgens apart by their IDs."
 
 [settings.field_tip]
@@ -622,6 +625,8 @@ published_long_edge = "Picture height (px)"
 candidates = "Candidates per picture"
 detail_size = "Detail pass"
 vae_tiling = "VAE tiling (decode in tiles to save graphics memory)"
+model = "Model"
+gender = "Gender"
 my_academy = "Academy players stay in the {b} group after they leave"
 mens_football_only = "Men's football only"
 continental_competition_ids = "Continental competition IDs (editor database IDs)"
@@ -673,6 +678,15 @@ ko = "한국어"
 auto = "Auto (Windows)"
 light = "Light"
 dark = "Dark"
+
+[settings.choice.model]
+animagine = "Anime (Animagine XL)"
+realvis = "Photo (RealVisXL)"
+zimage_turbo = "Photo (Z-Image-Turbo)"
+
+[settings.choice.gender]
+woman = "Woman"
+man = "Man"
 
 [settings.level]
 basic = "Basic"
@@ -799,6 +813,7 @@ here = "The models are here already."
 space = "Not enough free space: {size} and 1 GB to spare are needed in {folder}."
 running = "The download is running already."
 started = "Downloading the models ({size})."
+changed = "The model was changed in Settings: check the download again."
 
 [msg.player]
 bad_id = "Bad player ID."
@@ -1039,5 +1054,7 @@ nobody = "Nobody in this save gets a picture yet. Check the group thresholds in 
 
 [models.repo]
 "cagliostrolab/animagine-xl-4.0" = "Animagine XL 4.0, the image model"
+"SG161222/RealVisXL_V5.0" = "RealVisXL V5.0, the image model"
+"Tongyi-MAI/Z-Image-Turbo" = "Z-Image-Turbo, the image model"
 "h94/IP-Adapter" = "IP-Adapter plus-face, for re-draws that keep the face"
 "SmilingWolf/wd-eva02-large-tagger-v3" = "WD EVA02 tagger, for the quality check"

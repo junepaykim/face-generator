@@ -254,6 +254,28 @@ def test_personality_is_stored_and_kept_up_to_date(
     assert personality_from_json(player_row(conn, MINE_OLD)["personality"]) == calmer
 
 
+def test_each_persons_nation_is_stored_and_kept_when_not_read(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    """Phase 15f: the nation's database ID picks a man's look; a sync that cannot read the
+    nation table keeps what an earlier one read."""
+    from factories import media_person, staff_member
+
+    people = [replace(p, nation=765) if p.unique_id == MINE_OLD else p for p in world()]
+    staff = [replace(staff_member(COACH), nation=1651)]
+    media = [replace(media_person(HOME_REPORTER), nation=769)]
+    sync(conn, snapshot(people, staff=staff, media=media), settings)
+    assert [player_row(conn, u)["nation"] for u in (MINE_OLD, MINE_NEW, COACH, HOME_REPORTER)] == [
+        765, None, 1651, 769,
+    ]  # fmt: skip
+    staff = [staff_member(COACH)]
+    media = [media_person(HOME_REPORTER)]
+    sync(conn, snapshot(world(), staff=staff, media=media), settings)
+    assert [player_row(conn, u)["nation"] for u in (MINE_OLD, COACH, HOME_REPORTER)] == [
+        765, 1651, 769,
+    ]  # fmt: skip
+
+
 # --- careers -------------------------------------------------------------------------------------
 
 

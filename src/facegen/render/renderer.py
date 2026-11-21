@@ -28,6 +28,63 @@ SAMPLER = "euler_a"
 
 DETAIL_STRENGTH = 0.35
 
+REALVIS_REPO = "SG161222/RealVisXL_V5.0"
+
+
+@dataclass(frozen=True, slots=True)
+class SdxlModel:
+    """One SDXL checkpoint and how it is sampled. Every model draws at WIDTH x HEIGHT in fp16,
+    with the fp16-fix VAE (its own copy), INT8 UNet blocks and 75-token prompt chunks."""
+
+    repo: str
+    steps: int
+    cfg: float
+    sampler: str
+    """A key of `_SCHEDULERS`, recorded with each picture."""
+    variant: str | None = None
+    """"fp16": the repository's `*.fp16.safetensors` files, for one that also has fp32 ones."""
+    vae_upcast_off: bool = False
+    """The repository's VAE holds the fp16-fix weights but its config asks diffusers to decode
+    in fp32 (`force_upcast`), which more than doubles the decode's memory."""
+    vae_tile: int | None = None
+    """The VAE's tile size in pixels when tiling is on; None: the repository's `sample_size`.
+    A config saying 1024 decodes a 896x1152 picture in tiles barely smaller than itself."""
+    detail_strength: float = DETAIL_STRENGTH
+
+
+ANIMAGINE = SdxlModel(MODEL_REPO, STEPS, CFG, SAMPLER)
+REALVIS = SdxlModel(
+    REALVIS_REPO,
+    steps=30,
+    cfg=5.0,
+    sampler="dpmpp_2m_sde_karras",
+    variant="fp16",
+    vae_upcast_off=True,
+    vae_tile=512,
+)
+"""RealVisXL V5.0 (run `realistic`, docs/research.md section 20). Its card recommends DPM++ SDE
+Karras at 30+ steps, which needs torchsde; DPM++ 2M SDE Karras is the nearest built-in sampler.
+Its VAE is byte-identical to Animagine's fp16-fix VAE, so it decodes in fp16 too, and in tiles
+Animagine's size, 512 pixels (Phase 15i: its config's 1024 left the low preset 0.9 GiB above
+Animagine's)."""
+
+_SCHEDULERS: dict[str, tuple[str, dict[str, Any]]] = {
+    "euler_a": ("EulerAncestralDiscreteScheduler", {}),
+    "dpmpp_2m_sde_karras": (
+        "DPMSolverMultistepScheduler",
+        {"use_karras_sigmas": True, "algorithm_type": "sde-dpmsolver++"},
+    ),
+}
+
+
+def _scheduler(sampler: str, config: Any) -> Any:
+    """A new scheduler for `sampler`, from the repository's scheduler config."""
+    import diffusers
+
+    name, options = _SCHEDULERS[sampler]
+    return getattr(diffusers, name).from_config(config, **options)
+
+
 IPA_REPO = "h94/IP-Adapter"
 IPA_SUBFOLDER = "sdxl_models"
 IPA_WEIGHT = "ip-adapter-plus-face_sdxl_vit-h.safetensors"
@@ -147,8 +204,8 @@ TEXT_CACHE_SIZE = 128
 the full cache holds 80 to 120 MiB."""
 
 
-class AnimagineRenderer:
-    """Animagine XL 4.0 Opt in fp16 with its fp16-fix VAE; no compile warm-up.
+class SdxlRenderer:
+    """An SDXL model (`SdxlModel`) in fp16 with the fp16-fix VAE; no compile warm-up.
 
     Optional fp16 accumulation and INT8 transformer weights change pictures slightly;
     disabling both gives the fp16 baseline. INT8 weights are rebuilt per layer. Text
@@ -159,12 +216,11 @@ class AnimagineRenderer:
     uncached paths supply identical embeddings to the pipeline.
     """
 
-    model = MODEL_REPO
-
     def __init__(
         self,
-        detail_strength: float = DETAIL_STRENGTH,
+        spec: SdxlModel,
         *,
+        detail_strength: float | None = None,
         fp16_accumulation: bool = True,
         int8_weights: bool = True,
         offload_text_encoders: bool = True,
@@ -173,24 +229,29 @@ class AnimagineRenderer:
 
         prepare_environment()
         import torch
-        from diffusers import (
-            EulerAncestralDiscreteScheduler,
-            StableDiffusionXLImg2ImgPipeline,
-            StableDiffusionXLPipeline,
-        )
+        from diffusers import StableDiffusionXLImg2ImgPipeline, StableDiffusionXLPipeline
 
         self._torch = torch
+        self.spec = spec
+        self.model = spec.repo
         self.fp16_accumulation = fp16_accumulation
+        variant = {"variant": spec.variant} if spec.variant else {}
         pipe = StableDiffusionXLPipeline.from_pretrained(
-            MODEL_REPO, dtype=torch.float16, use_safetensors=True
+            spec.repo, dtype=torch.float16, use_safetensors=True, **variant
         )
+        if spec.vae_upcast_off:
+            pipe.vae.register_to_config(force_upcast=False)
+        if spec.vae_tile is not None:
+            pipe.vae.tile_sample_min_size = spec.vae_tile
+            pipe.vae.tile_latent_min_size = spec.vae_tile // 8
         self.int8_layers = 0
         if int8_weights:
             from facegen.render.quantise import quantise_linears
 
             # Layer by layer straight onto the GPU, before the rest of the model follows.
             self.int8_layers = quantise_linears(pipe.unet, INT8_SCOPE, "cuda")
-        pipe.scheduler = EulerAncestralDiscreteScheduler.from_config(pipe.scheduler.config)
+        base_scheduler = pipe.scheduler.config
+        pipe.scheduler = _scheduler(spec.sampler, base_scheduler)
         self.offload_text_encoders = offload_text_encoders
         if offload_text_encoders:
             # The text encoders stay in system memory. diffusers 0.42 reports a split
@@ -202,12 +263,15 @@ class AnimagineRenderer:
         pipe.set_progress_bar_config(disable=True)
         self.pipe = pipe
         # diffusers 0.42's from_pipe casts the shared UNet to float32 without an explicit
-        # dtype, doubling its weights and spilling into system RAM. Reuse fp16 components.
-        self.img2img = StableDiffusionXLImg2ImgPipeline(**pipe.components)
+        # dtype, doubling its weights and spilling into system RAM. Reuse fp16 components,
+        # with a scheduler of its own: a multistep scheduler keeps state between steps.
+        self.img2img = StableDiffusionXLImg2ImgPipeline(
+            **{**pipe.components, "scheduler": _scheduler(spec.sampler, base_scheduler)}
+        )
         self.img2img.set_progress_bar_config(disable=True)
         if pipe.unet.dtype != torch.float16 or pipe.vae.dtype != torch.float16:
             raise RuntimeError(f"model not in float16: unet {pipe.unet.dtype}")
-        self.detail_strength = detail_strength
+        self.detail_strength = spec.detail_strength if detail_strength is None else detail_strength
         self.vae_tiling = False
         self._texts: EmbeddingCache[TextEmbedding] = EmbeddingCache(TEXT_CACHE_SIZE)
         # The current job's prompt on the GPU, so its renders do not copy it again.
@@ -373,8 +437,8 @@ class AnimagineRenderer:
                 negative_pooled_prompt_embeds=npool,
                 width=WIDTH,
                 height=HEIGHT,
-                num_inference_steps=STEPS,
-                guidance_scale=CFG,
+                num_inference_steps=self.spec.steps,
+                guidance_scale=self.spec.cfg,
                 generator=generator,
                 **extra,
             ).images[0]
@@ -407,19 +471,20 @@ class AnimagineRenderer:
                 negative_pooled_prompt_embeds=npool,
                 image=big,
                 strength=self.detail_strength,
-                num_inference_steps=STEPS,
-                guidance_scale=CFG,
+                num_inference_steps=self.spec.steps,
+                guidance_scale=self.spec.cfg,
                 generator=generator,
                 **extra,
             ).images[0]
 
     def settings(self) -> dict[str, Any]:
+        spec = self.spec
         return {
             "width": WIDTH,
             "height": HEIGHT,
-            "steps": STEPS,
-            "cfg": CFG,
-            "sampler": SAMPLER,
+            "steps": spec.steps,
+            "cfg": spec.cfg,
+            "sampler": spec.sampler,
             "dtype": "float16",
             "matmul_accumulation": "float16" if self.fp16_accumulation else "float32",
             "unet_weights": (
@@ -428,13 +493,16 @@ class AnimagineRenderer:
                 if self.int8_layers
                 else "float16"
             ),
-            "vae": f"{MODEL_REPO}/vae (fp16-fix)",
+            "vae": (
+                f"{spec.repo}/vae (fp16-fix{', force_upcast off' if spec.vae_upcast_off else ''}"
+                f"{f', {spec.vae_tile}-pixel tiles' if spec.vae_tile else ''})"
+            ),
             "vae_tiling": self.vae_tiling,
             "prompt_encoding": "75-token chunks",
         }
 
     def detail_settings(self) -> dict[str, Any]:
-        return {"strength": self.detail_strength, "steps": STEPS}
+        return {"strength": self.detail_strength, "steps": self.spec.steps}
 
     def reference_settings(self) -> dict[str, Any]:
         return {
@@ -461,3 +529,23 @@ class AnimagineRenderer:
             "peak_allocated_gib": round(cuda.max_memory_allocated() / 2**30, 2),
             "peak_reserved_gib": round(cuda.max_memory_reserved() / 2**30, 2),
         }
+
+
+class AnimagineRenderer(SdxlRenderer):
+    """Animagine XL 4.0 Opt with its fp16-fix VAE: the anime model."""
+
+    def __init__(
+        self,
+        detail_strength: float = DETAIL_STRENGTH,
+        *,
+        fp16_accumulation: bool = True,
+        int8_weights: bool = True,
+        offload_text_encoders: bool = True,
+    ) -> None:
+        super().__init__(
+            ANIMAGINE,
+            detail_strength=detail_strength,
+            fp16_accumulation=fp16_accumulation,
+            int8_weights=int8_weights,
+            offload_text_encoders=offload_text_encoders,
+        )

@@ -42,6 +42,8 @@ class Job:
     """The staff job in words, None for a player or where the save names none."""
     media_role: str | None = None
     """"journalist" or "press officer": dressed for their work, aged by the media table."""
+    nation: int | None = None
+    """The game's database ID of the person's nation (core/nations.py): a man's look."""
 
 
 @dataclass(frozen=True, slots=True)

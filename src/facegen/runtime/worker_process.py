@@ -211,14 +211,14 @@ def serve_child(
     settings: Settings,
     *,
     defaults_path: Path | None,
-    renderer_factory: Callable[[], Renderer],
+    renderer_factory: Callable[[str], Renderer],
     tagger_factory: Callable[[], Tagger],
     fm_check: Callable[[], bool | None],
     commands: Iterable[str],
     out: TextIO,
     generate_now: bool = False,
     kits: KitTable | None = None,
-    models_ready: Callable[[], bool] | None = None,
+    models_ready: Callable[[str], bool] | None = None,
 ) -> Exit:
     """`facegen worker`: run the worker loop, talking to the parent, until it ends. Returns
     why it ended, as told to the parent."""

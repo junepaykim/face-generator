@@ -188,8 +188,15 @@ HAIR_FAMILIES: dict[str, frozenset[str]] = {
     "silver": frozenset({"grey", "white"}),
     "pink": frozenset({"pink"}),
     "blue": frozenset({"blue"}),
+    # A man's (man_traits.HAIR_COLOUR) where its name differs from a woman's.
+    "dark brown": frozenset({"brown"}),
+    "light brown": frozenset({"brown"}),
+    "blond": frozenset({"yellow"}),
+    "ginger": frozenset({"red", "orange"}),
+    "grey": frozenset({"grey", "white"}),
 }
-"""Hair colour (traits.HAIR_COLOUR) to the backdrop families it would blend with."""
+"""Hair colour (traits.HAIR_COLOUR, man_traits.HAIR_COLOUR) to the backdrop families it would
+blend with."""
 
 
 @dataclass(frozen=True, slots=True)

@@ -56,21 +56,24 @@ def prepare_native(
 
 def prepare_models(
     *,
+    model: str,
     download: bool,
     confirmed: bool,
     report: Report,
     ask: Callable[[str], str],
     interactive: Callable[[], bool],
-    run_download: Callable[[], models.DownloadStatus],
+    run_download: Callable[[str], models.DownloadStatus],
     cache: models.HubCache | None = None,
 ) -> int:
-    """Check model files and run the download only after consent and a free-space check."""
-    now = models.status(cache)
-    for repo, what in models.REPOS.items():
+    """Check the files of `model` (the selected `style.model`) and run their download, only
+    theirs, after consent and a free-space check."""
+    now = models.status(model, cache)
+    report(f"Image model  {model}")
+    for repo in dict.fromkeys(f.repo for f in now.files):
         left = [f for f in now.missing if f.repo == repo]
-        size = models.total_size(f for f in models.FILES if f.repo == repo)
+        size = models.total_size(f for f in now.files if f.repo == repo)
         state = "ready" if not left else f"{len(left)} file(s) missing"
-        report(f"{repo:<38} {models.gigabytes(size):>8}  {state}  ({what})")
+        report(f"{repo:<38} {models.gigabytes(size):>8}  {state}  ({models.REPOS[repo]})")
     report(f"Cache        {now.cache}")
     free = "unknown" if now.free_bytes is None else models.gigabytes(now.free_bytes)
     report(f"Free space   {free}")
@@ -93,7 +96,7 @@ def prepare_models(
             report("Not downloaded.")
             return 3
     report(f"Downloading {size}; it can be stopped and started again.", flush=True)
-    result = run_download()
+    result = run_download(model)
     if result.error or not result.finished:
         report(f"The download did not finish: {result.error or 'stopped'}")
         report("Run the same command again to go on where it stopped.")

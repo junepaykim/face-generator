@@ -17,8 +17,10 @@ Rules:
 - A job that failed its checks and went to review is not re-queued for the same target.
 - A re-draw that keeps the character sheet may use the existing picture as a reference
   (`reference_scale`); by default only for players at my club.
-- A picture with a legacy men's age wording gets a new face, tracked or not:
-  everyone is drawn as a woman or girl (age.drawn_as_man).
+- While everyone is drawn as a woman (`style.gender`), a picture with a legacy men's age
+  wording (M1 to M4, 2026-11-13) gets a new face, tracked or not (age.drawn_as_man). Other
+  pictures keep the gender and model they were drawn with until a re-draw for another
+  reason: changing either setting re-draws nobody by itself (user, 2026-11-20).
 """
 
 from __future__ import annotations
@@ -30,7 +32,7 @@ from datetime import date
 from facegen.core.age import drawn_as_man
 from facegen.core.classify import Classification, Group
 from facegen.core.domain import JobKind, JobStatus
-from facegen.core.settings_values import ReferenceSettings
+from facegen.core.settings_values import WOMAN, ReferenceSettings
 
 # Queue order (spec section 2): manual requests; group A at my club, newest arrivals first;
 # the rest of group A; group B; group C. B, C and the rest of A go by PA, highest first.
@@ -167,8 +169,8 @@ def queue_position(
     return _GROUP_TIER[group], -float(pa or 0)
 
 
-def desired_job(s: PlayerPlanState) -> DesiredJob | None:
-    """The one automatic job this player needs now, or None."""
+def desired_job(s: PlayerPlanState, gender: str = WOMAN) -> DesiredJob | None:
+    """The one automatic job this player needs now, or None. `gender` is `style.gender`."""
     group = s.classification.group
     if group is None:
         return None
@@ -182,7 +184,7 @@ def desired_job(s: PlayerPlanState) -> DesiredJob | None:
         return job("initial", "first picture")
     if s.club_id is None and not s.media:
         return None  # a re-draw needs a kit; wait for the next club
-    if drawn_as_man(img.age_band):
+    if gender == WOMAN and drawn_as_man(img.age_band):
         return job("reroll", "drawn as a woman")
     if group is Group.A and img.group is not Group.A:
         return job("upgrade", f"promoted to A from {img.group.label}")
@@ -195,8 +197,8 @@ def desired_job(s: PlayerPlanState) -> DesiredJob | None:
     return None
 
 
-def plan_player(s: PlayerPlanState) -> Action | None:
-    want = desired_job(s)
+def plan_player(s: PlayerPlanState, gender: str = WOMAN) -> Action | None:
+    want = desired_job(s, gender)
     active = s.active_job
     if active is not None:
         if active.status != "queued":
@@ -233,12 +235,13 @@ def plan_player(s: PlayerPlanState) -> Action | None:
     return Enqueue(s.unique_id, want)
 
 
-def plan(states: Iterable[PlayerPlanState]) -> Plan:
+def plan(states: Iterable[PlayerPlanState], gender: str = WOMAN) -> Plan:
+    """Every player's action; `gender` is `style.gender`."""
     enqueue: list[Enqueue] = []
     update: list[Update] = []
     cancel: list[Cancel] = []
     for s in states:
-        match plan_player(s):
+        match plan_player(s, gender):
             case Enqueue() as a:
                 enqueue.append(a)
             case Update() as a:

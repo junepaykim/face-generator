@@ -3,7 +3,8 @@ one Undo reverts (Phase 12g). Pure: the defaults and current values come in as m
 
 Reach moves every group's CA and PA thresholds together, so more or fewer players at other
 clubs qualify; players at my club always get a picture. Quality is the graphics-card presets
-(`setup.hardware`, measured on the RTX 4080, docs/research.md section 12).
+(`setup.hardware`, measured on the RTX 4080, docs/research.md section 12, and again for every
+image model in section 20).
 """
 
 from __future__ import annotations

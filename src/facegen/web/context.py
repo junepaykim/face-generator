@@ -23,9 +23,9 @@ class AppContext:
     """WorkerService in a thread, or worker_process.WorkerProxy for a worker process."""
     syncer: SyncControl | None = None
     poller: PollerService | None = None
-    models: Callable[[], ModelsStatus] | None = None
-    """The model files' status (models.status); None where no real GPU worker runs (fakes,
-    --no-worker): then the models are not part of the setup."""
+    models: Callable[[str], ModelsStatus] | None = None
+    """The status of a model's files, by `style.model` key (models.status); None where no real
+    GPU worker runs (fakes, --no-worker): then the models are not part of the setup."""
     download: ModelDownload | None = None
     hardware: Callable[[], hardware.Hardware] | None = None
     """Asks for the graphics card (hardware.probe, in a child process); asked once."""
@@ -40,12 +40,13 @@ class AppContext:
     folder that is not a git checkout. None elsewhere: the dashboard says how to update."""
 
     def setup(self, settings: Settings) -> SetupState:
-        """What first-run setup still needs (Phase 10): FM27's folder, the model files."""
+        """What first-run setup still needs (Phase 10): FM27's folder, the selected model's
+        files."""
         folder = settings.paths.fm_user_dir
         return SetupState(
             folder_missing=folder is None,
             folder_gone=folder is not None and not folder_setup.RealDisk().is_dir(folder),
-            models=self.models() if self.models is not None else None,
+            models=self.models(settings.style.model) if self.models is not None else None,
             download=self.download.status() if self.download is not None else None,
             browse=self.browse is not None,
         )

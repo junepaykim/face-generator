@@ -10,10 +10,19 @@ from fakes import figure as figure_on
 from PIL import Image, ImageDraw
 
 from facegen import qc
+from facegen.core.man_traits import ManSheet
 from facegen.core.traits import CharacterSheet
 from facegen.datasource.kits import Kit
 from facegen.persistence.settings import MyClubSettings
-from facegen.qc import CheckResult, TagResult, best, check, expectation, head_top
+from facegen.qc import (
+    CheckResult,
+    TagResult,
+    best,
+    check,
+    expectation,
+    head_top,
+    man_expectation,
+)
 
 SHEET = CharacterSheet(
     hair_colour="silver",
@@ -177,3 +186,105 @@ def test_head_top_on_every_backdrop(kind: str, top: float) -> None:
     found = head_top(figure_on(224, 288, top=top, kind=kind))
     assert found is not None and abs(found - top) <= 0.02, (kind, top, found)
     assert head_top(backdrop(224, 288, kind)) is None
+
+
+# --- the men's check (user, 2026-11-20; Phase 15h) ----------------------------------------------
+
+MAN = ManSheet(
+    look="northern european",
+    skin="fair",
+    hair_colour="blond",
+    hair_style="side parting",
+    facial_hair="full beard",
+    eye_colour="blue",
+    expression="serious",
+    greying_from=40,
+    glasses=False,
+    base_seed=5,
+)
+MAN_EXPECT = man_expectation(MAN, 30, KIT)
+
+
+def man_tags(rating: str = "general", **extra: float) -> TagResult:
+    ratings = {"general": 0.1, "sensitive": 0.05, "questionable": 0.01, "explicit": 0.0}
+    ratings[rating] = 0.9
+    base = {"solo": 0.98, "1boy": 0.99}
+    base.update({k.replace("_", " "): v for k, v in extra.items()})
+    return TagResult(ratings, base)
+
+
+def test_the_mens_check_is_the_one_approved() -> None:
+    assert qc.MAN_CONTENT_TAGS == ("topless male", "shirtless", "male underwear")
+    assert qc.MAN_REQUIRED_TAGS == ("solo", "1boy")
+    assert set(qc.MAN_FORBIDDEN_TAGS) == {
+        "1girl", "multiple boys", "2boys", "multiple views", "no humans",
+    }  # fmt: skip
+    # The women's check is unchanged.
+    assert qc.REQUIRED_TAGS == ("solo", "1girl")
+    assert not set(qc.MAN_CONTENT_TAGS) & set(qc.CONTENT_TAGS)
+    assert not EXPECT.man and MAN_EXPECT.man
+
+
+def test_a_man_needs_no_hair_or_eye_colour_and_ranks_by_them() -> None:
+    assert MAN_EXPECT.hair == MAN_EXPECT.eyes == frozenset()
+    assert MAN_EXPECT.rank["hair_colour"] == {"blonde hair"}
+    assert MAN_EXPECT.rank["facial_hair"] == {"beard", "facial hair"}
+    assert {"shirt colour 1", "shirt colour 2"} <= set(MAN_EXPECT.rank)
+    r = check(man_tags(), MAN_EXPECT, 0.03)
+    assert r.passed and r.failures == ()
+    better = check(man_tags(blonde_hair=0.9, beard=0.8), MAN_EXPECT, 0.03)
+    assert better.passed and better.score > r.score
+    # As drawn at his age: grey later, no beard on a boy; a shaved head ranks no colour.
+    old = man_expectation(MAN, 60, KIT)
+    assert old.rank["hair_colour"] == {"grey hair", "white hair"}
+    assert "facial_hair" not in man_expectation(MAN, 17, KIT).rank
+    shaved = man_expectation(replace(MAN, hair_style="shaved"), 30, KIT)
+    assert "hair_colour" not in shaved.rank
+
+
+@pytest.mark.parametrize(
+    "extra,failure",
+    [
+        ({"1boy": 0.1}, "not one man: no 1boy"),
+        ({"solo": 0.1}, "not one man: no solo"),
+        ({"1girl": 0.6}, "not one man: 1girl"),
+        ({"multiple_boys": 0.5}, "not one man: multiple boys"),
+        ({"2boys": 0.5}, "not one man: 2boys"),
+        ({"multiple_views": 0.5}, "not one man: multiple views"),
+        ({"no_humans": 0.5}, "not one man: no humans"),
+    ],
+)
+def test_one_man_alone(extra: dict[str, float], failure: str) -> None:
+    r = check(man_tags(**extra), MAN_EXPECT, 0.03)
+    assert not r.passed and r.failures == (failure,)
+
+
+@pytest.mark.parametrize("tag", [*qc.CONTENT_TAGS, *qc.MAN_CONTENT_TAGS])
+def test_a_mans_content_tags_fail_even_when_rated_general(tag: str) -> None:
+    t = man_tags(**{tag.replace(" ", "_"): 0.5})
+    assert t.rating == "general"
+    r = check(t, MAN_EXPECT, 0.03)
+    assert not r.passed and r.failures == (f"content: {tag}",)
+    assert check(man_tags(**{tag.replace(" ", "_"): 0.3}), MAN_EXPECT, 0.03).passed
+
+
+@pytest.mark.parametrize("rating", ["sensitive", "questionable", "explicit"])
+def test_a_man_must_be_rated_general(rating: str) -> None:
+    r = check(man_tags(rating), MAN_EXPECT, 0.03)
+    assert not r.passed and r.failures[0].startswith(f"rated {rating}")
+
+
+def test_a_mans_head_position_is_checked_as_a_womans() -> None:
+    assert check(man_tags(), MAN_EXPECT, qc.HEAD_TOP_MAX).passed
+    low = check(man_tags(), MAN_EXPECT, 0.25)
+    assert not low.passed and low.failures == ("head starts 25% down the picture",)
+    assert check(man_tags(), MAN_EXPECT, None).failures == (
+        "no figure found against the background",
+    )
+
+
+def test_the_womens_check_is_unchanged_for_shirtless_or_a_boy() -> None:
+    """The men's content tags are not added to the women's check (user, 2026-11-20)."""
+    assert check(tags(shirtless=0.5), EXPECT, 0.03).passed
+    boy = check(man_tags(**{"grey hair": 0.8, "blue eyes": 0.9}), EXPECT, 0.03)
+    assert not boy.passed and boy.failures == ("not one girl: no 1girl",)

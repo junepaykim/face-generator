@@ -146,8 +146,8 @@ def test_facegen_launch_runs_the_wheel_and_the_models_steps(config_file: Path, m
         report("Rust code   not in use")
         return 3
 
-    def fake_models(*, download, confirmed, report, ask, interactive, run_download):  # type: ignore[no-untyped-def]
-        seen.append(("models", (download, confirmed)))
+    def fake_models(*, model, download, confirmed, report, ask, interactive, run_download):  # type: ignore[no-untyped-def]
+        seen.append(("models", (model, download, confirmed)))
         return 0
 
     monkeypatch.setattr(setup_operations, "prepare_native", fake_native)
@@ -155,9 +155,29 @@ def test_facegen_launch_runs_the_wheel_and_the_models_steps(config_file: Path, m
     log = config_file.parent / "start.log"
     out = io.StringIO()
     assert main(["--config", str(config_file), "launch", "--log", str(log)], out=out) == 0
-    assert seen == [("native", True), ("models", (True, False))]  # asks; never --yes
+    # The model chosen in Settings (the default: no database yet); it asks, never --yes.
+    assert seen == [("native", True), ("models", ("animagine", True, False))]
     assert "Rust code   not in use" in log.read_text(encoding="utf-8")
     assert "Warning: the prebuilt Rust extension" in out.getvalue()
+    assert not (config_file.parent / "data" / "facegen.db").exists()
+
+
+def test_facegen_launch_offers_the_model_chosen_in_settings(config_file: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Phase 15e: only the selected model's files are offered."""
+    from facegen.persistence import db
+    from facegen.persistence.settings import load_settings, set_override
+    from facegen.setup import operations as setup_operations
+
+    conn = db.connect(load_settings(defaults_path=config_file).paths.db_path)
+    set_override(conn, "style.model", "realvis", config_file)
+    conn.close()
+    chosen: list[str] = []
+    monkeypatch.setattr(setup_operations, "prepare_native", lambda **kwargs: 0)
+    monkeypatch.setattr(
+        setup_operations, "prepare_models", lambda *, model, **kwargs: chosen.append(model) or 0
+    )
+    assert main(["--config", str(config_file), "launch"], out=io.StringIO()) == 0
+    assert chosen == ["realvis"]
 
 
 # -- a local file copied from WSL onto Windows ---------------------------------------------------

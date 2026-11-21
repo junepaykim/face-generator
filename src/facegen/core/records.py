@@ -71,6 +71,9 @@ class PlayerRecord:
     team_slot: int | None = None
     """The player's team at their club: 0 the first team, higher the club's other teams
     (reserves, under-23s, under-18s); None for a free agent or an unknown team."""
+    nation: int | None = None
+    """The game's editor database ID of the person's nation (core/nations.py names it); None
+    where the save does not give it."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +98,9 @@ class StaffRecord:
     female: bool | None = None
     """A woman, by her first name's entry in the game database (datasource/people.py); None
     where the save does not tell."""
+    nation: int | None = None
+    """The game's editor database ID of the person's nation (core/nations.py names it); None
+    where the save does not give it."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +119,9 @@ class MediaRecord:
     club_id: int | None
     """A press officer's club; None for a journalist."""
     female: bool | None = None
+    nation: int | None = None
+    """The game's editor database ID of the person's nation (core/nations.py names it); None
+    where the save does not give it."""
 
 
 @dataclass(frozen=True, slots=True)

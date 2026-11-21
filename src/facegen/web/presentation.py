@@ -13,7 +13,7 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 
 from facegen.core.planner import reference_scale
-from facegen.core.settings_values import Settings
+from facegen.core.settings_values import IMAGE_MODELS, Settings
 from facegen.core.traits import TRAIT_TABLES
 from facegen.i18n import GROUPS, Translator
 from facegen.persistence.jobs import load_career
@@ -46,7 +46,11 @@ def static_version(folder: Path) -> str:
 
 
 def uses_reference(kind: str, at_my_club: bool, settings: Settings) -> bool:
-    """Whether a job would draw with the player's current picture as a reference."""
+    """Whether a job would draw with the player's current picture as a reference: never with
+    a model that takes none (Z-Image-Turbo). The worker also draws without one when the current
+    picture shows another gender or was drawn by another model."""
+    if not IMAGE_MODELS[settings.style.model].reference:
+        return False
     return reference_scale(kind, at_my_club, settings.reference) is not None
 
 

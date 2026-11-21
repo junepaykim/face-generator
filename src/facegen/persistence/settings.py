@@ -19,8 +19,10 @@ from facegen.core.age import TABLES, WORDINGS
 from facegen.core.settings_values import (
     DETAIL_SIZES,
     FOUND,
+    GENDER_CHOICES,
     GROUP_NAMES,
     LANGUAGE_CHOICES,
+    MODEL_CHOICES,
     NOT_SET,
     THEME_CHOICES,
     UI,
@@ -43,6 +45,7 @@ from facegen.core.settings_values import (
     Schedule,
     Settings,
     StaffSettings,
+    StyleSettings,
     UpdateSettings,
     YouthSettings,
 )
@@ -389,6 +392,10 @@ def build_settings(
             auto_groups=auto_groups,
         ),
         render=RenderSettings(vae_tiling=v["render.vae_tiling"]),
+        style=StyleSettings(
+            model=one_of("style.model", MODEL_CHOICES),
+            gender=one_of("style.gender", GENDER_CHOICES),
+        ),
         display=DisplaySettings(
             language=one_of("display.language", LANGUAGE_CHOICES),
             theme=one_of("display.theme", THEME_CHOICES),
@@ -428,6 +435,22 @@ def load_settings(
                 continue
             overridden.add(key)
     return build_settings(merged, frozenset(overridden), origins)
+
+
+def load_saved_settings(defaults_path: Path | None = None) -> Settings:
+    """The settings with the overrides saved so far, for commands that otherwise run without
+    the database (`facegen models`, `facegen launch`). It is never created here: before
+    facegen's first start there is none, and the defaults alone apply."""
+    from facegen.persistence import db
+
+    settings = load_settings(defaults_path=defaults_path)
+    if not settings.paths.db_path.is_file():
+        return settings
+    conn = db.connect(settings.paths.db_path)
+    try:
+        return load_settings(conn, defaults_path)
+    finally:
+        conn.close()
 
 
 def set_override(

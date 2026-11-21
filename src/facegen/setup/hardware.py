@@ -8,7 +8,9 @@ The RTX 4080 measurements (docs/research.md section 12) put reference redraws at
 6.66 and 5.00 GiB for high, medium and low, with about 3 GB held by Windows. The defaults
 therefore target 12 GB or more; medium targets 10–11 GB; lower cards use low. No CUDA
 card means no changes. Round reported memory to whole GiB first: 11.99 GiB takes high,
-and a 9 GB card takes low.
+and a 9 GB card takes low. The same presets serve every model (Phase 15i, research section
+20): RealVisXL peaks as Animagine, and Z-Image-Turbo, which takes no reference, at 6.23,
+6.23 and 5.90 GiB, its render needing about 5.9 in any preset.
 """
 
 from __future__ import annotations

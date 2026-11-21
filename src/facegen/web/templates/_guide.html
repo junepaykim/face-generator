@@ -64,7 +64,7 @@
             <tr><th>{{ t("setup.models.free") }}</th><td>{{ gigabytes(m.free_bytes) if m.free_bytes is not none else t("common.unknown") }}</td></tr>
           </table></div>
           {% if not m.enough_space %}<p class="bad small">{{ t("setup.models.no_space", size=gigabytes(m.missing_bytes)) }}</p>{% endif %}
-          <form method="post" action="/setup/models"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="confirm" value="download">
+          <form method="post" action="/setup/models"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="confirm" value="download"><input type="hidden" name="model" value="{{ m.model }}">
             <div class="buttons"><button class="primary" {{ "disabled" if not m.enough_space }}>{{ t("setup.models.download", size=gigabytes(m.missing_bytes)) }}</button></div>
           </form>
         {% elif s.key == "sync" and s.state in ("ask", "wait") %}

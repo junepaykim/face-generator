@@ -53,6 +53,21 @@
       <p><a href="/hardware">{{ t("settings.basic.check_card") }}</a></p>
     </section>
 
+    <section class="card" id="style">
+      <h2>{{ t("settings.title.style") }} {{ tip(t("settings.tip.style")) }}</h2>
+      <p class="muted small">{{ t("settings.note.style") }}</p>
+      {% for key in ("style.model", "style.gender") %}
+      {% set name = key.rpartition(".")[2] %}
+      <label class="field" data-field>
+        <span class="name">{{ t("settings.label." ~ name) }}</span>
+        <select name="{{ key }}" data-key>
+          {% for value, label in style_choices[name] %}<option value="{{ value }}" {{ "selected" if values[key] == value }}>{{ label }}</option>{% endfor %}
+        </select>
+        <span class="bad small" data-error></span>
+      </label>
+      {% endfor %}
+    </section>
+
     <section class="card" id="when">
       <h2>{{ t("settings.basic.when") }} {{ tip(t("settings.basic.when_tip")) }}</h2>
       {{ tick("schedule.generate_while_fm_running", t("settings.label.generate_while_fm_running"), t("settings.basic.fm_running_tip")) }}

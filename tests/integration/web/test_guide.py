@@ -23,7 +23,7 @@ from facegen.persistence.settings import DEFAULTS_PATH, load_defaults, load_sett
 from facegen.runtime.contracts import WorkerStatus
 from facegen.service import SyncService, WorkerService
 from facegen.setup.hardware import Hardware
-from facegen.setup.models import FILES, ModelsStatus
+from facegen.setup.models import ModelsStatus, files_for
 from facegen.web import guide
 from facegen.web.app import AppContext, create_app
 
@@ -43,7 +43,9 @@ def facts(**changes: object) -> guide.Facts:
         folder_ok=False,
         folder=None,
         folder_gone=False,
-        models=ModelsStatus(Path("hub"), FILES, 10 * GIB, free_bytes=100 * GIB),
+        models=ModelsStatus(
+            "animagine", Path("hub"), files_for("animagine"), files_for("animagine"), 100 * GIB
+        ),
         download=None,
         card_available=True,
         card=None,

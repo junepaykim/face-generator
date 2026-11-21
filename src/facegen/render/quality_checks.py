@@ -1,6 +1,6 @@
 """Quality and content checks (docs/spec.md section 3; docs/research.md section 5 recipe).
 
-A picture passes only if all of these hold:
+A picture of a woman passes only if all of these hold:
 
 - the tagger's top rating is "general", and none of CONTENT_TAGS (midriff, navel, crop top
   and the like) is tagged (content rule; never configurable);
@@ -9,6 +9,13 @@ A picture passes only if all of these hold:
 - `solo` and `1girl` are present and none of `multiple views`, `multiple girls`, `2girls`,
   `no humans`;
 - the figure's head starts in the top fifth of the picture, as a proxy for face size.
+
+A picture of a man (`style.gender`, on every model) passes the men's check the user approved
+(2026-11-19, decided 2026-11-20; for anime men too, 2026-11-20): the same rating and every
+CONTENT_TAGS entry plus MAN_CONTENT_TAGS; `solo` and `1boy` present and none of
+MAN_FORBIDDEN_TAGS; the same head position. His hair colour only ranks candidates, and no eye
+colour is asked for: on photos the tagger names hair colour less reliably, and a shaved head
+shows none.
 
 Kit pattern and logos are not checked. Group A's candidates that pass
 are ranked by `score`: p(general), plus the tagger's mean confidence in the traits, the kit's
@@ -26,6 +33,8 @@ from dataclasses import dataclass, field
 from statistics import fmean
 from typing import TYPE_CHECKING, Any
 
+from facegen.core import man_traits
+from facegen.core.man_traits import ManSheet
 from facegen.core.prompt import drawn_traits
 from facegen.core.traits import EYE_COLOUR, HAIR_COLOUR, TRAIT_TABLES, CharacterSheet
 from facegen.render import figure
@@ -44,6 +53,10 @@ CONTENT_TAGS = (
     "navel", "see-through", "crop top", "revealing clothes",
 )  # fmt: skip
 FORBIDDEN_TAGS = ("multiple views", "multiple girls", "2girls", "no humans")
+MAN_CONTENT_TAGS = ("topless male", "shirtless", "male underwear")
+"""Content tags added to CONTENT_TAGS for a man (user, 2026-11-20)."""
+MAN_REQUIRED_TAGS = ("solo", "1boy")
+MAN_FORBIDDEN_TAGS = ("1girl", "multiple boys", "2boys", "multiple views", "no humans")
 HEAD_TOP_MAX = 0.20
 """Maximum distance from the top edge to the figure, as a fraction of picture height."""
 
@@ -82,6 +95,23 @@ class Expectation:
     eyes: frozenset[str]
     rank: Mapping[str, frozenset[str]] = field(default_factory=dict)
     """Ranking only: trait or shirt colour name to the tags that show it."""
+    man: bool = False
+    """A picture of a man: the men's check, which asks for no hair or eye colour."""
+
+
+def man_expectation(sheet: ManSheet, age: int, wear: Wear) -> Expectation:
+    """What the tagger should see in a picture of a man at `age` (real age in years): one man;
+    for ranking only, the hair colour and facial hair drawn at that age and the kit's colours
+    and look, or the outfit's look, colour and prop."""
+    now = man_traits.drawn(sheet, age)
+    rank: dict[str, frozenset[str]] = {}
+    if man_traits.HAIR_STYLE[sheet.hair_style].coloured:
+        rank["hair_colour"] = man_traits.HAIR_COLOUR[now.hair_colour].tags
+    facial = man_traits.FACIAL_HAIR[now.facial_hair].tags
+    if facial:
+        rank["facial_hair"] = facial
+    rank.update(wear.rank_tags())
+    return Expectation(hair=frozenset(), eyes=frozenset(), rank=rank, man=True)
 
 
 def expectation(
@@ -142,17 +172,24 @@ def check(tags: TagResult, expect: Expectation, head_top: float | None) -> Check
     p_general = float(tags.ratings.get("general", 0.0))
     if tags.rating != "general":
         failures.append(f"rated {tags.rating} (general {p_general:.2f})")
-    flagged = [t for t in CONTENT_TAGS if tags.present(t)]
+    content = CONTENT_TAGS + MAN_CONTENT_TAGS if expect.man else CONTENT_TAGS
+    flagged = [t for t in content if tags.present(t)]
     if flagged:
         failures.append("content: " + ", ".join(flagged))
-    if not any(tags.present(t) for t in expect.hair):
-        failures.append("hair colour not seen")
-    if not any(tags.present(t) for t in expect.eyes):
-        failures.append("eye colour not seen")
-    missing = [t for t in REQUIRED_TAGS if not tags.present(t)]
-    extra = [t for t in FORBIDDEN_TAGS if tags.present(t)]
+    if not expect.man:
+        if not any(tags.present(t) for t in expect.hair):
+            failures.append("hair colour not seen")
+        if not any(tags.present(t) for t in expect.eyes):
+            failures.append("eye colour not seen")
+    required, forbidden, who = (
+        (MAN_REQUIRED_TAGS, MAN_FORBIDDEN_TAGS, "man")
+        if expect.man
+        else (REQUIRED_TAGS, FORBIDDEN_TAGS, "girl")
+    )
+    missing = [t for t in required if not tags.present(t)]
+    extra = [t for t in forbidden if tags.present(t)]
     if missing or extra:
-        failures.append("not one girl: " + ", ".join([f"no {t}" for t in missing] + extra))
+        failures.append(f"not one {who}: " + ", ".join([f"no {t}" for t in missing] + extra))
     if head_top is None:
         failures.append("no figure found against the background")
     elif head_top > HEAD_TOP_MAX:

@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Realistic Model Bake-off</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface-1: #fcfcfb;
+  --surface-2: #f3f2ee;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #6f6d68;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --good: #0ca30c;
+  --good-text: #006300;
+  --critical: #d03b3b;
+  --critical-text: #b02a2a;
+  --warning: #fab219;
+  --accent-wash: rgba(42, 120, 214, 0.10);
+  --star: #c98500;
+  --shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --surface-2: #232321;
+    --text-primary: #f0efec;
+    --text-secondary: #c3c2b7;
+    --text-muted: #9a9890;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --good: #0ca30c;
+    --good-text: #0ca30c;
+    --critical: #e66767;
+    --critical-text: #f08a8a;
+    --accent-wash: rgba(57, 135, 229, 0.16);
+    --star: #eda100;
+    --shadow: 0 8px 28px rgba(0, 0, 0, 0.6);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface-1: #1a1a19;
+  --surface-2: #232321;
+  --text-primary: #f0efec;
+  --text-secondary: #c3c2b7;
+  --text-muted: #9a9890;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --border: rgba(255, 255, 255, 0.10);
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --good: #0ca30c;
+  --good-text: #0ca30c;
+  --critical: #e66767;
+  --critical-text: #f08a8a;
+  --accent-wash: rgba(57, 135, 229, 0.16);
+  --star: #eda100;
+  --shadow: 0 8px 28px rgba(0, 0, 0, 0.6);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--page);
+  color: var(--text-primary);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.wrap { max-width: 1480px; margin: 0 auto; padding: 24px 16px 64px; }
+header { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+h1 { font-size: 22px; margin: 0 0 4px; font-weight: 650; letter-spacing: -0.01em; }
+h2 { font-size: 17px; margin: 40px 0 4px; font-weight: 650; }
+h3 { font-size: 14px; margin: 0 0 8px; font-weight: 600; }
+p { margin: 0; }
+.sub { color: var(--text-secondary); max-width: 92ch; }
+.note { color: var(--text-muted); font-size: 13px; max-width: 100ch; margin-top: 6px; }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+button, select, input { font: inherit; color: inherit; }
+.btn {
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+  padding: 6px 12px; cursor: pointer; min-height: 32px;
+}
+.btn:hover { background: var(--surface-2); }
+.btn[aria-pressed="true"] { background: var(--accent-wash); border-color: var(--series-1); }
+.btn:focus-visible, .chip:focus-visible, .cell button:focus-visible, th button:focus-visible {
+  outline: 2px solid var(--series-1); outline-offset: 2px;
+}
+
+/* stat tiles */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-top: 20px; }
+.tile .label { color: var(--text-secondary); font-size: 13px; }
+.tile .value { font-size: 28px; font-weight: 650; margin-top: 2px; line-height: 1.2; }
+.tile .value.small { font-size: 18px; }
+.tile .detail { color: var(--text-muted); font-size: 12px; margin-top: 4px; }
+
+/* charts */
+.charts { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 12px; margin-top: 12px; }
+@media (max-width: 900px) { .charts { grid-template-columns: 1fr; } }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; color: var(--text-secondary); font-size: 12px; margin-bottom: 8px; }
+.key { display: inline-flex; align-items: center; gap: 6px; }
+.key i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+svg text { font: 12px system-ui, -apple-system, "Segoe UI", sans-serif; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.hit { fill: transparent; cursor: default; }
+.tip {
+  position: fixed; z-index: 30; pointer-events: none; background: var(--surface-1);
+  color: var(--text-primary); border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px 10px; box-shadow: var(--shadow); font-size: 12px; max-width: 280px; display: none;
+}
+.tip b { font-weight: 600; }
+.tip .row { display: flex; gap: 8px; align-items: center; color: var(--text-secondary); }
+
+/* table */
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 7px 10px; border-bottom: 1px solid var(--grid); text-align: left; white-space: nowrap; vertical-align: middle; }
+th { color: var(--text-secondary); font-weight: 600; font-size: 12px; position: sticky; top: 0; background: var(--surface-1); }
+th button { background: none; border: 0; padding: 0; cursor: pointer; font-weight: 600; color: inherit; }
+th button::after { content: ""; margin-left: 4px; color: var(--text-muted); }
+th[aria-sort="ascending"] button::after { content: "▲"; }
+th[aria-sort="descending"] button::after { content: "▼"; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr.ref td { color: var(--text-secondary); }
+tr.base td { background: var(--surface-2); }
+.status { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; }
+.status.good { color: var(--good-text); }
+.status.bad { color: var(--critical-text); }
+.muted { color: var(--text-muted); }
+
+/* picture grid */
+.controls { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 12px 0; }
+.controls .group { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.controls .label { color: var(--text-secondary); font-size: 12px; }
+.chip {
+  border: 1px solid var(--border); background: var(--surface-1); border-radius: 999px;
+  padding: 4px 10px; cursor: pointer; font-size: 12px; min-height: 28px;
+}
+.chip[aria-pressed="true"] { background: var(--accent-wash); border-color: var(--series-1); }
+.chip[disabled] { opacity: 0.45; cursor: not-allowed; }
+.grid-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-1); }
+.pgrid { border-collapse: separate; border-spacing: 0; width: max-content; }
+.pgrid th, .pgrid td { border-bottom: 1px solid var(--grid); padding: 8px; vertical-align: top; white-space: normal; }
+.pgrid thead th { position: sticky; top: 0; z-index: 2; background: var(--surface-1); font-size: 12px; }
+.pgrid .rowhead { position: sticky; left: 0; z-index: 1; background: var(--surface-1); width: 190px; min-width: 190px; max-width: 190px; font-size: 12px; color: var(--text-secondary); }
+.pgrid .rowhead b { color: var(--text-primary); display: block; font-size: 13px; }
+.cell { width: var(--thumb); }
+.cell .imgbtn { display: block; padding: 0; border: 0; background: var(--surface-2); border-radius: 6px; overflow: hidden; cursor: zoom-in; width: var(--thumb); aspect-ratio: 896 / 1152; }
+.cell img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.cell .missing { width: var(--thumb); aspect-ratio: 896 / 1152; display: grid; place-items: center; color: var(--text-muted); font-size: 12px; background: var(--surface-2); border-radius: 6px; }
+.cell .meta { display: flex; align-items: center; gap: 4px; margin-top: 4px; flex-wrap: wrap; min-height: 26px; }
+.badge { font-size: 11px; padding: 1px 6px; border-radius: 4px; background: var(--surface-2); color: var(--text-secondary); white-space: nowrap; }
+.badge.bad { color: var(--critical-text); background: color-mix(in srgb, var(--critical) 14%, transparent); }
+.badge.good { color: var(--good-text); background: color-mix(in srgb, var(--good) 12%, transparent); }
+.star { margin-left: auto; border: 0; background: none; cursor: pointer; font-size: 18px; line-height: 1; padding: 2px 4px; color: var(--text-muted); min-width: 28px; min-height: 26px; }
+.star[aria-pressed="true"] { color: var(--star); }
+.picks { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0 0; }
+.pick { display: inline-flex; gap: 6px; align-items: baseline; padding: 4px 10px; border-radius: 999px; background: var(--surface-1); border: 1px solid var(--border); font-size: 12px; }
+.pick b { font-variant-numeric: tabular-nums; }
+
+/* lightbox */
+dialog { border: 0; padding: 0; background: var(--surface-1); color: var(--text-primary); border-radius: 12px; box-shadow: var(--shadow); width: min(1200px, calc(100vw - 32px)); max-height: calc(100vh - 32px); }
+dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+.lb { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); max-height: calc(100vh - 32px); }
+@media (max-width: 800px) { .lb { grid-template-columns: 1fr; overflow-y: auto; } }
+.lb .img { background: var(--surface-2); display: grid; place-items: center; min-height: 300px; }
+.lb .img img { max-width: 100%; max-height: calc(100vh - 32px); display: block; }
+.lb .info { padding: 16px; overflow-y: auto; font-size: 13px; }
+.lb .info .prompt { background: var(--surface-2); border-radius: 8px; padding: 8px 10px; color: var(--text-secondary); margin: 8px 0; }
+.lb .bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 8px 0; }
+.kv span:nth-child(odd) { color: var(--text-muted); }
+.tags { color: var(--text-muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Realistic model bake-off</h1>
+      <p class="sub" id="subtitle"></p>
+    </div>
+    <div class="group">
+      <button class="btn" id="theme" type="button" title="Switch light / dark">Theme: auto</button>
+    </div>
+  </header>
+
+  <section class="tiles" id="tiles" aria-label="Summary"></section>
+
+  <h2>Memory and speed</h2>
+  <p class="note" id="memnote"></p>
+  <div class="charts">
+    <div class="card chart">
+      <h3>Peak VRAM reserved (GiB)</h3>
+      <div class="legend" id="vram-legend"></div>
+      <div id="vram-chart"></div>
+    </div>
+    <div class="card chart">
+      <h3>Seconds per picture at render size</h3>
+      <div id="speed-chart"></div>
+    </div>
+  </div>
+
+  <h2>All measurements</h2>
+  <p class="note">Click a heading to sort. Content, one man, framing, beard and hair are the EVA02 tagger's reading (threshold 0.35). That tagger is trained on anime, so treat these as a rough guide on photos, not as the production check. PSNR and SSIM compare each quantised picture with the same model's full-precision picture, same seed and prompt; higher means the quantisation changed less.</p>
+  <div class="card scroll" style="margin-top:12px; padding:0">
+    <table id="table"></table>
+  </div>
+
+  <h2>Pictures</h2>
+  <p class="note">Click a picture to enlarge it (← → change model, ↑ ↓ change case, S stars, Esc closes). Star the ones you like; your stars stay in this browser and the tally below counts them per column. Blind mode hides the model names and shuffles each row.</p>
+  <div class="controls">
+    <div class="group" role="group" aria-label="Set">
+      <span class="label">Set</span>
+      <button class="chip" data-set="sheet" aria-pressed="true" type="button">Sheets</button>
+      <button class="chip" data-set="ladder" aria-pressed="false" type="button">Age ladder</button>
+      <button class="chip" data-set="probe" aria-pressed="false" type="button">Detail-size probe</button>
+    </div>
+    <div class="group">
+      <label class="label" for="size">Size</label>
+      <input id="size" type="range" min="120" max="320" step="10" value="190">
+    </div>
+    <div class="group">
+      <button class="btn" id="blind" aria-pressed="false" type="button">Blind mode</button>
+      <button class="btn" id="refs" aria-pressed="false" type="button">Show full-precision references</button>
+      <button class="btn" id="copy" type="button">Copy my picks</button>
+    </div>
+  </div>
+  <div class="controls" id="colchips" role="group" aria-label="Columns shown"></div>
+  <div class="picks" id="picks" aria-live="polite"></div>
+  <div class="grid-wrap" style="margin-top:12px"><table class="pgrid" id="pgrid"></table></div>
+</div>
+
+<div class="tip" id="tip" role="tooltip"></div>
+<dialog id="lightbox" aria-label="Picture"><div class="lb"><div class="img"><img id="lb-img" alt=""></div><div class="info" id="lb-info"></div></div></dialog>
+
+<script>
+const DATA = /*__DATA__*/null;
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const fmt = (v, d = 1, unit = "") => v == null ? "–" : `${Number(v).toFixed(d)}${unit}`;
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private window */ } },
+};
+const KEY = `realistic-bakeoff:${DATA.run}`;
+const T = DATA.target;
+const cols = DATA.columns.filter(c => !c.error || c.pictures);
+const fitsPlain = c => c.render_peak != null && c.detail_peak != null && Math.max(c.render_peak, c.detail_peak) <= T;
+const fitsTiled = c => c.render_peak != null && c.tiled_peak != null && Math.max(c.render_peak, c.tiled_peak) <= T;
+const fits = c => fitsPlain(c) || fitsTiled(c);
+const bestPeak = c => Math.max(c.render_peak, fitsPlain(c) || c.tiled_peak == null ? c.detail_peak : Math.min(c.detail_peak, c.tiled_peak));
+
+// ---------- theme
+(function () {
+  const btn = $("#theme");
+  const order = ["auto", "light", "dark"];
+  let mode = store.get(KEY + ":theme", "auto");
+  const apply = () => {
+    if (mode === "auto") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", mode);
+    btn.textContent = `Theme: ${mode}`;
+  };
+  btn.addEventListener("click", () => { mode = order[(order.indexOf(mode) + 1) % 3]; store.set(KEY + ":theme", mode); apply(); });
+  apply();
+})();
+
+// ---------- header and tiles
+$("#subtitle").innerHTML = `Run <b>${esc(DATA.run)}</b>, built ${esc(DATA.generated)}. Made-up male players, rendered at ${DATA.size[0]}×${DATA.size[1]}. ` +
+  `The target is the anime model's memory: Animagine with INT8 weights peaks at <b>${T} GiB</b> reserved in a group A job with a reference picture. Local page only; these pictures stay on this PC.`;
+
+(function tiles() {
+  const quant = cols.filter(c => !c.is_reference && c.render_peak != null);
+  const within = quant.filter(fits);
+  const fastest = within.slice().sort((a, b) => a.s_median - b.s_median)[0];
+  const pictures = Object.keys(DATA.pics).length;
+  const b = DATA.baseline;
+  const t = [
+    {label: "VRAM target", value: `${T} GiB`, detail: b ? `Animagine measured now: render ${fmt(b.render_peak, 2)}, real detail pass ${fmt(b.detail_pass_peak, 2)} GiB` : "Animagine group A job, with a reference picture"},
+    {label: "Quantised columns within target", value: `${within.length} of ${quant.length}`, detail: `${quant.filter(fitsPlain).length} without VAE tiling; render and detail-size peaks both count`},
+    {label: "Fastest within target", value: fastest ? fastest.label : "–", small: true, detail: fastest ? `${fmt(fastest.s_median)} s per picture · ${fmt(bestPeak(fastest), 2)} GiB peak` : ""},
+    {label: "Pictures", value: pictures.toLocaleString(), detail: `${DATA.cases.length} cases × ${cols.length} columns`},
+  ];
+  $("#tiles").innerHTML = t.map(x => `<div class="card tile"><div class="label">${esc(x.label)}</div><div class="value${x.small ? " small" : ""}">${esc(x.value)}</div><div class="detail">${esc(x.detail)}</div></div>`).join("");
+})();
+
+$("#memnote").textContent = `Peaks are PyTorch's reserved memory (what other programs lose; the CUDA context adds about 0.3 GiB). ` +
+  `Render is a ${DATA.size[0]}×${DATA.size[1]} picture. Detail size is one full render at ${DATA.detail[0]}×${DATA.detail[1]}, group A's detail-pass size, for every column including Animagine, so they compare like for like ` +
+  `(Animagine's real detail pass, an img2img at strength 0.35, is in the table). Where that went over the target it was run again with VAE tiling. ` +
+  `The text encoder runs before the transformer and leaves the card, so its trip is listed in the table, not here. The vertical line is the ${T} GiB target.`;
+
+// ---------- tooltip
+const tip = $("#tip");
+function showTip(e, html) {
+  tip.innerHTML = html; tip.style.display = "block";
+  const r = tip.getBoundingClientRect();
+  let x = e.clientX + 14, y = e.clientY + 14;
+  if (x + r.width > innerWidth - 8) x = e.clientX - r.width - 14;
+  if (y + r.height > innerHeight - 8) y = e.clientY - r.height - 14;
+  tip.style.left = `${Math.max(8, x)}px`; tip.style.top = `${Math.max(8, y)}px`;
+}
+const hideTip = () => { tip.style.display = "none"; };
+
+// ---------- horizontal bar charts (inline SVG)
+function niceMax(v) { const steps = [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]; const p = 10 ** Math.floor(Math.log10(v)); for (const s of steps) if (s * p >= v) return s * p; return 10 * p; }
+// Drawn at the container's pixel width (no viewBox scaling), so text stays 11-12px.
+function hbar(el, rows, series, opts) {
+  const W = Math.max(300, Math.round(el.clientWidth));
+  const labelW = Math.min(opts.labelW || 210, Math.round(W * 0.4)), right = 48, top = 18, rowH = series.length > 2 ? 36 : series.length > 1 ? 30 : 24;
+  const maxChars = Math.max(10, Math.floor((labelW - 14) / 6.6));
+  const barH = series.length > 2 ? 8 : series.length > 1 ? 10 : 12, gap = 2;
+  const H = top + rows.length * rowH + 22;
+  const maxV = niceMax(Math.max(opts.ref || 0, ...rows.flatMap(r => series.map(s => r[s.key] || 0))) * 1.05);
+  const x = v => labelW + (W - labelW - right) * (v / maxV);
+  const ticks = []; const step = maxV / 4; for (let i = 0; i <= 4; i++) ticks.push(i * step);
+  let svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.title)}">`;
+  for (const t of ticks) svg += `<line x1="${x(t)}" x2="${x(t)}" y1="${top - 4}" y2="${H - 20}" stroke="var(--grid)" stroke-width="1"/>` +
+    `<text x="${x(t)}" y="${H - 6}" text-anchor="middle" fill="var(--text-muted)">${Number.isInteger(t) ? t : t.toFixed(1)}</text>`;
+  svg += `<line x1="${x(0)}" x2="${x(0)}" y1="${top - 4}" y2="${H - 20}" stroke="var(--axis)" stroke-width="1"/>`;
+  if (opts.ref != null) {
+    svg += `<line x1="${x(opts.ref)}" x2="${x(opts.ref)}" y1="${top - 10}" y2="${H - 20}" stroke="var(--text-secondary)" stroke-width="1.5"/>` +
+      `<text x="${x(opts.ref)}" y="${top - 12}" text-anchor="middle" fill="var(--text-primary)" font-weight="600">${esc(opts.refLabel)}</text>`;
+  }
+  rows.forEach((r, i) => {
+    const y0 = top + i * rowH;
+    const label = r.label.length > maxChars ? r.label.slice(0, maxChars - 1) + "…" : r.label;
+    svg += `<text x="${labelW - 10}" y="${y0 + rowH / 2 + 4}" text-anchor="end" fill="${r.base ? "var(--text-primary)" : "var(--text-secondary)"}" font-weight="${r.base ? 600 : 400}">${esc(label)}</text>`;
+    const blockH = series.length * barH + (series.length - 1) * gap;
+    series.forEach((s, k) => {
+      const v = r[s.key]; const by = y0 + (rowH - blockH) / 2 + k * (barH + gap);
+      if (v == null) { const note = r[s.key + "_note"]; if (note) svg += `<text x="${x(0) + 4}" y="${by + barH - 1}" fill="var(--text-muted)" font-size="11">${esc(note)}</text>`; return; }
+      const w = Math.max(1, x(v) - x(0)), rad = Math.min(4, barH / 2, w);
+      // square at the baseline, 4px rounded data-end
+      svg += `<path d="M${x(0)},${by} h${w - rad} a${rad},${rad} 0 0 1 ${rad},${rad} v${barH - 2 * rad} a${rad},${rad} 0 0 1 -${rad},${rad} h-${w - rad} z" fill="var(${s.color})"/>`;
+      svg += `<text x="${x(v) + 4}" y="${by + barH - 1}" fill="var(--text-secondary)" font-size="11" style="font-variant-numeric:tabular-nums;paint-order:stroke;stroke:var(--surface-1);stroke-width:3px;stroke-linejoin:round">${opts.fmt(v)}</text>`;
+      svg += `<rect class="hit" x="${labelW}" y="${by - 1}" width="${W - labelW}" height="${barH + 2}" data-row="${i}" data-s="${k}"/>`;
+    });
+  });
+  svg += `</svg>`;
+  el.innerHTML = svg;
+  el.querySelectorAll(".hit").forEach(h => {
+    const r = rows[+h.dataset.row], s = series[+h.dataset.s];
+    const html = () => `<b>${esc(r.label)}</b><div class="row"><span class="key"><i style="background:var(${s.color})"></i></span>${esc(s.name)}: <b>${opts.fmt(r[s.key])}</b></div>` + (opts.extra ? opts.extra(r) : "");
+    h.addEventListener("mousemove", e => showTip(e, html()));
+    h.addEventListener("mouseleave", hideTip);
+  });
+}
+
+(function charts() {
+  const b = DATA.baseline;
+  const rows = cols.filter(c => c.render_peak != null || c.error).map(c => ({
+    label: c.label, render_peak: c.render_peak, detail_peak: c.detail_peak, tiled_peak: c.tiled_peak,
+    detail_peak_note: c.detail_error || (c.is_reference ? "" : "not measured"), render_peak_note: c.error || "not measured",
+    s_median: c.s_median, weights_gib: c.weights_gib,
+  }));
+  if (b) rows.push({label: b.label, render_peak: b.render_peak, detail_peak: b.detail_peak, tiled_peak: b.tiled_peak, s_median: b.s_median, weights_gib: b.weights_gib, base: true});
+  const vr = rows.slice().sort((p, q) => (p.render_peak ?? 99) - (q.render_peak ?? 99));
+  const series = [
+    {key: "render_peak", name: `Render ${DATA.size[0]}×${DATA.size[1]}`, color: "--series-1"},
+    {key: "detail_peak", name: `Detail size ${DATA.detail[0]}×${DATA.detail[1]}`, color: "--series-2"},
+    {key: "tiled_peak", name: "Detail size, VAE tiled", color: "--series-3"},
+  ];
+  $("#vram-legend").innerHTML = series.map(s => `<span class="key"><i style="background:var(${s.color})"></i>${esc(s.name)}</span>`).join("");
+  const sp = rows.filter(r => r.s_median != null).sort((p, q) => p.s_median - q.s_median);
+  const drawCharts = () => {
+    hbar($("#vram-chart"), vr, series, {
+      title: "Peak VRAM reserved per column", ref: T, refLabel: `target ${T} GiB`, fmt: v => `${v.toFixed(2)}`,
+      extra: r => `<div class="row">weights on the card: ${fmt(r.weights_gib, 2)} GiB</div>`,
+    });
+    hbar($("#speed-chart"), sp, [{key: "s_median", name: "Median seconds per picture", color: "--series-1"}], {
+      title: "Seconds per picture", fmt: v => `${v.toFixed(1)} s`, labelW: 200,
+    });
+  };
+  drawCharts();
+  let lastW = 0, pending = 0;
+  new ResizeObserver(() => {
+    const w = $("#vram-chart").clientWidth + $("#speed-chart").clientWidth;
+    if (w === lastW) return; lastW = w;
+    cancelAnimationFrame(pending); pending = requestAnimationFrame(drawCharts);
+  }).observe(document.querySelector(".charts"));
+})();
+
+// ---------- measurements table
+(function table() {
+  const b = DATA.baseline;
+  const defs = [
+    {k: "label", h: "Column", f: r => `${esc(r.label)}${r.is_reference ? ' <span class="muted">(reference)</span>' : ""}`},
+    {k: "fit", h: "Target", f: r => r.base ? '<span class="muted">is the target</span>' : r.render_peak == null ? '<span class="muted">–</span>' :
+      fitsPlain(r) ? `<span class="status good">✓ within</span>` : fitsTiled(r) ? `<span class="status good">✓ with VAE tiling</span>` : `<span class="status bad">✗ over</span>`,
+      v: r => r.base ? -1 : fitsPlain(r) ? 0 : fitsTiled(r) ? 1 : 2},
+    {k: "weights_gib", h: "Weights GiB", n: 2},
+    {k: "render_peak", h: "Render peak", n: 2},
+    {k: "detail_peak", h: "Detail-size peak", n: 2},
+    {k: "tiled_peak", h: "Tiled detail-size peak", n: 2},
+    {k: "detail_pass_peak", h: "Real detail pass peak", n: 2},
+    {k: "encode_peak", h: "Encode trip peak", n: 2},
+    {k: "s_median", h: "s / picture", n: 1},
+    {k: "detail_s", h: "s at detail size", n: 1},
+    {k: "tiled_s", h: "s tiled", n: 1},
+    {k: "load_s", h: "Load s", n: 0},
+    {k: "content_ok", h: "Content OK", n: 0, u: "%"},
+    {k: "one_man", h: "One man", n: 0, u: "%"},
+    {k: "framing", h: "Framing", n: 0, u: "%"},
+    {k: "beard", h: "Beard", n: 0, u: "%"},
+    {k: "hair", h: "Hair colour", n: 0, u: "%"},
+    {k: "realism", h: "Photo tag", n: 2},
+    {k: "psnr", h: "PSNR dB", n: 1},
+    {k: "ssim", h: "SSIM", n: 3},
+    {k: "steps", h: "Steps", n: 0},
+    {k: "cfg", h: "CFG", n: 1},
+    {k: "sampler", h: "Sampler"},
+    {k: "licence", h: "Licence"},
+  ];
+  const rows = cols.map(c => ({...c, ...c.metrics}));
+  if (b) rows.push({...b, base: true, steps: 28, cfg: 5.5, sampler: "euler a"});
+  let sortK = null, dir = 1;
+  const val = (r, d) => d.v ? d.v(r) : r[d.k];
+  function draw() {
+    let rs = rows.slice();
+    if (sortK) { const d = defs.find(x => x.k === sortK); rs.sort((p, q) => { const a = val(p, d), bb = val(q, d); if (a == null) return 1; if (bb == null) return -1; return (a > bb ? 1 : a < bb ? -1 : 0) * dir; }); }
+    const head = defs.map(d => `<th class="${d.n != null ? "num" : ""}" aria-sort="${sortK === d.k ? (dir > 0 ? "ascending" : "descending") : "none"}"><button type="button" data-k="${d.k}">${esc(d.h)}</button></th>`).join("");
+    const body = rs.map(r => `<tr class="${r.base ? "base" : r.is_reference ? "ref" : ""}">` + defs.map(d => {
+      if (d.f) return `<td>${d.f(r)}</td>`;
+      const v = r[d.k];
+      if (d.n != null) return `<td class="num">${v == null ? '<span class="muted">–</span>' : fmt(v, d.n, d.u || "")}</td>`;
+      return `<td>${esc(v ?? "–")}</td>`;
+    }).join("") + `</tr>`).join("");
+    $("#table").innerHTML = `<thead><tr>${head}</tr></thead><tbody>${body}</tbody>`;
+    $("#table").querySelectorAll("th button").forEach(btn => btn.addEventListener("click", () => {
+      const k = btn.dataset.k; if (sortK === k) dir = -dir; else { sortK = k; dir = 1; } draw();
+    }));
+  }
+  draw();
+})();
+
+// ---------- picture grid
+const state = {
+  set: "sheet",
+  size: store.get(KEY + ":size", 190),
+  blind: false,
+  refs: false,
+  hidden: new Set(store.get(KEY + ":hidden", [])),
+  stars: new Set(store.get(KEY + ":stars", [])),
+};
+$("#size").value = state.size;
+document.documentElement.style.setProperty("--thumb", `${state.size}px`);
+
+function visibleCols() { return cols.filter(c => c.pictures && (state.refs || !c.is_reference) && !state.hidden.has(c.key)); }
+function hash(s) { let h = 2166136261; for (const ch of s) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
+function rowCols(caseId) {
+  const vc = visibleCols();
+  if (!state.blind) return vc;
+  return vc.map(c => ({c, h: hash(caseId + c.key)})).sort((p, q) => p.h - q.h).map(x => x.c);
+}
+function blindName(i) { return `Model ${String.fromCharCode(65 + i)}`; }
+
+function chips() {
+  $("#colchips").innerHTML = `<span class="label">Columns</span>` + cols.filter(c => c.pictures).map(c => {
+    const off = c.is_reference && !state.refs;
+    return `<button class="chip" type="button" data-col="${esc(c.key)}" aria-pressed="${!state.hidden.has(c.key) && !off}" ${off ? "disabled" : ""}>${esc(state.blind ? "•••" : c.label)}</button>`;
+  }).join("");
+  $("#colchips").querySelectorAll("[data-col]").forEach(b => b.addEventListener("click", () => {
+    const k = b.dataset.col; state.hidden.has(k) ? state.hidden.delete(k) : state.hidden.add(k);
+    store.set(KEY + ":hidden", [...state.hidden]); draw();
+  }));
+}
+
+function badges(p) {
+  if (!p || p.ok == null) return "";
+  const out = [];
+  out.push(p.ok ? `<span class="badge good" title="Rated general, no content tags">✓ content</span>` : `<span class="badge bad" title="${esc((p.flags || []).join(", ") || "rating " + p.rating)}">✗ content</span>`);
+  if (!p.man) out.push(`<span class="badge bad" title="The tagger did not see exactly one man">✗ one man</span>`);
+  if (!p.fr) out.push(`<span class="badge bad" title="Head starts ${p.top == null ? "nowhere" : Math.round(p.top * 100) + "% down"}">✗ framing</span>`);
+  if (!p.bd) out.push(`<span class="badge bad" title="Facial hair does not match the sheet">✗ beard</span>`);
+  return out.join("");
+}
+
+function cellHtml(c, caseId) {
+  const p = DATA.pics[`${c.key}/${caseId}`];
+  if (!p) return `<td class="cell"><div class="missing">not rendered</div></td>`;
+  const id = `${c.key}/${caseId}`;
+  const starred = state.stars.has(id);
+  return `<td class="cell"><button class="imgbtn" type="button" data-open="${esc(id)}" aria-label="Enlarge ${esc(caseId)}"><img loading="lazy" src="${esc(p.t)}" alt="${esc(caseId)}"></button>` +
+    `<div class="meta">${badges(p)}<span class="badge">${fmt(p.s, 1, " s")}</span>${p.psnr != null && !state.blind ? `<span class="badge" title="PSNR against its full-precision picture">${fmt(p.psnr, 1, " dB")}</span>` : ""}` +
+    `<button class="star" type="button" data-star="${esc(id)}" aria-pressed="${starred}" aria-label="Star">${starred ? "★" : "☆"}</button></div></td>`;
+}
+
+function draw() {
+  chips();
+  const vc = visibleCols();
+  const g = $("#pgrid");
+  if (state.set === "probe") {
+    const head = vc.map((c, i) => `<th>${esc(state.blind ? blindName(i) : c.label)}</th>`).join("");
+    const cells = vc.map(c => c.probe ? `<td class="cell"><a class="imgbtn" href="${esc(c.probe)}" target="_blank" rel="noopener"><img loading="lazy" src="${esc(c.probe)}" alt="probe"></a><div class="meta"><span class="badge">${fmt(c.detail_s, 1, " s")}</span><span class="badge">${fmt(c.detail_peak, 2, " GiB")}</span></div></td>` :
+      `<td class="cell"><div class="missing">${esc(c.detail_error || "no probe")}</div></td>`).join("");
+    g.innerHTML = `<thead><tr><th class="rowhead">Case S01a at ${DATA.detail[0]}×${DATA.detail[1]}, shown downscaled</th>${head}</tr></thead><tbody><tr><td class="rowhead">The memory probe for group A's detail pass. A model that only draws well near its training size can break at this size.</td>${cells}</tr></tbody>`;
+  } else {
+    const cs = DATA.cases.filter(c => c.kind === state.set);
+    const head = state.blind ? `<th class="rowhead">Case</th>` + vc.map((_, i) => `<th>${blindName(i)}<br><span class="muted">order shuffled per row</span></th>`).join("")
+      : `<th class="rowhead">Case</th>` + vc.map(c => `<th>${esc(c.label)}</th>`).join("");
+    const body = cs.map(cs1 => `<tr><td class="rowhead"><b>${esc(cs1.id)}</b>${esc(cs1.desc)}</td>${rowCols(cs1.id).map(c => cellHtml(c, cs1.id)).join("")}</tr>`).join("");
+    g.innerHTML = `<thead><tr>${head}</tr></thead><tbody>${body}</tbody>`;
+  }
+  g.querySelectorAll("[data-open]").forEach(b => b.addEventListener("click", () => openBox(b.dataset.open)));
+  g.querySelectorAll("[data-star]").forEach(b => b.addEventListener("click", () => toggleStar(b.dataset.star)));
+  tally();
+}
+
+function toggleStar(id) {
+  state.stars.has(id) ? state.stars.delete(id) : state.stars.add(id);
+  store.set(KEY + ":stars", [...state.stars]);
+  document.querySelectorAll(`[data-star="${CSS.escape(id)}"]`).forEach(b => { const on = state.stars.has(id); b.setAttribute("aria-pressed", on); b.textContent = on ? "★" : "☆"; });
+  tally(); if (box.open && box.dataset.id === id) openBox(id);
+}
+
+function tally() {
+  const el = $("#picks");
+  if (state.blind) { el.innerHTML = `<span class="muted">Stars: ${state.stars.size}. The tally per column shows when blind mode is off.</span>`; return; }
+  const counts = cols.filter(c => c.pictures).map(c => ({c, n: [...state.stars].filter(s => s.startsWith(c.key + "/")).length})).filter(x => x.n).sort((p, q) => q.n - p.n);
+  el.innerHTML = counts.length ? `<span class="label">Your stars</span>` + counts.map(x => `<span class="pick">${esc(x.c.label)} <b>${x.n}</b></span>`).join("") : `<span class="muted">No stars yet.</span>`;
+}
+
+$("#size").addEventListener("input", e => { state.size = +e.target.value; document.documentElement.style.setProperty("--thumb", `${state.size}px`); store.set(KEY + ":size", state.size); });
+document.querySelectorAll("[data-set]").forEach(b => b.addEventListener("click", () => {
+  state.set = b.dataset.set; document.querySelectorAll("[data-set]").forEach(x => x.setAttribute("aria-pressed", x === b)); draw();
+}));
+$("#blind").addEventListener("click", e => { state.blind = !state.blind; e.currentTarget.setAttribute("aria-pressed", state.blind); draw(); });
+$("#refs").addEventListener("click", e => { state.refs = !state.refs; e.currentTarget.setAttribute("aria-pressed", state.refs); draw(); });
+$("#copy").addEventListener("click", async e => {
+  const by = {};
+  for (const s of state.stars) { const [k, cid] = s.split("/"); (by[k] ||= []).push(cid); }
+  const lines = Object.entries(by).sort((p, q) => q[1].length - p[1].length).map(([k, ids]) => `${k}: ${ids.length} (${ids.sort().join(", ")})`);
+  const text = `Realistic bake-off picks (${DATA.run}), ${state.stars.size} stars\n` + (lines.join("\n") || "none");
+  try { await navigator.clipboard.writeText(text); e.currentTarget.textContent = "Copied"; } catch { prompt("Copy these picks:", text); }
+  setTimeout(() => { e.currentTarget.textContent = "Copy my picks"; }, 1600);
+});
+
+// ---------- lightbox
+const box = $("#lightbox");
+function openBox(id) {
+  const [key, caseId] = id.split("/");
+  const p = DATA.pics[id]; const c = cols.find(x => x.key === key); const cs = DATA.cases.find(x => x.id === caseId);
+  if (!p || !c || !cs) return;
+  box.dataset.id = id;
+  $("#lb-img").src = p.f; $("#lb-img").alt = `${caseId}`;
+  const name = state.blind ? blindName(rowCols(caseId).indexOf(c)) : c.label;
+  const starred = state.stars.has(id);
+  const kv = [
+    ["Case", `${cs.id} · seed ${cs.seed}`],
+    ["Sheet", cs.desc],
+    ["Time", fmt(p.s, 1, " s")],
+    ...(state.blind ? [] : [["Settings", `${c.steps} steps · CFG ${c.cfg} · ${c.sampler} · ${c.weights.toUpperCase()}`]]),
+    ["Tagger", p.ok == null ? "not tagged" : `${p.ok ? "✓" : "✗"} content (${esc(p.rating)}${p.flags && p.flags.length ? ": " + esc(p.flags.join(", ")) : ""}) · ${p.man ? "✓" : "✗"} one man · ${p.fr ? "✓" : "✗"} framing · ${p.bd ? "✓" : "✗"} beard · ${p.hr ? "✓" : "✗"} hair · photo tag ${fmt(p.re, 2)}`],
+    ...(p.psnr != null && !state.blind ? [["Against full precision", `${fmt(p.psnr, 1)} dB PSNR · SSIM ${fmt(p.ssim, 3)}`]] : []),
+  ];
+  $("#lb-info").innerHTML = `<div class="bar"><button class="btn" type="button" id="lb-star" aria-pressed="${starred}">${starred ? "★ Starred" : "☆ Star"}</button>` +
+    `<a class="btn" href="${esc(p.f)}" target="_blank" rel="noopener">Open full size</a><button class="btn" type="button" id="lb-close">Close</button></div>` +
+    `<h3>${esc(name)}</h3><div class="kv">${kv.map(([k, v]) => `<span>${esc(k)}</span><span>${k === "Tagger" ? v : esc(v)}</span>`).join("")}</div>` +
+    `<div class="prompt">${esc(cs.prompt)}</div>` + (c.cfg > 1 && !state.blind ? `<div class="tags">Negative: ${esc(DATA.negative)}</div>` : "") +
+    (p.tags ? `<p class="tags" style="margin-top:8px">Tags: ${esc(p.tags.join(", "))}</p>` : "");
+  $("#lb-star").addEventListener("click", () => toggleStar(id));
+  $("#lb-close").addEventListener("click", () => box.close());
+  if (!box.open) box.showModal();
+}
+box.addEventListener("click", e => { if (e.target === box) box.close(); });
+box.addEventListener("keydown", e => {
+  const id = box.dataset.id; if (!id) return;
+  const [key, caseId] = id.split("/");
+  const rc = rowCols(caseId); const i = rc.findIndex(c => c.key === key);
+  const cs = DATA.cases.filter(c => c.kind === (state.set === "probe" ? "sheet" : state.set)); const j = cs.findIndex(c => c.id === caseId);
+  if (e.key === "ArrowRight" && rc.length) { openBox(`${rc[(i + 1) % rc.length].key}/${caseId}`); e.preventDefault(); }
+  if (e.key === "ArrowLeft" && rc.length) { openBox(`${rc[(i - 1 + rc.length) % rc.length].key}/${caseId}`); e.preventDefault(); }
+  if (e.key === "ArrowDown" && j >= 0) { openBox(`${key}/${cs[(j + 1) % cs.length].id}`); e.preventDefault(); }
+  if (e.key === "ArrowUp" && j >= 0) { openBox(`${key}/${cs[(j - 1 + cs.length) % cs.length].id}`); e.preventDefault(); }
+  if (e.key.toLowerCase() === "s") toggleStar(id);
+});
+
+draw();
+</script>
+</body>
+</html>

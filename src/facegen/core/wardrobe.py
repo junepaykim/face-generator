@@ -377,6 +377,10 @@ class Outfit:
     text: str
     sporty: bool
     rank: tuple[tuple[str, frozenset[str]], ...] = ()
+    tone: str | None = None
+    """The look's neutral colour (`{tone}`), None for a look without one."""
+    home: Kit | None = None
+    """The home kit whose colours dress it; the photo prompt words the same clothes."""
 
     def words(self) -> str:
         """Prompt words for the clothes and the prop."""
@@ -481,4 +485,6 @@ def dress(
         text=", ".join(p for p in (text, prop.words) if p),
         sporty=look.sporty,
         rank=tuple(rank),
+        tone=tone if look.tones else None,
+        home=home,
     )

@@ -123,6 +123,57 @@ def test_basic_switches_and_quality_save_like_advanced_fields(
     assert labels == ["preset.quality.low", "edit", "edit"]
 
 
+def test_the_picture_style_is_one_model_and_one_gender_for_everyone(
+    client: TestClient, config_file: Path
+) -> None:
+    """User, 2026-11-20: one model and one gender, on Basic and Advanced alike. Z-Image-Turbo
+    is offered since the worker draws its re-draws without a reference (Phase 15g)."""
+    page = unescape(client.get("/settings").text)
+    assert "Picture style" in page
+    assert '<option value="animagine" selected>Anime (Animagine XL)</option>' in page
+    assert re.search(r'<option value="realvis"\s*>Photo \(RealVisXL\)</option>', page)
+    assert '<option value="woman" selected>Woman</option>' in page
+    assert re.search(r'<option value="man"\s*>Man</option>', page)
+    assert re.search(r'<option value="zimage_turbo"\s*>Photo \(Z-Image-Turbo\)</option>', page)
+    for key in ("style.model", "style.gender"):
+        assert f'<select name="{key}" data-key>' in page, key
+        assert (
+            f'<select name="{key}" data-key data-default=' in client.get("/settings/advanced").text
+        )
+
+    data = client.post("/settings/save", data={"style.model": "realvis", "style.gender": "man"})
+    assert data.json()["ok"]
+    now = values(config_file)
+    assert (now["style.model"], now["style.gender"]) == ("realvis", "man")
+    page = unescape(client.get("/settings").text)
+    assert '<option value="realvis" selected>Photo (RealVisXL)</option>' in page
+    for key, value in (("style.model", "flux"), ("style.gender", "other")):
+        bad = client.post("/settings/save", data={key: value}).json()
+        assert not bad["ok"] and key in bad["errors"], key
+    assert client.post("/settings/save", data={"style.model": "zimage_turbo"}).json()["ok"]
+    assert values(config_file)["style.model"] == "zimage_turbo"
+    korean = unescape(client.get("/settings/basic", headers=KOREAN_WINDOWS).text)
+    for text in (
+        "그림 스타일", "실사 (RealVisXL)", "실사 (Z-Image-Turbo)", "애니메이션 (Animagine XL)",
+        "남성", "여성",
+    ):  # fmt: skip
+        assert text in korean, text
+
+
+def test_the_picture_style_says_z_image_turbo_needs_10_gb(client: TestClient) -> None:
+    """Its render needs about 6 GiB in every preset (Phase 15i): too much for an 8 GB card
+    beside Windows. Said on Basic and Advanced alike (user, 2026-11-21)."""
+    note = "Z-Image-Turbo needs a graphics card with 10 GB or more."
+    for path in ("/settings", "/settings/advanced"):
+        page = unescape(client.get(path).text)
+        assert page.count(note) == 1, path
+        korean = unescape(client.get(path, headers=KOREAN_WINDOWS).text)
+        assert korean.count("Z-Image-Turbo는 그래픽카드 메모리가 10 GB 이상 필요합니다.") == 1, path
+    advanced = unescape(client.get("/settings/advanced").text)
+    assert "Journalists and press officers are drawn in the" in advanced
+    assert "drawn as women" not in advanced
+
+
 def test_without_the_script_basic_saves_what_it_shows(
     client: TestClient, config_file: Path
 ) -> None:

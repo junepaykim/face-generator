@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import UTC, datetime
 
+from facegen.core.man_traits import ManSheet, sample_man_sheet
 from facegen.core.records import Personality
 from facegen.core.traits import (
     DEFAULT_BODY,
@@ -106,3 +107,51 @@ def sheet_for(
     if activate:
         select_sheet(conn, career_id, unique_id, version)
     return version, sheet
+
+
+def load_man_sheet(
+    conn: sqlite3.Connection, career_id: int, unique_id: int, version: int
+) -> ManSheet | None:
+    """The men's sheet stored with a sheet version, or None if that version was never drawn as
+    a man (or does not exist)."""
+    row = conn.execute(
+        "SELECT base_seed, man_sheet FROM traits"
+        " WHERE career_id = ? AND unique_id = ? AND version = ?",
+        (career_id, unique_id, version),
+    ).fetchone()
+    if row is None or row["man_sheet"] is None:
+        return None
+    return ManSheet.from_json(row["man_sheet"], row["base_seed"])
+
+
+def man_sheet_for(
+    conn: sqlite3.Connection,
+    career_id: int,
+    career_key: str,
+    unique_id: int,
+    version: int,
+    *,
+    nation: int | None,
+    personality: Personality | None = None,
+    personality_weight: int = DEFAULT_PERSONALITY_WEIGHT,
+) -> ManSheet:
+    """The men's sheet of an existing sheet version, sampled and stored with it on first use,
+    so a later change of nation or personality leaves his look as it is."""
+    found = load_man_sheet(conn, career_id, unique_id, version)
+    if found is not None:
+        return found
+    sheet = sample_man_sheet(
+        career_key,
+        unique_id,
+        version,
+        nation=nation,
+        personality=personality,
+        personality_weight=personality_weight,
+    )
+    cur = conn.execute(
+        "UPDATE traits SET man_sheet = ? WHERE career_id = ? AND unique_id = ? AND version = ?",
+        (sheet.to_json(), career_id, unique_id, version),
+    )
+    if cur.rowcount != 1:
+        raise RuntimeError(f"no character sheet version {version} for {unique_id}")
+    return sheet

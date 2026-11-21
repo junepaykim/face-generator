@@ -5,9 +5,12 @@ Masters live under data/masters/<career key>/<unique_id>/. After three failed at
 the job goes to review and publishes nothing. Interrupted jobs retry with the same seeds.
 
 Generation waits for FM27 to stop unless Generate now overrides it. Keep-face redraws use
-the current portrait's face crop when `reference_scale` permits and the file is available.
-Player shoots use the career's in-game season; staff and media use their role's wardrobe
-and poses on the grey backdrop. Fakes can run the orchestration without a GPU or save.
+the current portrait's face crop when `reference_scale` permits, the file is available and
+the current picture shows the same gender drawn by the same model; Z-Image-Turbo takes no
+reference. Player shoots use the career's in-game season; staff and media use their role's
+wardrobe and poses on the grey backdrop. Everyone is drawn as `style.gender` by
+`style.model` (core/style.py); a man also has a men's sheet stored with his sheet version.
+Fakes can run the orchestration without a GPU or save.
 """
 
 from __future__ import annotations
@@ -22,15 +25,26 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from facegen.core.age import age_wording, drawn_as_man
+from facegen.core.age import age_wording
 from facegen.core.domain import FinishedStatus
 from facegen.core.job_records import Career, Job, JobFilter
 from facegen.core.kit_values import Kit, KitSource, KitTable
+from facegen.core.man_traits import ManSheet, sample_man_sheet
 from facegen.core.planner import reference_scale
-from facegen.core.prompt import Prompt, Wear, build_prompt
+from facegen.core.prompt import Prompt, Wear
 from facegen.core.records import is_first_team_manager
-from facegen.core.settings_values import GroupA, GroupB, GroupC, MyClubSettings, Settings
+from facegen.core.settings_values import (
+    IMAGE_MODELS,
+    MAN,
+    GroupA,
+    GroupB,
+    GroupC,
+    ImageModel,
+    MyClubSettings,
+    Settings,
+)
 from facegen.core.shoot import DEFAULT_BACKDROP, Backdrop, Pose, Shoot, shoot_for
+from facegen.core.style import portrait_prompt, shoot_hair
 from facegen.core.traits import (
     CharacterSheet,
     pick_pose,
@@ -42,10 +56,16 @@ from facegen.persistence import jobs
 from facegen.persistence.db import transaction
 from facegen.persistence.image_store import ImageStore, master_dir
 from facegen.persistence.jobs import JobGone, load_career, queued_jobs
-from facegen.persistence.sheet_store import load_sheet, next_sheet_version, select_sheet
+from facegen.persistence.sheet_store import (
+    load_man_sheet,
+    load_sheet,
+    next_sheet_version,
+    select_sheet,
+)
 from facegen.pipeline.publish import PublishReport, publish_pack
 from facegen.platform import platform_info, procs
 from facegen.platform.locking import LockBusy, file_lock
+from facegen.platform.memory import release_free_memory
 from facegen.render import quality_checks as qc
 from facegen.render.picture import crop_to_aspect, face_box
 from facegen.render.renderer import (
@@ -202,6 +222,8 @@ class _PreparedPortrait:
     setup: Setup
     my_club: MyClubSettings | None
     prompt: Prompt | None
+    gender: str
+    """Who the picture shows (`style.gender`), recorded with it."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,6 +237,8 @@ class Preview:
     prompt: Prompt | None
     reference_scale: float | None = None
     """The strength of the reference picture this job would use, None for none."""
+    man: ManSheet | None = None
+    """The men's sheet the job would draw, while everyone is drawn as a man."""
 
 
 @dataclass
@@ -233,7 +257,7 @@ class Worker:
         kits: KitTable,
         career: Career,
         *,
-        renderer_factory: Callable[[], Renderer],
+        renderer_factory: Callable[[str], Renderer],
         tagger_factory: Callable[[], Tagger],
         fm_check: Callable[[], bool | None] = fm_running,
         log: Callable[[str], None] = print,
@@ -246,6 +270,8 @@ class Worker:
         self._renderer_factory = renderer_factory
         self._tagger_factory = tagger_factory
         self._renderer: Renderer | None = None
+        self._renderer_model: str | None = None
+        """The `style.model` the loaded renderer was built for."""
         self._tagger: Tagger | None = None
         self.fm_check = fm_check
         self.log = log
@@ -259,10 +285,19 @@ class Worker:
 
     @property
     def renderer(self) -> Renderer:
+        """The selected model's renderer, loaded on first use. After `style.model` changes
+        (settings are read again before each job), the old model is unloaded first."""
+        model = self.settings.style.model
+        if self._renderer is not None and self._renderer_model != model:
+            old, self._renderer, self._renderer_model = self._renderer, None, None
+            self.log(f"The image model is now {model}: unloading {old.model}.")
+            self._close(old)
+            release_free_memory()
         if self._renderer is None:
             t0 = self.clock()
             self.log("Loading the image model...")
-            self._renderer = self._renderer_factory()
+            self._renderer = self._renderer_factory(model)
+            self._renderer_model = model
             self.log(f"  loaded in {self.clock() - t0:.0f} s")
         return self._renderer
 
@@ -284,16 +319,21 @@ class Worker:
         closed model behind for the next job.
         """
         models = (self._renderer, self._tagger)
-        self._renderer = self._tagger = None
+        self._renderer = self._tagger = self._renderer_model = None
         for model in models:
-            close = getattr(model, "close", None)
-            if close is None:
-                continue
-            try:
-                close()
-            except Exception as exc:  # noqa: BLE001 - report it; the model is gone either way
-                self.log(f"  could not free the GPU cleanly: {type(exc).__name__}: {exc}")
+            self._close(model)
+        release_free_memory()
         return any(m is not None for m in models)
+
+    def _close(self, model: object) -> None:
+        """Free a model already let go of. Never raises."""
+        close = getattr(model, "close", None)
+        if close is None:
+            return
+        try:
+            close()
+        except Exception as exc:  # noqa: BLE001 - report it; the model is gone either way
+            self.log(f"  could not free the GPU cleanly: {type(exc).__name__}: {exc}")
 
     def runnable(self, f: JobFilter) -> list[Job]:
         """Queued jobs that match the filter, in queue order."""
@@ -302,6 +342,11 @@ class Worker:
     def reference_scale(self, job: Job) -> float | None:
         """The reference strength for a job, judged where the player is now (spec section 5)."""
         return reference_scale(job.kind, job.at_my_club, self.settings.reference)
+
+    @property
+    def image_model(self) -> ImageModel:
+        """What the selected model (`style.model`) draws and takes."""
+        return IMAGE_MODELS[self.settings.style.model]
 
     def preview(self, f: JobFilter, limit: int | None = None) -> list[Preview]:
         """What the next jobs would draw, without a GPU and without storing anything.
@@ -313,6 +358,7 @@ class Worker:
     def _preview(self, job: Job) -> Preview:
         """What one queued job would draw; reads only."""
         found = load_sheet(self.conn, self.career.id, job.unique_id, job.traits_version)
+        man = None
         if found is None or (job.kind == "reroll" and job.traits_version is None):
             sheet_version = next_sheet_version(self.conn, self.career.id, job.unique_id)
             sheet = sample_sheet(
@@ -327,8 +373,19 @@ class Worker:
                 manager=job.staff and is_first_team_manager(job.staff_job),
             )
         else:
-            _, sheet = found
-        portrait = self._prepare_portrait(job, sheet)
+            sheet_version, sheet = found
+            if self.settings.style.gender == MAN:
+                man = load_man_sheet(self.conn, self.career.id, job.unique_id, sheet_version)
+        if self.settings.style.gender == MAN and man is None:
+            man = sample_man_sheet(
+                self.career.key,
+                job.unique_id,
+                sheet_version,
+                nation=job.nation,
+                personality=job.personality,
+                personality_weight=self.settings.personality.weight,
+            )
+        portrait = self._prepare_portrait(job, sheet, man)
         setup = portrait.setup
         return Preview(
             job,
@@ -338,7 +395,8 @@ class Worker:
             setup.kit_source,
             f"{setup.pose_text()}, {setup.backdrop.describe()} backdrop",
             portrait.prompt,
-            self.reference_scale(job),
+            self.reference_scale(job) if self.image_model.reference else None,
+            man,
         )
 
     def requeue_stale(self) -> int:
@@ -425,20 +483,32 @@ class Worker:
         sheet_version, sheet = jobs.allocate_sheet(
             self.conn, self.career, job, self.settings.body, self.settings.personality.weight
         )
-        portrait = self._prepare_portrait(job, sheet)
+        man = None
+        if self.settings.style.gender == MAN:
+            man = jobs.allocate_man_sheet(
+                self.conn, self.career, job, sheet_version, self.settings.personality.weight
+            )
+        portrait = self._prepare_portrait(job, sheet, man)
         version, wording, prompt = portrait.version, portrait.wording, portrait.prompt
         if wording is None or prompt is None:
-            return self._finish_failed(job, version, sheet_version, None, [], t0, "age unknown")
+            return self._finish_failed(
+                job, version, sheet_version, None, [], t0, "age unknown", portrait.gender
+            )
         setup = portrait.setup
         wear = setup.wear
-        expect = qc.expectation(sheet, wear, portrait.my_club)
+        if man is not None and job.age is not None:  # a man has a prompt only with his age
+            expect = qc.man_expectation(man, job.age, wear)
+        else:
+            expect = qc.expectation(sheet, wear, portrait.my_club)
         self._pre_encode(prompt, upcoming)
 
         folder = master_dir(self.data_dir, self.career.key, job.unique_id)
         reference, reference_info = None, None
         scale = self.reference_scale(job)
         if scale is not None:
-            reference, reference_info = self._reference(job, scale, folder, version)
+            reference, reference_info = self._reference(
+                job, scale, folder, version, portrait.gender
+            )
         cand_dir = folder / f"v{version:03d}-candidates"
         candidates: list[Candidate] = []
         winner: Candidate | None = None
@@ -477,11 +547,14 @@ class Worker:
             "outfit": wear.look if isinstance(wear, Outfit) else None,
             "my_club": job.at_my_club,
             "sheet_version": sheet_version,
+            "man_sheet": man.describe() if man is not None else None,
             "reference": reference_info,
             "prompt": prompt,
         }
         if winner is None:
-            return self._finish_failed(job, version, sheet_version, context, candidates, t0)
+            return self._finish_failed(
+                job, version, sheet_version, context, candidates, t0, gender=portrait.gender
+            )
 
         final, detail_info = winner.image, None
         if group.detail_size is not None:
@@ -525,6 +598,7 @@ class Worker:
                 check_result,
                 current=True,
                 model=self.renderer.model,
+                gender=portrait.gender,
             )
             select_sheet(self.conn, self.career.id, job.unique_id, sheet_version)
             jobs.finish(self.conn, job.id, "done", winner.attempt + 1)
@@ -546,8 +620,14 @@ class Worker:
         )
         return JobOutcome(job, "done", image_id, version, self.clock() - t0, message)
 
-    def _prepare_portrait(self, job: Job, sheet: CharacterSheet) -> _PreparedPortrait:
-        """Choose the next picture's setup and prompt without assigning a sheet or rendering."""
+    def _prepare_portrait(
+        self, job: Job, sheet: CharacterSheet, man: ManSheet | None = None
+    ) -> _PreparedPortrait:
+        """Choose the next picture's setup and prompt without assigning a sheet or rendering.
+
+        The age wording is the picture's age band for everyone: a man is re-drawn when it
+        changes too, and his prompt states his age in years (user, 2026-11-20)."""
+        style = self.settings.style
         version = self.images.next_version(job.unique_id)
         wording = job.target_band or age_wording(
             job.age,
@@ -557,16 +637,27 @@ class Worker:
             staff=job.staff,
             media=job.media_role is not None,
         )
-        setup = self._setup(job, sheet, version)
+        setup = self._setup(job, sheet, version, man)
         my_club = self.settings.my_club if job.at_my_club else None
         prompt = None
         if wording is not None:
-            prompt = build_prompt(
-                sheet, wording, setup.wear, setup.pose, my_club, backdrop=setup.backdrop
+            prompt = portrait_prompt(
+                style.model,
+                style.gender,
+                sheet=sheet,
+                man=man,
+                wording=wording,
+                age=job.age,
+                wear=setup.wear,
+                pose=setup.pose,
+                backdrop=setup.backdrop,
+                my_club=my_club,
             )
-        return _PreparedPortrait(version, wording, setup, my_club, prompt)
+        return _PreparedPortrait(version, wording, setup, my_club, prompt, style.gender)
 
-    def _setup(self, job: Job, sheet: CharacterSheet, version: int) -> Setup:
+    def _setup(
+        self, job: Job, sheet: CharacterSheet, version: int, man: ManSheet | None = None
+    ) -> Setup:
         """Select a player shoot or a staff/media outfit with its role's pose and backdrop."""
         if job.media_role:
             home, source = self.kits.kit_for(job.target_club_id, False)
@@ -588,7 +679,7 @@ class Worker:
             home, _ = self.kits.kit_for(job.target_club_id, False)
         shoot = shoot_for(
             kit,
-            sheet.hair_colour,
+            shoot_hair(sheet, man, job.age),
             sheet.base_seed,
             version,
             home=home,
@@ -662,6 +753,7 @@ class Worker:
         candidates: list[Candidate],
         t0: float,
         why: str | None = None,
+        gender: str = "woman",
     ) -> JobOutcome:
         """Nothing passed: keep the best try for the review list; publish nothing."""
         best = max(candidates, key=lambda c: c.result.score, default=None)
@@ -701,6 +793,7 @@ class Worker:
                     },
                     current=False,
                     model=self.renderer.model,
+                    gender=gender,
                 )
             jobs.finish(self.conn, job.id, "failed", MAX_ATTEMPTS if candidates else 0, error[:500])
         return JobOutcome(
@@ -708,25 +801,36 @@ class Worker:
         )
 
     def _reference(
-        self, job: Job, scale: float, folder: Path, version: int
+        self, job: Job, scale: float, folder: Path, version: int, gender: str
     ) -> tuple[Reference | None, dict[str, Any]]:
         """The player's current picture as a reference, and what to record about it.
 
         The face is cropped from the current master (`picture.face_box`) and kept next to the
-        new picture as vNNN-reference.webp. With no current picture or its file gone, or a
-        current picture of a man (`age.drawn_as_man`), the job is drawn without a reference
-        and the record says why.
+        new picture as vNNN-reference.webp. The job is drawn without a reference, and the
+        record says why, when the model takes none (Z-Image-Turbo), with no current picture
+        or its file gone, or when the current picture shows another gender (`gender` is the
+        new picture's) or was drawn by another model: an anime woman's face must not lead a
+        photo of a man.
         """
-        info: dict[str, Any] = {"scale": scale, **_reference_settings(self.renderer)}
+        renderer = self.renderer
+        if not (self.image_model.reference and getattr(renderer, "reference_adapter", True)):
+            why = f"{self.image_model.name} takes no reference picture"
+            self.log(f"  drawn without a reference: {why}")
+            return None, {"used": False, "why": why, "scale": scale}
+        info: dict[str, Any] = {"scale": scale, **_reference_settings(renderer)}
         row = self.conn.execute(
-            "SELECT id, version, master_path, COALESCE(restored_band, age_band) AS band"
+            "SELECT id, version, master_path, model, gender"
             " FROM images WHERE career_id = ? AND unique_id = ? AND is_current = 1",
             (self.career.id, job.unique_id),
         ).fetchone()
         if row is None or not row["master_path"]:
             return None, {"used": False, "why": "no current picture", **info}
-        if drawn_as_man(row["band"]):
-            why = "the current picture is of a man"
+        why = None
+        if row["gender"] != gender:
+            why = f"the current picture is of a {row['gender']}"
+        elif row["model"] != renderer.model:
+            why = f"the current picture was drawn by {row['model']}"
+        if why is not None:
             self.log(f"  drawn without a reference: {why}")
             return None, {"used": False, "why": why, **info}
         master = self.data_dir / row["master_path"]
@@ -754,8 +858,13 @@ class Worker:
 
 
 def _model_extras(renderer: Renderer, prompt: Prompt) -> dict[str, Any]:
+    """The prompt's length as the model reads it: SDXL's 75-token chunks, or Z-Image-Turbo's
+    tokens."""
     chunks = getattr(renderer, "prompt_chunks", None)
-    return {"prompt_chunks": chunks(prompt)} if chunks else {}
+    if chunks:
+        return {"prompt_chunks": chunks(prompt)}
+    tokens = getattr(renderer, "prompt_tokens", None)
+    return {"prompt_tokens": tokens(prompt)} if tokens else {}
 
 
 def _detail_settings(renderer: Renderer) -> dict[str, Any]:

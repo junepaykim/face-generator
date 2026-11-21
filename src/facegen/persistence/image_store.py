@@ -58,12 +58,14 @@ class ImageStore:
         *,
         current: bool,
         model: str,
+        gender: str,
     ) -> int:
+        """`gender` is who the picture shows: "woman" or "man" (`style.gender`)."""
         cur = self.conn.execute(
             "INSERT INTO images (career_id, unique_id, version, reason, group_name, club_id,"
             " age_band, traits_version, model, prompt, negative_prompt, seed, master_path,"
-            " published_path, check_result, is_current, created_at, render)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)",
+            " published_path, check_result, is_current, created_at, render, gender)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)",
             (
                 self.career.id,
                 job.unique_id,
@@ -82,6 +84,7 @@ class ImageStore:
                 int(current),
                 now(),
                 json.dumps(render),
+                gender,
             ),
         )
         assert cur.lastrowid is not None
