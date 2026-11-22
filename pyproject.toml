@@ -1,6 +1,6 @@
 [project]
 name = "facegen"
-version = "0.1.2"
+version = "0.1.3"
 description = "Generates anime-style portraits for Football Manager 27 players."
 readme = "README.md"
 license = "MIT"
