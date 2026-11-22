@@ -351,7 +351,9 @@ env -u FACEGEN_TEST_GPU -u FACEGEN_TEST_SAVE HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLI
 ```
 
 With cached models, the opt-in GPU tests also check rendering, reference faces, encoding
-equivalence and the 8 GiB budget.
+equivalence and the 8 GiB budget: one file per image model (`test_gpu.py` for Animagine,
+`test_gpu_realvis.py`, `test_gpu_zimage.py`), and `test_gpu_jobs.py` for whole jobs with
+every model and gender. Run one file at a time.
 
 ```bash
 FACEGEN_TEST_GPU=1 uv run --no-sync pytest tests/opt_in/test_gpu.py

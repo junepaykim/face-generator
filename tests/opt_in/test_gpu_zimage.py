@@ -6,8 +6,10 @@ Needs the GPU, Tongyi-MAI/Z-Image-Turbo (all of it) and the EVA02 tagger in the 
 cache, and FM27 closed. Draws one made-up man; the pictures stay in memory. Run with -s to see
 the timings and memory.
 
-The prompt is a fixed text in run `realistic`'s template (docs/research.md section 20) until
-Phase 15f's prompt builder replaces it. Z-Image-Turbo has no negative prompt.
+The prompt is the one the worker gives Z-Image-Turbo for a man (core/style.py: the photo prompt
+of his seeded sheet at his age, in his shoot's kit, without a negative, as it draws without
+guidance), and the picture goes through the men's check (Phase 15k).
+tests/opt_in/test_gpu_jobs.py runs whole jobs.
 """
 
 from __future__ import annotations
@@ -28,18 +30,49 @@ pytestmark = [
 SEED = 7_654_321
 
 
-def _prompt(age: int) -> Any:
-    from facegen.core.prompt import Prompt
+NATION = 38  # Nigeria: a West African look, as run `realistic`'s fixed prompt
 
-    return Prompt(
-        f"Professional studio headshot photograph of a {age}-year-old West African male football"
-        " player, head and shoulders, centred, facing the camera and looking into the lens. He"
-        " has dark brown skin, short black hair in a high-top fade, a short trimmed beard, dark"
-        " brown eyes and a confident smile. He wears an orange football shirt with black trim,"
-        " fully clothed. A plain off-white studio background, soft even lighting, sharp focus,"
-        " natural skin texture, realistic photo. He is the only person in the picture.",
-        "",
+
+def _case(age: int) -> tuple[Any, Any, Any]:
+    """A made-up man at `age`: his sheet, what he wears and the prompt Z-Image-Turbo is given."""
+    from facegen.core.kit_values import Kit
+    from facegen.core.man_traits import sample_man_sheet
+    from facegen.core.shoot import shoot_for
+    from facegen.core.style import portrait_prompt, shoot_hair
+    from facegen.core.traits import sample_sheet
+
+    sheet = sample_sheet("gpu-test-zimage", 1, 1)
+    man = sample_man_sheet("gpu-test-zimage", 1, 1, nation=NATION)
+    kit = Kit(shirt=("orange",), trim="black", shorts="black")
+    shoot = shoot_for(kit, shoot_hair(sheet, man, age), sheet.base_seed, 1, age=age)
+    prompt = portrait_prompt(
+        "zimage_turbo",
+        "man",
+        sheet=sheet,
+        man=man,
+        wording="W07",
+        age=age,
+        wear=shoot.wear,
+        pose=shoot.pose,
+        backdrop=shoot.backdrop,
     )
+    assert prompt is not None
+    return man, shoot.wear, prompt
+
+
+def _prompt(age: int) -> Any:
+    return _case(age)[2]
+
+
+def _men_check(tagger: Any, image: Any, age: int) -> Any:
+    """The men's check (render/quality_checks.py) on one picture; prints what it saw."""
+    from facegen.render import quality_checks as qc
+
+    man, wear, _ = _case(age)
+    tags = tagger([image])[0]
+    result = qc.check(tags, qc.man_expectation(man, age, wear), qc.head_top(image))
+    print("  check:", result.to_json(tags) | {"tags": None}, _one_man(tags))
+    return result
 
 
 @pytest.fixture(scope="module")
@@ -82,20 +115,22 @@ def test_render_and_detail(gpu: tuple[Any, Any]) -> None:
     settings = renderer.settings()
     assert (settings["steps"], settings["cfg"]) == (9, 0.0)
     prompt = _prompt(27)
+    assert prompt.positive.startswith("Professional studio headshot photograph of a 27-year-old")
+    assert prompt.negative == ""  # it draws without guidance: no negative is given or stored
     assert 50 < renderer.prompt_tokens(prompt) < MAX_TOKENS
 
     image = renderer.render(prompt, SEED)
     assert image.size == (WIDTH, HEIGHT) == (896, 1152)
-    tags = tagger([image])[0]
-    print("portrait:", _one_man(tags))
-    assert tags.rating == "general"
+    result = _men_check(tagger, image, 27)
+    assert result.rating == "general", result.failures
+    assert not [f for f in result.failures if f.startswith("content")], result.failures
     # Seeded: the same seed draws the same picture (allowing for GPU rounding).
     assert _difference(renderer.render(prompt, SEED), image) < 2.0
 
     detailed = renderer.detail(image, prompt, SEED, size=(1344, 1728))
     assert detailed.size == (1344, 1728)
     assert crop_to_aspect(detailed).size == (1296, 1728)  # the 3:4 master
-    assert tagger([detailed])[0].rating == "general"
+    assert _men_check(tagger, detailed, 27).rating == "general"
     assert renderer.detail_settings()["vae_tiling"] is True
     assert renderer.vae_tiling is False  # the detail pass's tiling does not stay on
 

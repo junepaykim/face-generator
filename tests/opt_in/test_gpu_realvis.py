@@ -6,9 +6,9 @@ Needs the GPU, the models in the Hugging Face cache (RealVisXL, the EVA02 tagger
 reference test, h94/IP-Adapter), and FM27 closed. Draws one made-up man; the pictures stay in
 memory. Run with -s to see the timings and memory.
 
-The prompt is a fixed text in run `realistic`'s template (docs/research.md section 20) until
-Phase 15f's prompt builder replaces it; the negative is the content negative the user approved
-on 2026-11-20 with that run's composition and style terms.
+The prompt is the one the worker gives RealVisXL for a man (core/style.py: the photo prompt of
+his seeded sheet at his age, in his shoot's kit, with the approved negative), and the picture
+goes through the men's check (Phase 15k). tests/opt_in/test_gpu_jobs.py runs whole jobs.
 """
 
 from __future__ import annotations
@@ -27,27 +27,50 @@ pytestmark = [
     ),
 ]
 
-NEGATIVE = (
-    "nsfw, nude, naked, shirtless, bare chest, topless, underwear, swimwear, revealing clothes, "
-    "suggestive, multiple people, two people, text, watermark, signature, logo, frame, cartoon, "
-    "anime, illustration, painting, drawing, 3d render, cgi, plastic skin, deformed, "
-    "bad anatomy, asymmetric eyes, blurry, lowres"
-)
 SEED = 1_234_567
+NATION = 776  # Italy: a Southern European look, as run `realistic`'s fixed prompt
+
+
+def _case(age: int) -> tuple[Any, Any, Any]:
+    """A made-up man at `age`: his sheet, what he wears and the prompt RealVisXL is given."""
+    from facegen.core.kit_values import Kit
+    from facegen.core.man_traits import sample_man_sheet
+    from facegen.core.shoot import shoot_for
+    from facegen.core.style import portrait_prompt, shoot_hair
+    from facegen.core.traits import sample_sheet
+
+    sheet = sample_sheet("gpu-test-realvis", 1, 1)
+    man = sample_man_sheet("gpu-test-realvis", 1, 1, nation=NATION)
+    kit = Kit(shirt=("claret", "sky"), pattern="sleeves", shorts="white")
+    shoot = shoot_for(kit, shoot_hair(sheet, man, age), sheet.base_seed, 1, age=age)
+    prompt = portrait_prompt(
+        "realvis",
+        "man",
+        sheet=sheet,
+        man=man,
+        wording="W07",
+        age=age,
+        wear=shoot.wear,
+        pose=shoot.pose,
+        backdrop=shoot.backdrop,
+    )
+    assert prompt is not None
+    return man, shoot.wear, prompt
 
 
 def _prompt(age: int) -> Any:
-    from facegen.core.prompt import Prompt
+    return _case(age)[2]
 
-    return Prompt(
-        f"Professional studio headshot photograph of a {age}-year-old Mediterranean male football"
-        " player, head and shoulders, centred, facing the camera and looking into the lens. He"
-        " has olive skin, dark brown wavy hair swept back, light stubble, brown eyes and a"
-        " neutral expression. He wears a claret football shirt with light blue sleeves, fully"
-        " clothed. A dark navy blue studio background, soft even lighting, sharp focus, natural"
-        " skin texture, realistic photo. He is the only person in the picture.",
-        NEGATIVE,
-    )
+
+def _men_check(tagger: Any, image: Any, age: int) -> Any:
+    """The men's check (render/quality_checks.py) on one picture; prints what it saw."""
+    from facegen.render import quality_checks as qc
+
+    man, wear, _ = _case(age)
+    tags = tagger([image])[0]
+    result = qc.check(tags, qc.man_expectation(man, age, wear), qc.head_top(image))
+    print("  check:", result.to_json(tags) | {"tags": None}, _one_man(tags))
+    return result
 
 
 @pytest.fixture(scope="module")
@@ -105,18 +128,21 @@ def test_render_and_detail(gpu: tuple[Any, Any]) -> None:
     prompt = _prompt(22)
     assert renderer.prompt_chunks(prompt) >= 2  # the long prompt is not cut at 77 tokens
 
+    assert prompt.positive.startswith("Professional studio headshot photograph of a 22-year-old")
+    assert prompt.negative  # RealVisXL reads the approved content negative
+
     image = renderer.render(prompt, SEED)
     assert image.size == (WIDTH, HEIGHT) == (896, 1152)
-    tags = tagger([image])[0]
-    print("portrait:", _one_man(tags))
-    assert tags.rating == "general"
+    result = _men_check(tagger, image, 22)
+    assert result.rating == "general", result.failures
+    assert not [f for f in result.failures if f.startswith("content")], result.failures
     # Seeded: the same seed draws the same picture (allowing for GPU rounding).
     assert _difference(renderer.render(prompt, SEED), image) < 2.0
 
     detailed = renderer.detail(image, prompt, SEED, size=(1344, 1728))
     assert detailed.size == (1344, 1728)
     assert crop_to_aspect(detailed).size == (1296, 1728)  # the 3:4 master
-    assert tagger([detailed])[0].rating == "general"
+    assert _men_check(tagger, detailed, 22).rating == "general"
 
 
 def test_reference_picture(gpu: tuple[Any, Any]) -> None:
@@ -139,9 +165,8 @@ def test_reference_picture(gpu: tuple[Any, Any]) -> None:
     again = renderer.render(prompt, SEED, reference)
     assert _difference(again, referenced) < 2.0  # seeded with a reference too
     assert _difference(referenced, plain) > 0.5  # the reference changes the picture
-    tags = tagger([referenced])[0]
-    print("with reference:", _one_man(tags))
-    assert tags.rating == "general"
+    result = _men_check(tagger, referenced, 22)
+    assert result.rating == "general", result.failures
 
     detailed = renderer.detail(referenced, prompt, SEED, reference, size=(1344, 1728))
     assert detailed.size == (1344, 1728)

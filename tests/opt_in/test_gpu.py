@@ -76,6 +76,44 @@ def test_render_check_and_detail(gpu: tuple[Any, Any], case: tuple[Any, Any, Any
     assert crop_to_aspect(detailed).size == (1296, 1728)  # the 3:4 master
 
 
+def test_a_man_through_the_mens_check(gpu: tuple[Any, Any]) -> None:
+    """A man as the worker prompts Animagine for him: his seeded sheet in tags at his age, in
+    his shoot's kit (core/style.py), judged by the men's check (Phase 15h, 15k)."""
+    from facegen import qc
+    from facegen.core.man_traits import sample_man_sheet
+    from facegen.core.shoot import shoot_for
+    from facegen.core.style import portrait_prompt, shoot_hair
+    from facegen.core.traits import sample_sheet
+    from facegen.datasource.kits import Kit
+
+    renderer, tagger = gpu
+    age = 24
+    sheet = sample_sheet("gpu-test", 1, 1)
+    man = sample_man_sheet("gpu-test", 1, 1, nation=116)  # Japan: an East Asian look
+    kit = Kit(shirt=("blue", "white"), pattern="stripes", shorts="blue")
+    shoot = shoot_for(kit, shoot_hair(sheet, man, age), sheet.base_seed, 1, age=age)
+    prompt = portrait_prompt(
+        "animagine",
+        "man",
+        sheet=sheet,
+        man=man,
+        wording="W07",
+        age=age,
+        wear=shoot.wear,
+        pose=shoot.pose,
+        backdrop=shoot.backdrop,
+    )
+    assert prompt is not None and prompt.positive.startswith("1boy, solo, male focus")
+    assert "shirtless" in prompt.negative  # the approved anime men's content negative
+
+    image = renderer.render(prompt, sheet.base_seed)
+    tags = tagger([image])[0]
+    result = qc.check(tags, qc.man_expectation(man, age, shoot.wear), qc.head_top(image))
+    print("man:", result.to_json(tags) | {"tags": None})
+    assert result.rating == "general", result.failures
+    assert not [f for f in result.failures if f.startswith("content")], result.failures
+
+
 def test_reference_picture(gpu: tuple[Any, Any], case: tuple[Any, Any, Any]) -> None:
     """IP-Adapter loads on the first reference, draws with it, and switches out again so a
     picture without a reference is the plain model's."""
