@@ -20,8 +20,9 @@ if TYPE_CHECKING:
 
 MODEL_REPO = "cagliostrolab/animagine-xl-4.0"
 WIDTH, HEIGHT = 896, 1152
-"""The render size: Animagine's portrait size nearest 3:4 (its model card lists 896x1152),
-about SDXL's native million pixels. The master is cropped to exactly 3:4 (864x1152)."""
+"""The 3:4 render size: Animagine's portrait size nearest 3:4 (its model card lists 896x1152),
+about SDXL's native million pixels. The master is cropped to exactly 3:4 (864x1152). A square
+picture renders at 1024x1024 (`picture.aspect`, settings_values.RENDER_SIZES; Phase 16g)."""
 STEPS = 28
 CFG = 5.5
 SAMPLER = "euler_a"
@@ -106,7 +107,16 @@ class Reference:
 class Renderer(Protocol):
     model: str
 
-    def render(self, prompt: Prompt, seed: int, reference: Reference | None = None) -> Image: ...
+    def render(
+        self,
+        prompt: Prompt,
+        seed: int,
+        reference: Reference | None = None,
+        *,
+        size: tuple[int, int] = (WIDTH, HEIGHT),
+    ) -> Image:
+        """A picture `size` (width, height) pixels: 896x1152 for 3:4, 1024x1024 for 1:1."""
+        ...
 
     def detail(
         self,
@@ -425,7 +435,14 @@ class SdxlRenderer:
         finally:
             matmul.allow_fp16_accumulation = before
 
-    def render(self, prompt: Prompt, seed: int, reference: Reference | None = None) -> Image:
+    def render(
+        self,
+        prompt: Prompt,
+        seed: int,
+        reference: Reference | None = None,
+        *,
+        size: tuple[int, int] = (WIDTH, HEIGHT),
+    ) -> Image:
         pe, pp, ne, npool, _ = self._embeddings(prompt)
         extra = self._conditioning(reference)
         generator = self._torch.Generator("cuda").manual_seed(seed)
@@ -435,8 +452,8 @@ class SdxlRenderer:
                 pooled_prompt_embeds=pp,
                 negative_prompt_embeds=ne,
                 negative_pooled_prompt_embeds=npool,
-                width=WIDTH,
-                height=HEIGHT,
+                width=size[0],
+                height=size[1],
                 num_inference_steps=self.spec.steps,
                 guidance_scale=self.spec.cfg,
                 generator=generator,

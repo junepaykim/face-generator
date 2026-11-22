@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from facegen.core.domain import ACTIVE_JOB_STATUSES, JOB_KINDS, JOB_STATUSES
 
@@ -358,8 +360,48 @@ ALTER TABLE traits ADD COLUMN man_sheet TEXT;
 """
 
 
+# Phase 16: league-share cutoffs and picture shapes.
+# clubs.reputation: the club's reputation (1-10000) as last read. clubs.league_id: the league on
+# my nation's ladder the club belongs to (core/leagues.py); league_offset: how many levels that
+# league is above mine (1 the league above, -1 below, 0 mine or a parallel division); NULL off
+# the ladder.
+# league_stats: per career and scope ('league', 'above', 'below', 'continental'), the
+# competitions found and the candidates' CA and PA histograms (JSON lists of 201 counts),
+# newgens and photo-less players apart, as the last sync read them.
+# images.aspect: the shape a picture was drawn in. Every earlier picture is 3:4, including the
+# pre-V5 squares already published as 3:4 crops.
+_V14 = """
+ALTER TABLE clubs ADD COLUMN reputation INTEGER;
+ALTER TABLE clubs ADD COLUMN league_id INTEGER;
+ALTER TABLE clubs ADD COLUMN league_offset INTEGER;
+CREATE TABLE league_stats (
+    career_id    INTEGER NOT NULL REFERENCES careers(id),
+    scope        TEXT NOT NULL CHECK (scope IN ('league', 'above', 'below', 'continental')),
+    competitions TEXT NOT NULL,            -- JSON list of competition IDs
+    newgen_ca    TEXT NOT NULL,            -- JSON list: candidates per value 0-200
+    newgen_pa    TEXT NOT NULL,
+    no_photo_ca  TEXT NOT NULL,
+    no_photo_pa  TEXT NOT NULL,
+    game_date    TEXT,
+    PRIMARY KEY (career_id, scope)
+);
+ALTER TABLE images ADD COLUMN aspect TEXT NOT NULL DEFAULT '3:4' CHECK (aspect IN ('3:4', '1:1'));
+"""
+
+
+# Phase 16: pictures are 1:1 by default (`picture.aspect`, user 2026-11-22). A database that
+# already holds pictures keeps drawing 3:4, so one career's pictures keep one shape: it gets the
+# old default as its own setting, unless it has one.
+_V15 = """
+INSERT INTO settings (key, value, updated_at)
+SELECT 'picture.aspect', '"3:4"', strftime('%Y-%m-%dT%H:%M:%S+00:00', 'now')
+WHERE EXISTS (SELECT 1 FROM images)
+  AND NOT EXISTS (SELECT 1 FROM settings WHERE key = 'picture.aspect');
+"""
+
+
 MIGRATIONS: tuple[str, ...] = (
-    _V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10, _V11, _V12, _V13
+    _V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10, _V11, _V12, _V13, _V14, _V15
 )  # fmt: skip
 
 # The active career: the one whose save was written last (spec section 8). A career synced
@@ -388,62 +430,136 @@ def migrate(conn: sqlite3.Connection) -> int:
     return schema_version(conn)
 
 
-# Rename settings at every connect without raising the schema version: older installations
-# may share this database. They warn and skip unknown keys but reject newer schemas.
-RENAMED_SETTINGS = {
-    f"groups.{g}.detail_pass": (f"groups.{g}.detail_size", {True: "1344x1728", False: "off"})
-    for g in ("a", "b", "c")
+# Rename or convert settings at every connect without raising the schema version: older
+# installations may share this database. They warn and skip unknown keys but reject newer schemas.
+
+
+def _at_least(value: Any) -> Any:
+    """An old "strictly above" number N as "at least" N+1, so the same people stay picked
+    (Phase 16); above 200 picks nobody, so 200 becomes "-"."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return value
+    return value + 1 if value < 200 else "-"
+
+
+_OLD_DETAIL = {"1344x1728": "x1.5", "1152x1472": "smaller"}
+
+
+@dataclass(frozen=True, slots=True)
+class Conversion:
+    """An old setting and the key and value it becomes."""
+
+    new_key: str
+    convert: Callable[[Any], Any]
+    old_values: tuple[Any, ...] = ()
+    """For a conversion that keeps its key: the old values that need converting."""
+
+
+CONVERTED_SETTINGS: dict[str, Conversion] = {
+    **{
+        f"groups.{g}.detail_pass": Conversion(
+            f"groups.{g}.detail_size", lambda v: {True: "x1.5", False: "off"}.get(v)
+        )
+        for g in ("a", "b", "c")
+    },
+    **{
+        f"groups.{g}.detail_size": Conversion(
+            f"groups.{g}.detail_size", lambda v: _OLD_DETAIL.get(v, v), tuple(_OLD_DETAIL)
+        )
+        for g in ("a", "b", "c")
+    },
+    "groups.a.ca_above": Conversion("cutoffs.everywhere.a_ca", _at_least),
+    "groups.a.pa_above": Conversion("cutoffs.everywhere.a_pa", _at_least),
+    "groups.b.any_ca_above": Conversion("cutoffs.everywhere.b_ca", _at_least),
+    "groups.b.any_pa_above": Conversion("cutoffs.everywhere.b_pa", _at_least),
+    "groups.b.league_ca_above": Conversion("cutoffs.manual.b_ca", _at_least),
+    "groups.b.league_pa_above": Conversion("cutoffs.manual.b_pa", _at_least),
+    "groups.c.league_ca_above": Conversion("cutoffs.manual.c_ca", _at_least),
+    "groups.c.league_pa_above": Conversion("cutoffs.manual.c_pa", _at_least),
+    "groups.b.my_academy": Conversion("cutoffs.my_club.academy_alumni", lambda v: v),
+    "youth.enabled": Conversion(
+        "cutoffs.my_club.youth", lambda v: {True: "b", False: "a"}.get(v, v)
+    ),
+    "cutoffs.adjacent_light": Conversion("cutoffs.light_below", lambda v: v),
 }
-"""Old key to (new key, value map). The old detail-pass switch used 1344x1728 when on."""
+"""Old key to what it becomes. The detail-pass switch used 1344x1728 when on (now "x1.5").
+Phase 16: thresholds "strictly above" N became "at least" N+1, group A's and B's "any club"
+numbers the global cuts, the league numbers the manual set; `youth.enabled` off put the youth
+teams in A with the first team. The one switch for the leagues above and below became two
+(user, 2026-11-22): the league above's is on by default, so the old switch carries over to the
+league below's."""
+RENAMED_SETTINGS = CONVERTED_SETTINGS
+"""The earlier name of CONVERTED_SETTINGS."""
+
+
+def _history_marks() -> tuple[str, list[str]]:
+    """A WHERE clause finding history entries that hold an old key or an old value."""
+    likes: list[str] = []
+    for old_key, c in CONVERTED_SETTINGS.items():
+        if c.new_key != old_key:
+            likes.append(f'%"{old_key}"%')
+        else:
+            likes += [f'%"{old_key}": {json.dumps(v)}%' for v in c.old_values]
+    clause = " OR ".join("before LIKE ? OR after LIKE ?" for _ in likes)
+    return clause, [x for like in likes for x in (like, like)]
+
+
+def _stale_override(key: str, value: Any) -> bool:
+    c = CONVERTED_SETTINGS.get(key)
+    if c is None:
+        return False
+    return c.new_key != key or value in c.old_values
 
 
 def rename_settings(conn: sqlite3.Connection) -> int:
-    """Rename old setting keys in the overrides and in the settings history; return how many
-    overrides changed. A quick read first: with nothing to rename, nothing is written, so a
-    connection takes no write lock for it. An old key written again later (by an older facegen)
-    replaces the new one, as the later change."""
-    old_keys = list(RENAMED_SETTINGS)
-    marks = " OR ".join("before LIKE ? OR after LIKE ?" for _ in old_keys)
-    likes = [f'%"{k}"%' for k in old_keys for _ in (0, 1)]
-    found = conn.execute(
-        f"SELECT 1 FROM settings WHERE key IN ({', '.join('?' * len(old_keys))})"
-        f" UNION ALL SELECT 1 FROM settings_history WHERE {marks} LIMIT 1",
-        [*old_keys, *likes],
+    """Rename or convert old settings in the overrides and in the settings history; return
+    how many overrides changed. A quick read first: with nothing to convert, nothing is written,
+    so a connection takes no write lock for it. An old key written again later (by an older
+    facegen) replaces the new one, as the later change. History entries are converted the same
+    way, so Undo still works across the change."""
+    old_keys = list(CONVERTED_SETTINGS)
+    marks, likes = _history_marks()
+    candidates = conn.execute(
+        f"SELECT key, value FROM settings WHERE key IN ({', '.join('?' * len(old_keys))})",
+        old_keys,
+    ).fetchall()
+    stale = [r for r in candidates if _stale_override(r[0], json.loads(r[1]))]
+    history = conn.execute(
+        f"SELECT 1 FROM settings_history WHERE {marks} LIMIT 1", likes
     ).fetchone()
-    if found is None:
+    if not stale and history is None:
         return 0
     changed = 0
     with transaction(conn):
-        for old_key, (new_key, values) in RENAMED_SETTINGS.items():
+        for old_key, c in CONVERTED_SETTINGS.items():
             row = conn.execute(
                 "SELECT value, updated_at FROM settings WHERE key = ?", (old_key,)
             ).fetchone()
-            if row is not None:
-                old_value = json.loads(row[0])
+            if row is not None and _stale_override(old_key, json.loads(row[0])):
+                new_value = c.convert(json.loads(row[0]))
                 conn.execute("DELETE FROM settings WHERE key = ?", (old_key,))
-                if isinstance(old_value, bool):
+                if new_value is not None:
                     conn.execute(
                         "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)"
                         " ON CONFLICT (key) DO UPDATE SET value = excluded.value,"
                         " updated_at = excluded.updated_at",
-                        (new_key, json.dumps(values[old_value]), row[1]),
+                        (c.new_key, json.dumps(new_value), row[1]),
                     )
                 changed += 1
-            for entry in conn.execute(
-                "SELECT id, before, after FROM settings_history WHERE before LIKE ? OR after LIKE ?",
-                (f'%"{old_key}"%', f'%"{old_key}"%'),
-            ).fetchall():
-                sides = []
-                for text in (entry[1], entry[2]):
-                    side = json.loads(text)
-                    if old_key in side:
+        rows = conn.execute(f"SELECT id, before, after FROM settings_history WHERE {marks}", likes)
+        for entry in rows.fetchall():
+            sides = []
+            for text in (entry[1], entry[2]):
+                side = json.loads(text)
+                for old_key, c in CONVERTED_SETTINGS.items():
+                    if old_key in side and (c.new_key != old_key or side[old_key] in c.old_values):
                         value = side.pop(old_key)
-                        side[new_key] = values.get(value) if isinstance(value, bool) else None
-                    sides.append(json.dumps(side))
-                conn.execute(
-                    "UPDATE settings_history SET before = ?, after = ? WHERE id = ?",
-                    (*sides, entry[0]),
-                )
+                        side[c.new_key] = None if value is None else c.convert(value)
+                sides.append(json.dumps(side))
+            conn.execute(
+                "UPDATE settings_history SET before = ?, after = ? WHERE id = ?",
+                (*sides, entry[0]),
+            )
     return changed
 
 

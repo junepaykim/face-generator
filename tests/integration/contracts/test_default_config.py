@@ -13,49 +13,82 @@ def load() -> dict:
         return tomllib.load(f)
 
 
-def test_three_groups_with_valid_thresholds():
+def test_three_groups_draw_and_the_cutoffs_pick():
+    """Phase 16 (user, 2026-11-20): a group keeps how it is drawn (height, candidates, detail
+    pass); who is in it is [cutoffs]."""
     groups = load()["groups"]
     assert set(groups) == {"a", "b", "c"}
     for name, group in groups.items():
-        thresholds = {k: v for k, v in group.items() if k.endswith("_above")}
-        assert thresholds, f"group {name} has no thresholds"
-        for key, value in thresholds.items():
-            assert isinstance(value, int) and 1 <= value <= 200, f"{name}.{key}"
+        assert set(group) == {"published_long_edge", "candidates", "detail_size"}, name
+    cutoffs = load()["cutoffs"]
+    cells = ("a_ca", "a_pa", "b_ca", "b_pa", "c_ca", "c_pa")
+    others = ("above_b_ca", "above_c_ca", "below_c_ca", "continental_b_ca")
+    assert set(cutoffs["share"]) == {*cells, *others}
+    assert set(cutoffs["manual"]) == set(cells) == set(cutoffs["everywhere"])
+    for key, value in cutoffs["share"].items():
+        assert value == "-" or (isinstance(value, float) and 0.1 <= value <= 100), key
+    for kind in ("manual", "everywhere"):
+        for key, value in cutoffs[kind].items():
+            assert value == "-" or (isinstance(value, int) and 1 <= value <= 200), (kind, key)
 
 
-def test_default_bars_descend_from_a_to_c():
-    g = load()["groups"]
-    ca = [
-        g["a"]["ca_above"],
-        g["b"]["any_ca_above"],
-        g["b"]["league_ca_above"],
-        g["c"]["league_ca_above"],
-    ]
-    pa = [
-        g["a"]["pa_above"],
-        g["b"]["any_pa_above"],
-        g["b"]["league_pa_above"],
-        g["c"]["league_pa_above"],
-    ]
-    assert ca == sorted(ca, reverse=True) and len(set(ca)) == len(ca)
-    assert pa == sorted(pa, reverse=True) and len(set(pa)) == len(pa)
+def test_the_users_cutoff_table():
+    """The user's table (2026-11-20, "at least" 2026-11-21, new numbers 2026-11-22): Detailed my
+    league CA or PA top 2.5%, everywhere CA 165 or PA 180; Standard my league CA or PA top 12%,
+    the league above CA top 15%, a continental competition CA top 30%, everywhere CA 145 or PA
+    160; Light my league CA top 80%, the league above CA top 50% (on) and the league below CA top
+    50% (off), each its own switch; no global cut."""
+    c = load()["cutoffs"]
+    assert c["mode"] == "auto"
+    assert (c["light_above"], c["light_below"]) == (True, False)
+    assert "adjacent_light" not in c
+    assert c["share"] == {
+        "a_ca": 2.5, "a_pa": 2.5, "b_ca": 12.0, "b_pa": 12.0, "c_ca": 80.0, "c_pa": "-",
+        "above_b_ca": 15.0, "above_c_ca": 50.0, "below_c_ca": 50.0, "continental_b_ca": 30.0,
+    }  # fmt: skip
+    assert c["everywhere"] == {
+        "a_ca": 165, "a_pa": 180, "b_ca": 145, "b_pa": 160, "c_ca": "-", "c_pa": "-",
+    }  # fmt: skip
+    assert c["my_club"] == {
+        "first_team": "a", "youth": "b", "loans": "b", "academy_alumni": True,
+    }  # fmt: skip
+
+
+def test_default_cuts_descend_from_a_to_c():
+    c = load()["cutoffs"]
+    everywhere = [c["everywhere"][k] for k in ("a_ca", "b_ca")]
+    assert everywhere == sorted(everywhere, reverse=True) and len(set(everywhere)) == 2
+    everywhere = [c["everywhere"][k] for k in ("a_pa", "b_pa")]
+    assert everywhere == sorted(everywhere, reverse=True) and len(set(everywhere)) == 2
+    shares = [c["share"][k] for k in ("a_ca", "b_ca", "c_ca")]
+    assert shares == sorted(shares) and len(set(shares)) == 3  # a wider share picks more
+    manual = [c["manual"][k] for k in ("b_ca", "c_ca")]
+    assert manual == sorted(manual, reverse=True)
+    manual = [c["manual"][k] for k in ("b_pa", "c_pa")]
+    assert manual == sorted(manual, reverse=True)
 
 
 def test_academy_newgens_fall_back_to_group_b():
-    g = load()["groups"]
-    assert "my_academy" not in g["a"]
-    assert g["b"]["my_academy"] is True
+    assert load()["cutoffs"]["my_club"]["academy_alumni"] is True
+    assert "my_academy" not in load()["groups"]["b"]
 
 
 def test_age_tables_match_spec():
     """Spec section 3: first real age per wording, per table (user, 2026-11-11). Every table
     offers all ten wordings, "-" for one it leaves out; W06 back at my club at 26, W05 from 24
-    (user, 2026-11-17)."""
+    (user, 2026-11-17). My club's staff spread looks over an age span instead (Phase 16f): W02 to
+    W10 over 28 to 64, on by default (user, 2026-11-22); the manual table stays below it."""
+    looks = {f"W{n:02d}" for n in range(1, 11)}
+    tables = load()["age"]
     age = {
-        table: {w: first for w, first in rows.items() if first != "-"}
-        for table, rows in load()["age"].items()
+        table: {w: first for w, first in rows.items() if w in looks and first != "-"}
+        for table, rows in tables.items()
     }
-    assert all(len(rows) == 10 for rows in load()["age"].values())
+    assert all(len([w for w in rows if w in looks]) == 10 for rows in tables.values())
+    assert {k: v for k, v in tables["staff"].items() if k not in looks} == {
+        "mode": "auto", "from": "W02", "to": "W10", "start": 28, "end": 64,
+    }  # fmt: skip
+    assert all(set(rows) == looks for name, rows in tables.items() if name != "staff")
     assert age == {
         "a_my_club": {"W01": 15, "W02": 17, "W03": 19, "W04": 22, "W05": 24, "W06": 26,
                       "W07": 27, "W08": 29, "W09": 31, "W10": 34},
@@ -73,10 +106,18 @@ def test_age_tables_match_spec():
 
 
 def test_youth_and_media_are_drawn_by_default():
-    """User, 2026-11-13: my club's youth teams at group B, journalists and press officers."""
+    """User, 2026-11-13: my club's youth teams at group B, journalists and press officers.
+    Since Phase 16 the youth teams' group is `cutoffs.my_club.youth`."""
     d = load()
-    assert d["youth"] == {"enabled": True}
+    assert "youth" not in d
+    assert d["cutoffs"]["my_club"]["youth"] == "b"
     assert d["media"] == {"journalists": True, "press_officers": True}
+
+
+def test_pictures_are_1_by_1_by_default():
+    """Phase 16g: 1:1 is a choice beside 3:4 (user, 2026-11-11), and the default since
+    2026-11-22 (user); a database that already holds pictures keeps 3:4 (migration 15)."""
+    assert load()["picture"] == {"aspect": "1:1"}
 
 
 def test_paths_name_no_windows_user():

@@ -50,7 +50,7 @@ def test_the_presets_change_only_picture_settings() -> None:
         "groups.a.detail_size": "off",
         "render.vae_tiling": True,
     }
-    assert MEDIUM.changes["groups.a.detail_size"] == "1152x1472"
+    assert MEDIUM.changes["groups.a.detail_size"] == "smaller"
 
 
 def test_the_high_preset_is_the_defaults() -> None:
@@ -189,7 +189,7 @@ def test_facegen_hardware(monkeypatch: pytest.MonkeyPatch) -> None:
     code = cmd_hardware(argparse.Namespace(json=False), out, detect=lambda: card, current=current)
     text = out.getvalue()
     assert code == 0 and "Fake 8 GB, 8.0 GiB" in text and "under 10 GB" in text
-    assert "would change groups.a.detail_size: 1344x1728 -> off" in text
+    assert "would change groups.a.detail_size: x1.5 -> off" in text
     out = io.StringIO()
     assert cmd_hardware(argparse.Namespace(json=True), out, detect=lambda: card) == 0
     assert Hardware.from_json(json.loads(out.getvalue())) == card

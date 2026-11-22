@@ -11,10 +11,11 @@ from typing import Any
 
 from facegen.core.age import age_wording
 from facegen.core.classify import Classification, Group, PlayerFacts, Rules, classify
+from facegen.core.cutoffs import Cutoffs, effective_cutoffs
 from facegen.core.domain import ACTIVE_JOB_STATUSES
 from facegen.core.planner import ImageState, JobState, Plan, PlayerPlanState, plan
 from facegen.core.settings_values import Settings
-from facegen.persistence import photo_index
+from facegen.persistence import league_stats, photo_index
 from facegen.persistence.db import transaction
 from facegen.persistence.jobs import apply_plan
 
@@ -70,6 +71,12 @@ def image_state(r: sqlite3.Row) -> ImageState:
     return ImageState(Group(r["group_name"]), r["club_id"], r["age_band"])
 
 
+def cutoffs_for(conn: sqlite3.Connection, career_id: int | None, settings: Settings) -> Cutoffs:
+    """The numbers in force for a career: the settings over its last sync's candidates."""
+    stats = league_stats.load(conn, career_id) if career_id is not None else {}
+    return effective_cutoffs(settings.cutoffs, stats, no_photo=settings.no_photo.enabled)
+
+
 def _classify(
     conn: sqlite3.Connection, career_id: int, settings: Settings
 ) -> tuple[PlanResult, list[tuple[Any, ...]]]:
@@ -106,13 +113,20 @@ def _classify(
     photos_known = photo_status is not None and photo_status.game_known
 
     rules = Rules.of(settings)
+    cuts = cutoffs_for(conn, career_id, settings)
+    managed = conn.execute(
+        "SELECT managed_club_id FROM careers WHERE id = ?", (career_id,)
+    ).fetchone()
+    my_club = managed[0] if managed is not None else None
     classifications: dict[int, Classification] = {}
     changed: list[tuple[Any, ...]] = []
     moved: list[Move] = []
     states: list[PlayerPlanState] = []
     for r in conn.execute(
-        "SELECT p.*, ph.unique_id IS NOT NULL AS has_photo FROM players p"
-        " LEFT JOIN photos ph ON ph.unique_id = p.unique_id WHERE p.career_id = ?",
+        "SELECT p.*, ph.unique_id IS NOT NULL AS has_photo, c.league_offset FROM players p"
+        " LEFT JOIN photos ph ON ph.unique_id = p.unique_id"
+        " LEFT JOIN clubs c ON c.career_id = p.career_id AND c.club_id = p.club_id"
+        " WHERE p.career_id = ?",
         (career_id,),
     ):
         uid = r["unique_id"]
@@ -135,8 +149,14 @@ def _classify(
                 youth=bool(r["youth_team"]),
                 media=r["media_role"],
                 local_media=bool(r["local_media"]),
+                league_offset=r["league_offset"],
+                loaned_out=(
+                    my_club is not None
+                    and r["loan_parent_club_id"] == my_club
+                    and r["club_id"] != my_club
+                ),
             )
-            c = classify(facts, settings.groups, rules)
+            c = classify(facts, cuts, rules)
         else:
             gone = "no longer on my club's staff" if staff else "not in the latest save"
             c = Classification(None, False, (gone,))

@@ -7,12 +7,14 @@ from factories import ABROAD, RIVAL, facts, snapshot, staff_member
 from support.fmsave import UID_MAP, coded, fm_staff
 
 from facegen.core.classify import Group, Rules, classify
+from facegen.core.cutoffs import effective_cutoffs
 from facegen.core.traits import sample_sheet
 from facegen.core.wardrobe import role_for
 from facegen.datasource.fmsave_source import convert_staff
 from facegen.datasource.kits import load_kits
 from facegen.datasource.photos import PhotoIndex, PhotoScan
 from facegen.persistence.jobs import JobFilter, allocate_sheet, claim, load_career, queued_jobs
+from facegen.persistence.settings import load_settings
 from facegen.pipeline.sync import run_sync
 from facegen.pipeline.worker import Worker
 
@@ -35,6 +37,9 @@ def test_read_only_my_staff_and_league_first_team_managers():
     assert [(r.unique_id, r.club_id) for r in records] == [(1, 1010), (2, 1011)]
 
 
+CUTS = effective_cutoffs(load_settings().cutoffs, None)
+
+
 @pytest.mark.parametrize("photo", [True, False, None])
 @pytest.mark.parametrize("newgen", [True, False])
 def test_manager_requires_known_absence_of_any_photo(settings, photo, newgen):
@@ -47,12 +52,12 @@ def test_manager_requires_known_absence_of_any_photo(settings, photo, newgen):
         ca=199,
         pa=200,
     )
-    result = classify(manager, settings.groups)
+    result = classify(manager, CUTS)
     assert result.group == (Group.C if photo is False else None)
     assert not result.tracked
-    assert classify(replace(manager, at_my_club=True), settings.groups).group is Group.A
-    assert classify(replace(manager, pin="never"), settings.groups).group is None
-    assert classify(manager, settings.groups, Rules(staff=False)).group is None
+    assert classify(replace(manager, at_my_club=True), CUTS).group is Group.A
+    assert classify(replace(manager, pin="never"), CUTS).group is None
+    assert classify(manager, CUTS, Rules(staff=False)).group is None
 
 
 def test_sync_manager_photo_and_league_transitions(conn, settings):

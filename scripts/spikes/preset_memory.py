@@ -58,11 +58,11 @@ def one_cap(
     import torch
 
     from facegen.core.man_traits import sample_man_sheet
+    from facegen.core.settings_values import detail_size
     from facegen.core.shoot import DEFAULT_BACKDROP
     from facegen.core.style import portrait_prompt
     from facegen.core.traits import sample_sheet
     from facegen.datasource.kits import Kit
-    from facegen.persistence.settings import DETAIL_SIZES
     from facegen.pipeline.worker import Reference
     from facegen.render import quality_checks as qc
     from facegen.render.picture import crop_to_aspect, face_box
@@ -84,7 +84,7 @@ def one_cap(
     for k, name in enumerate(presets):
         preset = by_name[name]
         candidates = preset.changes["groups.a.candidates"]
-        size = DETAIL_SIZES[preset.changes["groups.a.detail_size"]]
+        size = detail_size(preset.changes["groups.a.detail_size"], "3:4")
         renderer.set_vae_tiling(preset.changes["render.vae_tiling"])
         age = AGES[k % 3]
         prompt = portrait_prompt(

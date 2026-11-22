@@ -61,10 +61,10 @@ def test_basic_holds_who_quality_and_when_and_advanced_holds_everything(
         "notifications.new_pictures",
     ):  # fmt: skip
         assert f'name="{key}" data-key' in page, key
-    assert 'name="groups.a.ca_above"' not in page and "About this run" not in page
+    assert 'name="cutoffs.everywhere.a_ca"' not in page and "About this run" not in page
     assert 'href="/settings/basic" class="on" aria-current="page">Basic' in page
     advanced = client.get("/settings/advanced").text
-    assert 'name="groups.a.ca_above"' in advanced and "Recent changes" in advanced
+    assert 'name="cutoffs.everywhere.a_ca"' in advanced and "Recent changes" in advanced
     assert 'href="/settings/advanced" class="on" aria-current="page">Advanced' in advanced
     korean = unescape(client.get("/settings/basic", headers=KOREAN_WINDOWS).text)
     for text in ("그림 대상", "다른 구단 선수", "적게", "보통", "많이", "그림 품질", "메모리 절약"):
@@ -80,7 +80,10 @@ def test_a_preset_is_one_named_change_that_one_undo_reverts(
     assert data["message"].startswith("Saved: Players at other clubs: More. ")
     assert "Standard 0 → 1" in data["message"]  # the rival newgen now qualifies
     now = values(config_file)
-    assert all(now[k] == defaults[k] - 10 for k in presets.REACH_KEYS)
+    more = presets.values_of("reach", "more", defaults)
+    assert all(now[k] == more[k] for k in presets.REACH_KEYS)
+    assert now["cutoffs.everywhere.a_ca"] == defaults["cutoffs.everywhere.a_ca"] - 10
+    assert now["cutoffs.share.b_ca"] == defaults["cutoffs.share.b_ca"] * 1.5
     advanced = unescape(client.get("/settings/advanced").text)
     assert "· Players at other clubs: More" in advanced  # the history names the preset
     assert checked(client.get("/settings/basic").text, "reach") == ["more"]
@@ -95,7 +98,7 @@ def test_a_preset_is_one_named_change_that_one_undo_reverts(
 
 
 def test_a_threshold_set_by_hand_shows_no_preset(client: TestClient) -> None:
-    assert client.post("/settings/save", data={"groups.b.any_pa_above": "149"}).json()["ok"]
+    assert client.post("/settings/save", data={"cutoffs.everywhere.b_pa": "149"}).json()["ok"]
     page = client.get("/settings").text
     assert checked(page, "reach") == []
     assert re.search(r'data-custom="reach"\s*>Set by hand in <a href="/settings/advanced">', page)
@@ -192,7 +195,7 @@ def test_without_the_script_basic_saves_what_it_shows(
     assert r.status_code == 303 and r.headers["location"].startswith("/settings?msg=")
     now = values(config_file)
     assert now["staff.enabled"] is True and now["media.journalists"] is False
-    assert now["groups.a.ca_above"] == 165 and now["render.vae_tiling"] is False
+    assert now["cutoffs.everywhere.a_ca"] == 175 and now["render.vae_tiling"] is False  # 165+10
 
 
 def test_the_quality_this_card_suits_is_marked(config_file: Path) -> None:
@@ -217,7 +220,7 @@ def test_the_settings_link_opens_the_level_shown_last_even_after_a_restart(
     assert advanced_on in client.get("/settings").text
     client.get("/gallery")  # another page in between
     page = client.get("/settings").text
-    assert advanced_on in page and 'name="groups.a.ca_above"' in page
+    assert advanced_on in page and 'name="cutoffs.everywhere.a_ca"' in page
     # A new run of the app on the same data folder.
     db_path = load_settings(defaults_path=config_file).paths.db_path
     again = client_for(config_file, db_path)

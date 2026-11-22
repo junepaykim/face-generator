@@ -10,36 +10,50 @@ from typing import Any
 from fastapi import Request
 from starlette.datastructures import FormData
 
+from facegen.core.age import WORDINGS
+from facegen.core.cutoffs import OFF
 from facegen.core.settings_values import (
+    ASPECT_CHOICES,
+    CUTOFF_MODES,
     DETAIL_SIZES,
     GENDER_CHOICES,
     LANGUAGE_CHOICES,
     MODEL_CHOICES,
     THEME_CHOICES,
+    TIER_CHOICES,
 )
 from facegen.i18n import ENGLISH, Translator
-from facegen.persistence.settings import SKIP_WORDING, is_age_wording, is_fixed
+from facegen.persistence.settings import SKIP_WORDING, is_age_wording, is_cut_cell, is_fixed
 from facegen.web.messages import band_name
 
-# The thresholds first: they are what the page is mostly for (spec section 7). Each section's
-# title is the catalog's "settings.title.<section>", its note "settings.note.<top section>"
-# (most sections have none: Phase 12 keeps the page short), its ⓘ tip "settings.tip.<top>".
+# Who is picked first: it is what the page is mostly for (spec section 7). Each section's title
+# is the catalog's "settings.title.<section>", its note "settings.note.<top section>" (most
+# sections have none: Phase 12 keeps the page short), its ⓘ tip "settings.tip.<top>".
 SECTION_ORDER = (
-    "groups", "staff", "youth", "media", "no_photo", "style", "age", "schedule", "display",
-    "notifications", "eligibility", "my_club", "body", "personality", "reference", "render", "updates",
-    "newgen",
+    "cutoffs", "groups", "picture", "staff", "media", "no_photo", "style", "age", "schedule",
+    "display", "notifications", "eligibility", "my_club", "body", "personality", "reference",
+    "render", "updates", "newgen",
 )  # fmt: skip
+TABS: dict[str, tuple[str, ...]] = {
+    "cutoffs": ("cutoffs",),
+    "quality": ("groups", "picture", "render", "style", "reference", "my_club", "body",
+                "personality"),
+    "targets": ("staff", "media", "no_photo"),
+    "ages": ("age",),
+    "system": ("schedule", "display", "notifications", "updates", "eligibility", "newgen"),
+}  # fmt: skip
+"""The Advanced page's tabs (Phase 16h, user 2026-11-20) and the top sections each holds:
+who is picked; how pictures are drawn; who else gets one; age looks; how facegen runs."""
+TAB_ANCHORS = {"about": "system", "folders": "system", "graphics-card": "quality"}
+"""Anchors from before the tabs, and the tab each opens (sections: their top section's tab)."""
 LABELLED_IN_FULL = frozenset(
     {
-        "groups.b.league_ca_above",
-        "groups.b.league_pa_above",
-        "groups.b.any_ca_above",
-        "groups.b.any_pa_above",
-        "groups.c.league_ca_above",
-        "groups.c.league_pa_above",
+        "cutoffs.mode",
+        "cutoffs.light_above",
+        "cutoffs.light_below",
+        "age.staff.mode",
         "staff.enabled",
         "no_photo.enabled",
-        "youth.enabled",
         "media.journalists",
         "media.press_officers",
         "reference.enabled",
@@ -58,9 +72,19 @@ CHOICES: dict[str, tuple[str, ...]] = {
     "theme": THEME_CHOICES,
     "model": MODEL_CHOICES,
     "gender": GENDER_CHOICES,
+    "mode": CUTOFF_MODES,
+    "aspect": ASPECT_CHOICES,
+    "first_team": TIER_CHOICES,
+    "youth": TIER_CHOICES,
+    "loans": TIER_CHOICES,
+    "from": tuple(WORDINGS),
+    "to": tuple(WORDINGS),
 }
 """Text settings with a fixed set of values, by the key's last part, shown as a drop-down list;
-each value's label is the catalog's "settings.choice.<name>.<value>"."""
+each value's label is the catalog's "settings.choice.<name>.<value>", a group's name for a tier
+and a look's name for a look."""
+TIER_KEYS = frozenset({"first_team", "youth", "loans"})
+LOOK_KEYS = frozenset({"from", "to"})
 
 GROUP_LIST_KEYS = frozenset({"schedule.auto_groups"})
 """Lists of picture groups, shown as one tick box per group."""
@@ -83,12 +107,20 @@ ADULT_WORDED_TABLES = frozenset({"age.staff", "age.media"})
 2026-11-14), so their tables show the band names without the players' prompt words."""
 
 
+def choice_label(name: str, value: str, t: Translator = ENGLISH) -> str:
+    if name in TIER_KEYS:
+        return t(f"group.{value}")
+    if name in LOOK_KEYS:
+        return band_name(value, t)
+    return t(f"settings.choice.{name}.{value}")
+
+
 def choices_of(key: str, t: Translator = ENGLISH) -> tuple[tuple[str, str], ...] | None:
     name = key.rpartition(".")[2]
     values = CHOICES.get(name)
     if values is None:
         return None
-    return tuple((value, t(f"settings.choice.{name}.{value}")) for value in values)
+    return tuple((value, choice_label(name, value, t)) for value in values)
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,15 +149,15 @@ class Field:
         """The default as the field holds it: what "use default" puts back."""
         if isinstance(self.default, bool):
             return "on" if self.default else ""
-        if isinstance(self.default, list):
-            return ", ".join(str(v) for v in self.default)
-        return str(self.default)
+        return input_text(self.default)
 
 
 def input_text(value: Any) -> str:
-    """A setting's value as its text field holds it."""
+    """A setting's value as its text field holds it; a whole share reads "6", not "6.0"."""
     if isinstance(value, list):
         return ", ".join(str(v) for v in value)
+    if isinstance(value, float):
+        return f"{value:g}"
     return str(value)
 
 
@@ -139,15 +171,23 @@ def value_text(value: Any, t: Translator = ENGLISH, key: str = "") -> str:
         return t("settings.value.on") if value else t("settings.value.off")
     if is_age_wording(key) and value == SKIP_WORDING:
         return t("settings.value.skip")
+    if is_cut_cell(key):
+        if value == OFF:
+            return t("settings.value.off")
+        if key.startswith("cutoffs.share."):
+            return t("settings.value.share", share=f"{float(value):g}")
+        return t("settings.value.at_least", value=value)
     name = key.rpartition(".")[2]
     if name in CHOICES and value in CHOICES[name]:
-        return t(f"settings.choice.{name}.{value}")
+        return choice_label(name, value, t)
     return str(value)
 
 
 def _kind(default: Any, key: str = "") -> str:
     if is_age_wording(key):
         return "band"
+    if is_cut_cell(key):
+        return "cell"
     if key in GROUP_LIST_KEYS:
         return "groups"
     if isinstance(default, bool):
@@ -267,11 +307,38 @@ def settings_sections(
     ]
 
 
+def tab_of(section: str) -> str:
+    """The Advanced page's tab holding a section ("age.staff" -> "ages")."""
+    top = section.split(".")[0]
+    return next((tab for tab, tops in TABS.items() if top in tops), "system")
+
+
+def tab_anchors() -> dict[str, str]:
+    """Anchor name (an old card's id, or a top section) to the tab that holds it, for the page's
+    script: `#about` or `#section-age-b` opens its tab."""
+    return TAB_ANCHORS | {top: tab for tab, tops in TABS.items() for top in tops}
+
+
+def settings_tabs(
+    sections: list[tuple[str, str, str, list[Field]]],
+) -> dict[str, list[tuple[str, str, str, list[Field]]]]:
+    """The sections of each tab, in page order."""
+    tabs: dict[str, list[tuple[str, str, str, list[Field]]]] = {tab: [] for tab in TABS}
+    for section in sections:
+        tabs[tab_of(section[0])].append(section)
+    return tabs
+
+
 def _typed(default: Any, text: str, key: str = "") -> Any:
     """Text from a field, typed as the default. ValueError if it does not fit."""
     kind = _kind(default, key)
     if kind == "band":  # a whole number, or "-" (or nothing) for a wording left out
         return SKIP_WORDING if text in ("", SKIP_WORDING) else int(text)
+    if kind == "cell":  # a share or a number, or "-" (or nothing) to switch the cell off
+        if text in ("", OFF):
+            return OFF
+        text = text.removesuffix("%").strip().replace(",", ".")
+        return float(text) if key.startswith("cutoffs.share.") else int(text)
     if kind == "groups":
         return [x.lower() for x in re.split(r"[,\s]+", text) if x]
     if kind in ("choice", "text"):  # a choice's value is checked with the settings
@@ -290,6 +357,8 @@ def _error(default: Any, t: Translator = ENGLISH, key: str = "") -> str:
     kind = _kind(default, key)
     if kind == "band":
         return t("settings.error.band")
+    if kind == "cell":
+        return t("settings.error.cell")
     return t("settings.error.whole_numbers" if kind == "list" else "settings.error.number")
 
 
@@ -306,7 +375,8 @@ def parse_settings_form(
         default = defaults[key]
         raw = form.get(key)
         if isinstance(default, bool):
-            values[key] = raw is not None
+            # A tick box sends "on"; the page's hidden "off" before it is sent either way.
+            values[key] = raw is not None and str(raw).strip().lower() not in _FALSE
             continue
         text = raw.strip() if isinstance(raw, str) else ""
         try:

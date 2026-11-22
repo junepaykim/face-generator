@@ -13,6 +13,7 @@ from starlette.concurrency import run_in_threadpool
 from facegen.core import presets
 from facegen.i18n import Translator
 from facegen.persistence import photo_index
+from facegen.persistence.jobs import load_career
 from facegen.persistence.settings import SettingsError, folder_not_set_message, load_defaults
 from facegen.pipeline import settings_history
 from facegen.pipeline.settings_history import Outcome
@@ -28,11 +29,19 @@ from facegen.web.forms import (
     parse_settings_changes,
     parse_settings_form,
     settings_sections,
+    settings_tabs,
+    tab_anchors,
     value_text,
 )
 from facegen.web.messages import report_summary, settings_error_text
 from facegen.web.presentation import Presentation
 from facegen.web.responses import _redirect, _safe_next
+from facegen.web.settings_view import live_parts
+
+LIVE_PARTS = {"tier-summary": "_tier_summary.html", "staff-looks": "_staff_looks.html"}
+"""The Advanced page's parts drawn again after each save (Phase 16e), by `data-part` name."""
+RELOAD_PREFIXES = ("display.", "cutoffs.mode", "age.staff.mode")
+"""Settings whose change redraws the page: its language or theme, or which fields it shows."""
 
 BASIC = "/settings/basic"
 ADVANCED = "/settings/advanced"
@@ -209,10 +218,17 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
         current = settings_now(conn)
         t = deps.translator(request, conn)
         shown = dict(current.values) | (values or {})
+        sections = settings_sections(shown, defaults, t)
+        career = load_career(conn)
         return page(
             request,
             "settings.html",
             conn,
+            tabs=settings_tabs(sections),
+            tab_anchors=tab_anchors(),
+            fields={f.key: f for _, _, _, fs in sections for f in fs},
+            card=deps.card.known(),
+            **live_parts(conn, current, career.id if career else None, t),
             info={
                 # Moved here from the dashboard (Phase 12): about this run, not the pictures.
                 "worker": ctx.worker.status() if ctx.worker else None,
@@ -221,7 +237,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             },
             update=deps.update_offer(),
             folders=folders_of(request, current),
-            sections=settings_sections(shown, defaults, t),
+            sections=sections,
             errors=errors or {},
             error=error,
             **history_context(conn, t),
@@ -333,7 +349,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                                 return settings_page(request, conn, values, errors=errors)
                             verb = "saved"
                             outcome = settings_history.save(
-                                conn, values, defaults_path=ctx.defaults_path
+                                conn, values, defaults_path=ctx.defaults_path, convert=True
                             )
                         case "apply-some":
                             # The Basic page without its script: only the fields it shows.
@@ -347,6 +363,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                                 chosen | values,
                                 label=labels[0] if labels and not values else "edit",
                                 defaults_path=ctx.defaults_path,
+                                convert=True,
                             )
                         case "defaults":
                             verb = "saved"
@@ -404,7 +421,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                 values = chosen | values
                 try:
                     outcome = settings_history.save(
-                        conn, values, label=label, defaults_path=ctx.defaults_path
+                        conn, values, label=label, defaults_path=ctx.defaults_path, convert=True
                     )
                 except SettingsError as exc:
                     message = str(exc)
@@ -422,15 +439,32 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                 t = deps.translator(request, conn)
                 if outcome.changed:
                     wake()
-                # The values as stored (lists lower-cased, numbers tidied), for the page to show.
+                # The values as stored (lists lower-cased, numbers tidied), for the page to show:
+                # those posted, and those a mode switch converted with them.
                 current = outcome.settings.values
+                touched = set(values) | {k for e in outcome.entries for k in e.after}
                 fields = {
                     key: {
                         "value": current[key],
                         "text": input_text(current[key]),
                         "changed": current[key] != defaults[key],
                     }
-                    for key in values
+                    for key in sorted(touched)
+                    if key in current
+                }
+                career = load_career(conn)
+                report = outcome.report
+                live = live_parts(
+                    conn,
+                    outcome.settings,
+                    career.id if career else None,
+                    t,
+                    before=report.before if report is not None and report.changed_total else None,
+                )
+                texts = presentation.texts(request, outcome.settings)
+                parts = {
+                    name: templates.get_template(file).render(**texts, **live)
+                    for name, file in LIVE_PARTS.items()
                 }
                 chosen_now = {
                     kind: presets.current(kind, current, defaults) for kind in presets.KINDS
@@ -443,11 +477,14 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                     {
                         "ok": True,
                         "changed": outcome.changed,
-                        "reload": any(k.startswith("display.") for k in values) and outcome.changed,
+                        "reload": any(k.startswith(RELOAD_PREFIXES) for k in values)
+                        and outcome.changed,
                         "message": outcome_message("saved", outcome, t)
                         if outcome.changed
                         else t("msg.settings.nothing"),
                         "fields": fields,
+                        "effective": live["cutoffs"].effective,
+                        "parts": parts,
                         "presets": chosen_now,
                         "history_html": history_html,
                         "can_undo": history["can_undo"],

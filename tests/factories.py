@@ -8,6 +8,7 @@ from datetime import date
 from facegen.core.classify import PlayerFacts
 from facegen.core.records import (
     ClubRecord,
+    CompetitionRules,
     Gender,
     LeagueTableRecord,
     MediaRecord,
@@ -174,6 +175,8 @@ def snapshot(
     staff_read: bool = True,
     media: Iterable[MediaRecord] = (),
     media_read: bool = True,
+    fixture_seasons: Mapping[int, int] | None = None,
+    competition_rules: CompetitionRules | None = None,
 ) -> Snapshot:
     if tables is None:
         tables = (
@@ -200,6 +203,8 @@ def snapshot(
         staff_read=staff_read,
         media=tuple(media),
         media_read=media_read,
+        fixture_seasons=dict(fixture_seasons or {}),
+        competition_rules=competition_rules,
     )
 
 
@@ -218,3 +223,34 @@ def facts(**kw: object) -> PlayerFacts:
     }
     base.update(kw)
     return PlayerFacts(**base)  # type: ignore[arg-type]
+
+
+MANUAL: dict[str, object] = {
+    "cutoffs.mode": "manual",
+    "cutoffs.everywhere.a_ca": 155,
+    "cutoffs.everywhere.a_pa": 170,
+    "cutoffs.everywhere.b_ca": 140,
+    "cutoffs.everywhere.b_pa": 155,
+    "age.staff.mode": "manual",
+    "picture.aspect": "3:4",
+}
+"""The overrides this small made-up world was written for: my league's cutoffs as numbers set
+by hand (Manual, Phase 16), the old thresholds as "at least" N+1 (my league B CA 131 or PA 151,
+C CA 116 or PA 141; everywhere A 155/170, B 140/155), my club's staff aged by the manual table
+and 3:4 pictures: the defaults before 2026-11-22. For tests about something other than league
+shares and those defaults, whose small world's leagues hold too few candidates for shares to
+read like numbers."""
+
+
+MANUAL_MODE: dict[str, object] = {"cutoffs.mode": "manual"}
+"""Only my league's cutoffs as numbers, every other default as it is: for the web pages, which
+show the defaults (Basic's presets among them)."""
+
+
+def manual_cutoffs(settings: object) -> object:
+    """The settings with the MANUAL overrides laid over them."""
+    from facegen.persistence.settings import build_settings
+
+    values = {**settings.values, **MANUAL}  # type: ignore[attr-defined]
+    overridden = settings.overridden | set(MANUAL)  # type: ignore[attr-defined]
+    return build_settings(values, overridden, settings.paths.origins)  # type: ignore[attr-defined]

@@ -22,12 +22,15 @@ data_dir = "data"
 
 [eligibility]
 mens_football_only = true
-# Competition editor-database IDs (fmsave's Competition.database_id, stable across saves) of
-# the men's Champions League, Europa League and Conference League. Not yet known: the save
-# examined in Phase 0.1 loads no European league (docs/research.md).
+# The continental competitions my club plays in are found from its first team's fixtures: the
+# Champions League (1301394), the Europa League (1301396) and the Conference League (31051584)
+# when it plays in their current edition (docs/research.md section 24), and any other
+# competition whose clubs are mostly from other nations, a few from each. This list, when not
+# empty, is used instead: competition editor-database IDs (fmsave's Competition.database_id,
+# stable across saves), of which the ones my club plays in count.
 continental_competition_ids = []
-# A player I have loaned out counts as "at my club" while I hold the contract.
-# Proposed answer to open question 3 in docs/decisions.md.
+# A player I have loaned out counts as "at my club" while I hold the contract: drawn in the
+# [cutoffs.my_club] loans group, tracked, and with my club's age looks.
 loaned_out_at_my_club = true
 
 [newgen]
@@ -41,46 +44,96 @@ fallback_min_unique_id = 2002000000
 # Fixed rules, not settings (docs/spec.md section 2):
 #   - every player at my club gets a picture, newgen or pre-existing;
 #   - elsewhere only newgens, and pre-existing players without a photo ([no_photo]), are
-#     picked automatically;
+#     picked automatically: the "candidates";
 #   - other pre-existing players elsewhere are generated only when picked in the UI;
 #   - group A players are tracked (their picture is re-drawn when they change club or
 #     age band). Groups set picture quality; tracking is separate (spec section 2).
 
-# "above" is strict: ca_above = 155 means CA of 156 or more.
-# Pictures are 3:4 portraits (user, 2026-11-11; decisions.md); published_long_edge is the
-# height in pixels: 1024 gives 768x1024.
-# CA and PA conditions are joined with OR.
+# How each group's pictures are drawn (Phase 16: who is in each group is [cutoffs]). The groups
+# are Detailed (a), Standard (b) and Light (c) in the UI.
+# published_long_edge is the height in pixels: 1024 gives 768x1024 for a 3:4 picture and
+# 1024x1024 for a square ([picture]).
+# detail_size: the chosen picture upscaled, re-drawn lightly and checked again. "x1.5" is 1.5
+# times the render (1344x1728 for 3:4, 1536x1536 for 1:1); "smaller" needs less graphics memory
+# (1152x1472, 1280x1280); "off" skips the pass. Pictures already drawn keep their size: a change
+# applies to pictures drawn from then on (Phase 10).
 
 [groups.a]
-ca_above = 155
-pa_above = 170
 published_long_edge = 1024
 candidates = 3
-# The detail pass: the chosen picture upscaled to this size (width x height), re-drawn lightly
-# and checked again. "1344x1728" is 1.5 times the render size (896x1152); "1152x1472" needs
-# less graphics memory; "off" skips the pass. Pictures already drawn keep their size: a change
-# applies to pictures drawn from then on (Phase 10).
-detail_size = "1344x1728"
+detail_size = "x1.5"
 
 [groups.b]
-# Newgens who came through my academy are in group A while at my club. After they
-# leave they fall back to group B and stay tracked for good. Set to false to treat
-# them like any other newgen.
-my_academy = true
-league_ca_above = 130               # my league or a listed continental competition
-league_pa_above = 150
-any_ca_above = 140                  # any club
-any_pa_above = 155
 published_long_edge = 768
 candidates = 1
 detail_size = "off"
 
 [groups.c]
-league_ca_above = 115               # my league only
-league_pa_above = 140
 published_long_edge = 512
 candidates = 1
 detail_size = "off"
+
+[cutoffs]
+# Who is picked for each group (user, 2026-11-20 and 2026-11-21; docs/spec.md section 2). Every
+# number means "at least" (155 is CA 155 or more). The candidates are the people the rules can
+# pick: newgens, and pre-existing players without a photo ([no_photo]). A share "top N%" of a
+# league: its candidates sorted by CA (or PA), and everyone at or above the value of the one at
+# rank ceil(N% x count), ties included. "-" switches a cell off. A player takes the highest
+# group any rule gives. Shares are measured again at every sync.
+# mode: "auto" uses [cutoffs.share] for my league; "manual" uses [cutoffs.manual]. The other
+# leagues' cells are shares in both modes; [cutoffs.everywhere] is numbers in both.
+mode = "auto"
+# The league above mine and the league below get Light (c) pictures by their share
+# (above_c_ca, below_c_ca), each with its own switch (user, 2026-11-22).
+light_above = true
+light_below = false
+
+[cutoffs.my_club]
+# The group each part of my club is drawn in: "a", "b" or "c". Youth teams (reserves, under-23s,
+# under-18s) and players I loaned out reach "a" by my league's or the global "a" cut. Everyone at
+# my club is tracked while there; loaned-out players while I hold the contract.
+first_team = "a"
+youth = "b"
+loans = "b"
+# Newgens who came through my academy stay in "b", tracked for good, after they leave.
+academy_alumni = true
+
+[cutoffs.share]
+# My league's cells in auto mode (percent, one decimal, or "-"). Detailed and Standard lowered
+# from 6/3% and 40/20% (user, 2026-11-22: "around top 2.5% and top 12%").
+a_ca = 2.5
+a_pa = 2.5
+b_ca = 12.0
+b_pa = 12.0
+c_ca = 80.0
+c_pa = "-"
+# The league above mine, the league below (each a level of my pyramid as the save's own rules
+# list it, else as club reputations order my nation's leagues; parallel divisions share a level)
+# and the continental competitions my club plays in.
+above_b_ca = 15.0
+above_c_ca = 50.0                   # only while light_above is on
+below_c_ca = 50.0                   # only while light_below is on
+continental_b_ca = 30.0
+
+[cutoffs.manual]
+# My league's cells in manual mode: at least this CA or PA (1-200), or "-". Switching modes on the
+# Settings page converts each cell from the latest save.
+a_ca = "-"
+a_pa = "-"
+b_ca = 131
+b_pa = 151
+c_ca = 116
+c_pa = 141
+
+[cutoffs.everywhere]
+# At any club, whatever the league: at least this CA or PA (1-200), or "-". Raised from 155/170
+# and 140/155 (user, 2026-11-22: Detailed higher, Standard slightly).
+a_ca = 165
+a_pa = 180
+b_ca = 145
+b_pa = 160
+c_ca = "-"
+c_pa = "-"
 
 [staff]
 # My club's staff (coaches, physios, scouts, analysts, the board, and the manager: you) get
@@ -90,13 +143,6 @@ detail_size = "off"
 # playing kit, and their age wording comes from [age.staff]. Staff at other clubs are not
 # read. Pin a person to "never" on their page to leave them out. Requested by the user,
 # 2026-11-12 (docs/spec.md section 2). Everyone is drawn as a woman (user, 2026-11-14).
-enabled = true
-
-[youth]
-# Players in my club's teams other than the first team (reserves, under-23s, under-18s) are
-# in group B, or group A when their CA or PA reaches group A's thresholds, and group A once
-# they are moved to the first team, which re-draws them at A quality (user, 2026-11-13). They
-# are tracked while at my club. Off: they are in group A like the first team.
 enabled = true
 
 [media]
@@ -175,6 +221,17 @@ W09 = "-"
 W10 = "-"
 
 [age.staff]                         # my club's staff, whatever their group (user, 2026-11-12)
+# "manual": the looks below. "auto" (Phase 16f): the looks from `from` to `to` spread over the
+# ages `start` to `end`: up to `start` the first look, from `end` the last, and the years between
+# split evenly over the looks between, a leftover year to the younger looks. W02-W10 over 28-64:
+# 28 and under, 29-33, 34-38, ..., 59-63, 64 and over. Switching to manual copies the spread.
+# Auto by default (user, 2026-11-22: re-drawing my club's staff once is fine); the looks below
+# are the manual table.
+mode = "auto"
+from = "W02"
+to = "W10"
+start = 28
+end = 64
 # Very wide bands, and never W01: most staff fall in W03-W07. Across the Telford save's
 # 71,000 staff, 90% are 25-60, about 4% under 25 and 6% over 60 (docs/research.md).
 W01 = "-"
@@ -257,6 +314,13 @@ auto_groups = ["a", "b", "c"]
 # and the blended tiles can change a picture slightly. "Auto-configure for my GPU" on the
 # Settings page turns it on for such a card. Applies from the next picture.
 vae_tiling = false
+
+[picture]
+# The shape of pictures drawn from now on: "3:4" (portrait) or "1:1" (square), for everyone
+# (Phase 16g). A change re-draws nobody: each picture keeps the shape it was drawn in. Square by
+# default (user, 2026-11-22); a database that already held pictures keeps "3:4" as its own
+# setting (persistence/db.py, migration 15).
+aspect = "1:1"
 
 [style]
 # How pictures look, for everyone drawn: players, staff and media (user, 2026-11-20). The model

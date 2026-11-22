@@ -8,7 +8,17 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pytest
-from factories import GAME_DATE, MY_CLUB, NEWGEN, PLAIN_PERSONALITY, RIVAL, player, snapshot
+from factories import (
+    GAME_DATE,
+    MANUAL,
+    MY_CLUB,
+    NEWGEN,
+    PLAIN_PERSONALITY,
+    RIVAL,
+    manual_cutoffs,
+    player,
+    snapshot,
+)
 from fakes import FakeRenderer, FakeTagger
 from PIL import Image
 
@@ -16,7 +26,7 @@ from facegen.core.prompt import CONTENT_NEGATIVE, YOUNG_NEGATIVE
 from facegen.core.settings_values import StyleSettings
 from facegen.core.traits import personality_to_json, sample_sheet
 from facegen.datasource.kits import load_kits
-from facegen.persistence.settings import Paths, PersonalitySettings, Settings
+from facegen.persistence.settings import Paths, PersonalitySettings, Settings, set_overrides
 from facegen.persistence.sheet_store import load_sheet
 from facegen.pipeline.gallery import write_gallery
 from facegen.pipeline.sync import run_sync
@@ -94,6 +104,18 @@ class Env:
         return self.conn.execute(
             "SELECT * FROM images WHERE unique_id = ? AND is_current = 1", (uid,)
         ).fetchone()
+
+
+@pytest.fixture
+def settings(settings: Settings) -> Settings:
+    """Manual numbers: these tests are not about league shares (Phase 16)."""
+    return manual_cutoffs(settings)  # type: ignore[return-value]
+
+
+@pytest.fixture
+def conn(conn: sqlite3.Connection) -> sqlite3.Connection:
+    set_overrides(conn, MANUAL)
+    return conn
 
 
 @pytest.fixture
@@ -891,7 +913,7 @@ def _with(settings: Settings, **groups_a: object) -> Settings:
 
 
 def test_the_detail_size_reaches_the_renderer_and_is_recorded(env: Env) -> None:
-    w, r, _ = env.worker(settings=_with(env.settings, detail_size=(1152, 1472)))
+    w, r, _ = env.worker(settings=_with(env.settings, detail="smaller"))
     outcome = w.run(MINE, limit=1).done[0]
     assert r.detail_sizes == [(1152, 1472)]
     img = env.current(outcome.job.unique_id)
@@ -909,7 +931,7 @@ def test_the_default_detail_size_is_one_and_a_half_times_the_render(env: Env) ->
 
 
 def test_detail_size_off_skips_the_pass(env: Env) -> None:
-    w, r, _ = env.worker(settings=_with(env.settings, detail_size=None))
+    w, r, _ = env.worker(settings=_with(env.settings, detail="off"))
     outcome = w.run(MINE, limit=1).done[0]
     assert (r.renders, r.details) == (3, 0)
     assert json.loads(env.current(outcome.job.unique_id)["render"])["detail"] is None
@@ -1138,3 +1160,38 @@ def test_z_image_turbo_draws_without_a_reference_and_says_why(env: Env) -> None:
     assert render["prompt_tokens"] == len(image["prompt"].split())
     assert "prompt_chunks" not in render
     assert all(p.negative == "" for p in r2.prompts)
+
+
+# --- 1:1 pictures (Phase 16g) ------------------------------------------------------------------
+
+
+def _square(settings: Settings) -> Settings:
+    return replace(settings, picture=replace(settings.picture, aspect="1:1"))
+
+
+def test_a_square_picture_is_drawn_checked_and_kept_square(env: Env) -> None:
+    w, r, _ = env.worker(settings=_square(env.settings))
+    outcome = w.run(MINE, limit=1).done[0]
+    assert set(r.render_sizes) == {(1024, 1024)}
+    assert r.detail_sizes == [(1536, 1536)]  # x1.5 of a square
+    img = env.current(outcome.job.unique_id)
+    assert img["aspect"] == "1:1"
+    render = json.loads(img["render"])
+    assert (render["aspect"], render["width"], render["height"]) == ("1:1", 1024, 1024)
+    with Image.open(env.data / img["master_path"]) as im:
+        assert im.size == (96, 96)  # the fake's detail pass, a sixteenth of 1536, uncropped
+    for cand in json.loads(img["check_result"])["candidates"]:
+        with Image.open(env.data / cand["path"]) as im:
+            assert im.width == im.height  # candidates are kept in the picture's shape
+
+
+def test_the_shape_applies_from_the_next_picture_and_redraws_nobody(env: Env) -> None:
+    w, _, _ = env.worker()
+    first = w.run(MINE, limit=1).done[0].job.unique_id
+    queued = env.conn.execute("SELECT COUNT(*) FROM jobs WHERE status = 'queued'").fetchone()[0]
+    w, r, _ = env.worker(settings=_square(env.settings))
+    second = w.run(MINE, limit=1).done[0].job.unique_id
+    assert env.current(first)["aspect"] == "3:4" and env.current(second)["aspect"] == "1:1"
+    assert r.render_sizes and set(r.render_sizes) == {(1024, 1024)}
+    after = env.conn.execute("SELECT COUNT(*) FROM jobs WHERE status = 'queued'").fetchone()[0]
+    assert after == queued - 1  # nothing queued again for the shape

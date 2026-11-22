@@ -9,11 +9,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from factories import ABROAD, NEWGEN, RIVAL, WOMENS, player, snapshot
+from factories import ABROAD, MANUAL, NEWGEN, RIVAL, WOMENS, manual_cutoffs, player, snapshot
 from fakes import FakeRenderer, FakeTagger
 
 from facegen.datasource.kits import load_kits
-from facegen.persistence.settings import Paths, Settings
+from facegen.persistence.settings import Paths, Settings, set_overrides
 from facegen.pipeline import manual
 from facegen.pipeline.manual import ManualError
 from facegen.pipeline.sync import run_sync
@@ -93,6 +93,18 @@ class Env:
         return self.conn.execute(
             "SELECT * FROM jobs WHERE unique_id = ? AND status IN ('queued', 'running')", (uid,)
         ).fetchall()
+
+
+@pytest.fixture
+def settings(settings: Settings) -> Settings:
+    """Manual numbers: these tests are not about league shares (Phase 16)."""
+    return manual_cutoffs(settings)  # type: ignore[return-value]
+
+
+@pytest.fixture
+def conn(conn: sqlite3.Connection) -> sqlite3.Connection:
+    set_overrides(conn, MANUAL)
+    return conn
 
 
 @pytest.fixture

@@ -259,15 +259,22 @@ class ZImageRenderer:
         if reference is not None:
             raise ValueError("Z-Image-Turbo has no reference adapter; draw without a reference")
 
-    def render(self, prompt: Prompt, seed: int, reference: Reference | None = None) -> Image:
+    def render(
+        self,
+        prompt: Prompt,
+        seed: int,
+        reference: Reference | None = None,
+        *,
+        size: tuple[int, int] = (WIDTH, HEIGHT),
+    ) -> Image:
         self._no_reference(reference)
         embeds = self._embeddings(prompt)
         generator = self._torch.Generator("cuda").manual_seed(seed)
         with self._torch.no_grad():
             return self.pipe(
                 prompt_embeds=embeds,
-                width=WIDTH,
-                height=HEIGHT,
+                width=size[0],
+                height=size[1],
                 num_inference_steps=STEPS,
                 guidance_scale=GUIDANCE,
                 cfg_normalization=False,

@@ -15,8 +15,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from facegen.core.age import TABLES, WORDINGS
+from facegen.core.age import TABLES, WORDINGS, spread_table
+from facegen.core.cutoffs import LEAGUE_CELLS, OFF, OTHER_CELLS
 from facegen.core.settings_values import (
+    ASPECT_CHOICES,
+    CUTOFF_MODES,
     DETAIL_SIZES,
     FOUND,
     GENDER_CHOICES,
@@ -24,30 +27,33 @@ from facegen.core.settings_values import (
     LANGUAGE_CHOICES,
     MODEL_CHOICES,
     NOT_SET,
+    STAFF_AGE_MODES,
     THEME_CHOICES,
+    TIER_CHOICES,
     UI,
     AgeSettings,
+    CutoffSettings,
     DisplaySettings,
     Eligibility,
-    GroupA,
-    GroupB,
-    GroupC,
     Groups,
+    GroupSpec,
     MediaSettings,
     MyClubSettings,
+    MyClubTiers,
     Newgen,
     NoPhotoSettings,
     NotificationSettings,
     Paths,
     PersonalitySettings,
+    PictureSettings,
     ReferenceSettings,
     RenderSettings,
     Schedule,
     Settings,
     StaffSettings,
+    StaffSpread,
     StyleSettings,
     UpdateSettings,
-    YouthSettings,
 )
 from facegen.core.traits import BANNABLE, BodyThresholds
 from facegen.locations import CONFIG_DIR, PROJECT_ROOT
@@ -66,6 +72,10 @@ _FIXED_PREFIXES = ("paths.", "ui.")
 
 SKIP_WORDING = "-"
 """An age table's value for a wording it does not use (Phase 12, user 2026-11-17)."""
+SPREAD_KEYS = frozenset({"mode", "from", "to", "start", "end"})
+"""`age.staff`'s keys for its auto mode, beside the looks (Phase 16f)."""
+CELL_PREFIXES = ("cutoffs.share.", "cutoffs.manual.", "cutoffs.everywhere.")
+"""Cutoff cells: a share or a number, or OFF ("-") to switch the cell off (Phase 16)."""
 
 DETECTED_KEYS = ("paths.fm_user_dir", "paths.fm_install_dir")
 """Folders that are looked for on this PC (fm_paths.py) when no file sets them."""
@@ -200,6 +210,9 @@ def check_override(key: str, value: Any, defaults: Mapping[str, Any]) -> Any:
     default = defaults[key]
     if is_age_wording(key):
         ok = _is_int(value) or value == SKIP_WORDING
+    elif is_cut_cell(key):
+        share = key.startswith("cutoffs.share.")
+        ok = _is_int(value) or (share and isinstance(value, float)) or value == OFF
     elif isinstance(default, bool):
         ok = isinstance(value, bool)
     elif _is_int(default):
@@ -237,21 +250,42 @@ def build_settings(
     `[paths]` came from (`_load_defaults`)."""
     v = values
 
-    def threshold(key: str) -> int:
-        return _range(key, v[key], 0, 200)
-
     def edge(key: str) -> int:
         return _range(key, v[key], 64, 4096)
 
     def candidates(key: str) -> int:
         return _range(key, v[key], 1, 8)
 
-    def detail_size(key: str) -> tuple[int, int] | None:
-        if v[key] not in DETAIL_SIZES:
+    def detail(key: str) -> str:
+        return one_of(key, tuple(DETAIL_SIZES))
+
+    def group(name: str) -> GroupSpec:
+        return GroupSpec(
+            published_long_edge=edge(f"groups.{name}.published_long_edge"),
+            candidates=candidates(f"groups.{name}.candidates"),
+            detail=detail(f"groups.{name}.detail_size"),
+        )
+
+    def share(key: str) -> float | None:
+        value = v[key]
+        if value == OFF:
+            return None
+        if not (_is_int(value) or isinstance(value, float)):
+            raise SettingsError(f"setting {key!r} needs a share or {OFF!r}")
+        tenths = float(value) * 10
+        if not 1 <= tenths <= 1000 or abs(tenths - round(tenths)) > 1e-6:
             raise SettingsError(
-                f"setting {key!r} must be one of {', '.join(DETAIL_SIZES)}, got {v[key]!r}"
+                f"setting {key!r} must be a share from 0.1 to 100 with one decimal, got {value}"
             )
-        return DETAIL_SIZES[v[key]]
+        return round(tenths) / 10
+
+    def number(key: str) -> int | None:
+        value = v[key]
+        if value == OFF:
+            return None
+        if not _is_int(value):
+            raise SettingsError(f"setting {key!r} needs a whole number or {OFF!r}")
+        return _range(key, value, 1, 200)
 
     def one_of(key: str, choices: tuple[str, ...]) -> str:
         if v[key] not in choices:
@@ -269,7 +303,9 @@ def build_settings(
         rows = sorted(
             (k.removeprefix(prefix), v[k])
             for k in v
-            if k.startswith(prefix) and v[k] != SKIP_WORDING
+            if k.startswith(prefix)
+            and v[k] != SKIP_WORDING
+            and k.removeprefix(prefix) not in SPREAD_KEYS
         )
         if not rows:
             raise SettingsError(f"age.{name} needs at least one wording")
@@ -286,7 +322,21 @@ def build_settings(
             )
         return tuple((first_age, wording) for wording, first_age in rows)
 
-    age = AgeSettings(**{name: age_table(name) for name in TABLES})
+    tables = {name: age_table(name) for name in TABLES}
+    spread = None
+    if one_of("age.staff.mode", STAFF_AGE_MODES) == "auto":
+        looks = tuple(WORDINGS)
+        spread = StaffSpread(
+            first=one_of("age.staff.from", looks),
+            last=one_of("age.staff.to", looks),
+            start=_range("age.staff.start", v["age.staff.start"], 0, 100),
+            end=_range("age.staff.end", v["age.staff.end"], 0, 100),
+        )
+        try:
+            tables["staff"] = spread_table(spread.first, spread.last, spread.start, spread.end)
+        except ValueError as exc:
+            raise SettingsError(f"age.staff: {exc}") from exc
+    age = AgeSettings(**tables, staff_spread=spread)
 
     scale = v["reference.scale"]
     if not 0 < scale <= 1:
@@ -339,35 +389,23 @@ def build_settings(
             loaned_out_at_my_club=v["eligibility.loaned_out_at_my_club"],
         ),
         newgen=Newgen(fallback_min_unique_id=v["newgen.fallback_min_unique_id"]),
-        groups=Groups(
-            a=GroupA(
-                ca_above=threshold("groups.a.ca_above"),
-                pa_above=threshold("groups.a.pa_above"),
-                published_long_edge=edge("groups.a.published_long_edge"),
-                candidates=candidates("groups.a.candidates"),
-                detail_size=detail_size("groups.a.detail_size"),
+        groups=Groups(a=group("a"), b=group("b"), c=group("c")),
+        cutoffs=CutoffSettings(
+            mode=one_of("cutoffs.mode", CUTOFF_MODES),
+            light_above=v["cutoffs.light_above"],
+            light_below=v["cutoffs.light_below"],
+            my_club=MyClubTiers(
+                first_team=one_of("cutoffs.my_club.first_team", TIER_CHOICES),
+                youth=one_of("cutoffs.my_club.youth", TIER_CHOICES),
+                loans=one_of("cutoffs.my_club.loans", TIER_CHOICES),
+                academy_alumni=v["cutoffs.my_club.academy_alumni"],
             ),
-            b=GroupB(
-                my_academy=v["groups.b.my_academy"],
-                league_ca_above=threshold("groups.b.league_ca_above"),
-                league_pa_above=threshold("groups.b.league_pa_above"),
-                any_ca_above=threshold("groups.b.any_ca_above"),
-                any_pa_above=threshold("groups.b.any_pa_above"),
-                published_long_edge=edge("groups.b.published_long_edge"),
-                candidates=candidates("groups.b.candidates"),
-                detail_size=detail_size("groups.b.detail_size"),
-            ),
-            c=GroupC(
-                league_ca_above=threshold("groups.c.league_ca_above"),
-                league_pa_above=threshold("groups.c.league_pa_above"),
-                published_long_edge=edge("groups.c.published_long_edge"),
-                candidates=candidates("groups.c.candidates"),
-                detail_size=detail_size("groups.c.detail_size"),
-            ),
+            share={c: share(f"cutoffs.share.{c}") for c in (*LEAGUE_CELLS, *OTHER_CELLS)},
+            manual={c: number(f"cutoffs.manual.{c}") for c in LEAGUE_CELLS},
+            everywhere={c: number(f"cutoffs.everywhere.{c}") for c in LEAGUE_CELLS},
         ),
         staff=StaffSettings(enabled=v["staff.enabled"]),
         no_photo=NoPhotoSettings(enabled=v["no_photo.enabled"]),
-        youth=YouthSettings(enabled=v["youth.enabled"]),
         media=MediaSettings(
             journalists=v["media.journalists"], press_officers=v["media.press_officers"]
         ),
@@ -392,6 +430,7 @@ def build_settings(
             auto_groups=auto_groups,
         ),
         render=RenderSettings(vae_tiling=v["render.vae_tiling"]),
+        picture=PictureSettings(aspect=one_of("picture.aspect", ASPECT_CHOICES)),
         style=StyleSettings(
             model=one_of("style.model", MODEL_CHOICES),
             gender=one_of("style.gender", GENDER_CHOICES),
@@ -475,6 +514,11 @@ def set_override(
 def is_age_wording(key: str) -> bool:
     """An age table's first age for a wording ("age.b.W04"): a whole number, or SKIP_WORDING."""
     return key.startswith("age.") and key.rpartition(".")[2] in WORDINGS
+
+
+def is_cut_cell(key: str) -> bool:
+    """A cutoff cell ("cutoffs.share.a_ca"): a share or a number, or OFF to switch it off."""
+    return key.startswith(CELL_PREFIXES)
 
 
 def is_fixed(key: str) -> bool:

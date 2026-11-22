@@ -31,14 +31,14 @@ class FaultOnThirdJob(FakeRenderer):
         self.jobs: list[str] = []
         self.faulted = False
 
-    def render(self, prompt: Prompt, seed: int, reference: Any = None):  # type: ignore[no-untyped-def]
+    def render(self, prompt: Prompt, seed: int, reference: Any = None, **kw: Any):  # type: ignore[no-untyped-def]
         if prompt.positive not in self.jobs:
             self.jobs.append(prompt.positive)
         if len(self.jobs) == 3 and not self.marker.exists():
             self.marker.write_text("faulted", encoding="utf-8")
             self.faulted = True
             raise RuntimeError(FAULT)
-        return super().render(prompt, seed, reference)
+        return super().render(prompt, seed, reference, **kw)
 
     def close(self) -> None:
         if self.faulted:

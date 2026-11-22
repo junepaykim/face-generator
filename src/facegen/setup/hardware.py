@@ -161,13 +161,14 @@ HIGH = Preset(
     "high",
     "12 GB or more",
     dict(QUALITY["high"]),
-    "The defaults: group A is the best of 3 candidates, with the detail pass at 1344x1728.",
+    "The defaults: group A is the best of 3 candidates, with the detail pass at 1.5 times the"
+    " render.",
 )
 MEDIUM = Preset(
     "medium",
     "10 to under 12 GB",
     dict(QUALITY["medium"]),
-    "Group A is the best of 3, with a smaller detail pass (1152x1472), which needs less memory.",
+    "Group A is the best of 3, with a smaller detail pass, which needs less memory.",
 )
 LOW = Preset(
     "low",

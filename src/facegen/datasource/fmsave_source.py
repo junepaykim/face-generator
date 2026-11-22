@@ -11,14 +11,16 @@ from __future__ import annotations
 import warnings
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
+from contextlib import ExitStack, suppress
 from dataclasses import fields, replace
 from datetime import date
 from pathlib import Path
 from typing import Any
 
-from facegen.core.leagues import clubs_in_competitions, my_league_competitions
+from facegen.core.leagues import league_ladder, my_league
 from facegen.core.records import (
     ClubRecord,
+    CompetitionRules,
     Gender,
     LeagueTableRecord,
     MediaRecord,
@@ -29,7 +31,7 @@ from facegen.core.records import (
     StaffRecord,
     is_first_team_manager,
 )
-from facegen.datasource import people
+from facegen.datasource import league_rules, people
 from facegen.datasource.base import SaveReadError, UnsupportedSaveError
 
 _GENDERS = {"MEN": Gender.MEN, "WOMEN": Gender.WOMEN}
@@ -64,6 +66,7 @@ def convert_clubs(clubs: Iterable[Any]) -> tuple[dict[int, ClubRecord], dict[int
             name=c.name,
             gender=club_gender(c.gender),
             nation_id=c.nation_id,
+            reputation=getattr(c, "reputation", None),
         )
     return records, uid_map
 
@@ -298,8 +301,9 @@ def convert_league_tables(
 
 def convert_fixtures(
     fixtures: Iterable[Any], uid_map: Mapping[int, int], comp_keys: Mapping[int, int]
-) -> dict[int, dict[int, int]]:
-    """First-team fixtures per club in each competition's latest season."""
+) -> tuple[dict[int, dict[int, int]], dict[int, int]]:
+    """First-team fixtures per club in each competition's latest season, and that season (its
+    start year) for each competition whose fixtures give one."""
     by_season: dict[int, dict[int, Counter[int]]] = defaultdict(lambda: defaultdict(Counter))
     for f in fixtures:
         if f.competition_id is None or f.competition_id not in comp_keys:
@@ -309,7 +313,18 @@ def convert_fixtures(
         for uid, slot in ((f.home_club_uid, f.home_team_slot), (f.away_club_uid, f.away_team_slot)):
             if uid is not None and uid in uid_map and slot in _FIRST_TEAM_SLOTS:
                 counts[uid_map[uid]] += 1
-    return {cid: dict(seasons[max(seasons)]) for cid, seasons in by_season.items()}
+    counts = {cid: dict(seasons[max(seasons)]) for cid, seasons in by_season.items()}
+    latest = {cid: max(seasons) for cid, seasons in by_season.items() if max(seasons) >= 0}
+    return counts, latest
+
+
+def read_league_rules(save: Any) -> CompetitionRules:
+    """The save's own division lists and competition levels (datasource/league_rules.py).
+
+    Like `read_people`, this borrows fmsave's decompressed game database: an internal of the
+    pinned version (AGENTS.md rule 5), so the caller reports a failure and goes on without."""
+    with save._context.section("game_db") as db:
+        return league_rules.competition_rules(db)
 
 
 def unknown_build_note(build: str, reader: str) -> str:
@@ -385,57 +400,77 @@ class FmsaveDataSource:
         # reader failure there should not stop a sync.
         tables: tuple[LeagueTableRecord, ...] = ()
         fixture_counts: dict[int, dict[int, int]] = {}
+        fixture_seasons: dict[int, int] = {}
         try:
             comp_keys = {c.id: competition_key(c.database_id, c.id) for c in save.competitions()}
             tables = convert_league_tables(save.league_tables(), uid_map, comp_keys)
-            fixture_counts = convert_fixtures(save.fixtures(), uid_map, comp_keys)
+            fixture_counts, fixture_seasons = convert_fixtures(save.fixtures(), uid_map, comp_keys)
         except fmsave.FmsaveError as exc:
             notes.append(f"competition data unavailable: {exc}")
-        # Staff-reader failures must not prevent player syncs.
-        staff: tuple[StaffRecord, ...] = ()
-        staff_read = True
-        first_names: dict[int, str | None] = {}
-        if managed:
+        with ExitStack() as section:
+            # Both byte readers below read the game database: borrow it once, not twice.
+            with suppress(Exception):  # each reader reports its own failure below
+                section.enter_context(save._context.section("game_db"))
+            rules: CompetitionRules | None = None
             try:
-                all_staff = list(save.staff())
-                competitions = my_league_competitions(managed_id, clubs, tables, fixture_counts)
-                league_clubs = clubs_in_competitions(competitions, tables, fixture_counts)
-                staff = convert_staff(
-                    all_staff,
-                    uid_map,
-                    managed[0].club_uid,
-                    info.game_date,
-                    manager_club_ids=league_clubs,
-                    nations=nations,
+                rules = read_league_rules(save)
+            except Exception as exc:  # noqa: BLE001 - experimental reader; the sync goes on
+                notes.append(
+                    "the save's league levels unavailable, so the leagues are ordered by club "
+                    f"reputation ({type(exc).__name__}: {exc})"
                 )
-                selected = {s.unique_id for s in staff}
-                first_names = {
-                    s.unique_id: getattr(s, "first_name", None)
-                    for s in all_staff
-                    if s.unique_id in selected
-                }
-            except fmsave.FmsaveError as exc:
-                staff_read = False
-                notes.append(f"staff data unavailable, staff pictures left as they were: {exc}")
-        # The byte reader fills gaps in fmsave; its failure must not stop a sync.
-        media: tuple[MediaRecord, ...] = ()
-        media_read = True
-        try:
-            media, female = read_people(
-                save,
-                managed[0].club_uid if managed else None,
-                managed_id,
-                first_names,
-                info.game_date,
-            )
-            staff = tuple(replace(s, female=female.get(s.unique_id)) for s in staff)
-            media = tuple(replace(m, nation=nation_of(m.nation_id, nations)) for m in media)
-        except Exception as exc:  # noqa: BLE001 - experimental reader; the sync goes on
-            media_read = False
-            notes.append(
-                "journalists, press officers and staff genders unavailable "
-                f"({type(exc).__name__}: {exc}); their pictures are left as they were"
-            )
+            # Staff-reader failures must not prevent player syncs.
+            staff: tuple[StaffRecord, ...] = ()
+            staff_read = True
+            first_names: dict[int, str | None] = {}
+            if managed:
+                try:
+                    all_staff = list(save.staff())
+                    ladder = league_ladder(
+                        managed_id,
+                        clubs,
+                        tables,
+                        fixture_counts,
+                        seasons=fixture_seasons,
+                        rules=rules,
+                    )
+                    _, league_clubs = my_league(ladder, managed_id, clubs, tables, fixture_counts)
+                    staff = convert_staff(
+                        all_staff,
+                        uid_map,
+                        managed[0].club_uid,
+                        info.game_date,
+                        manager_club_ids=league_clubs,
+                        nations=nations,
+                    )
+                    selected = {s.unique_id for s in staff}
+                    first_names = {
+                        s.unique_id: getattr(s, "first_name", None)
+                        for s in all_staff
+                        if s.unique_id in selected
+                    }
+                except fmsave.FmsaveError as exc:
+                    staff_read = False
+                    notes.append(f"staff data unavailable, staff pictures left as they were: {exc}")
+            # The byte reader fills gaps in fmsave; its failure must not stop a sync.
+            media: tuple[MediaRecord, ...] = ()
+            media_read = True
+            try:
+                media, female = read_people(
+                    save,
+                    managed[0].club_uid if managed else None,
+                    managed_id,
+                    first_names,
+                    info.game_date,
+                )
+                staff = tuple(replace(s, female=female.get(s.unique_id)) for s in staff)
+                media = tuple(replace(m, nation=nation_of(m.nation_id, nations)) for m in media)
+            except Exception as exc:  # noqa: BLE001 - experimental reader; the sync goes on
+                media_read = False
+                notes.append(
+                    "journalists, press officers and staff genders unavailable "
+                    f"({type(exc).__name__}: {exc}); their pictures are left as they were"
+                )
 
         return Snapshot(
             meta=SaveMeta(
@@ -453,6 +488,8 @@ class FmsaveDataSource:
             players=players,
             league_tables=tables,
             fixture_counts=fixture_counts,
+            fixture_seasons=fixture_seasons,
+            competition_rules=rules,
             staff=staff,
             staff_read=staff_read,
             media=media,

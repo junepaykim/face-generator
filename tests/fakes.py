@@ -127,6 +127,8 @@ class FakeRenderer:
         """The prompts of each trip of the text encoders, in order."""
         self.detail_sizes: list[tuple[int, int]] = []
         """The target size of each detail pass, in order."""
+        self.render_sizes: list[tuple[int, int]] = []
+        """The size each picture was asked for, in order."""
         self.vae_tiling = False
 
     # The two stages of prompt encoding (facegen.prompt_cache), without the cache's size limit.
@@ -142,14 +144,23 @@ class FakeRenderer:
     def encoded(self, prompt: Prompt) -> bool:
         return {prompt.positive, prompt.negative} <= self.texts
 
-    def render(self, prompt: Prompt, seed: int, reference: Any = None) -> Image.Image:
+    def render(
+        self,
+        prompt: Prompt,
+        seed: int,
+        reference: Any = None,
+        *,
+        size: tuple[int, int] = (896, 1152),
+    ) -> Image.Image:
+        """The render at a sixteenth of `size`: 56x72 for 3:4, 64x64 for 1:1."""
         self.prepare([prompt])  # as the real renderer encodes a prompt nobody prepared
         self.calls.append(("render", seed))
         self.prompts.append(prompt)
         self.references.append(reference)
+        self.render_sizes.append(size)
         if self.fail_on_call is not None and len(self.calls) == self.fail_on_call:
             raise self.exc
-        img = figure()
+        img = figure(size[0] // 16, size[1] // 16)
         img.info["seed"] = seed
         return img
 
@@ -162,13 +173,13 @@ class FakeRenderer:
         *,
         size: tuple[int, int],
     ) -> Image.Image:
-        """Scaled as the real renderer's target size scales the 896x1152 render: the fake's
-        56x72 picture is that render divided by 16."""
+        """At a sixteenth of the target size, as the fake's render is a sixteenth of the real
+        one's (1344x1728 gives 84x108)."""
         self.prepare([prompt])
         self.calls.append(("detail", seed))
         self.references.append(reference)
         self.detail_sizes.append(size)
-        out = image.resize((image.width * size[0] // 896, image.height * size[1] // 1152))
+        out = image.resize((size[0] // 16, size[1] // 16))
         out.info["seed"] = seed
         return out
 
@@ -215,10 +226,10 @@ class FakeZImageRenderer(FakeRenderer):
     def __init__(self, key: str = "zimage_turbo", **kw: Any) -> None:
         super().__init__(key, **kw)
 
-    def render(self, prompt: Prompt, seed: int, reference: Any = None) -> Image.Image:
+    def render(self, prompt: Prompt, seed: int, reference: Any = None, **kw: Any) -> Image.Image:
         if reference is not None:
             raise ValueError("Z-Image-Turbo has no reference adapter")
-        return super().render(prompt, seed)
+        return super().render(prompt, seed, **kw)
 
     def prompt_tokens(self, prompt: Prompt) -> int:
         return len(prompt.positive.split())

@@ -27,6 +27,9 @@ class ClubRecord:
     gender: Gender
     nation_id: int | None
     """Save-local ID of the nation whose league the club plays in."""
+    reputation: int | None = None
+    """Club reputation from 1 to 10000 (fmsave's verified field); None where it cannot be read.
+    It orders my nation's leagues into a ladder (core/leagues.py)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,6 +135,32 @@ class LeagueTableRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class DivisionList:
+    """A nation's league divisions as the save's own competition rules order them."""
+
+    nation: int | None
+    """The nation's editor database ID (765 England); None where the record does not say."""
+    women: bool | None
+    """True for a women's pyramid; None where the record does not say."""
+    divisions: tuple[int, ...]
+    """Competition editor IDs from the top division down; a regional parent stands for its
+    groups (CompetitionRules.children)."""
+
+
+@dataclass(frozen=True, slots=True)
+class CompetitionRules:
+    """What the save's competition rules say about league levels (docs/research.md 23-25)."""
+
+    division_lists: tuple[DivisionList, ...] = ()
+    levels: Mapping[int, int] = field(default_factory=dict)
+    """Competition editor ID to its zero-based level (`levl`), where the rules agree."""
+    children: Mapping[int, tuple[int, ...]] = field(default_factory=dict)
+    """A regional parent's editor ID to its groups' (National League North and South)."""
+    unknown: frozenset[int] = frozenset()
+    """Competitions whose copies in the rules disagree on their level or groups."""
+
+
+@dataclass(frozen=True, slots=True)
 class SaveMeta:
     game: str
     build: str
@@ -159,6 +188,11 @@ class Snapshot:
     Competition IDs are the game's editor database IDs where the save links one (stable
     across saves, what the continental settings list), else minus one minus the save-local ID.
     """
+    fixture_seasons: Mapping[int, int] = field(default_factory=dict)
+    """Competition ID to the season (its start year) `fixture_counts` counts, where known."""
+    competition_rules: CompetitionRules | None = None
+    """The save's own division lists and competition levels; None where they could not be read
+    (the league ladder then comes from club reputations)."""
     staff: tuple[StaffRecord, ...] = ()
     """My club's staff and first-team managers at clubs in my current league."""
     staff_read: bool = True

@@ -216,8 +216,10 @@ def test_fixtures_count_first_team_games_in_the_latest_season() -> None:
         fixture(None, 2026, 10, 11),  # no competition
         fixture(9999, 2026, 10, 11),  # competition not in the table
     ]
-    out = convert_fixtures(fixtures, UID_MAP, {6601: 2000132563, 7233: 2000315308})
+    out, seasons = convert_fixtures(fixtures, UID_MAP, {6601: 2000132563, 7233: 2000315308})
     assert out == {2000132563: {1010: 3, 1011: 2}, 2000315308: {1010: 1, 1012: 1}}
+    # The season the counts are from; none where the fixtures store none.
+    assert seasons == {2000132563: 2026}
 
 
 def test_staff_job_in_words() -> None:
@@ -497,6 +499,19 @@ def test_a_nation_is_its_database_id() -> None:
     assert convert_player(fm_player(1, nation_id=8), UID_MAP, None, nations).nation is None
     assert convert_player(fm_player(1, nation_id=None), UID_MAP, None, nations).nation is None
     assert convert_player(fm_player(1), UID_MAP, None).nation is None  # no table, no field
+
+
+def test_the_saves_league_rules_are_read_or_their_absence_reported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_open(monkeypatch, FakeSave(people=True))
+    snap = FmsaveDataSource().load(Path("Career.fm"))
+    assert snap.competition_rules is not None  # these bytes hold no division list
+    assert snap.competition_rules.division_lists == ()
+    _patch_open(monkeypatch, FakeSave())  # no fmsave internals to borrow
+    snap = FmsaveDataSource().load(Path("Career.fm"))
+    assert snap.competition_rules is None and snap.players
+    assert any("league levels unavailable" in w for w in snap.meta.warnings)
 
 
 def test_without_the_people_reader_the_sync_goes_on(monkeypatch: pytest.MonkeyPatch) -> None:

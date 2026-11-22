@@ -516,6 +516,14 @@ default = "default {value}"
 use_default = "use default"
 age_label = "{band} ({tags})"
 age_label_plain = "{band}"
+tabs = "Settings sections"
+
+[settings.tab]
+cutoffs = "Cutoffs"
+quality = "Quality"
+targets = "Targets"
+ages = "Age looks"
+system = "System"
 
 [settings.info]
 title = "About this run"
@@ -559,6 +567,8 @@ on = "on"
 off = "off"
 none = "none"
 skip = "not used"
+share = "top {share}%"
+at_least = "{value}+"
 
 [settings.error]
 range = "must be from {low} to {high}"
@@ -571,13 +581,20 @@ number = "needs a number"
 whole_numbers = "needs whole numbers"
 on_off = "needs on or off"
 band = "needs a whole number, or - to leave it out"
+cell = "needs a number, or - to switch it off"
 
 [settings.title]
+cutoffs = "My league and continental"
+"cutoffs.my_club" = "My club"
+"cutoffs.share" = "Shares"
+"cutoffs.manual" = "My league, set by hand"
+"cutoffs.everywhere" = "Everywhere"
+groups = "Picture quality"
 "groups.a" = "{a} group"
 "groups.b" = "{b} group"
 "groups.c" = "{c} group"
+picture = "Picture shape"
 staff = "My club's staff"
-youth = "My club's youth teams"
 media = "Journalists and press officers"
 no_photo = "Pre-existing players without a photo"
 eligibility = "Who counts"
@@ -601,14 +618,16 @@ updates = "Updates"
 
 [settings.note]
 eligibility = "Applies from the next sync."
-staff = "Staff are drawn at {a} quality."
-youth = "Players outside the first team are drawn in the {b} group, and in {a} once they join it."
+staff = "Staff are drawn at {a} quality. Managers in my league without a photo get a {c} picture."
+picture = "Applies to pictures drawn from now on."
 media = "Journalists and press officers are drawn in the {b} group."
 my_club = "Applies to new pictures."
 body = "Applies to new characters."
 style = "Z-Image-Turbo needs a graphics card with 10 GB or more."
 
 [settings.tip]
+cutoffs = "Players at other clubs are picked by their share of a league: top 6% means the best 6% of its newgens and players without a photo, by CA or PA. Shares are measured again at every sync, so they follow promotion and relegation. Manual sets my league's cuts as numbers instead. - switches a cell off."
+cutoffs_my_club = "Everyone at my club gets a picture. Youth teams and players I loaned out reach {a} by my league's or the global {a} cut."
 age = "The age each look starts at; it lasts until the next one used. - leaves a look out of this table."
 personality = "How much a new character's expression follows their personality. 0: not at all. 1: a fitting expression is twice as likely. 2: three times as likely."
 reference = "When a picture is drawn again (a new kit, an older look, a new picture), the current face guides the new one so the player still looks the same. A stronger reference keeps the face closer but can blur the kit."
@@ -617,17 +636,34 @@ newgen = "Used only for a career's first sync, if facegen cannot tell newgens ap
 
 [settings.field_tip]
 banned_traits = "Pictures with these words become much less likely."
+continental_competition_ids = "Leave empty to find them from my club's fixtures, UEFA competitions included."
 
 [settings.label]
-ca_above = "CA above"
-pa_above = "PA above"
 published_long_edge = "Picture height (px)"
 candidates = "Candidates per picture"
 detail_size = "Detail pass"
 vae_tiling = "VAE tiling (decode in tiles to save graphics memory)"
 model = "Model"
 gender = "Gender"
-my_academy = "Academy players stay in the {b} group after they leave"
+first_team = "First team"
+youth = "Youth and reserve teams"
+loans = "Players I loaned out"
+academy_alumni = "Academy players stay in the {b} group after they leave"
+a_ca = "{a} CA"
+a_pa = "{a} PA"
+b_ca = "{b} CA"
+b_pa = "{b} PA"
+c_ca = "{c} CA"
+c_pa = "{c} PA"
+above_b_ca = "League above: {b} CA"
+above_c_ca = "League above: {c} CA"
+below_c_ca = "League below: {c} CA"
+continental_b_ca = "Continental: {b} CA"
+aspect = "Picture shape"
+from = "Youngest look"
+to = "Oldest look"
+start = "First look up to age"
+end = "Last look from age"
 mens_football_only = "Men's football only"
 continental_competition_ids = "Continental competition IDs (editor database IDs)"
 loaned_out_at_my_club = "Count players I loaned out as my club's"
@@ -647,15 +683,12 @@ generate_while_fm_running = "Generate pictures while FM27 is running"
 auto_groups = "Groups drawn automatically"
 
 [settings.label_in]
-"groups.b.league_ca_above" = "My league or continental: CA above"
-"groups.b.league_pa_above" = "My league or continental: PA above"
-"groups.b.any_ca_above" = "CA above"
-"groups.b.any_pa_above" = "PA above"
-"groups.c.league_ca_above" = "My league: CA above"
-"groups.c.league_pa_above" = "My league: PA above"
+"cutoffs.mode" = "My league's cuts"
+"cutoffs.light_above" = "{c} pictures for the league above"
+"cutoffs.light_below" = "{c} pictures for the league below"
+"age.staff.mode" = "Looks"
 "staff.enabled" = "Draw my club's staff"
-"no_photo.enabled" = "Make their pictures by the {a}, {b} and {c} thresholds"
-"youth.enabled" = "Draw my club's reserve, U-23 and U-18 players"
+"no_photo.enabled" = "Pick them by the same cuts as newgens"
 "media.journalists" = "Draw journalists from my club's country"
 "media.press_officers" = "Draw my club's press officers"
 "reference.enabled" = "Use the current face when drawing again"
@@ -665,9 +698,17 @@ auto_groups = "Groups drawn automatically"
 "updates.check" = "Look for a newer facegen once a day"
 
 [settings.choice.detail_size]
-1344x1728 = "1344 x 1728 (best)"
-1152x1472 = "1152 x 1472 (less graphics memory)"
+"x1.5" = "x1.5 (best)"
+smaller = "Smaller (less graphics memory)"
 off = "off"
+
+[settings.choice.mode]
+auto = "Auto (top %)"
+manual = "Manual (numbers)"
+
+[settings.choice.aspect]
+"3:4" = "3:4 portrait"
+"1:1" = "1:1 square"
 
 [settings.choice.language]
 auto = "Auto (Windows)"
@@ -719,6 +760,40 @@ more = "More"
 high = "Best"
 medium = "Balanced"
 low = "Memory saver"
+
+[cutoffs]
+summary = "Now:"
+top = "top"
+either = "CA {ca}+ or PA {pa}+"
+above = "League above"
+below = "League below"
+continental = "Continental"
+clubs = { one = "{count} club", other = "{count} clubs" }
+no_league = "No league was found in the latest save: only the everywhere cuts pick players at other clubs."
+not_synced = "Values show once a save is synced."
+
+[cutoffs.col]
+league_ca = "My league: CA"
+league_pa = "My league: PA"
+elsewhere = "Other leagues"
+
+[cutoffs.effective]
+value = "≈ {name} {value}+"
+share = "≈ top {share}%"
+
+[cutoffs.found]
+league = "My league:"
+above = "Above:"
+below = "Below:"
+continental = "Continental:"
+
+[ages]
+look = "Look"
+ages = "Ages"
+staff_now = "Staff now"
+and_under = "{age} and under"
+and_over = "{age} and over"
+any = "any age"
 
 [history]
 title = "Recent changes"

@@ -355,16 +355,19 @@ function localTimes(root) {
 }
 
 // Settings: each change is saved as it is made; there is no Apply button. The server keeps
-// what every change replaced, so Undo, Redo and the Recent changes list can put it back.
+// what every change replaced, so Undo, Redo and the Recent changes list can put it back. The
+// Advanced page has one form per tab (Phase 16h); they save as one, one change at a time.
 (function autosave() {
-  const form = document.querySelector("form[data-autosave]");
-  if (!form) return;
-  const token = form.querySelector('input[name="csrf_token"]').value;
+  const forms = Array.from(document.querySelectorAll("form[data-autosave]"));
+  if (!forms.length) return;
+  const token = forms[0].querySelector('input[name="csrf_token"]').value;
   const status = document.querySelector("[data-save-status]");
   const history = document.getElementById("history");
   const undoButton = document.querySelector("[data-undo]");
   const redoButton = document.querySelector("[data-redo]");
-  const inputs = new Map(Array.from(form.querySelectorAll("[data-key]")).map((el) => [el.name, el]));
+  const inputs = new Map();
+  forms.forEach((form) => form.querySelectorAll("[data-key]").forEach((el) => inputs.set(el.name, el)));
+  const within = (selector) => forms.flatMap((form) => Array.from(form.querySelectorAll(selector)));
   const read = (el) => (el.type === "checkbox" ? (el.checked ? "on" : "") : el.value.trim());
   // What the server holds for each field, as the field would show it.
   const saved = new Map(Array.from(inputs, ([name, el]) => [name, read(el)]));
@@ -391,11 +394,10 @@ function localTimes(root) {
   };
   // A preset (Basic page) is a radio group: the choice sent, then the one the values match.
   const chosen = new Map();
-  const radios = (kind) => form.querySelectorAll(`[data-preset][name="preset.${kind}"]`);
+  const radios = (kind) => within(`[data-preset][name="preset.${kind}"]`);
   const showPreset = (kind, name) => {
     radios(kind).forEach((r) => { r.checked = r.value === name; });
-    const custom = form.querySelector(`[data-custom="${kind}"]`);
-    if (custom) custom.hidden = name !== null;
+    within(`[data-custom="${kind}"]`).forEach((custom) => { custom.hidden = name !== null; });
   };
 
   async function saveDirty() {
@@ -419,7 +421,7 @@ function localTimes(root) {
       const data = await res.json();
       fields.forEach((el) => showError(el, data.errors && data.errors[el.name]));
       picked.forEach((_, name) => {
-        const radio = form.querySelector(`[data-preset][name="${name}"]`);
+        const radio = within(`[data-preset][name="${name}"]`)[0];
         if (radio) showError(radio, data.errors && data.errors[name]);
       });
       if (!data.ok) {
@@ -441,8 +443,15 @@ function localTimes(root) {
       syncTicks();
       Object.entries(data.presets || {}).forEach(([kind, name]) => showPreset(kind, name));
       say(data.message, data.changed ? "ok" : "");
-      // A new language or theme shows once the page loads again.
+      // A new language or theme, or a mode switch, shows once the page loads again.
       if (data.reload) { leaving = true; location.reload(); return; }
+      // What each cutoff gives in the latest save, and the counts and lists it changes.
+      Object.entries(data.effective || {}).forEach(([key, value]) => {
+        document.querySelectorAll(`[data-effective="${CSS.escape(key)}"]`).forEach((el) => { el.textContent = value; });
+      });
+      Object.entries(data.parts || {}).forEach(([name, html]) => {
+        document.querySelectorAll(`[data-part="${CSS.escape(name)}"]`).forEach((el) => { el.innerHTML = html; });
+      });
       if (history) {
         history.innerHTML = data.history_html;
         localTimes(history);
@@ -460,37 +469,38 @@ function localTimes(root) {
 
   // A list of groups shown as tick boxes: the hidden field holds "a, c" and is what is saved.
   const syncTicks = () => {
-    form.querySelectorAll("[data-group-of]").forEach((box) => {
+    within("[data-group-of]").forEach((box) => {
       const field = inputs.get(box.dataset.groupOf);
       if (field) box.checked = field.value.split(/[,\s]+/).includes(box.value);
     });
   };
-  form.addEventListener("change", (e) => {
-    const box = e.target.closest("[data-group-of]");
-    if (!box) return;
-    const name = box.dataset.groupOf;
-    const field = inputs.get(name);
-    field.value = Array.from(form.querySelectorAll(`[data-group-of="${name}"]`))
-      .filter((b) => b.checked).map((b) => b.value).join(", ");
-  }, true);
-
-  form.addEventListener("change", (e) => {
-    if (e.target.matches("[data-preset]")) chosen.set(e.target.name, e.target.value);
-  }, true);
-  form.addEventListener("change", save);
-  form.addEventListener("submit", (e) => { e.preventDefault(); save(); });
-  form.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && e.target.matches("input")) { e.preventDefault(); save(); }
-  });
-  form.addEventListener("click", (e) => {
-    const button = e.target.closest("[data-use-default]");
-    if (!button) return;
-    e.preventDefault();
-    const el = fieldOf(button).querySelector("[data-key]");
-    if (el.type === "checkbox") el.checked = el.dataset.default === "on";
-    else el.value = el.dataset.default;
-    syncTicks();
-    save();
+  forms.forEach((form) => {
+    form.addEventListener("change", (e) => {
+      const box = e.target.closest("[data-group-of]");
+      if (!box) return;
+      const name = box.dataset.groupOf;
+      const field = inputs.get(name);
+      field.value = within(`[data-group-of="${name}"]`)
+        .filter((b) => b.checked).map((b) => b.value).join(", ");
+    }, true);
+    form.addEventListener("change", (e) => {
+      if (e.target.matches("[data-preset]")) chosen.set(e.target.name, e.target.value);
+    }, true);
+    form.addEventListener("change", save);
+    form.addEventListener("submit", (e) => { e.preventDefault(); save(); });
+    form.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && e.target.matches("input")) { e.preventDefault(); save(); }
+    });
+    form.addEventListener("click", (e) => {
+      const button = e.target.closest("[data-use-default]");
+      if (!button) return;
+      e.preventDefault();
+      const el = fieldOf(button).querySelector("[data-key]");
+      if (el.type === "checkbox") el.checked = el.dataset.default === "on";
+      else el.value = el.dataset.default;
+      syncTicks();
+      save();
+    });
   });
 
   // Undo, Redo, Reset and "undo back to here" wait for a save on its way, so they act on it.
@@ -501,12 +511,65 @@ function localTimes(root) {
     const submitter = e.submitter;
     await save();
     if (dirty().length && !window.confirm(text("js.unsaved_confirm"))) return;
+    // Come back to the same tab.
+    const next = target.querySelector('input[name="next"]');
+    if (next && location.hash && next.value.startsWith(location.pathname)) {
+      next.value = location.pathname + location.hash;
+    }
     leaving = true;
     target.requestSubmit(submitter);
   });
   window.addEventListener("beforeunload", (e) => {
     if (!leaving && (running || dirty().length)) { e.preventDefault(); e.returnValue = ""; }
   });
+})();
+
+// The Advanced settings page's tabs (Phase 16h): one shows at a time and the address keeps it
+// (#tab-quality). An anchor from before the tabs (#about, #section-age-b) opens its tab. Without
+// the script every tab shows, one under the other.
+(function settingsTabs() {
+  const nav = document.querySelector("[data-tab-pills]");
+  if (!nav) return;
+  const panels = Array.from(document.querySelectorAll("[data-tab-panel]"));
+  if (!panels.length) return;
+  let anchors = {};
+  try { anchors = JSON.parse(nav.dataset.anchors || "{}"); } catch (e) { /* none */ }
+  document.documentElement.classList.add("tabs-on");
+  const names = panels.map((p) => p.dataset.tabPanel);
+  const show = (name) => {
+    if (!names.includes(name)) name = names[0];
+    panels.forEach((p) => { p.hidden = p.dataset.tabPanel !== name; });
+    nav.querySelectorAll("[data-tab]").forEach((a) => {
+      const on = a.dataset.tab === name;
+      a.classList.toggle("on", on);
+      if (on) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+    });
+  };
+  // The tab an address names, and the element to scroll to.
+  const target = () => {
+    const id = decodeURIComponent(location.hash.slice(1));
+    if (!id || id === "history") return null;
+    if (id.startsWith("tab-")) return { tab: id.slice(4), el: null };
+    const el = document.getElementById(id);
+    const panel = el && el.closest("[data-tab-panel]");
+    if (panel) return { tab: panel.dataset.tabPanel, el };
+    const top = id.startsWith("section-") ? id.slice(8).split("-")[0] : id;
+    return anchors[top] ? { tab: anchors[top], el: null } : null;
+  };
+  const apply = () => {
+    const found = target();
+    show(found ? found.tab : names[0]);
+    if (found && found.el) found.el.scrollIntoView({ block: "start" });
+  };
+  nav.addEventListener("click", (e) => {
+    const link = e.target.closest("[data-tab]");
+    if (!link) return;
+    e.preventDefault();
+    history.replaceState(null, "", "#tab-" + link.dataset.tab);
+    show(link.dataset.tab);
+  });
+  window.addEventListener("hashchange", apply);
+  apply();
 })();
 
 // A filter form that applies itself: a list choice at once, the search box on Enter (Gallery).

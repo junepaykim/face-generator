@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
-from factories import ABROAD, NEWGEN, RIVAL, player, snapshot
+from factories import ABROAD, MANUAL, NEWGEN, RIVAL, player, snapshot
 from fakes import FakeRenderer, FakeTagger
 from support.paths import ROOT
 
@@ -132,8 +132,9 @@ class Env:
 
 @pytest.fixture
 def env(config_file: Path) -> Iterator[Env]:
-    settings = load_settings(defaults_path=config_file)
-    conn = db.connect(settings.paths.db_path)
+    conn = db.connect(load_settings(defaults_path=config_file).paths.db_path)
+    # My league's cutoffs as numbers: these tests are not about league shares (Phase 16).
+    settings = set_overrides(conn, MANUAL, config_file)
     run_sync(conn, snapshot(world()), settings, save_file="career.fm")
     yield Env(conn, settings, config_file, Gpu(), [False], Clock())
     conn.close()
@@ -197,7 +198,7 @@ def test_a_threshold_change_requeues_and_a_new_face_is_drawn_next(env: Env) -> N
     # Meanwhile, in the UI: lower group A's CA bar so the B newgen (CA 90) reaches A ...
     ui = db.connect(env.settings.paths.db_path)
     with transaction(ui):
-        applied = set_overrides(ui, {"groups.a.ca_above": 85}, env.config)
+        applied = set_overrides(ui, {"cutoffs.everywhere.a_ca": 85}, env.config)
         classify_and_plan(ui, env.cid, applied)
     # ... and ask for a new face for the player just drawn.
     manual.new_face(ui, env.cid, MINE_2, applied)

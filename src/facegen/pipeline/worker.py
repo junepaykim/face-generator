@@ -34,11 +34,11 @@ from facegen.core.planner import reference_scale
 from facegen.core.prompt import Prompt, Wear
 from facegen.core.records import is_first_team_manager
 from facegen.core.settings_values import (
+    ASPECTS,
     IMAGE_MODELS,
     MAN,
-    GroupA,
-    GroupB,
-    GroupC,
+    RENDER_SIZES,
+    GroupSpec,
     ImageModel,
     MyClubSettings,
     Settings,
@@ -474,7 +474,7 @@ class Worker:
             jobs.release(self.conn, job.id, f"interrupted: {type(exc).__name__}: {exc}"[:500])
             raise
 
-    def _group(self, group: str) -> GroupA | GroupB | GroupC:
+    def _group(self, group: str) -> GroupSpec:
         return getattr(self.settings.groups, group)
 
     def _run_job(self, job: Job, upcoming: Sequence[Job] = ()) -> JobOutcome:
@@ -513,17 +513,20 @@ class Worker:
         candidates: list[Candidate] = []
         winner: Candidate | None = None
         self._configure_renderer()
+        # The shape of pictures drawn from now on (Phase 16g); the picture keeps it.
+        aspect = self.settings.picture.aspect
+        ratio, size = ASPECTS[aspect], RENDER_SIZES[aspect]
         for attempt in range(MAX_ATTEMPTS):
             batch = []
             for k in range(group.candidates):
                 seed = picture_seed(sheet.base_seed, version, attempt, k)
-                image = self.renderer.render(prompt, seed, reference)
+                image = self.renderer.render(prompt, seed, reference, size=size)
                 batch.append((k, seed, image))
             tag_results = self.tagger([img for _, _, img in batch])
             for (k, seed, image), tags in zip(batch, tag_results, strict=True):
                 result = qc.check(tags, expect, qc.head_top(image))
                 cand = Candidate(attempt, k, seed, image, tags, result)
-                cand.path = self.images.save_candidate(cand_dir, cand)
+                cand.path = self.images.save_candidate(cand_dir, cand, ratio)
                 candidates.append(cand)
             this_round = candidates[-len(batch) :]
             pick = qc.best([c.result for c in this_round])
@@ -550,6 +553,7 @@ class Worker:
             "man_sheet": man.describe() if man is not None else None,
             "reference": reference_info,
             "prompt": prompt,
+            "aspect": aspect,
         }
         if winner is None:
             return self._finish_failed(
@@ -557,18 +561,20 @@ class Worker:
             )
 
         final, detail_info = winner.image, None
-        if group.detail_size is not None:
-            final, detail_info = self._detail(winner, prompt, expect, reference, group.detail_size)
+        detail_size = group.detail_size(aspect)
+        if detail_size is not None:
+            final, detail_info = self._detail(winner, prompt, expect, reference, detail_size)
         master = folder / f"v{version:03d}.png"
+        drawn = self._render_settings(size)
         self.images.save_master(
             master,
-            crop_to_aspect(final),
+            crop_to_aspect(final, ratio),
             prompt,
             winner.seed,
             self.renderer.model,
-            self.renderer.settings(),
+            drawn,
         )
-        render = {**self.renderer.settings(), **_model_extras(self.renderer, prompt)}
+        render = {**drawn, **_model_extras(self.renderer, prompt)}
         render["detail"] = detail_info
         render.update({k: v for k, v in context.items() if k != "prompt"})
         render["seconds"] = round(self.clock() - t0, 2)  # the dashboard's estimate (Phase 12c)
@@ -599,6 +605,7 @@ class Worker:
                 current=True,
                 model=self.renderer.model,
                 gender=portrait.gender,
+                aspect=aspect,
             )
             select_sheet(self.conn, self.career.id, job.unique_id, sheet_version)
             jobs.finish(self.conn, job.id, "done", winner.attempt + 1)
@@ -714,6 +721,10 @@ class Worker:
         if len(prompts) > 1:
             self.log(f"  encoded the prompts of the next {len(prompts)} jobs ({texts} texts)")
 
+    def _render_settings(self, size: tuple[int, int]) -> dict[str, Any]:
+        """The renderer's settings as recorded with a picture, at the size it was drawn."""
+        return {**self.renderer.settings(), "width": size[0], "height": size[1]}
+
     def _configure_renderer(self) -> None:
         """Apply VAE tiling per job rather than only when the renderer loads."""
         set_tiling = getattr(self.renderer, "set_vae_tiling", None)
@@ -765,15 +776,17 @@ class Worker:
                 folder = master_dir(self.data_dir, self.career.key, job.unique_id)
                 master = folder / f"v{version:03d}-rejected.png"
                 prompt: Prompt = context["prompt"]
+                aspect = context["aspect"]
+                drawn = self._render_settings(RENDER_SIZES[aspect])
                 self.images.save_master(
                     master,
-                    crop_to_aspect(best.image),
+                    crop_to_aspect(best.image, ASPECTS[aspect]),
                     prompt,
                     best.seed,
                     self.renderer.model,
-                    self.renderer.settings(),
+                    drawn,
                 )
-                render = {**self.renderer.settings(), **_model_extras(self.renderer, prompt)}
+                render = {**drawn, **_model_extras(self.renderer, prompt)}
                 render.update({k: v for k, v in context.items() if k != "prompt"})
                 render["seconds"] = round(self.clock() - t0, 2)
                 image_id = self.images.insert_image(
@@ -794,6 +807,7 @@ class Worker:
                     current=False,
                     model=self.renderer.model,
                     gender=gender,
+                    aspect=aspect,
                 )
             jobs.finish(self.conn, job.id, "failed", MAX_ATTEMPTS if candidates else 0, error[:500])
         return JobOutcome(

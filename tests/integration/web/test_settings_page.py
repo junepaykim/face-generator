@@ -59,7 +59,8 @@ def test_group_names_show_as_chips_in_labels_and_titles(client: TestClient) -> N
     page = client.get("/settings/advanced").text
     standard = '<span class="grp grp-b" data-tip="One picture each at standard quality: strong and promising players in my league, continental competitions and my youth teams, and the press.">Standard</span>'
     assert f"Academy players stay in the {standard} group after they leave" in page
-    assert f"<legend>{standard} group" in page
+    assert f"<th>{standard}</th>" in page  # the quality table's column
+    assert f'<th scope="row">{standard}</th>' in page  # the cutoffs table's row
     korean = client.get("/settings/advanced", headers=KOREAN_WINDOWS).text
     assert re.search(
         r'내 구단 출신 유스는 이적해도 <span class="grp grp-b" data-tip="[^"]+">표준</span> 그룹에 남기기',

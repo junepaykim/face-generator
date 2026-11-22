@@ -1,0 +1,54 @@
+{# One setting as a labelled field (Advanced page). `errors` maps keys to their error text. #}
+{% from "_icons.html" import info as tip %}
+{% macro input(fd, label=None) %}
+  {% if fd.kind == "bool" %}
+    <input type="hidden" name="{{ fd.key }}" value="off"><input type="checkbox" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" {{ "checked" if fd.value is sameas true }}{% if label %} aria-label="{{ label }}"{% endif %}>
+  {% elif fd.kind == "int" %}
+    <input type="number" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}" step="1"{% if label %} aria-label="{{ label }}"{% endif %}>
+  {% elif fd.kind == "float" %}
+    <input type="number" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}" step="any"{% if label %} aria-label="{{ label }}"{% endif %}>
+  {% elif fd.kind == "band" %}
+    <input type="text" class="band" inputmode="numeric" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}" aria-label="{{ label or fd.label }}">
+  {% elif fd.kind == "cell" %}
+    <input type="text" class="cell" inputmode="decimal" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}" aria-label="{{ label or fd.label }}">
+  {% elif fd.kind == "groups" %}
+    <span class="group-ticks">
+      <input type="hidden" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}">
+      {% for g in ("a", "b", "c") %}<label class="tick"><input type="checkbox" data-group-of="{{ fd.key }}" value="{{ g }}" {{ "checked" if g in fd.value }}> {{ grp(g) }}</label>{% endfor %}
+    </span>
+  {% elif fd.kind == "choice" %}
+    <select name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}"{% if fd.key.startswith("display.") %} data-reload{% endif %}{% if label %} aria-label="{{ label }}"{% endif %}>
+      {% for value, text in fd.choices %}<option value="{{ value }}" {{ "selected" if fd.text == value }}>{{ text }}</option>{% endfor %}
+      {% if fd.text not in fd.choices|map("first") %}<option value="{{ fd.text }}" selected>{{ fd.text }}</option>{% endif %}
+    </select>
+  {% else %}
+    <input type="text" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}"{% if label %} aria-label="{{ label }}"{% endif %}>
+  {% endif %}
+{% endmacro %}
+
+{% macro note(fd, errors) -%}
+  <span class="muted small">{{ t("settings.default", value=fd.default_text) }}
+    <button type="button" class="link small" data-use-default {{ "hidden" if not fd.changed }}>{{ t("settings.use_default") }}</button>
+    <span class="bad" data-error>{% if fd.key in errors %} · {{ errors[fd.key] }}{% endif %}</span></span>
+{%- endmacro %}
+
+{% macro field(fd, errors) %}
+  {% set box = "div" if fd.kind == "groups" else "label" %}
+  <{{ box }} class="field {{ 'changed' if fd.changed }} {{ 'error' if fd.key in errors }}" data-field>
+    {% set field_tip = "settings.field_tip." ~ fd.key.rsplit(".", 1)[-1] %}
+    <span class="name">{% if fd.label_key %}{{ t(fd.label_key, **fd.label_values) }}{% else %}{{ fd.label }}{% endif %}{% if tr.has(field_tip) %} {{ tip(t(field_tip)) }}{% endif %} <span class="dot" data-dot title="{{ t('settings.default', value=fd.default_text) }}" {{ "hidden" if not fd.changed }}></span></span>
+    {{ input(fd) }}
+    {{ note(fd, errors) }}
+  </{{ box }}>
+{% endmacro %}
+
+{# A field inside a table cell: the input, the live value beside it, the default dot and error. #}
+{% macro cell(fd, errors, label, effective=None) %}
+  <span class="cell-field {{ 'changed' if fd.changed }} {{ 'error' if fd.key in errors }}" data-field>
+    {% if fd.key.startswith("cutoffs.share.") %}<span class="muted small">{{ t("cutoffs.top") }}</span>{% endif %}
+    {{ input(fd, label) }}{% if fd.key.startswith("cutoffs.share.") %}<span class="muted small">%</span>{% endif %}
+    <span class="dot" data-dot title="{{ t('settings.default', value=fd.default_text) }}" {{ "hidden" if not fd.changed }}></span>
+    {% if effective is not none %}<span class="effective" data-effective="{{ fd.key }}">{{ effective }}</span>{% endif %}
+    <span class="bad small" data-error>{% if fd.key in errors %}{{ errors[fd.key] }}{% endif %}</span>
+  </span>
+{% endmacro %}

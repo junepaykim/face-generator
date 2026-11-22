@@ -41,14 +41,38 @@ WOMAN, MAN = "woman", "man"
 GENDER_CHOICES = (WOMAN, MAN)
 """`style.gender`: everyone is drawn as a woman or as a man (user, 2026-11-20)."""
 
-DETAIL_SIZES: dict[str, tuple[int, int] | None] = {
-    "1344x1728": (1344, 1728),
-    "1152x1472": (1152, 1472),
+ASPECTS: dict[str, tuple[int, int]] = {"3:4": (3, 4), "1:1": (1, 1)}
+"""`picture.aspect`: the shape of pictures drawn from now on, width to height (Phase 16g). Each
+picture keeps the shape it was drawn in (`images.aspect`)."""
+ASPECT_CHOICES = tuple(ASPECTS)
+RENDER_SIZES: dict[str, tuple[int, int]] = {"3:4": (896, 1152), "1:1": (1024, 1024)}
+"""The size each shape is rendered at: about SDXL's native million pixels. A 3:4 render is
+cropped to exactly 3:4 (864x1152); a square needs no crop."""
+
+DETAIL_SIZES: dict[str, dict[str, tuple[int, int]] | None] = {
+    "x1.5": {"3:4": (1344, 1728), "1:1": (1536, 1536)},
+    "smaller": {"3:4": (1152, 1472), "1:1": (1280, 1280)},
     "off": None,
 }
-"""`groups.*.detail_size`: the detail pass's target size (width, height), or none. 1344x1728 is
-1.5 times the 896x1152 render; 1152x1472 needs less graphics memory. Both sides
-are multiples of 64, as the model needs."""
+"""`groups.*.detail_size`: the detail pass by scale, resolved per picture shape to (width,
+height), or none. x1.5 is 1.5 times the render; "smaller" needs less graphics memory. Every side
+is a multiple of 64, as the models need. Before Phase 16 the values were the 3:4 sizes
+("1344x1728", "1152x1472"), migrated by `persistence.db.CONVERTED_SETTINGS`."""
+
+
+def detail_size(name: str, aspect: str) -> tuple[int, int] | None:
+    """A detail-pass choice's target size for a picture shape; None for off."""
+    sizes = DETAIL_SIZES[name]
+    return None if sizes is None else sizes[aspect]
+
+
+CUTOFF_MODES = ("auto", "manual")
+"""`cutoffs.mode`: my league's cells as shares ("top 6%") or numbers set by hand (Phase 16)."""
+TIER_CHOICES = ("a", "b", "c")
+"""`cutoffs.my_club.*`: the tier (group) a part of my club is drawn in."""
+STAFF_AGE_MODES = ("manual", "auto")
+"""`age.staff.mode`: the staff table set look by look, or spread over an age span (Phase 16f)."""
+
 
 FOUND = "found on this PC"
 NOT_SET = "not set"
@@ -106,51 +130,83 @@ class Newgen:
 
 
 @dataclass(frozen=True, slots=True)
-class GroupA:
-    ca_above: int
-    pa_above: int
+class GroupSpec:
+    """How one group's pictures are drawn: who is in it is `CutoffSettings`' (Phase 16)."""
+
     published_long_edge: int
     candidates: int
-    detail_size: tuple[int, int] | None
-    """The detail pass's target size (width, height); None: no detail pass."""
+    detail: str
+    """A key of DETAIL_SIZES."""
 
-
-@dataclass(frozen=True, slots=True)
-class GroupB:
-    my_academy: bool
-    league_ca_above: int
-    league_pa_above: int
-    any_ca_above: int
-    any_pa_above: int
-    published_long_edge: int
-    candidates: int
-    detail_size: tuple[int, int] | None
-    """The detail pass's target size (width, height); None: no detail pass."""
-
-
-@dataclass(frozen=True, slots=True)
-class GroupC:
-    league_ca_above: int
-    league_pa_above: int
-    published_long_edge: int
-    candidates: int
-    detail_size: tuple[int, int] | None
-    """The detail pass's target size (width, height); None: no detail pass."""
+    def detail_size(self, aspect: str = "3:4") -> tuple[int, int] | None:
+        """The detail pass's target size (width, height) for a picture shape; None: no pass."""
+        return detail_size(self.detail, aspect)
 
 
 @dataclass(frozen=True, slots=True)
 class Groups:
-    a: GroupA
-    b: GroupB
-    c: GroupC
+    a: GroupSpec
+    b: GroupSpec
+    c: GroupSpec
 
     def published_sizes(self) -> dict[str, int]:
-        """Group name to the height of its published 3:4 picture, in pixels."""
+        """Group name to the height of its published picture, in pixels."""
         return {
             "a": self.a.published_long_edge,
             "b": self.b.published_long_edge,
             "c": self.c.published_long_edge,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class MyClubTiers:
+    """The tier each part of my club is drawn in (`cutoffs.my_club`)."""
+
+    first_team: str = "a"
+    youth: str = "b"
+    """My club's teams other than the first team (reserves, under-23s, under-18s)."""
+    loans: str = "b"
+    """Players I loaned out to other clubs, while I hold the contract (user, 2026-11-21)."""
+    academy_alumni: bool = True
+    """Newgens who came through my academy stay in Standard (B), tracked, after they leave."""
+
+
+@dataclass(frozen=True, slots=True)
+class CutoffSettings:
+    """Who is picked for each tier (spec section 2, Phase 16): shares of a league, numbers
+    everywhere. A cell's None is "-": switched off. See core/cutoffs.py."""
+
+    mode: str = "auto"
+    """A key of CUTOFF_MODES: my league's cells as shares (auto) or numbers (manual)."""
+    light_above: bool = True
+    """The league above gets Light pictures by its share (`above_c_ca`)."""
+    light_below: bool = False
+    """The league below gets Light pictures by its share (`below_c_ca`)."""
+    my_club: MyClubTiers = field(default_factory=MyClubTiers)
+    share: Mapping[str, float | None] = field(default_factory=dict)
+    """My league's cells and the other leagues' cells ("above_b_ca"), in percent."""
+    manual: Mapping[str, int | None] = field(default_factory=dict)
+    """My league's cells as numbers (at least), used in manual mode."""
+    everywhere: Mapping[str, int | None] = field(default_factory=dict)
+    """The global cells: at least this CA or PA, at any club."""
+
+
+@dataclass(frozen=True, slots=True)
+class StaffSpread:
+    """`age.staff` in auto mode: looks `first` to `last` spread over the ages `start` to `end`."""
+
+    first: str
+    last: str
+    start: int
+    end: int
+
+
+@dataclass(frozen=True, slots=True)
+class PictureSettings:
+    """The shape of pictures drawn from now on."""
+
+    aspect: str = "1:1"
+    """A key of ASPECTS. A change re-draws nobody; each picture keeps its own shape."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,6 +221,8 @@ class AgeSettings:
     """My club's staff, whatever their group: wide bands, W02 the youngest."""
     media: tuple[tuple[int, str], ...]
     """Journalists and press officers: the staff bands from W04 up."""
+    staff_spread: StaffSpread | None = None
+    """In auto mode (`age.staff.mode`) the spread `staff` was made from; None in manual."""
 
     def table(self, name: str) -> tuple[tuple[int, str], ...]:
         return getattr(self, name)
@@ -176,16 +234,6 @@ class StaffSettings:
 
     enabled: bool
     """False: staff are in no group unless pinned; their pictures are kept."""
-
-
-@dataclass(frozen=True, slots=True)
-class YouthSettings:
-    """My club's teams other than the first team."""
-
-    enabled: bool
-    """True: players in my club's reserve, under-23 and under-18 teams are in group B, or A
-    when their CA or PA reaches group A's thresholds, and A once they join the first team.
-    False: they are in group A like the first team."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -297,9 +345,9 @@ class Settings:
     eligibility: Eligibility
     newgen: Newgen
     groups: Groups
+    cutoffs: CutoffSettings
     staff: StaffSettings
     no_photo: NoPhotoSettings
-    youth: YouthSettings
     media: MediaSettings
     age: AgeSettings
     reference: ReferenceSettings
@@ -308,6 +356,7 @@ class Settings:
     personality: PersonalitySettings
     schedule: Schedule
     render: RenderSettings
+    picture: PictureSettings
     style: StyleSettings
     display: DisplaySettings
     notifications: NotificationSettings

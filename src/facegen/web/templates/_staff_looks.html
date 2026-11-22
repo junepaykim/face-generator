@@ -1,0 +1,11 @@
+{# My club's staff table: each look's ages and how many staff have it now (Phase 16f). #}
+<table class="looks">
+  <thead><tr><th>{{ t("ages.look") }}</th><th>{{ t("ages.ages") }}</th><th class="num">{{ t("ages.staff_now") }}</th></tr></thead>
+  <tbody>
+  {% for row in staff_looks %}
+    <tr><td>{{ band(row.look) }}</td>
+      <td>{% if row.first is none and row.last is none %}{{ t("ages.any") }}{% elif row.first is none %}{{ t("ages.and_under", age=row.last) }}{% elif row.last is none %}{{ t("ages.and_over", age=row.first) }}{% elif row.first == row.last %}{{ row.first }}{% else %}{{ row.first }}–{{ row.last }}{% endif %}</td>
+      <td class="num">{{ "–" if row.staff is none else row.staff }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>

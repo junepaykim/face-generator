@@ -14,9 +14,12 @@ import pytest
 from support.paths import ROOT
 
 from facegen.core import presets
+from facegen.core.cutoffs import SCOPES as CUTOFF_SCOPES
 from facegen.core.domain import JOB_KINDS
 from facegen.core.problems import KINDS as PROBLEM_KINDS
 from facegen.core.settings_values import (
+    ASPECT_CHOICES,
+    CUTOFF_MODES,
     DETAIL_SIZES,
     GENDER_CHOICES,
     LANGUAGE_CHOICES,
@@ -30,7 +33,7 @@ from facegen.runtime.contracts import WORKER_REASONS
 from facegen.setup import hardware
 from facegen.setup.models import REPOS
 from facegen.web import presentation
-from facegen.web.forms import editable_keys, settings_sections
+from facegen.web.forms import TABS, editable_keys, settings_sections
 from facegen.web.messages import CHECK_FAILURES
 from facegen.web.queries import (
     GALLERY_SORTS,
@@ -119,6 +122,10 @@ def vocabulary_keys() -> list[str]:
     keys += [f"players.photo.{k}" for k in PHOTO_FILTERS] + [f"players.scope.{k}" for k in SCOPES]
     keys += [f"players.sort.{k}" for k in SORTS]
     keys += [f"settings.choice.detail_size.{k}" for k in DETAIL_SIZES]
+    keys += [f"settings.choice.mode.{k}" for k in CUTOFF_MODES]
+    keys += [f"settings.choice.aspect.{k}" for k in ASPECT_CHOICES]
+    keys += [f"settings.tab.{k}" for k in TABS]
+    keys += [f"cutoffs.found.{k}" for k in CUTOFF_SCOPES]
     keys += [f"settings.choice.language.{k}" for k in LANGUAGE_CHOICES]
     keys += [f"settings.choice.theme.{k}" for k in THEME_CHOICES]
     keys += [f"settings.choice.model.{k}" for k in MODEL_CHOICES]

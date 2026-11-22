@@ -1,0 +1,7 @@
+{# Each group's count now, and before the last change where it moved (Phase 16e). #}
+{% set counts = cutoffs.counts %}
+<span class="muted small">{{ t("cutoffs.summary") }}</span>
+{% for g in ("a", "b", "c") %}
+  <span class="tier-count">{{ grp(g) }}
+  {% if counts is none %}–{% elif counts_before and counts_before[g] != counts[g] %}<span class="muted">{{ counts_before[g]|num }}</span> → <strong>{{ counts[g]|num }}</strong>{% else %}<strong>{{ counts[g]|num }}</strong>{% endif %}</span>{% if not loop.last %}<span class="muted">·</span>{% endif %}
+{% endfor %}

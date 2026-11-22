@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 from facegen.core.job_records import Career, Job
 from facegen.core.prompt import Prompt
 from facegen.persistence.jobs import now
-from facegen.render.picture import crop_to_aspect
+from facegen.render.picture import ASPECT, crop_to_aspect
 
 if TYPE_CHECKING:
     from PIL.Image import Image
@@ -59,13 +59,15 @@ class ImageStore:
         current: bool,
         model: str,
         gender: str,
+        aspect: str = "3:4",
     ) -> int:
-        """`gender` is who the picture shows: "woman" or "man" (`style.gender`)."""
+        """`gender` is who the picture shows: "woman" or "man" (`style.gender`); `aspect` its
+        shape, "3:4" or "1:1" (`picture.aspect` when it was drawn)."""
         cur = self.conn.execute(
             "INSERT INTO images (career_id, unique_id, version, reason, group_name, club_id,"
             " age_band, traits_version, model, prompt, negative_prompt, seed, master_path,"
-            " published_path, check_result, is_current, created_at, render, gender)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)",
+            " published_path, check_result, is_current, created_at, render, gender, aspect)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)",
             (
                 self.career.id,
                 job.unique_id,
@@ -85,15 +87,18 @@ class ImageStore:
                 now(),
                 json.dumps(render),
                 gender,
+                aspect,
             ),
         )
         assert cur.lastrowid is not None
         return cur.lastrowid
 
-    def save_candidate(self, folder: Path, cand: CandidateFile) -> str:
-        """The candidate as it would be published: cropped to 3:4, as WebP."""
+    def save_candidate(
+        self, folder: Path, cand: CandidateFile, aspect: tuple[int, int] = ASPECT
+    ) -> str:
+        """The candidate as it would be published: cropped to its shape (3:4 or 1:1), as WebP."""
         path = folder / f"a{cand.attempt}c{cand.index}-{cand.seed}.webp"
-        self.save_webp(path, crop_to_aspect(cand.image))
+        self.save_webp(path, crop_to_aspect(cand.image, aspect))
         return self.rel(path)
 
     def save_webp(self, path: Path, image: Image) -> None:

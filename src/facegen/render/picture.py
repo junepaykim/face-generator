@@ -1,7 +1,9 @@
-"""Picture geometry: the 3:4 portrait shape, published sizes and the face crop. Pure.
+"""Picture geometry: the picture's shape, published sizes and the face crop. Pure.
 
-The model renders near 3:4; the master is cropped to exactly that aspect. FM27 gets the
-master scaled down to the group's published height (`groups.<g>.published_long_edge`).
+A picture is a 3:4 portrait or, since Phase 16g, a 1:1 square (`picture.aspect`; each picture
+keeps the shape it was drawn in, `images.aspect`). The model renders near 3:4 and the master is
+cropped to exactly that aspect; a square renders square. FM27 gets the master scaled down to
+the group's published height (`groups.<g>.published_long_edge`).
 
 Legacy square pictures are centre-cropped on publication, without automatic redraws.
 
@@ -19,7 +21,7 @@ if TYPE_CHECKING:
     from PIL.Image import Image
 
 ASPECT = (3, 4)
-"""Width to height of every picture."""
+"""Width to height of a portrait, the default shape (settings_values.ASPECTS has both)."""
 
 type Box = tuple[int, int, int, int]
 """left, top, right, bottom in pixels, as PIL's crop takes them."""

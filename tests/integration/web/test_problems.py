@@ -146,10 +146,10 @@ def test_a_refused_request_is_worded_in_the_pages_language(env: Env) -> None:
     assert "Kid: no picture to draw again; use Generate" in client.get(r.headers["location"]).text
     bad = client.post(
         "/settings/save",
-        data={"groups.a.ca_above": "300"},
+        data={"cutoffs.everywhere.a_ca": "300"},
         headers={"Accept": "application/json", **KOREAN_WINDOWS},
     ).json()
-    assert bad["errors"]["groups.a.ca_above"] == "0~200 사이여야 합니다"
+    assert bad["errors"]["cutoffs.everywhere.a_ca"] == "1~200 사이여야 합니다"
     client.close()
 
 

@@ -103,3 +103,47 @@ def drawn_as_man(band: str | None) -> bool:
 def audience(row: Any) -> dict[str, bool]:
     """`age_wording`'s and `table_name`'s staff and media flags from a players row."""
     return {"staff": bool(row["is_staff"]), "media": row["media_role"] is not None}
+
+
+def spread_table(first: str, last: str, start: int, end: int) -> tuple[tuple[int, str], ...]:
+    """An age table spreading the looks `first` to `last` over the ages `start` to `end`
+    (my club's staff in auto mode, Phase 16f): up to `start` the first look, from `end` the last,
+    and the years between split evenly over the looks between, a leftover year going to the
+    younger looks. ValueError when the looks or ages are out of order, or the span has fewer
+    years than looks between.
+
+    W02-W10 over 28-64: (0, W02), (29, W03), (34, W04), ..., (59, W09), (64, W10).
+    """
+    keys = list(WORDINGS)
+    if first not in WORDINGS or last not in WORDINGS:
+        raise ValueError(f"unknown look {first if first not in WORDINGS else last}")
+    i, j = keys.index(first), keys.index(last)
+    if i > j:
+        raise ValueError("the first look must be younger than the last")
+    if start >= end:
+        raise ValueError("the first age must be below the last")
+    if i == j:
+        return ((0, first),)
+    middle = keys[i + 1 : j]
+    years = end - start - 1
+    if years < len(middle):
+        raise ValueError(f"{years} years between the ages cannot hold {len(middle)} looks")
+    rows = [(0, first)]
+    age = start + 1
+    if middle:
+        base, extra = divmod(years, len(middle))
+        for n, key in enumerate(middle):
+            rows.append((age, key))
+            age += base + (1 if n < extra else 0)
+    rows.append((end, last))
+    return tuple(rows)
+
+
+def band_ages(rows: tuple[tuple[int, str], ...]) -> list[tuple[str, int | None, int | None]]:
+    """Each look of a table with its ages: (look, first age or None for "and under", last age or
+    None for "and over")."""
+    out = []
+    for n, (first, key) in enumerate(rows):
+        last = rows[n + 1][0] - 1 if n + 1 < len(rows) else None
+        out.append((key, None if n == 0 else first, last))
+    return out

@@ -22,12 +22,18 @@ from facegen.core.identity import (
     is_newgen,
     person_hash,
 )
-from facegen.core.leagues import clubs_in_competitions, my_league_competitions
+from facegen.core.leagues import (
+    Ladder,
+    clubs_in_competitions,
+    continental_competitions,
+    league_ladder,
+    my_league,
+)
 from facegen.core.records import Gender, Snapshot
 from facegen.core.settings_values import Settings
 from facegen.core.traits import personality_to_json
 from facegen.datasource.photos import PhotoScan
-from facegen.persistence import photo_index
+from facegen.persistence import league_stats, photo_index
 from facegen.persistence.db import transaction
 from facegen.pipeline import reclassification
 
@@ -88,6 +94,9 @@ class SyncReport:
     signings, loans in). Their jobs go to the front of the automatic queue. 0 on a first sync."""
     new_staff: int = 0
     """People on my club's staff who were not at the career's previous sync. 0 on a first sync."""
+    leagues: list[league_stats.FoundLeague] = field(default_factory=list)
+    """The leagues found for the cutoffs (my league, above, below, continental), each named by
+    its best-known clubs."""
 
 
 def resolve_career(
@@ -229,6 +238,26 @@ class IngestStats:
     continental_clubs: int
     arrivals_at_my_club: int = 0
     staff_arrivals: int = 0
+    scopes: dict[str, tuple[int, ...]] = field(default_factory=dict)
+    """The cutoff scopes found ("league", "above", "below", "continental") and their
+    competitions; a scope not found is left out."""
+
+
+def found_scopes(
+    league_ids: frozenset[int], ladder: Ladder, continental_ids: frozenset[int]
+) -> dict[str, tuple[int, ...]]:
+    """The scopes the share rules can measure: my league, the levels above and below mine on
+    the ladder, and the continental competitions my club plays in."""
+    scopes: dict[str, tuple[int, ...]] = {}
+    if league_ids:
+        scopes["league"] = tuple(sorted(league_ids))
+    for scope, offset in (("above", 1), ("below", -1)):
+        found = ladder.at(offset)
+        if found:
+            scopes[scope] = tuple(sorted(lg.competition_id for lg in found))
+    if continental_ids:
+        scopes["continental"] = tuple(sorted(continental_ids))
+    return scopes
 
 
 def ingest(
@@ -257,14 +286,29 @@ def ingest(
     first_sync = not prev
     my_club = snapshot.managed_club_id
     elig = settings.eligibility
-    league_ids = my_league_competitions(
-        my_club, snapshot.clubs, snapshot.league_tables, snapshot.fixture_counts
+    ladder = league_ladder(
+        my_club,
+        snapshot.clubs,
+        snapshot.league_tables,
+        snapshot.fixture_counts,
+        seasons=snapshot.fixture_seasons,
+        rules=snapshot.competition_rules,
     )
-    league_clubs = clubs_in_competitions(
-        league_ids, snapshot.league_tables, snapshot.fixture_counts
+    ladder_clubs = ladder.club_leagues()
+    league_ids, league_clubs = my_league(
+        ladder, my_club, snapshot.clubs, snapshot.league_tables, snapshot.fixture_counts
+    )
+    continental_ids = continental_competitions(
+        my_club,
+        snapshot.clubs,
+        snapshot.league_tables,
+        snapshot.fixture_counts,
+        elig.continental_competition_ids,
+        seasons=snapshot.fixture_seasons,
+        game_date=snapshot.meta.game_date,
     )
     continental_clubs = clubs_in_competitions(
-        elig.continental_competition_ids, snapshot.league_tables, snapshot.fixture_counts
+        continental_ids, snapshot.league_tables, snapshot.fixture_counts
     )
     game_date = snapshot.meta.game_date
 
@@ -360,10 +404,13 @@ def ingest(
         (cid, sync_id),
     )
     conn.executemany(
-        "INSERT INTO clubs (career_id, club_id, name, gender, nation_id, in_my_league, continental)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (career_id, club_id) DO UPDATE SET"
+        "INSERT INTO clubs (career_id, club_id, name, gender, nation_id, in_my_league, continental,"
+        " reputation, league_id, league_offset) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        " ON CONFLICT (career_id, club_id) DO UPDATE SET"
         " name = excluded.name, gender = excluded.gender, nation_id = excluded.nation_id,"
-        " in_my_league = excluded.in_my_league, continental = excluded.continental",
+        " in_my_league = excluded.in_my_league, continental = excluded.continental,"
+        " reputation = excluded.reputation, league_id = excluded.league_id,"
+        " league_offset = excluded.league_offset",
         [
             (
                 cid,
@@ -373,12 +420,19 @@ def ingest(
                 c.nation_id,
                 int(c.club_id in league_clubs),
                 int(c.club_id in continental_clubs),
+                c.reputation,
+                *ladder_clubs.get(c.club_id, (None, None)),
             )
             for c in snapshot.clubs.values()
         ],
     )
     return IngestStats(
-        first_sync, len(league_clubs), len(continental_clubs), arrivals, staff_arrivals
+        first_sync,
+        len(league_clubs),
+        len(continental_clubs),
+        arrivals,
+        staff_arrivals,
+        found_scopes(league_ids, ladder, continental_ids),
     )
 
 
@@ -667,6 +721,12 @@ def run_sync(
                 (save_mtime, save_mtime, career.id),
             )
         stats = ingest(conn, career, snapshot, settings, sync_id)
+        league_stats.store(
+            conn,
+            career.id,
+            league_stats.collect(conn, career.id, stats.scopes),
+            snapshot.meta.game_date,
+        )
         result = reclassification.classify_and_plan(conn, career.id, settings)
         counts = _counts(conn, career.id, snapshot)
         conn.execute(
@@ -684,9 +744,10 @@ def run_sync(
                 "only, 'my club' and 'my league' match nobody (decisions.md, open question 1)"
             )
         elif stats.my_league_clubs == 0:
-            warnings.append("could not work out my club's league from the save")
-        if not settings.eligibility.continental_competition_ids:
-            warnings.append("no continental competition IDs are set (eligibility settings)")
+            warnings.append(
+                "could not work out my club's league from the save: only the global cuts pick"
+                " players at other clubs"
+            )
         photo_status = photo_index.status(conn)
         if photo_status is not None:
             warnings.extend(photo_status.warnings)
@@ -711,6 +772,7 @@ def run_sync(
             table=player_table(conn, career.id) if with_table else [],
             new_at_my_club=stats.arrivals_at_my_club,
             new_staff=stats.staff_arrivals,
+            leagues=league_stats.found_leagues(conn, career.id),
         )
         if not dry_run and before_commit is not None:
             before_commit()

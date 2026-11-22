@@ -20,7 +20,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from facegen.core.age import WORDINGS
+from facegen.core.cutoffs import convert_mode
 from facegen.core.settings_values import Settings
+from facegen.persistence import league_stats
 from facegen.persistence.db import transaction
 from facegen.persistence.jobs import load_career
 from facegen.persistence.settings import load_defaults, load_settings, read_overrides, set_overrides
@@ -29,7 +32,7 @@ from facegen.pipeline.reclassification import ChangeReport, reclassify_with_repo
 
 HISTORY_LIMIT = 20
 
-_RECLASSIFY_PREFIXES = ("groups.", "age.", "staff.", "no_photo.", "youth.", "media.")
+_RECLASSIFY_PREFIXES = ("cutoffs.", "age.", "staff.", "no_photo.", "media.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,21 +125,47 @@ def _reclassify(
     return reclassify_with_report(conn, career.id, settings)
 
 
+def mode_changes(
+    conn: sqlite3.Connection, changes: Mapping[str, Any], current: Settings
+) -> dict[str, Any]:
+    """The changes with each mode switch carried out (Phase 16): my league's cutoffs switched
+    between Auto and Manual convert each cell from the latest save (core/cutoffs.py
+    `convert_mode`); my club's staff ages switched from Auto to Manual copy the spread into the
+    looks. Values the changes set themselves are kept."""
+    out = dict(changes)
+    mode = changes.get("cutoffs.mode")
+    if mode is not None and mode != current.cutoffs.mode:
+        career = load_career(conn)
+        stats = league_stats.load(conn, career.id) if career is not None else {}
+        converted = convert_mode(current.cutoffs, mode, stats, no_photo=current.no_photo.enabled)
+        out = converted | out
+    spread = current.age.staff_spread
+    if changes.get("age.staff.mode") == "manual" and spread is not None:
+        firsts = {wording: first for first, wording in current.age.staff}
+        copied = {f"age.staff.{w}": firsts.get(w, "-") for w in WORDINGS}
+        out = copied | out
+    return out
+
+
 def save(
     conn: sqlite3.Connection,
     changes: Mapping[str, Any],
     *,
     label: str = "edit",
     defaults_path: Path | None = None,
+    convert: bool = False,
 ) -> Outcome:
     """Store changes, re-classify, and record them as one undoable entry.
 
     The changes are checked together (settings.set_overrides) and nothing is stored unless all
     are valid: SettingsError otherwise. Values equal to the current ones are left out; a value
-    equal to its default removes the override.
+    equal to its default removes the override. With `convert` (an edit on the page), a mode
+    switch also converts the values it switches between (`mode_changes`), in the same entry.
     """
     with transaction(conn):
         current = load_settings(conn, defaults_path)
+        if convert:
+            changes = mode_changes(conn, changes, current)
         # An unknown key is kept, so set_overrides refuses it by name.
         changes = {
             k: v for k, v in changes.items() if k not in current.values or v != current.values[k]

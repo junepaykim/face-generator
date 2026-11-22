@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from factories import snapshot
+from factories import MANUAL_MODE, snapshot
 from fakes import FakeRenderer, FakeTagger
 from fastapi.testclient import TestClient
 from httpx import Response
@@ -15,7 +15,7 @@ from httpx import Response
 from facegen.core.records import PlayerRecord
 from facegen.datasource.kits import load_kits
 from facegen.persistence import db
-from facegen.persistence.settings import load_settings
+from facegen.persistence.settings import load_settings, set_overrides
 from facegen.pipeline.sync import run_sync
 from facegen.runtime.worker_service import WorkerService
 from facegen.web.app import AppContext, create_app
@@ -24,10 +24,13 @@ BASE = "http://127.0.0.1:8765"
 KOREAN_WINDOWS = {"Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"}
 
 
-def synced(config_file: Path, world: Sequence[PlayerRecord]) -> Path:
-    """The database of a career synced from `world`."""
-    settings = load_settings(defaults_path=config_file)
-    conn = db.connect(settings.paths.db_path)
+def synced(config_file: Path, world: Sequence[PlayerRecord], *, shares: bool = False) -> Path:
+    """The database of a career synced from `world`. My league's cutoffs are numbers set by
+    hand (Manual) unless `shares`: the made-up leagues hold too few candidates for shares."""
+    conn = db.connect(load_settings(defaults_path=config_file).paths.db_path)
+    settings = load_settings(conn, config_file)
+    if not shares:
+        settings = set_overrides(conn, MANUAL_MODE, config_file)
     run_sync(conn, snapshot(list(world)), settings, save_file="career.fm")
     conn.close()
     return settings.paths.db_path

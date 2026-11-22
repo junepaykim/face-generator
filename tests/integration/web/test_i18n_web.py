@@ -89,16 +89,19 @@ def test_flash_messages_follow_the_language(client: TestClient) -> None:
 def test_settings_errors_and_outcomes_are_worded_in_the_language(client: TestClient) -> None:
     bad = client.post(
         "/settings/save",
-        data={"groups.a.ca_above": "lots"},
+        data={"cutoffs.everywhere.a_ca": "lots"},
         headers={"Accept": "application/json", **KOREAN_WINDOWS},
     ).json()
-    assert not bad["ok"] and bad["errors"]["groups.a.ca_above"] == "숫자를 입력하세요"
+    assert (
+        not bad["ok"]
+        and bad["errors"]["cutoffs.everywhere.a_ca"] == "숫자를 입력하거나, 끄려면 -를 입력하세요"
+    )
     good = client.post(
         "/settings/save",
-        data={"groups.a.ca_above": "150"},
+        data={"cutoffs.everywhere.a_ca": "150"},
         headers={"Accept": "application/json", **KOREAN_WINDOWS},
     ).json()
-    assert good["message"].startswith("저장함: 정밀 그룹 · CA 초과 155 → 150.")
+    assert good["message"].startswith("저장함: 전체 · 정밀 CA 165 이상 → 150 이상.")
     assert not good["reload"]
 
 

@@ -45,7 +45,7 @@ class Measured:
     def __getattr__(self, name: str) -> Any:
         return getattr(self._inner, name)
 
-    def render(self, prompt: Any, seed: int, reference: Any = None) -> Any:
+    def render(self, prompt: Any, seed: int, reference: Any = None, **kw: Any) -> Any:
         if prompt.positive not in self._prompts:
             self._prompts.append(prompt.positive)
             n = len(self._prompts)
@@ -53,7 +53,9 @@ class Measured:
                 self._marker.write_text(f"job {n}, process {os.getpid()}\n", encoding="utf-8")
                 self._write({"kind": "fault", "job": n})
                 real_fault()
-        return self._timed("render", reference, lambda: self._inner.render(prompt, seed, reference))
+        return self._timed(
+            "render", reference, lambda: self._inner.render(prompt, seed, reference, **kw)
+        )
 
     def detail(
         self, image: Any, prompt: Any, seed: int, reference: Any = None, *, size: Any

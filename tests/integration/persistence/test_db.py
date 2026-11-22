@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from facegen.persistence import db
+from facegen.persistence.settings import load_settings
 
 TABLES = {"careers", "clubs", "players", "traits", "images", "jobs", "settings", "sync_runs"}
 
@@ -67,8 +68,9 @@ def test_state_migration_preserves_history_constraints_and_restored_sheet() -> N
     jobs_before = [tuple(r) for r in conn.execute("SELECT * FROM jobs")]
     db.migrate(conn)
     images_after = [tuple(r) for r in conn.execute("SELECT * FROM images ORDER BY id")]
-    assert [r[:-1] for r in images_after] == images_before
-    assert [r[-1] for r in images_after] == ["woman", "woman"]  # gender (migration 13)
+    assert [r[:-2] for r in images_after] == images_before
+    assert [r[-2] for r in images_after] == ["woman", "woman"]  # gender (migration 13)
+    assert [r[-1] for r in images_after] == ["3:4", "3:4"]  # aspect (migration 14)
     assert [tuple(r)[:-2] for r in conn.execute("SELECT * FROM jobs")] == jobs_before
     assert conn.execute("SELECT active_traits_version FROM players").fetchone()[0] == 1
     for table, column in (("images", "age_band"), ("jobs", "target_band")):
@@ -276,7 +278,7 @@ def test_migration_13_records_who_each_picture_shows() -> None:
         "INSERT INTO traits (career_id, unique_id, version, base_seed, sheet, created_at)"
         " VALUES (1, 7, 1, 5, '{}', 'now')"
     )
-    assert db.migrate(conn) == len(db.MIGRATIONS) == 13
+    assert db.migrate(conn) == len(db.MIGRATIONS)
     genders = [r[0] for r in conn.execute("SELECT gender FROM images ORDER BY version")]
     assert genders == ["woman", "man", "woman", "man", "woman"]
     assert conn.execute("SELECT man_sheet FROM traits").fetchone()[0] is None
@@ -284,6 +286,50 @@ def test_migration_13_records_who_each_picture_shows() -> None:
         conn.execute("UPDATE images SET gender = 'other'")
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute("UPDATE images SET gender = NULL")
+
+
+def _at_version(version: int) -> sqlite3.Connection:
+    conn = sqlite3.connect(":memory:", isolation_level=None)
+    conn.row_factory = sqlite3.Row
+    for script in db.MIGRATIONS[:version]:
+        conn.executescript(script)
+    conn.execute(f"PRAGMA user_version = {version}")
+    conn.execute(
+        "INSERT INTO careers (id, key, display_name, fingerprint, created_at, updated_at)"
+        " VALUES (1, 'c1', 'Career', '[]', 'now', 'now')"
+    )
+    return conn
+
+
+def test_migration_15_keeps_a_database_with_pictures_drawing_3_by_4() -> None:
+    """Pictures are 1:1 by default since 2026-11-22 (user); a database that already holds
+    pictures (this PC's) keeps the old default as its own setting, unless it has one."""
+    fresh = _at_version(14)
+    assert db.migrate(fresh) == len(db.MIGRATIONS)
+    assert load_settings(fresh).picture.aspect == "1:1"
+    assert fresh.execute("SELECT COUNT(*) FROM settings").fetchone()[0] == 0
+
+    drawn = _at_version(14)
+    drawn.execute(
+        "INSERT INTO images (career_id, unique_id, version, reason, group_name, model,"
+        " prompt, negative_prompt, seed, created_at)"
+        " VALUES (1, 7, 1, 'initial', 'a', 'm', 'p', 'n', 1, 'now')"
+    )
+    assert db.migrate(drawn) == len(db.MIGRATIONS)
+    s = load_settings(drawn)
+    assert s.picture.aspect == "3:4" and s.overridden == {"picture.aspect"}
+
+    chosen = _at_version(14)
+    chosen.execute(
+        "INSERT INTO images (career_id, unique_id, version, reason, group_name, model,"
+        " prompt, negative_prompt, seed, created_at)"
+        " VALUES (1, 7, 1, 'initial', 'a', 'm', 'p', 'n', 1, 'now')"
+    )
+    chosen.execute(
+        "INSERT INTO settings (key, value, updated_at) VALUES ('picture.aspect', '\"1:1\"', 'x')"
+    )
+    db.migrate(chosen)
+    assert load_settings(chosen).picture.aspect == "1:1"  # a choice already made stays
 
 
 def _history(conn: sqlite3.Connection, before: dict, after: dict) -> None:
@@ -294,9 +340,9 @@ def _history(conn: sqlite3.Connection, before: dict, after: dict) -> None:
 
 
 def test_the_detail_pass_switch_is_renamed_to_its_size_at_connect(tmp_path: Path) -> None:
-    """Phase 10c: a stored detail pass off is "off", on the size it drew at; the settings
-    history follows, so an older change can still be undone. No schema number changes, so an
-    older facegen on the same database still opens it."""
+    """Phase 10c: a stored detail pass off is "off", on the size it drew at (named by scale
+    since Phase 16: "x1.5"); the settings history follows, so an older change can still be
+    undone. No schema number changes, so an older facegen on the same database still opens it."""
     path = tmp_path / "facegen.db"
     conn = db.connect(path)
     conn.executemany(
@@ -305,16 +351,16 @@ def test_the_detail_pass_switch_is_renamed_to_its_size_at_connect(tmp_path: Path
             ("groups.a.detail_pass", "false"),
             ("groups.b.detail_pass", "true"),
             ("groups.c.detail_pass", "7"),  # not a switch: dropped, the default applies
-            ("groups.a.ca_above", "150"),
+            ("staff.enabled", "false"),
         ],
     )
     _history(conn, {"groups.a.detail_pass": None}, {"groups.a.detail_pass": False})
     _history(
         conn,
-        {"groups.b.detail_pass": False, "groups.a.ca_above": None},
-        {"groups.b.detail_pass": True, "groups.a.ca_above": 150},
+        {"groups.b.detail_pass": False, "staff.enabled": None},
+        {"groups.b.detail_pass": True, "staff.enabled": False},
     )
-    _history(conn, {"staff.enabled": None}, {"staff.enabled": False})
+    _history(conn, {"media.journalists": None}, {"media.journalists": False})
     conn.close()
 
     conn = db.connect(path)
@@ -322,8 +368,8 @@ def test_the_detail_pass_switch_is_renamed_to_its_size_at_connect(tmp_path: Path
     stored = dict(conn.execute("SELECT key, value FROM settings").fetchall())
     assert stored == {
         "groups.a.detail_size": '"off"',
-        "groups.b.detail_size": '"1344x1728"',
-        "groups.a.ca_above": "150",
+        "groups.b.detail_size": '"x1.5"',
+        "staff.enabled": "false",
     }
     rows = [
         (json.loads(r["before"]), json.loads(r["after"]))
@@ -332,17 +378,87 @@ def test_the_detail_pass_switch_is_renamed_to_its_size_at_connect(tmp_path: Path
     assert rows == [
         ({"groups.a.detail_size": None}, {"groups.a.detail_size": "off"}),
         (
-            {"groups.a.ca_above": None, "groups.b.detail_size": "off"},
-            {"groups.a.ca_above": 150, "groups.b.detail_size": "1344x1728"},
+            {"staff.enabled": None, "groups.b.detail_size": "off"},
+            {"staff.enabled": False, "groups.b.detail_size": "x1.5"},
         ),
-        ({"staff.enabled": None}, {"staff.enabled": False}),
+        ({"media.journalists": None}, {"media.journalists": False}),
     ]
     assert db.rename_settings(conn) == 0  # done once: nothing left
 
 
+def test_the_old_cutoffs_become_the_new_keys_at_connect(tmp_path: Path) -> None:
+    """Phase 16: an old "strictly above" N is "at least" N+1, so the same people stay picked;
+    group A's and B's "any club" numbers become the global cuts, the league numbers the manual
+    set; `youth.enabled` and `groups.b.my_academy` move to `cutoffs.my_club`, the detail sizes
+    are named by scale, and the one switch for the leagues above and below becomes the league
+    below's (the league above's is on by default). The settings history follows, so Undo still
+    works across it."""
+    path = tmp_path / "facegen.db"
+    conn = db.connect(path)
+    old = {
+        "groups.a.ca_above": 150,
+        "groups.a.pa_above": 200,  # above 200 picks nobody: switched off
+        "groups.b.any_ca_above": 135,
+        "groups.b.any_pa_above": 0,
+        "groups.b.league_ca_above": 120,
+        "groups.b.league_pa_above": 145,
+        "groups.c.league_ca_above": 100,
+        "groups.c.league_pa_above": 130,
+        "groups.b.my_academy": False,
+        "youth.enabled": False,
+        "groups.a.detail_size": "1152x1472",
+        "groups.b.detail_size": "x1.5",  # already new: left as it is
+        "cutoffs.adjacent_light": True,  # one switch for both, before 2026-11-22
+    }
+    conn.executemany(
+        "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, 'then')",
+        [(k, json.dumps(v)) for k, v in old.items()],
+    )
+    _history(conn, {"groups.a.ca_above": None, "youth.enabled": None}, {
+        "groups.a.ca_above": 150, "youth.enabled": False,
+    })  # fmt: skip
+    _history(conn, {"groups.a.detail_size": "1344x1728"}, {"groups.a.detail_size": "1152x1472"})
+    conn.close()
+
+    conn = db.connect(path)
+    stored = {k: json.loads(v) for k, v in conn.execute("SELECT key, value FROM settings")}
+    assert stored == {
+        "cutoffs.everywhere.a_ca": 151,
+        "cutoffs.everywhere.a_pa": "-",
+        "cutoffs.everywhere.b_ca": 136,
+        "cutoffs.everywhere.b_pa": 1,
+        "cutoffs.manual.b_ca": 121,
+        "cutoffs.manual.b_pa": 146,
+        "cutoffs.manual.c_ca": 101,
+        "cutoffs.manual.c_pa": 131,
+        "cutoffs.my_club.academy_alumni": False,
+        "cutoffs.my_club.youth": "a",
+        "groups.a.detail_size": "smaller",
+        "groups.b.detail_size": "x1.5",
+        "cutoffs.light_below": True,  # the league above's is on by default
+    }
+    rows = [
+        (json.loads(r["before"]), json.loads(r["after"]))
+        for r in conn.execute("SELECT before, after FROM settings_history ORDER BY id")
+    ]
+    assert rows == [
+        (
+            {"cutoffs.everywhere.a_ca": None, "cutoffs.my_club.youth": None},
+            {"cutoffs.everywhere.a_ca": 151, "cutoffs.my_club.youth": "a"},
+        ),
+        ({"groups.a.detail_size": "x1.5"}, {"groups.a.detail_size": "smaller"}),
+    ]
+    s = load_settings(conn)
+    assert s.cutoffs.mode == "auto"  # the mode starts on Auto
+    assert s.cutoffs.everywhere["a_ca"] == 151 and s.cutoffs.manual["b_ca"] == 121
+    assert s.cutoffs.my_club.youth == "a" and s.groups.a.detail_size() == (1152, 1472)
+    assert s.cutoffs.light_above and s.cutoffs.light_below
+    assert db.rename_settings(conn) == 0
+
+
 def test_an_old_key_written_again_by_an_older_facegen_wins(conn: sqlite3.Connection) -> None:
     conn.execute(
-        "INSERT INTO settings (key, value, updated_at) VALUES ('groups.a.detail_size', '\"1152x1472\"', 'a')"
+        "INSERT INTO settings (key, value, updated_at) VALUES ('groups.a.detail_size', '\"smaller\"', 'a')"
     )
     conn.execute(
         "INSERT INTO settings (key, value, updated_at) VALUES ('groups.a.detail_pass', 'false', 'b')"

@@ -21,11 +21,12 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from facegen.core.settings_values import ASPECTS
 from facegen.persistence import publication
 from facegen.persistence.db import active_career_id, transaction
 from facegen.platform import native
 from facegen.platform.locking import file_lock
-from facegen.render.picture import Box, aspect_box, crop_to_aspect, published_size
+from facegen.render.picture import ASPECT, Box, aspect_box, crop_to_aspect, published_size
 
 if TYPE_CHECKING:
     from facegen.core.settings_values import Settings
@@ -124,19 +125,27 @@ _CHUNK = 8
 the decoded masters (about 7 MB each) stay small in memory."""
 
 
-def published_bytes(master: Path, long_edge: int, *, rust: bool = True) -> bytes:
-    """The master as a 3:4 portrait `long_edge` pixels high, as PNG bytes.
+def published_bytes(
+    master: Path, long_edge: int, aspect: str = "3:4", *, rust: bool = True
+) -> bytes:
+    """The master in its shape (`aspect`: a 3:4 portrait or a 1:1 square) `long_edge` pixels
+    high, as PNG bytes.
 
     The Rust encoder is used when it is built (see `published_pictures`), unless `rust` is
     False.
     """
+    ratio = ASPECTS[aspect]
     if rust and native.ext is not None:
-        return native.ext.encode_portrait(master, _crop_box(master), published_size(long_edge))
-    return _pillow_bytes(master, long_edge)
+        return native.ext.encode_portrait(
+            master, _crop_box(master, ratio), published_size(long_edge, ratio)
+        )
+    return _pillow_bytes(master, long_edge, ratio)
 
 
-def published_pictures(items: Sequence[tuple[Path, int]], *, rust: bool = True) -> Iterator[bytes]:
-    """`published_bytes` for each (master, long edge), in order.
+def published_pictures(
+    items: Sequence[tuple[Path, int] | tuple[Path, int, str]], *, rust: bool = True
+) -> Iterator[bytes]:
+    """`published_bytes` for each (master, long edge[, shape]), in order; 3:4 by default.
 
     With the Rust extension (native.py), a chunk of pictures at a time is decoded, cropped,
     scaled with Lanczos-3 and saved as an optimised 8-bit RGB PNG on all cores. Without it,
@@ -147,32 +156,36 @@ def published_pictures(items: Sequence[tuple[Path, int]], *, rust: bool = True) 
     different stage (docs/research.md). The quality and content checks look at the master,
     not at this copy.
     """
+    shaped = [(item[0], item[1], ASPECTS[item[2] if len(item) > 2 else "3:4"]) for item in items]
     if not rust or native.ext is None:
-        for master, long_edge in items:
-            yield _pillow_bytes(master, long_edge)
+        for master, long_edge, ratio in shaped:
+            yield _pillow_bytes(master, long_edge, ratio)
         return
-    for start in range(0, len(items), _CHUNK):
-        jobs = [(m, _crop_box(m), published_size(e)) for m, e in items[start : start + _CHUNK]]
+    for start in range(0, len(shaped), _CHUNK):
+        jobs = [
+            (m, _crop_box(m, ratio), published_size(e, ratio))
+            for m, e, ratio in shaped[start : start + _CHUNK]
+        ]
         yield from native.ext.encode_portraits(jobs)
 
 
-def _crop_box(master: Path) -> Box:
-    """The 3:4 box of the master, from its header alone."""
+def _crop_box(master: Path, ratio: tuple[int, int] = ASPECT) -> Box:
+    """The box of the master in its shape, from its header alone."""
     from PIL import Image
 
     with Image.open(master) as im:
-        return aspect_box(im.width, im.height)
+        return aspect_box(im.width, im.height, ratio)
 
 
-def _pillow_bytes(master: Path, long_edge: int) -> bytes:
+def _pillow_bytes(master: Path, long_edge: int, ratio: tuple[int, int] = ASPECT) -> bytes:
     """The Python version of the encoder."""
     import io
 
     from PIL import Image
 
     with Image.open(master) as im:
-        img = crop_to_aspect(im.convert("RGB"))
-    size = published_size(long_edge)
+        img = crop_to_aspect(im.convert("RGB"), ratio)
+    size = published_size(long_edge, ratio)
     if img.size != size:
         img = img.resize(size, Image.Resampling.LANCZOS)
     buf = io.BytesIO()
@@ -218,14 +231,14 @@ def publish_career(
     """
     folder = pack_dir(fm_user_dir, career_key)
     rows = conn.execute(
-        "SELECT id, unique_id, group_name, master_path, published_path FROM images"
+        "SELECT id, unique_id, group_name, master_path, published_path, aspect FROM images"
         " WHERE career_id = ? AND is_current = 1 ORDER BY unique_id",
         (career_id,),
     ).fetchall()
     unchanged = 0
     missing: list[int] = []
     mapped: list[int] = []
-    todo: list[tuple[int, Path, Path, int]] = []  # image id, master, destination, size
+    todo: list[tuple[int, Path, Path, int, str]] = []  # image id, master, destination, size, shape
     for r in rows:
         dest = folder / f"{r['unique_id']}.png"
         if r["published_path"] == str(dest) and dest.is_file():
@@ -239,13 +252,13 @@ def publish_career(
             missing.append(r["unique_id"])
             continue
         _guard(dest, fm_user_dir)
-        todo.append((r["id"], master, dest, sizes[r["group_name"]]))
+        todo.append((r["id"], master, dest, sizes[r["group_name"]], r["aspect"]))
         mapped.append(r["unique_id"])
     # Encoded together, so the Rust encoder can work on several pictures at once.
     if todo:
         folder.mkdir(parents=True, exist_ok=True)
-    pictures = published_pictures([(master, size) for _, master, _, size in todo])
-    for (image_id, _, dest, _), data in zip(todo, pictures, strict=True):
+    pictures = published_pictures([(master, size, shape) for _, master, _, size, shape in todo])
+    for (image_id, _, dest, _, _), data in zip(todo, pictures, strict=True):
         _write_atomic(dest, data)
         conn.execute("UPDATE images SET published_path = ? WHERE id = ?", (str(dest), image_id))
     written = len(todo)

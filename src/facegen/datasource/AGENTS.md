@@ -29,6 +29,9 @@ uv run --no-sync python scripts/spikes/kit_colour_probe.py --help
   Optional competition/people failures warn without aborting player syncs.
 - `people.py` parses synthetic-testable bytes, not fmsave objects. Reject chance byte
   matches with the existing ID/name/date/personality checks.
+- `league_rules.py` (the save's division lists, levels and regional groups) parses the same
+  way. A record with an unknown value type is unreadable: skip it rather than guess its size.
+  A field's record is the nearest one whose own fields start there; keep the look-back limits.
 - `PhotoIndex.game is None` means unknown; an empty set means known absent.
   `PhotoScan.index is None` keeps stored IDs. An incomplete external pack scan records a
   warning and retries; `persistence/photo_index.py` owns the SQLite state and counts.

@@ -26,7 +26,7 @@ h1 { margin:0 0 4px; font-size:22px; }
 .player { display:flex; gap:16px; padding:14px 0; border-bottom:1px solid var(--line);
           flex-wrap:wrap; }
 .main { width:320px; }
-.main img { width:320px; aspect-ratio:3/4; object-fit:cover; display:block; border-radius:6px; }
+.main img { width:320px; aspect-ratio:auto 3/4; object-fit:cover; display:block; border-radius:6px; }
 .info { width:280px; font-size:13px; }
 .info h2 { margin:0 0 4px; font-size:16px; }
 .info .muted { color:var(--muted); }
@@ -34,7 +34,7 @@ h1 { margin:0 0 4px; font-size:22px; }
 .pic { margin:0; width:180px; background:var(--card); border:1px solid var(--line);
        border-radius:6px; overflow:hidden; }
 .pic.chosen { border:2px solid var(--pick); }
-.pic img { display:block; width:180px; aspect-ratio:3/4; object-fit:cover; }
+.pic img { display:block; width:180px; aspect-ratio:auto 3/4; object-fit:cover; }
 figcaption { display:flex; flex-wrap:wrap; gap:3px; padding:4px; }
 .b { font-size:11px; padding:1px 5px; border-radius:3px; color:var(--muted);
      background:var(--line); }

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
@@ -18,6 +19,8 @@ from facegen.pipeline.publish import (
     publish_active,
     publish_career,
     publish_pack,
+    published_bytes,
+    published_pictures,
     unpublish,
     write_config,
 )
@@ -417,3 +420,44 @@ def test_publish_lock_lets_one_writer_in_at_a_time(tmp_path: Path) -> None:
         assert not entered.wait(0.2)  # blocked while this thread holds it
     t.join(5)
     assert entered.is_set()
+
+
+def test_square_pictures_are_published_square_next_to_portraits(
+    conn: sqlite3.Connection, pack_settings: Settings, tmp_path: Path
+) -> None:
+    """Phase 16g: each picture in its own shape. A 1:1 picture is published 1:1 at its group's
+    height, beside 3:4 pictures; the pre-V5 squares marked 3:4 are still cropped to 3:4."""
+    portrait, square, old = tmp_path / "p.png", tmp_path / "s.png", tmp_path / "o.png"
+    Image.new("RGB", (1296, 1728), (10, 20, 30)).save(portrait)
+    Image.new("RGB", (1536, 1536), (40, 50, 60)).save(square)
+    Image.new("RGB", (1024, 1024), (70, 80, 90)).save(old)
+    _career(conn)
+    _image(conn, 1, "a", str(portrait))
+    _image(conn, 2, "a", str(square))
+    _image(conn, 3, "b", str(old))
+    conn.execute("UPDATE images SET aspect = '1:1' WHERE unique_id = 2")
+    assert publish_pack(conn, pack_settings, 1, "k").written == 3
+    folder = tmp_path / "fm" / "graphics" / "facegen" / "k"
+    sizes = {}
+    for uid in (1, 2, 3):
+        with Image.open(folder / f"{uid}.png") as im:
+            sizes[uid] = im.size
+    assert sizes == {1: (768, 1024), 2: (1024, 1024), 3: (576, 768)}
+
+
+@pytest.mark.parametrize("rust", [False, True])
+def test_published_bytes_in_each_shape(tmp_path: Path, rust: bool) -> None:
+    from facegen.platform import native
+
+    if rust and native.ext is None:
+        pytest.skip("the native extension is not built")
+    master = tmp_path / "m.png"
+    Image.new("RGB", (1344, 1728), (5, 6, 7)).save(master)
+    for shape, size in (("3:4", (384, 512)), ("1:1", (512, 512))):
+        data = published_bytes(master, 512, shape, rust=rust)
+        with Image.open(io.BytesIO(data)) as im:
+            assert im.size == size, shape
+    assert list(published_pictures([(master, 512, "1:1"), (master, 512)], rust=rust)) == [
+        published_bytes(master, 512, "1:1", rust=rust),
+        published_bytes(master, 512, rust=rust),
+    ]

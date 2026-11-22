@@ -14,12 +14,14 @@ from factories import (
     CONTINENTAL_COMP,
     CREATED_FROM,
     DEFAULT_CLUBS,
+    MANUAL,
     MY_CLUB,
     NEWGEN,
     PLAIN_PERSONALITY,
     RIVAL,
     WOMENS,
     club,
+    manual_cutoffs,
     player,
     snapshot,
 )
@@ -29,9 +31,23 @@ from facegen.core.records import Gender, PlayerRecord, Snapshot
 from facegen.core.traits import personality_from_json
 from facegen.datasource.photos import PhotoIndex, PhotoScan
 from facegen.persistence.db import connect
-from facegen.persistence.settings import Settings, load_settings, set_override
+from facegen.persistence.settings import Settings, load_settings, set_override, set_overrides
 from facegen.pipeline.reclassification import ChangeReport, reclassify, reclassify_with_report
 from facegen.pipeline.sync import SyncReport, record_failed_sync, run_sync, sync_of_save
+
+
+@pytest.fixture
+def settings(settings: Settings) -> Settings:
+    """Manual numbers: these tests are about the sync and the queue, not league shares
+    (those are `test_league_shares.py`'s)."""
+    return manual_cutoffs(settings)  # type: ignore[return-value]
+
+
+@pytest.fixture
+def conn(conn: sqlite3.Connection) -> sqlite3.Connection:
+    set_overrides(conn, MANUAL)
+    return conn
+
 
 # A small world: pre-existing players have low IDs, newgens start at NEWGEN.
 MINE_OLD = 1001  # pre-existing, at my club
@@ -213,7 +229,7 @@ def test_sync_reads_classification_settings_while_holding_the_write_lock(tmp_pat
     path = tmp_path / "state.db"
     with closing(connect(path)) as conn, closing(connect(path, busy_timeout_ms=0)) as editor:
         before_parse = load_settings(conn)
-        set_override(editor, "groups.c.league_ca_above", 125)
+        set_overrides(editor, {**MANUAL, "cutoffs.manual.c_ca": 126})
 
         def read_settings() -> Settings:
             with pytest.raises(sqlite3.OperationalError, match="database is locked"):
@@ -386,9 +402,17 @@ def test_pre_existing_player_who_leaves_my_club_keeps_the_picture(
 def test_loaned_out_player_counts_as_at_my_club(
     conn: sqlite3.Connection, settings: Settings
 ) -> None:
+    """Players I loaned out are Standard (user, 2026-11-21), tracked while I hold the contract,
+    and reach Detailed by the cuts; the tier is a setting."""
     loanee = player(1500, club_id=ABROAD, loan_parent=MY_CLUB)
-    sync(conn, snapshot([loanee]), settings)
-    assert player_row(conn, 1500)["at_my_club"] == 1
+    star = player(1501, ca=160, club_id=ABROAD, loan_parent=MY_CLUB)
+    sync(conn, snapshot([loanee, star]), settings)
+    row = player_row(conn, 1500)
+    assert (row["at_my_club"], row["group_name"], row["tracked"]) == (1, "b", 1)
+    assert "loaned out by my club" in json.loads(row["reasons"])
+    assert player_row(conn, 1501)["group_name"] == "a"
+    s = set_override(conn, "cutoffs.my_club.loans", "a")
+    reclassify(conn, 1, s)
     assert player_row(conn, 1500)["group_name"] == "a"
 
 
@@ -445,12 +469,19 @@ def test_all_genders_when_mens_only_is_off(conn: sqlite3.Connection) -> None:
 
 
 def test_continental_competition_ids_from_settings(conn: sqlite3.Connection) -> None:
+    """Listed IDs override the search, and count only where my club plays (Phase 16): its
+    clubs' candidates are B by their share (30%: the one candidate here)."""
+    europe = {CONTINENTAL_COMP: {CONTINENTAL: 6, MY_CLUB: 6}}
+    sync(conn, snapshot(world()), load_settings(conn))  # my club does not play in it
+    set_override(conn, "eligibility.continental_competition_ids", [CONTINENTAL_COMP])
     sync(conn, snapshot(world()), load_settings(conn))
     assert CONT_NEWGEN not in groups(conn)
-    set_override(conn, "eligibility.continental_competition_ids", [CONTINENTAL_COMP])
-    report = sync(conn, snapshot(world()), load_settings(conn))
+    report = sync(conn, snapshot(world(), fixture_counts=europe), load_settings(conn))
     assert groups(conn)[CONT_NEWGEN] == "b"
-    assert report.continental_clubs == 1
+    assert report.continental_clubs == 2
+    assert "in a continental competition, CA 131 (top 30%: 131+)" in str(
+        player_row(conn, CONT_NEWGEN)["reasons"]
+    )
 
 
 # --- threshold changes and departures ---------------------------------------------------------
@@ -461,13 +492,13 @@ def test_threshold_change_reclassifies_without_a_new_save(conn: sqlite3.Connecti
     cid = report.career.id
 
     # Raise the C bar: the queued C job is cancelled.
-    s = set_override(conn, "groups.c.league_ca_above", 125)
+    s = set_override(conn, "cutoffs.manual.c_ca", 126)
     result = reclassify(conn, cid, s)
     assert [a.unique_id for a in result.plan.cancel] == [RIVAL_C]
     assert RIVAL_C not in queued(conn)
 
     # Lower the A bar: the queued B job becomes an A job.
-    s = set_override(conn, "groups.a.pa_above", 150)
+    s = set_override(conn, "cutoffs.everywhere.a_pa", 150)
     result = reclassify(conn, cid, s)
     assert [a.unique_id for a in result.plan.update] == [RIVAL_NEWGEN]
     assert queued(conn)[RIVAL_NEWGEN] == ("initial", "a")
@@ -475,7 +506,7 @@ def test_threshold_change_reclassifies_without_a_new_save(conn: sqlite3.Connecti
 
 def test_reclassify_dry_run_previews_without_storing(conn: sqlite3.Connection) -> None:
     report = sync(conn, snapshot(world()), load_settings(conn))
-    s = set_override(conn, "groups.c.league_ca_above", 125)
+    s = set_override(conn, "cutoffs.manual.c_ca", 126)
     preview = reclassify(conn, report.career.id, s, dry_run=True)
     assert [a.unique_id for a in preview.plan.cancel] == [RIVAL_C]
     assert RIVAL_C in queued(conn)
@@ -484,7 +515,7 @@ def test_reclassify_dry_run_previews_without_storing(conn: sqlite3.Connection) -
 def test_threshold_change_never_deletes_pictures(conn: sqlite3.Connection) -> None:
     report = sync(conn, snapshot(world()), load_settings(conn))
     add_image(conn, RIVAL_C, "c", RIVAL, band="W04")
-    s = set_override(conn, "groups.c.league_ca_above", 125)
+    s = set_override(conn, "cutoffs.manual.c_ca", 126)
     reclassify(conn, report.career.id, s)
     assert conn.execute("SELECT COUNT(*) FROM images").fetchone()[0] == 1
 
@@ -492,7 +523,7 @@ def test_threshold_change_never_deletes_pictures(conn: sqlite3.Connection) -> No
 def test_promotion_to_a_after_a_picture_queues_an_upgrade(conn: sqlite3.Connection) -> None:
     report = sync(conn, snapshot(world()), load_settings(conn))
     add_image(conn, RIVAL_NEWGEN, "b", RIVAL, band="W04")
-    s = set_override(conn, "groups.a.pa_above", 150)
+    s = set_override(conn, "cutoffs.everywhere.a_pa", 150)
     reclassify(conn, report.career.id, s)
     assert queued(conn)[RIVAL_NEWGEN] == ("upgrade", "a")
 
@@ -651,7 +682,7 @@ def test_reclassify_with_report_says_what_moved(
 
     report = sync(conn, snapshot(world()), settings)
     with transaction(conn):
-        applied = set_overrides(conn, {"groups.c.league_ca_above": 125, "groups.a.ca_above": 150})
+        applied = set_overrides(conn, {"cutoffs.manual.c_ca": 126, "cutoffs.everywhere.a_ca": 150})
         r = reclassify_with_report(conn, report.career.id, applied)
     # RIVAL_C (CA 120) drops out of C; nobody new reaches A at 150 in this world.
     assert r.before["c"] == 1 and r.after["c"] == 0
@@ -675,7 +706,7 @@ def test_reclassify_with_report_lists_newly_queued_players(
 
     report = sync(conn, snapshot(world()), settings)
     with transaction(conn):
-        applied = set_overrides(conn, {"groups.b.any_ca_above": 59})
+        applied = set_overrides(conn, {"cutoffs.everywhere.b_ca": 59})
         r = reclassify_with_report(conn, report.career.id, applied)
     # ABROAD_LOW (CA 60) and CONT_NEWGEN (CA 131) now reach B anywhere; RIVAL_C's queued C
     # job becomes a B job.
@@ -840,11 +871,11 @@ def test_pre_existing_players_without_a_photo_are_picked_like_newgens(
     assert queued(conn)[STAR_ELSEWHERE] == ("initial", "a")
     assert queued(conn)[NO_PHOTO_B] == ("initial", "b")
     star = player_row(conn, STAR_ELSEWHERE)
-    assert json.loads(star["reasons"]) == ["no photo, CA 190 > 155"]
+    assert json.loads(star["reasons"]) == ["no photo, CA 190 (155+)"]
     assert star["tracked"] == 1
     assert json.loads(player_row(conn, NO_PHOTO_B)["reasons"]) == [
-        "no photo, in my league, CA 150 > 130",
-        "no photo, CA 150 > 140",
+        "no photo, in my league, CA 150 (131+)",
+        "no photo, CA 150 (140+)",
     ]
     c = report.counts
     # Without a photo: MINE_OLD (at my club), STAR_ELSEWHERE and NO_PHOTO_B.
@@ -947,11 +978,13 @@ def test_a_youth_player_with_group_a_ability_is_a(
     assert groups(conn)[YOUTH_OLD] == "a"
 
 
-def test_the_youth_rule_can_be_turned_off(conn: sqlite3.Connection, settings: Settings) -> None:
+def test_the_youth_teams_can_join_the_first_teams_group(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
     report = sync(
         conn, snapshot([*world(), player(YOUTH_OLD, ca=50, age=17, team_slot=2)]), settings
     )
-    s = set_override(conn, "youth.enabled", False)
+    s = set_override(conn, "cutoffs.my_club.youth", "a")
     reclassify(conn, report.career.id, s)
     assert groups(conn)[YOUTH_OLD] == "a"
     assert queued(conn)[YOUTH_OLD] == ("initial", "a")

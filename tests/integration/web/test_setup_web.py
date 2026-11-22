@@ -442,13 +442,17 @@ def test_auto_configure_on_an_8_gb_card_and_one_undo(tmp_path: Path) -> None:
         s = load_settings(c, env.config)  # with the overrides in the database
     finally:
         c.close()
-    assert s.groups.a.candidates == 2 and s.groups.a.detail_size is None
+    assert s.groups.a.candidates == 2 and s.groups.a.detail_size() is None
     assert s.render.vae_tiling is True
     # Who gets a picture is untouched.
-    assert (s.groups.a.ca_above, s.groups.b.any_pa_above, s.groups.c.league_ca_above) == (
-        before.groups.a.ca_above,
-        before.groups.b.any_pa_above,
-        before.groups.c.league_ca_above,
+    assert (
+        s.cutoffs.everywhere["a_ca"],
+        s.cutoffs.everywhere["b_pa"],
+        s.cutoffs.manual["c_ca"],
+    ) == (
+        before.cutoffs.everywhere["a_ca"],
+        before.cutoffs.everywhere["b_pa"],
+        before.cutoffs.manual["c_ca"],
     )
     assert env.one("SELECT COUNT(*) FROM settings_history") == 1
     assert env.one("SELECT label FROM settings_history") == "auto-configure"
@@ -483,5 +487,5 @@ def test_the_settings_page_offers_auto_configure_and_the_rendering_section(env: 
     text = env.client.get("/settings/advanced").text
     assert 'href="/hardware"' in text
     assert '<select name="groups.a.detail_size"' in text
-    assert '<option value="1152x1472"' in text
+    assert '<option value="smaller"' in text
     assert 'name="render.vae_tiling"' in text

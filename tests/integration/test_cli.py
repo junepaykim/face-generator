@@ -117,7 +117,7 @@ def test_sync_reads_fm27s_photo_list_and_picks_pre_existing_players_without_one(
     code, text = run(env, "sync", source=FakeSource(snap))
     assert code == 0
     assert "Queued      initial A 2" in text  # Old Hand (my club) and Faceless Star
-    assert "Faceless Star" in text and "no photo, CA 170 > 155" in text
+    assert "Faceless Star" in text and "no photo, CA 170 (165+)" in text
     assert "Famous Star" not in text and "Facepack Star" not in text
     assert "No photo    2 pre-existing players (2 have one); 1 of them in a group" in text
     code, text = run(env, "sync", source=FakeSource(snap))

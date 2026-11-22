@@ -9,7 +9,7 @@ from io import StringIO
 from pathlib import Path
 
 import pytest
-from factories import MY_CLUB, NEWGEN, RIVAL, media_person, player, snapshot, staff_member
+from factories import MANUAL, MY_CLUB, NEWGEN, RIVAL, media_person, player, snapshot, staff_member
 
 from facegen.cli import main
 from facegen.core.records import Snapshot
@@ -20,6 +20,7 @@ from facegen.persistence.settings import (
     local_path,
     read_overrides,
     set_override,
+    set_overrides,
 )
 from facegen.pipeline import settings_history as history
 from facegen.pipeline.publish import config_xml, pack_dir, write_config
@@ -32,43 +33,47 @@ RIVAL_C = NEWGEN + 3  # my league, CA 120: group C until C's bar passes 120
 
 
 def a_bar(conn: sqlite3.Connection) -> int:
-    return load_settings(conn).groups.a.ca_above
+    return load_settings(conn).cutoffs.everywhere["a_ca"]
 
 
 def test_a_save_is_stored_and_recorded(conn: sqlite3.Connection) -> None:
-    out = history.save(conn, {"groups.a.ca_above": 150})
+    out = history.save(conn, {"cutoffs.everywhere.a_ca": 150})
     assert out.changed and a_bar(conn) == 150
     (entry,) = out.entries
-    assert entry.before == {"groups.a.ca_above": None}  # no override: the default applied
-    assert entry.after == {"groups.a.ca_above": 150}
+    assert entry.before == {"cutoffs.everywhere.a_ca": None}  # no override: the default applied
+    assert entry.after == {"cutoffs.everywhere.a_ca": 150}
     assert entry.label == "edit" and not entry.undone
     assert history.entries(conn) == [entry]
     assert out.report is None  # no career yet: nothing to re-classify
 
 
 def test_values_already_in_force_are_not_a_change(conn: sqlite3.Connection) -> None:
-    out = history.save(conn, {"groups.a.ca_above": 155})  # the default
+    out = history.save(conn, {"cutoffs.everywhere.a_ca": 165})  # the default
     assert not out.changed and history.entries(conn) == []
     assert read_overrides(conn) == {}
 
 
 def test_an_invalid_change_stores_nothing(conn: sqlite3.Connection) -> None:
     with pytest.raises(SettingsError):
-        history.save(conn, {"groups.a.ca_above": 150, "groups.b.candidates": 0})
+        history.save(conn, {"cutoffs.everywhere.a_ca": 150, "groups.b.candidates": 0})
     with pytest.raises(SettingsError, match="unknown setting"):
         history.save(conn, {"groups.d.ca_above": 1})
     assert read_overrides(conn) == {} and history.entries(conn) == []
 
 
 def test_undo_and_redo_walk_the_history(conn: sqlite3.Connection) -> None:
-    history.save(conn, {"groups.a.ca_above": 150})
-    history.save(conn, {"groups.a.ca_above": 140, "groups.a.pa_above": 160})
+    history.save(conn, {"cutoffs.everywhere.a_ca": 150})
+    history.save(conn, {"cutoffs.everywhere.a_ca": 140, "cutoffs.everywhere.a_pa": 160})
     assert history.can_undo(conn) and not history.can_redo(conn)
 
     out = history.undo(conn)
-    assert [e.after for e in out.entries] == [{"groups.a.ca_above": 140, "groups.a.pa_above": 160}]
-    assert a_bar(conn) == 150 and load_settings(conn).groups.a.pa_above == 170
-    assert "groups.a.pa_above" not in read_overrides(conn)  # back to the default, not 170 stored
+    assert [e.after for e in out.entries] == [
+        {"cutoffs.everywhere.a_ca": 140, "cutoffs.everywhere.a_pa": 160}
+    ]
+    assert a_bar(conn) == 150 and load_settings(conn).cutoffs.everywhere["a_pa"] == 180
+    assert "cutoffs.everywhere.a_pa" not in read_overrides(
+        conn
+    )  # back to the default, not 180 stored
     assert history.can_redo(conn)
 
     history.undo(conn)
@@ -85,28 +90,27 @@ def test_undo_and_redo_walk_the_history(conn: sqlite3.Connection) -> None:
 def test_history_restores_explicit_overrides_even_when_defaults_change(
     conn: sqlite3.Connection, config_file: Path
 ) -> None:
-    key = "groups.a.ca_above"
-    set_override(conn, key, 155, config_file)
+    key = "cutoffs.everywhere.a_ca"
+    set_override(conn, key, 165, config_file)
     history.save(conn, {key: 150}, defaults_path=config_file)
 
     history.undo(conn, defaults_path=config_file)
-    assert read_overrides(conn) == {key: 155}  # Keep an explicitly stored default.
+    assert read_overrides(conn) == {key: 165}  # Keep an explicitly stored default.
 
-    config_file.write_text(
-        config_file.read_text(encoding="utf-8").replace("ca_above = 155", "ca_above = 150"),
-        encoding="utf-8",
-    )
+    text = config_file.read_text(encoding="utf-8")
+    assert text.count("a_ca = 165") == 1
+    config_file.write_text(text.replace("a_ca = 165", "a_ca = 150"), encoding="utf-8")
     history.redo(conn, defaults_path=config_file)
     assert read_overrides(conn) == {key: 150}  # Redo must not normalize through new defaults.
     history.undo(conn, defaults_path=config_file)
-    assert read_overrides(conn) == {key: 155}
+    assert read_overrides(conn) == {key: 165}
 
 
 def test_failed_undo_rolls_back_override_writes_and_history(
     conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    history.save(conn, {"groups.a.ca_above": 150})
-    history.save(conn, {"groups.a.ca_above": 140, "groups.a.pa_above": 160})
+    history.save(conn, {"cutoffs.everywhere.a_ca": 150})
+    history.save(conn, {"cutoffs.everywhere.a_ca": 140, "cutoffs.everywhere.a_pa": 160})
     before = list(conn.execute("SELECT * FROM settings ORDER BY key"))
     entries = history.entries(conn)
 
@@ -122,47 +126,47 @@ def test_failed_undo_rolls_back_override_writes_and_history(
 
 
 def test_undo_back_to_an_entry_undoes_every_later_change(conn: sqlite3.Connection) -> None:
-    first = history.save(conn, {"groups.a.ca_above": 150}).entries[0]
-    history.save(conn, {"groups.b.any_ca_above": 135})
-    history.save(conn, {"groups.a.ca_above": 145})
+    first = history.save(conn, {"cutoffs.everywhere.a_ca": 150}).entries[0]
+    history.save(conn, {"cutoffs.everywhere.b_ca": 135})
+    history.save(conn, {"cutoffs.everywhere.a_ca": 145})
     out = history.undo(conn, through=first.id)
     assert len(out.entries) == 3 and all(e.undone for e in history.entries(conn))
     assert read_overrides(conn) == {}
     # Redo brings them back one at a time, oldest first.
     history.redo(conn)
-    assert read_overrides(conn) == {"groups.a.ca_above": 150}
+    assert read_overrides(conn) == {"cutoffs.everywhere.a_ca": 150}
 
 
 def test_a_new_change_drops_what_was_undone(conn: sqlite3.Connection) -> None:
-    history.save(conn, {"groups.a.ca_above": 150})
-    history.save(conn, {"groups.a.ca_above": 140})
+    history.save(conn, {"cutoffs.everywhere.a_ca": 150})
+    history.save(conn, {"cutoffs.everywhere.a_ca": 140})
     history.undo(conn)
-    history.save(conn, {"groups.a.pa_above": 165})
+    history.save(conn, {"cutoffs.everywhere.a_pa": 165})
     assert not history.can_redo(conn)
     assert [e.after for e in history.entries(conn)] == [
-        {"groups.a.pa_above": 165},
-        {"groups.a.ca_above": 150},
+        {"cutoffs.everywhere.a_pa": 165},
+        {"cutoffs.everywhere.a_ca": 150},
     ]
 
 
 def test_only_the_latest_entries_are_kept(conn: sqlite3.Connection) -> None:
     for n in range(history.HISTORY_LIMIT + 5):
-        history.save(conn, {"groups.a.ca_above": 100 + n})
+        history.save(conn, {"cutoffs.everywhere.a_ca": 100 + n})
     entries = history.entries(conn, limit=100)
     assert len(entries) == history.HISTORY_LIMIT
-    assert entries[0].after == {"groups.a.ca_above": 100 + history.HISTORY_LIMIT + 4}
+    assert entries[0].after == {"cutoffs.everywhere.a_ca": 100 + history.HISTORY_LIMIT + 4}
 
 
 def test_reset_to_defaults_is_one_undoable_change(conn: sqlite3.Connection) -> None:
-    history.save(conn, {"groups.a.ca_above": 150})
+    history.save(conn, {"cutoffs.everywhere.a_ca": 150})
     history.save(conn, {"my_club.soften_skin": 1, "staff.enabled": False})
     out = history.save_defaults(conn)
     (entry,) = out.entries
     assert entry.label == "defaults" and read_overrides(conn) == {}
-    assert set(entry.keys) == {"groups.a.ca_above", "my_club.soften_skin", "staff.enabled"}
+    assert set(entry.keys) == {"cutoffs.everywhere.a_ca", "my_club.soften_skin", "staff.enabled"}
     history.undo(conn)
     assert read_overrides(conn) == {
-        "groups.a.ca_above": 150,
+        "cutoffs.everywhere.a_ca": 150,
         "my_club.soften_skin": 1,
         "staff.enabled": False,
     }
@@ -172,13 +176,14 @@ def test_reset_to_defaults_is_one_undoable_change(conn: sqlite3.Connection) -> N
 
 
 def test_changes_reclassify_and_say_what_they_did(conn: sqlite3.Connection) -> None:
+    set_overrides(conn, MANUAL)  # my league's cutoffs as numbers, not shares
     settings = load_settings(conn)
     run_sync(conn, snapshot([player(RIVAL_C, ca=120, pa=125, club_id=RIVAL)]), settings,
              save_file="career.fm")  # fmt: skip
     queued = "SELECT COUNT(*) FROM jobs WHERE status = 'queued' AND unique_id = ?"
     assert conn.execute(queued, (RIVAL_C,)).fetchone()[0] == 1
 
-    out = history.save(conn, {"groups.c.league_ca_above": 125})
+    out = history.save(conn, {"cutoffs.manual.c_ca": 126})
     assert out.report is not None and out.report.summary() == "C 1 → 0; queue: 1 cancelled"
     assert conn.execute(queued, (RIVAL_C,)).fetchone()[0] == 0
     assert history.entries(conn)[0].report == out.report  # kept with the entry
@@ -202,7 +207,7 @@ def test_history_reads_a_report_written_before_the_reclassification_move(
     conn.execute(
         "INSERT INTO settings_history (at, label, before, after, report)"
         " VALUES ('now', 'edit', ?, ?, ?)",
-        ('{"groups.b.any_ca_above":null}', '{"groups.b.any_ca_above":130}', stored),
+        ('{"cutoffs.everywhere.b_ca":null}', '{"cutoffs.everywhere.b_ca":130}', stored),
     )
 
     (entry,) = history.entries(conn)
@@ -247,13 +252,13 @@ def test_youth_and_media_edits_undo_and_redo_keep_groups_and_queue_in_sync(
 
     groups = {youth: "b", journalist: "b", press: "b", prospect: "b"}
     assert_groups(groups)
-    for key, ordered_ids, disabled_group in (
-        ("youth.enabled", [prospect, youth], "a"),
-        ("media.journalists", [journalist], None),
-        ("media.press_officers", [press], None),
+    for key, value, ordered_ids, disabled_group in (
+        ("cutoffs.my_club.youth", "a", [prospect, youth], "a"),
+        ("media.journalists", False, [journalist], None),
+        ("media.press_officers", False, [press], None),
     ):
         disabled = {**groups, **dict.fromkeys(ordered_ids, disabled_group)}
-        edited = history.save(conn, {key: False}).report
+        edited = history.save(conn, {key: value}).report
         assert edited is not None
         assert [(c.unique_id, c.before, c.after) for c in edited.changes] == [
             (uid, "b", disabled_group) for uid in ordered_ids
@@ -318,3 +323,27 @@ def test_save_sync_keeps_a_settings_edit_made_while_reading_the_snapshot(
         )
         assert editor.execute(active_jobs, (coach,)).fetchone()[0] == 0
         assert (obsolete_pack / "config.xml").read_text(encoding="utf-8") == config_xml([])
+
+
+def test_a_change_saved_before_phase_16_can_be_undone_after_it(conn: sqlite3.Connection) -> None:
+    """The old keys are converted in the overrides and in the history together (Phase 16):
+    undoing an old "CA above 150" puts back the default "at least" cut."""
+    import json as _json
+
+    from facegen.persistence.db import rename_settings
+
+    conn.execute(
+        "INSERT INTO settings (key, value, updated_at) VALUES ('groups.a.ca_above', '150', 'then')"
+    )
+    conn.execute(
+        "INSERT INTO settings_history (at, label, before, after) VALUES ('then', 'edit', ?, ?)",
+        (_json.dumps({"groups.a.ca_above": None}), _json.dumps({"groups.a.ca_above": 150})),
+    )
+    assert rename_settings(conn) == 1
+    assert load_settings(conn).cutoffs.everywhere["a_ca"] == 151  # the same people as "> 150"
+    out = history.undo(conn)
+    assert [e.after for e in out.entries] == [{"cutoffs.everywhere.a_ca": 151}]
+    assert read_overrides(conn) == {}
+    assert load_settings(conn).cutoffs.everywhere["a_ca"] == 165
+    history.redo(conn)
+    assert read_overrides(conn) == {"cutoffs.everywhere.a_ca": 151}

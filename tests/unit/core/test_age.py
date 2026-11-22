@@ -94,19 +94,43 @@ STAFF = {
 }  # fmt: skip
 
 
+def _manual_staff(settings: Settings) -> Settings:
+    """The settings with my club's staff aged by the manual table (Auto by default)."""
+    from facegen.persistence.settings import build_settings
+
+    return build_settings(dict(settings.values) | {"age.staff.mode": "manual"})
+
+
 def test_staff_have_their_own_wide_bands_whatever_their_group(settings: Settings) -> None:
+    manual = _manual_staff(settings)
     for group in Group:
         for wording, ages in STAFF.items():
             for real in ages:
+                assert age_wording(real, group, True, manual.age, staff=True) == wording, real
+    assert age_wording(14, Group.A, True, manual.age, staff=True) == "W02"  # never W01
+    assert all(w != "W01" for _, w in manual.age.staff)
+
+
+# The staff looks by default (user, 2026-11-22): W02 to W10 spread over the ages 28 to 64.
+SPREAD = {
+    "W02": range(14, 29), "W03": range(29, 34), "W04": range(34, 39), "W05": range(39, 44),
+    "W06": range(44, 49), "W07": range(49, 54), "W08": range(54, 59), "W09": range(59, 64),
+    "W10": range(64, 95),
+}  # fmt: skip
+
+
+def test_staff_are_spread_over_28_to_64_by_default(settings: Settings) -> None:
+    assert settings.age.staff_spread is not None
+    for group in Group:
+        for wording, ages in SPREAD.items():
+            for real in ages:
                 assert age_wording(real, group, True, settings.age, staff=True) == wording, real
-    assert age_wording(14, Group.A, True, settings.age, staff=True) == "W02"  # never W01
-    assert all(w != "W01" for _, w in settings.age.staff)
 
 
 def test_staff_ages_up_to_100_are_allowed_in_the_tables(settings: Settings) -> None:
     from facegen.persistence.settings import build_settings
 
-    values = dict(settings.values)
+    values = dict(settings.values) | {"age.staff.mode": "manual"}
     values["age.staff.W10"] = 99
     assert build_settings(values).age.staff[-1] == (99, "W10")
 
@@ -141,7 +165,8 @@ def test_journalists_and_press_officers_are_band_4_or_older(settings: Settings) 
 
 
 def test_media_bands_are_the_staff_bands_from_w04_up(settings: Settings) -> None:
-    staff = {w: a for a, w in settings.age.staff}
+    """The media table copies the staff's manual table, whatever the staff's mode."""
+    staff = {w: a for a, w in _manual_staff(settings).age.staff}
     media = {w: a for a, w in settings.age.media}
     assert list(media) == [f"W{n:02d}" for n in range(4, 11)]
     assert {w: a for w, a in media.items() if w != "W04"} == {
@@ -168,3 +193,71 @@ def test_custom_table(settings: Settings) -> None:
     s = replace(settings.age, b=((15, "W03"), (30, "W10")))
     assert age_wording(29, Group.B, False, s) == "W03"
     assert age_wording(30, Group.B, False, s) == "W10"
+
+
+# --- my club's staff spread over an age span (Phase 16f) ---------------------------------------
+
+
+def test_the_staff_spread_of_the_request() -> None:
+    from facegen.core.age import band_ages, spread_table
+
+    rows = spread_table("W02", "W10", 28, 64)
+    assert rows == (
+        (0, "W02"), (29, "W03"), (34, "W04"), (39, "W05"), (44, "W06"),
+        (49, "W07"), (54, "W08"), (59, "W09"), (64, "W10"),
+    )  # fmt: skip
+    ages = band_ages(rows)
+    assert ages[0] == ("W02", None, 28)  # 28 and under
+    assert ages[1] == ("W03", 29, 33)
+    assert ages[-2] == ("W09", 59, 63)
+    assert ages[-1] == ("W10", 64, None)  # 64 and over
+
+
+def test_a_leftover_year_goes_to_the_younger_looks() -> None:
+    from facegen.core.age import spread_table
+
+    # 3 looks between over 30-40: 9 years, 3 each; over 30-41: 10 years, 4, 3, 3.
+    assert spread_table("W04", "W08", 30, 40) == (
+        (0, "W04"), (31, "W05"), (34, "W06"), (37, "W07"), (40, "W08"),
+    )  # fmt: skip
+    assert spread_table("W04", "W08", 30, 41) == (
+        (0, "W04"), (31, "W05"), (35, "W06"), (38, "W07"), (41, "W08"),
+    )  # fmt: skip
+
+
+def test_spreads_with_one_or_two_looks() -> None:
+    from facegen.core.age import spread_table
+
+    assert spread_table("W05", "W05", 20, 60) == ((0, "W05"),)
+    assert spread_table("W05", "W06", 20, 60) == ((0, "W05"), (60, "W06"))
+
+
+@pytest.mark.parametrize(
+    ("first", "last", "start", "end"),
+    [
+        ("W10", "W02", 28, 64),  # looks out of order
+        ("W02", "W10", 64, 28),  # ages out of order
+        ("W02", "W10", 28, 28),
+        ("W02", "W10", 28, 35),  # 6 years between for 7 looks
+        ("W02", "M2", 28, 64),
+    ],
+)
+def test_a_spread_that_cannot_work_is_refused(first: str, last: str, start: int, end: int) -> None:
+    from facegen.core.age import spread_table
+
+    with pytest.raises(ValueError):
+        spread_table(first, last, start, end)
+
+
+def test_the_auto_mode_fills_the_staff_table(settings: Settings) -> None:
+    from facegen.persistence.settings import SettingsError, build_settings
+
+    values = dict(settings.values) | {"age.staff.mode": "auto"}
+    s = build_settings(values)
+    assert s.age.staff[1] == (29, "W03") and s.age.staff[-1] == (64, "W10")
+    assert s.age.staff_spread is not None and s.age.staff_spread.start == 28
+    assert age_wording(31, Group.A, True, s.age, staff=True) == "W03"
+    assert settings.age.staff_spread is not None  # auto by default (user, 2026-11-22)
+    assert _manual_staff(settings).age.staff_spread is None  # manual: the table
+    with pytest.raises(SettingsError, match=r"age\.staff: "):
+        build_settings(values | {"age.staff.end": 30})

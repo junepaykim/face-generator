@@ -11,7 +11,16 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from factories import ABROAD, NEWGEN, PLAIN_PERSONALITY, RIVAL, WOMENS, player, snapshot
+from factories import (
+    ABROAD,
+    MANUAL_MODE,
+    NEWGEN,
+    PLAIN_PERSONALITY,
+    RIVAL,
+    WOMENS,
+    player,
+    snapshot,
+)
 from fakes import FakeRenderer, FakeTagger
 from fastapi.testclient import TestClient
 from support.web import post_player_action
@@ -20,7 +29,13 @@ from facegen.core.records import Snapshot
 from facegen.datasource.kits import load_kits
 from facegen.datasource.photos import PhotoIndex, PhotoScan
 from facegen.persistence import db
-from facegen.persistence.settings import Settings, is_fixed, load_defaults, load_settings
+from facegen.persistence.settings import (
+    Settings,
+    is_fixed,
+    load_defaults,
+    load_settings,
+    set_overrides,
+)
 from facegen.pipeline.sync import run_sync
 from facegen.pipeline.worker import JobFilter, Worker, load_career
 from facegen.service import SyncService, WorkerService
@@ -87,7 +102,9 @@ def make_env(config: Path, *, synced: bool) -> Env:
     settings = load_settings(defaults_path=config)
     if synced:
         conn = db.connect(settings.paths.db_path)
-        run_sync(conn, snapshot(world()), settings, save_file="career.fm")
+        # My league's cutoffs as numbers: the made-up league holds too few candidates for shares.
+        set_overrides(conn, MANUAL_MODE, config)
+        run_sync(conn, snapshot(world()), load_settings(conn, config), save_file="career.fm")
         conn.close()
     worker = WorkerService(
         settings.paths.db_path,
@@ -435,8 +452,8 @@ def test_review_page_and_retry(env: Env) -> None:
 
 
 def _settings_form(env: Env, **changes: Any) -> dict[str, Any]:
-    """The settings form as a browser would post it: every editable field."""
-    values = dict(load_settings(defaults_path=env.config).values)
+    """The settings form as a browser would post it: every editable field, as stored."""
+    values = dict(load_settings(env.conn(), env.config).values)
     values.update(changes)
     form: dict[str, Any] = {}
     for key, default in load_defaults(env.config).items():
@@ -462,7 +479,7 @@ def autosave(env: Env, **fields: str) -> dict[str, Any]:
 
 def test_settings_are_saved_as_they_change(env: Env) -> None:
     page = env.client.get("/settings/advanced").text
-    assert 'name="groups.a.ca_above"' in page and 'name="ui.host"' not in page
+    assert 'name="cutoffs.everywhere.a_ca"' in page and 'name="ui.host"' not in page
     assert 'name="paths.fm_user_dir"' not in page
     # FM27's folders are shown, with where each came from, but not as fields.
     assert "FM27&#39;s folders" in page or "FM27's folders" in page
@@ -470,38 +487,46 @@ def test_settings_are_saved_as_they_change(env: Env) -> None:
     assert "Install</th><td>" in page
     assert "data-autosave" in page and 'value="preview"' not in page
     # The Save button is there only for a browser with JavaScript off.
-    assert re.search(r"<noscript>.*value=\"apply\".*</noscript>", page, re.DOTALL)
+    assert re.search(r"<noscript>.*value=\"apply-some\".*</noscript>", page, re.DOTALL)
+    # Five tabs, each with its own form; Undo and Recent changes stay outside them.
+    for tab in ("cutoffs", "quality", "targets", "ages", "system"):
+        assert f'id="tab-{tab}" data-tab-panel="{tab}"' in page and f'href="#tab-{tab}"' in page
+    assert page.count("data-autosave") == 5
     assert re.search(r"data-undo\s+disabled", page)  # nothing to undo yet
 
-    data = autosave(env, **{"groups.a.ca_above": "85"})
+    data = autosave(env, **{"cutoffs.everywhere.a_ca": "85"})
     assert data["ok"] and data["changed"]
-    assert data["message"].startswith("Saved: Detailed group · CA above 155 → 85.")
+    assert data["message"].startswith("Saved: Everywhere · Detailed CA 165+ → 85+.")
     # Rival Kid's queued B job becomes an A job, and Abroad Kid (CA 120) is queued at A.
     assert data["message"].endswith(
         "Detailed 1 → 3, Standard 1 → 0, auto-update 1 → 3; queue: 1 queued, 1 updated."
     )
-    assert data["fields"] == {"groups.a.ca_above": {"value": 85, "text": "85", "changed": True}}
+    assert data["fields"] == {
+        "cutoffs.everywhere.a_ca": {"value": 85, "text": "85", "changed": True}
+    }
     assert data["can_undo"] and not data["can_redo"]
     assert (
-        "Detailed group · CA above" in data["history_html"]
+        "Everywhere · Detailed CA" in data["history_html"]
         and 'name="through"' in data["history_html"]
     )
     assert 'name="csrf_token"' in data["history_html"]
     assert env.one("SELECT group_name FROM players WHERE unique_id = ?", B_NEWGEN) == "a"
     assert env.one("SELECT group_name FROM jobs WHERE unique_id = ?", B_NEWGEN) == "a"
-    assert load_settings(env.conn(), env.config).groups.a.ca_above == 85
+    assert load_settings(env.conn(), env.config).cutoffs.everywhere["a_ca"] == 85
 
-    again = autosave(env, **{"groups.a.ca_above": "85"})
+    again = autosave(env, **{"cutoffs.everywhere.a_ca": "85"})
     assert again["ok"] and not again["changed"] and again["message"] == "Nothing changed."
     # The page lists the change and offers to undo it.
     page = env.client.get("/settings/advanced").text
-    assert "Recent changes" in page and "155 → <strong>85</strong>" in page
+    assert "Recent changes" in page and "165+ → <strong>85+</strong>" in page
     assert not re.search(r"data-undo\s+disabled", page)
 
 
 def test_autosave_refuses_bad_values_and_names_the_field(env: Env) -> None:
-    data = autosave(env, **{"groups.a.ca_above": "999"})
-    assert not data["ok"] and data["errors"]["groups.a.ca_above"] == "must be from 0 to 200"
+    data = autosave(env, **{"cutoffs.everywhere.a_ca": "999"})
+    assert not data["ok"] and data["errors"]["cutoffs.everywhere.a_ca"] == "must be from 1 to 200"
+    data = autosave(env, **{"cutoffs.everywhere.a_ca": "many"})
+    assert data["errors"]["cutoffs.everywhere.a_ca"] == "needs a number, or - to switch it off"
     data = autosave(env, **{"groups.b.candidates": "two"})
     assert data["errors"] == {"groups.b.candidates": "needs a number"}
     # Values that only fail together blame the fields named; nothing is stored.
@@ -510,7 +535,7 @@ def test_autosave_refuses_bad_values_and_names_the_field(env: Env) -> None:
     data = autosave(env, **{"age.staff.W03": "17"})  # below W02's 18
     assert list(data["errors"]) == ["age.staff.W03"]
     assert "must start at an older age than the one before" in data["error"]
-    assert env.one("SELECT COUNT(*) FROM settings") == 0
+    assert env.one("SELECT COUNT(*) FROM settings WHERE key != 'cutoffs.mode'") == 0
     # Fixing the field that blocked another saves both in one change.
     data = autosave(env, **{"age.staff.W02": "16", "age.staff.W03": "17"})
     assert data["ok"] and env.one("SELECT COUNT(*) FROM settings_history") == 1
@@ -521,38 +546,38 @@ def test_autosave_refuses_bad_values_and_names_the_field(env: Env) -> None:
     assert load_settings(env.conn(), env.config).reference.enabled is True
     assert not autosave(env, **{"reference.enabled": "maybe"})["ok"]
     # The detail pass size is one of a few choices (Phase 10c).
+    data = autosave(env, **{"groups.a.detail_size": "smaller"})
+    assert data["ok"] and data["fields"]["groups.a.detail_size"]["text"] == "smaller"
+    assert load_settings(env.conn(), env.config).groups.a.detail_size() == (1152, 1472)
     data = autosave(env, **{"groups.a.detail_size": "1152x1472"})
-    assert data["ok"] and data["fields"]["groups.a.detail_size"]["text"] == "1152x1472"
-    assert load_settings(env.conn(), env.config).groups.a.detail_size == (1152, 1472)
-    data = autosave(env, **{"groups.a.detail_size": "2048x2048"})
-    assert not data["ok"] and "1344x1728, 1152x1472, off" in data["errors"]["groups.a.detail_size"]
+    assert not data["ok"] and "x1.5, smaller, off" in data["errors"]["groups.a.detail_size"]
 
 
 def test_undo_redo_and_undo_back_several_steps(env: Env) -> None:
-    autosave(env, **{"groups.a.ca_above": "150"})  # moves nobody in this world
-    autosave(env, **{"groups.b.any_ca_above": "110"})  # Abroad Kid (CA 120) joins B
+    autosave(env, **{"cutoffs.everywhere.a_ca": "150"})  # moves nobody in this world
+    autosave(env, **{"cutoffs.everywhere.b_ca": "110"})  # Abroad Kid (CA 120) joins B
     assert env.one("SELECT group_name FROM players WHERE unique_id = ?", ABROAD_KID) == "b"
 
     text = follow(env, env.client.post("/settings", data={"action": "undo"}))
-    assert "Undone: Standard group · CA above 110 → 140." in text
+    assert "Undone: Everywhere · Standard CA 110+ → 145+." in text
     assert env.one("SELECT group_name FROM players WHERE unique_id = ?", ABROAD_KID) is None
     text = follow(env, env.client.post("/settings", data={"action": "redo"}))
-    assert "Redone: Standard group · CA above 140 → 110." in text
+    assert "Redone: Everywhere · Standard CA 145+ → 110+." in text
     assert env.one("SELECT group_name FROM players WHERE unique_id = ?", ABROAD_KID) == "b"
 
     first = env.one("SELECT MIN(id) FROM settings_history")
     text = follow(env, env.client.post("/settings", data={"action": "undo", "through": first}))
-    assert "Detailed group · CA above 150 → 155" in text
-    assert "Standard group · CA above 110 → 140" in text
-    assert env.one("SELECT COUNT(*) FROM settings") == 0
+    assert "Everywhere · Detailed CA 150+ → 165+" in text
+    assert "Everywhere · Standard CA 110+ → 145+" in text
+    assert env.one("SELECT COUNT(*) FROM settings WHERE key != 'cutoffs.mode'") == 0
     assert env.one("SELECT group_name FROM players WHERE unique_id = ?", B_NEWGEN) == "b"
     assert "Nothing to undo." in follow(env, env.client.post("/settings", data={"action": "undo"}))
 
 
 def test_reset_all_and_the_save_button_without_javascript(env: Env) -> None:
-    form = _settings_form(env, **{"groups.a.ca_above": 85})
+    form = _settings_form(env, **{"cutoffs.everywhere.a_ca": 85})
     text = follow(env, env.client.post("/settings", data={**form, "action": "apply"}))
-    assert "Saved: Detailed group · CA above 155 → 85." in text
+    assert "Saved: Everywhere · Detailed CA 165+ → 85+." in text
     assert "Nothing changed" in follow(
         env, env.client.post("/settings", data={**form, "action": "apply"})
     )
@@ -569,7 +594,7 @@ def test_reset_all_and_the_save_button_without_javascript(env: Env) -> None:
     assert env.one("SELECT COUNT(*) FROM settings") == 0
     follow(env, env.client.post("/settings", data={"action": "undo"}))
     s = load_settings(env.conn(), env.config)
-    assert s.groups.a.ca_above == 85 and s.reference.enabled is False
+    assert s.cutoffs.everywhere["a_ca"] == 85 and s.reference.enabled is False
 
 
 def test_my_clubs_staff_on_the_players_pages(env: Env) -> None:
@@ -652,7 +677,7 @@ def test_photos_on_the_players_pages_and_the_dashboard(env: Env) -> None:
     # Famous Striker (CA 185) has no photo, so the newgen thresholds now put them in A.
     detail = env.client.get(f"/players/{STAR}").text
     assert "none: FM27 shows a silhouette" in detail
-    assert "no photo, CA 185 &gt; 155" in detail
+    assert "no photo, CA 185 (165+)" in detail
     assert re.search(r"Photo</th><td>\s*FM27's\s*</td>", env.client.get(f"/players/{MINE}").text)
 
     status = env.client.get("/status").text

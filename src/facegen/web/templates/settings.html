@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_icons.html" import info as tip %}
+{% from "_settings_field.html" import field, cell with context %}
 {% block title %}{{ t("nav.settings") }}{% endblock %}
 {% block content %}
 {% set level = "advanced" %}
@@ -7,89 +8,217 @@
 
 {% if error %}<div class="flash bad">{{ error }}</div>{% endif %}
 
-<div class="cards">
-{% include "_settings_folder.html" %}
-
-<div class="card" id="graphics-card">
-  <h2>{{ t("settings.gpu.title") }} {{ tip(t("settings.gpu.tip")) }}</h2>
-  <div class="buttons"><a class="button" href="/hardware">{{ t("settings.gpu.button") }}</a></div>
-</div>
-
-<div class="card" id="about">
-  <h2>{{ t("settings.info.title") }}</h2>
-  <table class="kv">
-    {% if info.worker %}
-    <tr><th>{{ t("settings.info.model") }}</th><td>{{ t("settings.info.model_loaded" if info.worker.models_loaded else "settings.info.model_not_loaded") }}</td></tr>
-    <tr><th>{{ t("settings.info.session") }}</th><td>{{ t("settings.info.session_value", done=info.worker.done, failed=info.worker.failed) }}</td></tr>
-    {% else %}
-    <tr><th>{{ t("settings.info.model") }}</th><td class="muted">{{ t("settings.info.no_worker") }}</td></tr>
-    {% endif %}
-    <tr><th>{{ t("settings.info.watcher") }}</th><td>{{ t("settings.info.watching" if info.watching else "settings.info.not_watching") }}</td></tr>
-    {% if info.photos %}<tr><th>{{ t("settings.info.photos") }}</th><td>{% if info.photos.game_known %}{{ t("settings.info.photos_value", count=info.photos.game) }}{% if info.photos.facepack_files %}{{ t("settings.info.facepacks", count=info.photos.facepack_files, mapped=info.photos.facepack) }}{% endif %}{% else %}<span class="bad">{{ t("settings.info.photos_unknown") }}</span>{% endif %}</td></tr>{% endif %}
-    {% if update %}{% set u = update.status %}
-    <tr><th>{{ t("settings.info.version") }}</th><td>{{ u.current }}</td></tr>
-    <tr id="update-state"><th>{{ t("settings.info.updates") }}</th><td>
-      {% if u.checking %}{{ t("settings.info.update_checking") }}
-      {% elif u.available %}{{ t("settings.info.update_available", version=u.latest, url=u.page) }}
-      {% elif u.error and not u.latest %}<span class="bad">{{ t("settings.info.update_failed") }}</span>
-      {% elif update.checked %}{{ t("settings.info.update_latest") }}
-      {% elif not u.enabled %}{{ t("settings.info.update_off") }}
-      {% else %}{{ t("settings.info.update_never") }}{% endif %}
-      {% if update.checked %}<span class="muted small">{{ t("settings.info.update_checked", when=update.checked) }}</span>{% endif %}
-      {% if u.error %}<details class="problem-detail" id="update-detail"><summary>{{ t("problem.details") }}</summary><pre>{{ u.error }}</pre></details>{% endif %}
-    </td></tr>
-    {% endif %}
-  </table>
-  {% if update %}<form method="post" action="/update/check" class="buttons"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="/settings/advanced#about"><button>{{ t("settings.info.update_check") }}</button></form>{% endif %}
-</div>
-</div>
-
 {% include "_settings_bar.html" %}
 
-<div class="settings-layout">
-  <form method="post" action="/settings" class="settings" data-autosave><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <noscript><div class="bulk"><button name="action" value="apply" class="primary">{{ t("settings.save") }}</button><span class="muted small">{{ t("settings.noscript") }}</span></div></noscript>
-    {% for section, title, note, fields in sections %}
-    {% set top = section.split(".")[0] %}
-    {% set first_of_top = loop.first or sections[loop.index0 - 1][0].split(".")[0] != top %}
-    <fieldset id="section-{{ section|replace('.', '-') }}">
-      <legend>{{ t("settings.title." ~ section) if tr.has("settings.title." ~ section) else title }}{% if first_of_top and tr.has("settings.tip." ~ top) %} {{ tip(t("settings.tip." ~ top)) }}{% endif %}</legend>
-      {% if note and first_of_top %}<p class="muted small">{{ t("settings.note." ~ top) }}</p>{% endif %}
-      {% for fd in fields %}
-        {% set box = "div" if fd.kind == "groups" else "label" %}
-        <{{ box }} class="field {{ 'changed' if fd.changed }} {{ 'error' if fd.key in errors }}" data-field>
-          {% set field_tip = "settings.field_tip." ~ fd.key.rsplit(".", 1)[-1] %}
-          <span class="name">{% if fd.label_key %}{{ t(fd.label_key, **fd.label_values) }}{% else %}{{ fd.label }}{% endif %}{% if tr.has(field_tip) %} {{ tip(t(field_tip)) }}{% endif %} <span class="dot" data-dot title="{{ t('settings.default', value=fd.default_text) }}" {{ "hidden" if not fd.changed }}></span></span>
-          {% if fd.kind == "bool" %}
-            <input type="checkbox" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" {{ "checked" if fd.value is sameas true }}>
-          {% elif fd.kind == "int" %}
-            <input type="number" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}" step="1">
-          {% elif fd.kind == "float" %}
-            <input type="number" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}" step="any">
-          {% elif fd.kind == "band" %}
-            <input type="text" class="band" inputmode="numeric" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}" aria-label="{{ fd.label }}">
-          {% elif fd.kind == "groups" %}
-            <span class="group-ticks">
-              <input type="hidden" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}">
-              {% for g in ("a", "b", "c") %}<label class="tick"><input type="checkbox" data-group-of="{{ fd.key }}" value="{{ g }}" {{ "checked" if g in fd.value }}> {{ grp(g) }}</label>{% endfor %}
-            </span>
-          {% elif fd.kind == "choice" %}
-            <select name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}"{% if fd.key.startswith("display.") %} data-reload{% endif %}>
-              {% for value, label in fd.choices %}<option value="{{ value }}" {{ "selected" if fd.text == value }}>{{ label }}</option>{% endfor %}
-              {% if fd.text not in fd.choices|map("first") %}<option value="{{ fd.text }}" selected>{{ fd.text }}</option>{% endif %}
-            </select>
-          {% else %}
-            <input type="text" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}">
-          {% endif %}
-          <span class="muted small">{{ t("settings.default", value=fd.default_text) }}
-            <button type="button" class="link small" data-use-default {{ "hidden" if not fd.changed }}>{{ t("settings.use_default") }}</button>
-            <span class="bad" data-error>{% if fd.key in errors %} · {{ errors[fd.key] }}{% endif %}</span></span>
-        </{{ box }}>
-      {% endfor %}
-    </fieldset>
-    {% endfor %}
-  </form>
+{# A tab's own form: saved as each field changes; without the script, its Save button sends it. #}
+{% macro form_head(tab) %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="/settings/advanced#tab-{{ tab }}">{% endmacro %}
+{% macro save_button() %}<noscript><div class="bulk"><button name="action" value="apply-some" class="primary">{{ t("settings.save") }}</button><span class="muted small">{{ t("settings.noscript") }}</span></div></noscript>{% endmacro %}
 
+{% macro section_box(section, title, note, fds, skip=()) %}
+  {% set top = section.split(".")[0] %}
+  <fieldset id="section-{{ section|replace('.', '-') }}">
+    <legend>{{ t("settings.title." ~ section) if tr.has("settings.title." ~ section) else title }}{% if tr.has("settings.tip." ~ top) and (section == top or section.endswith(".a_my_club")) %} {{ tip(t("settings.tip." ~ top)) }}{% endif %}</legend>
+    {% if note and (section == top) %}<p class="muted small">{{ t("settings.note." ~ top) }}</p>{% endif %}
+    {% for fd in fds %}{% if fd.key not in skip %}{{ field(fd, errors) }}{% endif %}{% endfor %}
+    {{ caller() if caller is defined }}
+  </fieldset>
+{% endmacro %}
+
+{% set f = fields %}
+{% set auto = f["cutoffs.mode"].value == "auto" %}
+{% set kind = "share" if auto else "manual" %}
+{% set ev = cutoffs.effective %}
+
+<nav class="pills" aria-label="{{ t('settings.tabs') }}" data-tab-pills data-anchors="{{ tab_anchors|tojson|forceescape }}">
+  {% for tab in tabs %}<a href="#tab-{{ tab }}" data-tab="{{ tab }}">{{ t("settings.tab." ~ tab) }}</a>{% endfor %}
+</nav>
+
+<div class="settings-layout">
+<div class="tab-panels">
+
+{# --- Cutoffs: who is picked for each group (Phase 16) ------------------------------------ #}
+<section class="tab-panel" id="tab-cutoffs" data-tab-panel="cutoffs">
+  <h2 class="tab-title">{{ t("settings.tab.cutoffs") }}</h2>
+  <div class="card tier-summary" data-part="tier-summary" role="status" aria-live="polite">{% include "_tier_summary.html" %}</div>
+  <form method="post" action="/settings" class="settings" data-autosave>{{ form_head("cutoffs") }}
+    <fieldset id="section-cutoffs-my_club">
+      <legend>{{ t("settings.title.cutoffs.my_club") }} {{ tip(t("settings.tip.cutoffs_my_club")) }}</legend>
+      {% for key in ("first_team", "youth", "loans", "academy_alumni") %}{{ field(f["cutoffs.my_club." ~ key], errors) }}{% endfor %}
+    </fieldset>
+
+    <fieldset id="section-cutoffs">
+      <legend>{{ t("settings.title.cutoffs") }} {{ tip(t("settings.tip.cutoffs")) }}</legend>
+      {{ field(f["cutoffs.mode"], errors) }}
+      <div class="table-scroll">
+      <table class="cutoff-table">
+        <thead><tr><th></th><th>{{ t("cutoffs.col.league_ca") }}</th><th>{{ t("cutoffs.col.league_pa") }}</th><th>{{ t("cutoffs.col.elsewhere") }}</th></tr></thead>
+        <tbody>
+        {% for g in ("a", "b", "c") %}
+          <tr>
+            <th scope="row">{{ grp(g) }}</th>
+            {% for attr in ("ca", "pa") %}
+              {% set key = "cutoffs." ~ kind ~ "." ~ g ~ "_" ~ attr %}
+              {% set column = tr("cutoffs.col.league_ca") if attr == "ca" else tr("cutoffs.col.league_pa") %}
+              <td data-label="{{ column }}">{{ cell(f[key], errors, tr("group." ~ g) ~ " · " ~ column, ev[key]) }}</td>
+            {% endfor %}
+            <td class="others" data-label="{{ tr('cutoffs.col.elsewhere') }}">
+              {% if g == "a" %}<span class="muted">–</span>{% endif %}
+              {% if g == "b" %}
+                <div><span class="where">{{ t("cutoffs.above") }} CA</span>{{ cell(f["cutoffs.share.above_b_ca"], errors, tr("group.b") ~ " · " ~ tr("cutoffs.above"), ev["cutoffs.share.above_b_ca"]) }}</div>
+                <div><span class="where">{{ t("cutoffs.continental") }} CA</span>{{ cell(f["cutoffs.share.continental_b_ca"], errors, tr("group.b") ~ " · " ~ tr("cutoffs.continental"), ev["cutoffs.share.continental_b_ca"]) }}</div>
+              {% endif %}
+              {% if g == "c" %}
+                <div><span class="where">{{ t("cutoffs.above") }} CA</span>{{ cell(f["cutoffs.share.above_c_ca"], errors, tr("group.c") ~ " · " ~ tr("cutoffs.above"), ev["cutoffs.share.above_c_ca"]) }}</div>
+                <div><span class="where">{{ t("cutoffs.below") }} CA</span>{{ cell(f["cutoffs.share.below_c_ca"], errors, tr("group.c") ~ " · " ~ tr("cutoffs.below"), ev["cutoffs.share.below_c_ca"]) }}</div>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      {{ field(f["cutoffs.light_above"], errors) }}
+      {{ field(f["cutoffs.light_below"], errors) }}
+      <div class="found-leagues small">
+        {% if not cutoffs.synced %}<p class="muted">{{ t("cutoffs.not_synced") }}</p>
+        {% elif not cutoffs.leagues %}<p class="muted">{{ t("cutoffs.no_league") }}</p>
+        {% else %}
+        <ul>
+          {% for lg in cutoffs.leagues %}<li><span class="muted">{{ t("cutoffs.found." ~ lg.scope) }}</span> {% if lg.name %}{{ lg.name }}{% else %}{{ lg.clubs|join(", ") }}{% endif %} <span class="muted">({{ t("cutoffs.clubs", count=lg.club_count) }})</span></li>{% endfor %}
+        </ul>
+        {% endif %}
+      </div>
+    </fieldset>
+
+    {% set every = namespace(parts=[]) %}
+    {% for g in ("a", "b", "c") %}
+      {% set ca = f["cutoffs.everywhere." ~ g ~ "_ca"].value %}{% set pa = f["cutoffs.everywhere." ~ g ~ "_pa"].value %}
+      {% if ca == "-" and pa == "-" %}{% set text = tr("settings.value.off") %}
+      {% elif pa == "-" %}{% set text = "CA " ~ ca ~ "+" %}
+      {% elif ca == "-" %}{% set text = "PA " ~ pa ~ "+" %}
+      {% else %}{% set text = tr("cutoffs.either", ca=ca, pa=pa) %}{% endif %}
+      {% set every.parts = every.parts + [(g, text)] %}
+    {% endfor %}
+    {% set bad = namespace(here=false) %}{% for k in errors %}{% if k.startswith("cutoffs.everywhere.") %}{% set bad.here = true %}{% endif %}{% endfor %}
+    <details class="everywhere" id="section-cutoffs-everywhere"{% if bad.here %} open{% endif %}>
+      <summary><strong>{{ t("settings.title.cutoffs.everywhere") }}</strong>: {% for g, text in every.parts %}{{ grp(g) }} {{ text }}{% if not loop.last %} · {% endif %}{% endfor %}</summary>
+      <table class="cutoff-table">
+        <thead><tr><th></th><th>CA</th><th>PA</th></tr></thead>
+        <tbody>
+        {% for g in ("a", "b", "c") %}
+          <tr><th scope="row">{{ grp(g) }}</th>
+            {% for attr in ("ca", "pa") %}<td data-label="{{ attr|upper }}">{{ cell(f["cutoffs.everywhere." ~ g ~ "_" ~ attr], errors, tr("group." ~ g) ~ " · " ~ attr|upper) }}</td>{% endfor %}
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </details>
+    {{ save_button() }}
+  </form>
+</section>
+
+{# --- Quality: how pictures are drawn --------------------------------------------------- #}
+<section class="tab-panel" id="tab-quality" data-tab-panel="quality">
+  <h2 class="tab-title">{{ t("settings.tab.quality") }}</h2>
+  <div class="card" id="graphics-card">
+    <h2>{{ t("settings.gpu.title") }} {{ tip(t("settings.gpu.tip")) }}</h2>
+    {% if card and card.has_gpu %}<p class="muted small">{{ card.name }}</p>{% endif %}
+    <div class="buttons"><a class="button" href="/hardware">{{ t("settings.gpu.button") }}</a></div>
+  </div>
+  <form method="post" action="/settings" class="settings" data-autosave>{{ form_head("quality") }}
+    <fieldset id="section-groups">
+      <legend>{{ t("settings.title.groups") }}</legend>
+      <div class="table-scroll">
+      <table class="spec-table">
+        <thead><tr><th></th>{% for g in ("a", "b", "c") %}<th>{{ grp(g) }}</th>{% endfor %}</tr></thead>
+        <tbody>
+        {% for name in ("published_long_edge", "candidates", "detail_size") %}
+          <tr><th scope="row">{{ t("settings.label." ~ name) }}</th>
+          {% for g in ("a", "b", "c") %}<td>{{ cell(f["groups." ~ g ~ "." ~ name], errors, tr("group." ~ g) ~ " · " ~ tr("settings.label." ~ name)) }}</td>{% endfor %}
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </fieldset>
+    {% for section, title, note, fds in tabs.quality if not section.startswith("groups") %}
+      {{ section_box(section, title, note, fds) }}
+    {% endfor %}
+    {{ save_button() }}
+  </form>
+</section>
+
+{# --- Targets: who else gets a picture ------------------------------------------------- #}
+<section class="tab-panel" id="tab-targets" data-tab-panel="targets">
+  <h2 class="tab-title">{{ t("settings.tab.targets") }}</h2>
+  <form method="post" action="/settings" class="settings" data-autosave>{{ form_head("targets") }}
+    {% for section, title, note, fds in tabs.targets %}{{ section_box(section, title, note, fds) }}{% endfor %}
+    {{ save_button() }}
+  </form>
+</section>
+
+{# --- Age looks ------------------------------------------------------------------------ #}
+<section class="tab-panel" id="tab-ages" data-tab-panel="ages">
+  <h2 class="tab-title">{{ t("settings.tab.ages") }}</h2>
+  <form method="post" action="/settings" class="settings" data-autosave>{{ form_head("ages") }}
+    {% for section, title, note, fds in tabs.ages %}
+      {% if section == "age.staff" %}
+        {% set spread = f["age.staff.mode"].value == "auto" %}
+        {% set spread_keys = ["age.staff.mode", "age.staff.from", "age.staff.to", "age.staff.start", "age.staff.end"] %}
+        {% if spread %}{% set skip = fds|map(attribute="key")|reject("in", spread_keys)|list %}{% else %}{% set skip = spread_keys[1:] %}{% endif %}
+        {% call section_box(section, title, note, fds, skip) %}
+          <div class="staff-looks" data-part="staff-looks">{% include "_staff_looks.html" %}</div>
+        {% endcall %}
+      {% else %}
+        {{ section_box(section, title, note, fds) }}
+      {% endif %}
+    {% endfor %}
+    {{ save_button() }}
+  </form>
+</section>
+
+{# --- System: folders, this run, and how facegen runs --------------------------------- #}
+<section class="tab-panel" id="tab-system" data-tab-panel="system">
+  <h2 class="tab-title">{{ t("settings.tab.system") }}</h2>
+  <div class="cards">
+  {% include "_settings_folder.html" %}
+
+  <div class="card" id="about">
+    <h2>{{ t("settings.info.title") }}</h2>
+    <table class="kv">
+      {% if info.worker %}
+      <tr><th>{{ t("settings.info.model") }}</th><td>{{ t("settings.info.model_loaded" if info.worker.models_loaded else "settings.info.model_not_loaded") }}</td></tr>
+      <tr><th>{{ t("settings.info.session") }}</th><td>{{ t("settings.info.session_value", done=info.worker.done, failed=info.worker.failed) }}</td></tr>
+      {% else %}
+      <tr><th>{{ t("settings.info.model") }}</th><td class="muted">{{ t("settings.info.no_worker") }}</td></tr>
+      {% endif %}
+      <tr><th>{{ t("settings.gpu.title") }}</th><td>{% if card and card.has_gpu %}{{ card.name }}{% else %}<a href="/hardware">{{ t("settings.basic.check_card") }}</a>{% endif %}</td></tr>
+      <tr><th>{{ t("settings.info.watcher") }}</th><td>{{ t("settings.info.watching" if info.watching else "settings.info.not_watching") }}</td></tr>
+      {% if info.photos %}<tr><th>{{ t("settings.info.photos") }}</th><td>{% if info.photos.game_known %}{{ t("settings.info.photos_value", count=info.photos.game) }}{% if info.photos.facepack_files %}{{ t("settings.info.facepacks", count=info.photos.facepack_files, mapped=info.photos.facepack) }}{% endif %}{% else %}<span class="bad">{{ t("settings.info.photos_unknown") }}</span>{% endif %}</td></tr>{% endif %}
+      {% if update %}{% set u = update.status %}
+      <tr><th>{{ t("settings.info.version") }}</th><td>{{ u.current }}</td></tr>
+      <tr id="update-state"><th>{{ t("settings.info.updates") }}</th><td>
+        {% if u.checking %}{{ t("settings.info.update_checking") }}
+        {% elif u.available %}{{ t("settings.info.update_available", version=u.latest, url=u.page) }}
+        {% elif u.error and not u.latest %}<span class="bad">{{ t("settings.info.update_failed") }}</span>
+        {% elif update.checked %}{{ t("settings.info.update_latest") }}
+        {% elif not u.enabled %}{{ t("settings.info.update_off") }}
+        {% else %}{{ t("settings.info.update_never") }}{% endif %}
+        {% if update.checked %}<span class="muted small">{{ t("settings.info.update_checked", when=update.checked) }}</span>{% endif %}
+        {% if u.error %}<details class="problem-detail" id="update-detail"><summary>{{ t("problem.details") }}</summary><pre>{{ u.error }}</pre></details>{% endif %}
+      </td></tr>
+      {% endif %}
+    </table>
+    {% if update %}<form method="post" action="/update/check" class="buttons"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="/settings/advanced#about"><button>{{ t("settings.info.update_check") }}</button></form>{% endif %}
+  </div>
+  </div>
+  <form method="post" action="/settings" class="settings" data-autosave>{{ form_head("system") }}
+    {% for section, title, note, fds in tabs.system %}{{ section_box(section, title, note, fds) }}{% endfor %}
+    {{ save_button() }}
+  </form>
+</section>
+
+</div>
   <aside class="card history-card" id="history">
     {% include "_settings_history.html" %}
   </aside>
