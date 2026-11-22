@@ -362,7 +362,7 @@ ALTER TABLE traits ADD COLUMN man_sheet TEXT;
 
 # Phase 16: league-share cutoffs and picture shapes.
 # clubs.reputation: the club's reputation (1-10000) as last read. clubs.league_id: the league on
-# my nation's ladder the club belongs to (core/leagues.py); league_offset: how many levels that
+# my pyramid's ladder the club belongs to (core/leagues.py); league_offset: how many levels that
 # league is above mine (1 the league above, -1 below, 0 mine or a parallel division); NULL off
 # the ladder.
 # league_stats: per career and scope ('league', 'above', 'below', 'continental'), the

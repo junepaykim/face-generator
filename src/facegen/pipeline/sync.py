@@ -296,7 +296,12 @@ def ingest(
     )
     ladder_clubs = ladder.club_leagues()
     league_ids, league_clubs = my_league(
-        ladder, my_club, snapshot.clubs, snapshot.league_tables, snapshot.fixture_counts
+        ladder,
+        my_club,
+        snapshot.clubs,
+        snapshot.league_tables,
+        snapshot.fixture_counts,
+        seasons=snapshot.fixture_seasons,
     )
     continental_ids = continental_competitions(
         my_club,

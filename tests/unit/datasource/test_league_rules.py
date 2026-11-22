@@ -5,7 +5,12 @@ from __future__ import annotations
 import struct
 
 from facegen.core.records import DivisionList
-from facegen.datasource.league_rules import competition_id, competition_rules, division_lists
+from facegen.datasource.league_rules import (
+    Record,
+    competition_id,
+    competition_rules,
+    division_lists,
+)
 
 # --- writing the format ---------------------------------------------------------------------
 
@@ -166,10 +171,24 @@ def test_nothing_to_read() -> None:
 
 
 def test_competition_ids_in_every_stored_form() -> None:
+    R = Record
     assert competition_id(14) == 14
-    assert competition_id([("comp", 109201)]) == 109201
-    assert competition_id([("comp", (5, 5))]) == 5
-    assert competition_id([("comp", (5, 6))]) is None
-    assert competition_id([("comp", [("id  ", "comp"), ("comp", 7), ("DBID", 7)])]) == 7
-    assert competition_id([("comp", [("id  ", "comp"), ("comp", 7), ("DBID", 8)])]) is None
-    assert competition_id([("type", 1)]) is None
+    assert competition_id(R([("comp", 109201)])) == 109201
+    assert competition_id(R([("comp", (5, 5))])) == 5
+    assert competition_id(R([("comp", (5, 6))])) is None
+    assert competition_id(R([("comp", R([("id  ", "comp"), ("comp", 7), ("DBID", 7)]))])) == 7
+    assert competition_id(R([("comp", R([("id  ", "comp"), ("comp", 7), ("DBID", 8)]))])) is None
+    assert competition_id(R([("type", 1)])) is None
+    assert competition_id([5, 6]) is None  # a list is not a record, whatever it holds
+    assert competition_id([("comp", 14)]) is None
+
+
+def test_an_odd_list_in_one_nations_rules_leaves_the_others_readable() -> None:
+    """A division item that is a list (of numbers) rather than a record makes that nation's
+    list unreadable; England's list beside it is still read."""
+    numbers = struct.pack("<I", 2) + b"".join(bytes([1, 1]) + struct.pack("<i", n) for n in (5, 6))
+    odd = nation_rules(771, 0, [comp_item(22), (0x0B, numbers)])
+    rules = competition_rules(save_bytes(odd, ENGLAND))
+    assert rules.division_lists == (
+        DivisionList(nation=765, women=False, divisions=(11, 12, 13, 14, 109201, 150990)),
+    )

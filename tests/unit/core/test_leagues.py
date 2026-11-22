@@ -74,101 +74,83 @@ def test_table_without_a_competition_is_ignored() -> None:
     assert my_league_competitions(1, CLUBS, (T(None, (1, 2, 3)),), {}) == frozenset()
 
 
-def test_clubs_in_competitions_unions_tables_and_fixtures() -> None:
-    tables = (T(CONTINENTAL, (30, 31)), T(LEAGUE, (1, 2)))
+def test_a_competitions_clubs_are_its_fixtures_and_its_tables_only_without_any() -> None:
+    tables = (T(CONTINENTAL, (30, 31)), T(LEAGUE, (1, 2)), T(CUP_GROUP, (4, 5)))
     fixtures = {CONTINENTAL: {32: 2}, CONFERENCE_LEAGUE: {33: 1}, CUP: {3: 1}}
-    got = clubs_in_competitions([CONTINENTAL, CONFERENCE_LEAGUE], tables, fixtures)
-    assert got == {30, 31, 32, 33}
+    got = clubs_in_competitions([CONTINENTAL, CONFERENCE_LEAGUE, CUP_GROUP], tables, fixtures)
+    # CONTINENTAL's table is left out: with fixtures, it may be from an earlier edition.
+    assert got == {32, 33, 4, 5}
     assert clubs_in_competitions([], tables, fixtures) == frozenset()
 
 
-# --- the league ladder (Phase 16) -----------------------------------------------------------------
+def test_a_uefa_competitions_clubs_leave_out_an_earlier_editions_table() -> None:
+    # This edition's fixtures hold my club (1) and a French club (2); last edition's table
+    # still holds another French club (3).
+    clubs = {1: club(1, nation=1), 2: club(2, nation=2), 3: club(3, nation=2)}
+    ucl = 1301394
+    fixtures = {ucl: {1: 2, 2: 2}}
+    tables = (T(ucl, (1, 3)),)
+    found = continental_competitions(
+        1, clubs, tables, fixtures, seasons={ucl: 2027}, game_date=date(2027, 12, 26)
+    )
+    assert found == {ucl}
+    assert clubs_in_competitions(found, tables, fixtures) == {1, 2}
 
 
-def rated(first: int, count: int, reputation: int, nation: int = 1, step: int = 10) -> dict:
-    """`count` clubs from `first`, reputations spread a little around `reputation`."""
-    return {
-        c: ClubRecord(c, f"Club {c}", Gender.MEN, nation, reputation + step * (i - count // 2))
-        for i, c in enumerate(range(first, first + count))
+def test_my_league_is_off_when_its_season_is_older_than_another() -> None:
+    """Just promoted, before the save's rules place my club: the old division's latest season
+    (48 fixtures) against the new one's (46). The seasons conflict, so no league."""
+    old, new = LEAGUE, CUP
+    fixtures = {
+        old: {c: 48 for c in range(1, 25)},
+        new: {1: 46} | {c: 46 for c in range(2, 25)},
     }
+    assert my_league_competitions(1, CLUBS, (), fixtures) == {old}  # without seasons
+    seasons = {old: 2026, new: 2027}
+    assert my_league_competitions(1, CLUBS, (), fixtures, seasons) == frozenset()
+    competitions, members = my_league(Ladder(), 1, CLUBS, (), fixtures, seasons=seasons)
+    assert competitions == frozenset() and members == frozenset()
+    # Once the new season's fixtures are the most, it is my league.
+    fixtures[new] = {c: 50 for c in range(1, 25)}
+    assert my_league_competitions(1, CLUBS, (), fixtures, seasons) == {new}
+
+
+def test_seasons_that_agree_or_are_unknown_leave_my_league_alone() -> None:
+    fixtures = {LEAGUE: {c: 46 for c in range(1, 25)}, CUP: {1: 3, 2: 3}}
+    assert my_league_competitions(1, CLUBS, (), fixtures, {LEAGUE: 2027, CUP: 2027}) == {LEAGUE}
+    assert my_league_competitions(1, CLUBS, (), fixtures, {LEAGUE: 2027}) == {LEAGUE}
+    assert my_league_competitions(1, CLUBS, (), fixtures, {}) == {LEAGUE}
+    # A season known for a cup but not for the league: they cannot be compared, so off.
+    assert my_league_competitions(1, CLUBS, (), fixtures, {CUP: 2027}) == frozenset()
+    # A competition my club has no fixture in does not count.
+    fixtures[CUP_GROUP] = {5: 2, 6: 2}
+    tables = (T(CUP_GROUP, (1, 5, 6)),)
+    seasons = {LEAGUE: 2026, CUP_GROUP: 2027}
+    assert my_league_competitions(1, CLUBS, tables, fixtures, seasons) == {LEAGUE}
+
+
+# --- continental competitions ------------------------------------------------------------------
 
 
 def league_fixtures(first: int, count: int, games: int | None = None) -> dict[int, int]:
     return {c: games if games is not None else 2 * (count - 1) for c in range(first, first + count)}
 
 
-TOP, SECOND, NORTH, SOUTH, CUP, YOUTH, WOMEN = 101, 102, 103, 104, 105, 106, 107
-PYRAMID = (
-    rated(1, 20, 7000)  # the top level
-    | rated(101, 24, 5000)  # level 2
-    | rated(201, 24, 2600, step=30)  # level 3, north
-    | rated(301, 24, 2700, step=30)  # level 3, south: parallel
-    | {c: ClubRecord(c, f"W{c}", Gender.WOMEN, 1, 6000) for c in range(401, 413)}
-)
-FIXTURES = {
-    TOP: league_fixtures(1, 20),
+SECOND = 102
+DOMESTIC = {c: club(c) for c in (*range(1, 21), *range(101, 125), *range(201, 225))}
+SEASON_GAMES = {
     SECOND: league_fixtures(101, 24),
-    NORTH: league_fixtures(201, 24),
-    SOUTH: league_fixtures(301, 24),
-    CUP: {c: 3 for c in (*range(1, 21), *range(101, 125), *range(201, 225))},
-    YOUTH: league_fixtures(1, 14, 26),  # the top clubs' reserve league: they play more above
-    WOMEN: league_fixtures(401, 12),
+    CUP: {c: 3 for c in (*range(1, 21), *range(101, 125), *range(201, 225))},  # a domestic cup
 }
 
 
-def test_the_ladder_orders_my_nations_leagues_by_reputation() -> None:
-    ladder = league_ladder(110, PYRAMID, (), FIXTURES)
-    assert [lg.competition_id for lg in ladder.leagues] == [TOP, SECOND, SOUTH, NORTH]
-    assert ladder.mine is not None and ladder.mine.competition_id == SECOND
-    assert [lg.competition_id for lg in ladder.at(1)] == [TOP]
-    assert sorted(lg.competition_id for lg in ladder.at(-1)) == [NORTH, SOUTH]
-    assert ladder.at(0) == (ladder.mine,)
-
-
-def test_parallel_divisions_share_a_level_and_neither_is_above_the_other() -> None:
-    ladder = league_ladder(210, PYRAMID, (), FIXTURES)  # in the north division
-    assert ladder.mine is not None and ladder.mine.competition_id == NORTH
-    assert [lg.competition_id for lg in ladder.at(1)] == [SECOND]
-    assert ladder.at(-1) == ()  # the lowest level loaded
-    south = next(lg for lg in ladder.leagues if lg.competition_id == SOUTH)
-    assert ladder.offset(south) == 0
-    offsets = ladder.club_leagues()
-    assert offsets[310] == (SOUTH, 0) and offsets[105] == (SECOND, 1)
-
-
-def test_cups_reserve_and_womens_leagues_are_not_on_the_ladder() -> None:
-    ids = {lg.competition_id for lg in league_ladder(110, PYRAMID, (), FIXTURES).leagues}
-    assert not ids & {CUP, YOUTH, WOMEN}
-
-
-def test_a_top_division_has_no_league_above() -> None:
-    ladder = league_ladder(5, PYRAMID, (), FIXTURES)
-    assert ladder.mine is not None and ladder.mine.competition_id == TOP
-    assert ladder.at(1) == ()
-    assert [lg.competition_id for lg in ladder.at(-1)] == [SECOND]
-
-
-def test_no_ladder_without_my_club_its_league_or_reputations() -> None:
-    assert league_ladder(None, PYRAMID, (), FIXTURES).mine is None
-    assert league_ladder(999, PYRAMID, (), FIXTURES).leagues == ()
-    assert league_ladder(110, PYRAMID, (), {}).mine is None
-    unrated = {c: ClubRecord(c, "x", Gender.MEN, 1) for c in PYRAMID}
-    assert league_ladder(110, unrated, (), FIXTURES).leagues == ()
-
-
-def test_a_league_from_its_table_alone() -> None:
-    tables = (T(SECOND, tuple(range(101, 125))), T(CUP_GROUP, (101, 102, 103, 104)))
-    ladder = league_ladder(110, PYRAMID, tables, {})
-    assert ladder.mine is not None and ladder.mine.competition_id == SECOND
-
-
 def test_continental_competitions_my_club_plays_in() -> None:
-    clubs = PYRAMID | {c: ClubRecord(c, "x", Gender.MEN, n, 6000) for n, c in
-                       ((2 + i // 3, 500 + i) for i in range(30))}  # fmt: skip
+    clubs = DOMESTIC | {c: ClubRecord(c, "x", Gender.MEN, n, 6000) for n, c in
+                        ((2 + i // 3, 500 + i) for i in range(30))}  # fmt: skip
     europe = {110: 6, 1: 6, **{500 + i: 6 for i in range(30)}}
     friendlies = {110: 2, **{c: 1 for c in range(201, 225)}, **{500 + i: 1 for i in range(30)}}
     tour = {110: 2, 500: 2, 503: 2, 506: 2}  # a pre-season event: too few clubs
-    fixtures = {**FIXTURES, 900: europe, 901: friendlies, 902: tour, 903: {1: 6, 500: 6}}
+    fixtures = {**SEASON_GAMES, 900: europe, 901: friendlies, 902: tour, 903: {1: 6, 500: 6}}
     assert continental_competitions(110, clubs, (), fixtures) == {900}
     assert continental_competitions(110, clubs, (), fixtures, frozenset({902, 903})) == {902}
     assert continental_competitions(None, clubs, (), fixtures) == frozenset()
@@ -196,7 +178,7 @@ ENGLAND = CompetitionRules(
     levels={PL: 0, CH: 1, L1: 2, L2: 3, NL: 4, NLNS: 5},
     children={NLNS: (NLN, NLS)},
 )
-# No reputations: the rules need none. Club 24 of League Two is Welsh, as Newport is.
+# Club 24 of League Two is Welsh, as Newport is.
 ENGLISH = {
     c: ClubRecord(c, f"Club {c}", Gender.MEN, 2 if c == 24 else 1)
     for c in (*range(1, 25), *range(101, 125), *range(201, 225), *range(301, 325))
@@ -223,7 +205,7 @@ def rules_ladder_of(
 
 def test_the_rules_place_my_league_and_the_levels_around_it() -> None:
     ladder = rules_ladder_of(110)  # the National League, tier 5
-    assert ladder.from_rules and ladder.mine is not None and ladder.mine.competition_id == NL
+    assert ladder.mine is not None and ladder.mine.competition_id == NL
     assert ladder.mine.level == 4
     assert [lg.competition_id for lg in ladder.at(1)] == [L2]
     assert 24 in ladder.at(1)[0].club_ids  # a Welsh club in England's pyramid
@@ -256,30 +238,35 @@ def test_my_league_from_the_rules_leaves_out_a_play_off_opponent() -> None:
     ladder = rules_ladder_of(110, fixtures)
     competitions, clubs = my_league(ladder, 110, ENGLISH, (), fixtures)
     assert competitions == {NL} and 201 not in clubs and len(clubs) == 24
-    # Without the rules: every club with a fixture in the competition, as before.
+    # Without the rules: no ladder, and my league is every club with a fixture in it.
     plain = league_ladder(110, ENGLISH, (), fixtures)
-    assert not plain.from_rules
-    assert 201 in my_league(plain, 110, ENGLISH, (), fixtures)[1]
+    assert plain == Ladder()
+    competitions, clubs = my_league(plain, 110, ENGLISH, (), fixtures)
+    assert competitions == {NL} and 201 in clubs
 
 
-def test_a_league_the_rules_do_not_list_is_ordered_by_reputation() -> None:
-    ladder = league_ladder(110, PYRAMID, (), FIXTURES, rules=ENGLAND)  # other IDs
-    assert (
-        not ladder.from_rules and ladder.mine is not None and ladder.mine.competition_id == SECOND
-    )
+def test_no_ladder_without_my_club_the_rules_or_my_league_in_them() -> None:
+    """Nobody is then in the league above or below: no guess from the clubs' reputations."""
+    assert league_ladder(None, ENGLISH, (), GAMES, rules=ENGLAND) == Ladder()
+    assert league_ladder(999, ENGLISH, (), GAMES, rules=ENGLAND) == Ladder()  # unknown club
+    assert league_ladder(110, ENGLISH, (), GAMES) == Ladder()  # the rules unread
+    assert league_ladder(110, ENGLISH, (), {}, rules=ENGLAND) == Ladder()  # no fixture
+    other = {SECOND: league_fixtures(101, 24)}  # a league the rules do not list
+    assert league_ladder(110, ENGLISH, (), other, rules=ENGLAND) == Ladder()
+    assert Ladder().at(1) == () and Ladder().at(-1) == () and Ladder().club_leagues() == {}
 
 
-def test_rules_that_disagree_give_no_rules_ladder() -> None:
+def test_rules_that_disagree_give_no_ladder() -> None:
     wrong_level = CompetitionRules(
         ENGLAND.division_lists, {**ENGLAND.levels, NL: 3}, ENGLAND.children
     )
-    assert not rules_ladder_of(110, rules=wrong_level).from_rules
+    assert rules_ladder_of(110, rules=wrong_level) == Ladder()
     unsure = CompetitionRules(
         ENGLAND.division_lists, ENGLAND.levels, ENGLAND.children, frozenset({NLS})
     )
-    assert not rules_ladder_of(110, rules=unsure).from_rules
+    assert rules_ladder_of(110, rules=unsure) == Ladder()
     twice = CompetitionRules((*ENGLAND.division_lists, DivisionList(None, False, (L1, NL))))
-    assert not rules_ladder_of(110, rules=twice).from_rules  # my league in two lists
+    assert rules_ladder_of(110, rules=twice) == Ladder()  # my league in two lists
 
 
 def test_each_gender_has_its_own_list() -> None:
@@ -321,4 +308,8 @@ def test_a_uefa_competition_counts_in_its_current_edition() -> None:
     played = {**fixtures, UECL: {600: 2, 601: 2}}
     assert UECL not in continental_competitions(
         110, clubs, stale, played, seasons=seasons | {UECL: 2027}, game_date=today
+    )
+    # A table row and no fixture at all: no edition confirmed either.
+    assert UECL not in continental_competitions(
+        110, clubs, stale, fixtures, seasons=seasons, game_date=today
     )

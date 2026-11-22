@@ -383,6 +383,47 @@ def test_wake_and_resume_reach_a_running_child(fake: Fake) -> None:
 # -- the exit test ----------------------------------------------------------------------------
 
 
+def test_quit_while_a_picture_is_drawn_ends_the_worker_at_once(
+    tmp_path: Path, config_file: Path
+) -> None:
+    """Quit does not wait for the picture being drawn (user, 2026-11-22): the worker process
+    ends at once, nothing is stored for the job, and the job goes back to the queue when a
+    worker starts again."""
+    from facegen.persistence import jobs
+
+    settings = load_settings(defaults_path=config_file)
+    conn = db.connect(settings.paths.db_path)
+    run_sync(conn, snapshot(world()), settings, save_file="career.fm")
+    conn.close()
+    marker = tmp_path / "drawing"
+    program = (sys.executable, str(TESTS / "gpu_child.py"), str(marker), "--slow")
+    p = WorkerProxy(
+        worker_process.worker_command(program, config_file),
+        db_path=settings.paths.db_path,
+        echo_stderr=False,
+    )
+    p.start()
+    try:
+        wait_for(marker.exists, timeout=60)  # a minute's picture has started
+        wait_for(lambda: p.status().state == "running")
+        t0 = time.monotonic()
+        p.stop(timeout=10)
+        took = time.monotonic() - t0
+    finally:
+        p.stop(timeout=10)
+    assert took < worker_process.STOP_TIMEOUT  # ended by itself, at once, not killed
+    assert p.status().state == "stopped" and p.child_pid is None
+    assert "is drawn again at the next start" in log_text(p)
+    assert "did not stop within" not in log_text(p)
+    conn = db.connect(settings.paths.db_path)
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM images").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM jobs WHERE status = 'running'").fetchone()[0] == 1
+        assert jobs.requeue_stale(conn) == 1  # what the next worker does first
+    finally:
+        conn.close()
+
+
 def test_exit_test_a_fault_on_the_third_job_is_shown_once_and_drawn_after_a_restart(
     tmp_path: Path, config_file: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

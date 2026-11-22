@@ -4,8 +4,8 @@ Runs the real sync (pipeline/sync.py) on save copies in data/snapshots/ into a s
 database, with FM27's photo list read as a sync reads it (nothing in FM27's folders is
 written), and reports for each save:
 
-- my nation's leagues on the ladder: level, offset from mine, clubs, median reputation, median
-  first-team CA and the best-known clubs (the save stores no competition names);
+- my pyramid's leagues on the ladder (from the save's rules): level, offset from mine, clubs,
+  median first-team CA and the best-known clubs;
 - each scope's candidates (newgens, and photo-less players) and the cut values in force;
 - each tier's count with the defaults, and with Light for the league below on as well;
 - with two saves of one career (in order), how many people changed tier between them;
@@ -87,12 +87,11 @@ def ladder_rows(snap: Snapshot) -> list[dict[str, Any]]:
                 "competition": lg.competition_id,
                 "name": competition_name(lg.competition_id),
                 "clubs": len(lg.club_ids),
-                "median_reputation": lg.reputation,
                 "median_first_team_ca": statistics.median(medians) if medians else None,
                 "best_known": [snap.clubs[c].name for c in best],
             }
         )
-    return [{"ladder_ms": round(took * 1000, 1), "from_rules": ladder.from_rules}, *rows]
+    return [{"ladder_ms": round(took * 1000, 1), "found": ladder.mine is not None}, *rows]
 
 
 def tier_counts(conn: Any, career_id: int) -> dict[str, Any]:

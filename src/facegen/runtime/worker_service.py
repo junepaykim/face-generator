@@ -27,6 +27,9 @@ from facegen.runtime.contracts import Exit, ExitReason, Link, WorkerStatus
 from facegen.runtime.logging import LOG_LINES, logger, stamp, utc_now
 from facegen.runtime.policy import BUSY_TIMEOUT_MS, FM_POLL_SECONDS
 
+STOPPED_EXIT = 4
+"""A worker process's exit code when Quit ended it while it was drawing (`stop_now`)."""
+
 IDLE_POLL_SECONDS = 15.0
 """How often an idle worker looks at the queue when nothing wakes it."""
 IDLE_UNLOAD_SECONDS = 300.0
@@ -95,6 +98,9 @@ class WorkerService:
         self._link = link
         self.exit: Exit | None = None
         """In a worker process, why the loop ended; None until it does."""
+        self._drawing = False
+        """A job is being drawn (models loading, rendering, storing it): Quit ends the worker
+        process at once then (`stop_now`)."""
 
     def pause(self) -> None:
         with self._lock:
@@ -215,6 +221,20 @@ class WorkerService:
         self._wake.set()
         if self._thread is not None:
             self._thread.join(timeout)
+
+    def stop_now(self, exit_now: Callable[[int], Any]) -> None:
+        """Quit, in a worker process: draw nothing more, and while a job is being drawn call
+        `exit_now` (`os._exit`), abandoning it. Nothing is lost: pictures and pack files are
+        written whole or not at all, the database rolls an open transaction back, and the job,
+        left running, goes back to the queue when a worker starts (`_requeue_stale`) and is drawn
+        again with the same sheet and seeds. Between jobs the loop ends by itself, finishing a
+        publication under way."""
+        with self._lock:
+            self._stop.set()
+            drawing = self._drawing
+        self._wake.set()
+        if drawing:
+            exit_now(STOPPED_EXIT)
 
     def _main(self) -> None:
         conn = self._connection()
@@ -391,6 +411,10 @@ class WorkerService:
 
         if self._models_ready is not None and not self._models_ready(settings.style.model):
             self._publish_pending(worker)
+            # The model chosen before may still be loaded: free the GPU while we wait.
+            if worker.unload():
+                self.log("The chosen model is not downloaded: the GPU is free.")
+                self._leave("freed")
             self._set(
                 "setup",
                 MODELS_MISSING.format(n=len(ready)),
@@ -420,6 +444,10 @@ class WorkerService:
                 return FM_POLL_SECONDS
 
         job = ready[0]
+        with self._lock:
+            if self._stop.is_set():  # Quit came while the queue was read: draw nothing
+                return 0.0
+            self._drawing = True
         self._set(
             "running",
             f"{job.name}: {job.kind} {job.group.upper()}",
@@ -431,7 +459,11 @@ class WorkerService:
         )
         self.log(f"{job.name} ({job.unique_id}), {job.kind} {job.group.upper()}")
         try:
-            outcome = worker.run_job(job, ready[1:])
+            try:
+                outcome = worker.run_job(job, ready[1:])
+            finally:
+                with self._lock:
+                    self._drawing = False
         except JobGone:
             return 0.0  # cancelled or changed meanwhile (a settings change); look again
         except Exception as exc:  # noqa: BLE001 - model load, out of memory: pause and report

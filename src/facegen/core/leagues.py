@@ -3,11 +3,18 @@ Pure.
 
 "My league" is the division my club's first team plays in (spec section 2). The save's own
 competition rules list each nation's divisions from the top (docs/research.md sections 23-25):
-when they place my club's league, the ladder comes from them (`rules_ladder`). Otherwise, among
-the domestic competitions holding my club's first team, in a league table or a fixture, my
-league is the one where my club plays the most first-team fixtures this season (a league
-schedules every round up front; cups and pre-season events have few), with the larger table as
-the tie-break, and the leagues are ordered by their clubs' reputation (`league_ladder`).
+when they place my club's league, the ladder comes from them (`league_ladder`) and my league is
+its division. Otherwise there is no ladder, so nobody is in the league above or below (user,
+2026-11-22: no guess from the clubs' reputations), and my league is the domestic competition
+holding my club's first team, in a league table or a fixture, where my club plays the most
+first-team fixtures this season (a league schedules every round up front; cups and pre-season
+events have few), with the larger table as the tie-break (`my_league_competitions`). When that
+competition's fixtures are from an older season than another one my club plays in (just
+promoted or relegated, before the new division's season is read), my league is not known and
+its rules pick nobody (user, 2026-11-22: turn it off when the seasons conflict).
+
+A competition's clubs are those in its fixtures, which are its latest season's; its tables
+count only when it has no fixtures, as a table can be from an earlier season or edition.
 
 League tables alone are not enough: before a season starts the save may hold no table yet.
 """
@@ -86,8 +93,11 @@ def my_league_competitions(
     clubs: Mapping[int, ClubRecord],
     tables: Sequence[LeagueTableRecord],
     fixture_counts: Mapping[int, Mapping[int, int]],
+    seasons: Mapping[int, int] | None = None,
 ) -> frozenset[int]:
-    """The competition ID of my club's league, as a set (empty when not found)."""
+    """The competition ID of my club's league, as a set: empty when not found, or when its
+    fixtures' season (`seasons`, `Snapshot.fixture_seasons`) is older than that of another
+    domestic competition my club has fixtures in, or unknown while another's is known."""
     if managed_club_id is None or managed_club_id not in clubs:
         return frozenset()
     nation = clubs[managed_club_id].nation_id
@@ -110,10 +120,18 @@ def my_league_competitions(
     if not candidates:
         return frozenset()
 
-    def score(cid: int) -> tuple[int, int]:
-        return fixture_counts.get(cid, {}).get(managed_club_id, 0), table_size.get(cid, 0)
+    def played(cid: int) -> int:
+        return fixture_counts.get(cid, {}).get(managed_club_id, 0)
 
-    return frozenset({max(candidates, key=score)})
+    def score(cid: int) -> tuple[int, int]:
+        return played(cid), table_size.get(cid, 0)
+
+    mine = max(candidates, key=score)
+    season_of = seasons or {}
+    newest = max((season_of.get(c, -1) for c in candidates if played(c)), default=-1)
+    if played(mine) and season_of.get(mine, -1) < newest:
+        return frozenset()  # the seasons conflict: an old division, or a guess
+    return frozenset({mine})
 
 
 def clubs_in_competitions(
@@ -121,58 +139,40 @@ def clubs_in_competitions(
     tables: Sequence[LeagueTableRecord],
     fixture_counts: Mapping[int, Mapping[int, int]],
 ) -> frozenset[int]:
-    """Every club with a first-team table row or fixture in any of the competitions."""
+    """Every club with a first-team fixture in any of the competitions, their latest season's;
+    for a competition with no fixtures, every club with a first-team row in its tables (which
+    can be from an earlier season or edition, so they count only then)."""
     wanted = frozenset(competition_ids)
     found: set[int] = set()
     for t in tables:
-        if t.competition_id in wanted:
+        if t.competition_id in wanted and not fixture_counts.get(t.competition_id):
             found.update(t.club_ids)
     for cid in wanted:
         found.update(fixture_counts.get(cid, {}))
     return frozenset(found)
 
 
-# --- the league ladder (Phase 16) -------------------------------------------------------------
-#
-# fmsave reads no league level or competition name, only each club's reputation (a verified
-# field). My nation's leagues are ordered by their clubs' reputation; Phase 16a measured the
-# method on the Telford and Colchester careers (docs/research.md section 22).
-
-LEVEL_SEPARATION = 0.8
-"""A league starts a new level below another when a club of the upper one has the higher
-reputation in at least this share of the pairs (one club from each). England's levels measured
-0.93 to 1.00 against the one above; National League North and South, one level, 0.61 to 0.69."""
-MIN_TABLE_LEAGUE = 10
-"""With no fixtures at all, a table this long marks a league (a cup's group tables are short)."""
-MIN_CONTINENTAL_CLUBS = 8
-MAX_PER_NATION = 8
-"""A continental competition holds a few clubs from each nation. A friendlies "competition"
-holds hundreds of one nation's clubs, and my club appears in it."""
+# --- the league ladder from the save's own rules (docs/research.md sections 23-25) ------------
 
 
 @dataclass(frozen=True, slots=True)
 class League:
-    """One of my nation's leagues on the ladder."""
+    """One division (or regional group) of my pyramid on the ladder."""
 
     competition_id: int
     club_ids: frozenset[int]
-    """The clubs whose league it is: where they play the most first-team fixtures."""
-    reputation: float
-    """The median reputation of those clubs."""
+    """The clubs whose league it is: where they play in the latest season, then the most."""
     level: int
-    """0 for the top level: the save's top division, or the top level loaded when the ladder
-    comes from reputations. Parallel divisions share a level."""
+    """The division's place in the save's list, 0 for the top; parallel groups share it."""
 
 
 @dataclass(frozen=True, slots=True)
 class Ladder:
-    """My nation's leagues by level, and mine among them."""
+    """My pyramid's leagues by level, and mine among them; empty where the save's rules do not
+    place my club's league."""
 
     leagues: tuple[League, ...] = ()
     mine: League | None = None
-    from_rules: bool = False
-    """True when the levels come from the save's own division lists (`rules_ladder`), False
-    when from the clubs' reputations."""
 
     def offset(self, league: League) -> int | None:
         """How many levels the league is above mine (below: negative); None without mine."""
@@ -191,168 +191,6 @@ class Ladder:
         """Club ID to (its league's competition ID, that league's offset from mine)."""
         return {c: (lg.competition_id, self.offset(lg)) for lg in self.leagues for c in lg.club_ids}
 
-
-def _separation(upper: list[int], lower: list[int]) -> float:
-    """The share of pairs (one club from each) in which the upper league's club has the higher
-    reputation; a tie counts half."""
-    wins = 0.0
-    for u in upper:
-        for low in lower:
-            wins += 1.0 if u > low else 0.5 if u == low else 0.0
-    return wins / (len(upper) * len(lower))
-
-
-def _median(values: list[int]) -> float:
-    ordered = sorted(values)
-    mid = len(ordered) // 2
-    return float(ordered[mid]) if len(ordered) % 2 else (ordered[mid - 1] + ordered[mid]) / 2
-
-
-def league_ladder(
-    managed_club_id: int | None,
-    clubs: Mapping[int, ClubRecord],
-    tables: Sequence[LeagueTableRecord],
-    fixture_counts: Mapping[int, Mapping[int, int]],
-    *,
-    seasons: Mapping[int, int] | None = None,
-    rules: CompetitionRules | None = None,
-) -> Ladder:
-    """My nation's leagues by level: from the save's own rules where they place my club's
-    league (`rules_ladder`), otherwise ordered by their clubs' reputation.
-
-    The reputation method:
-
-    - A league is a competition of my nation and my club's gender (at least DOMESTIC_SHARE of
-      its clubs) in which some club plays at least half a round of fixtures (cups and their
-      groups have few), or, with no fixtures for it, a table of MIN_TABLE_LEAGUE clubs or more.
-    - Each club belongs to the league where it plays the most first-team fixtures (then the
-      larger table); a league no club belongs to (a youth or reserve league) drops out.
-    - Leagues are ordered by their clubs' median reputation. A league joins the level of the
-      one above it unless that level's top league stands clearly above it (LEVEL_SEPARATION):
-      parallel divisions share a level.
-    - Mine is the league my club belongs to. No managed club, no league found, or none with
-      reputations: an empty ladder, so the rules for other leagues pick nobody.
-    """
-    if managed_club_id is None or managed_club_id not in clubs:
-        return Ladder()
-    if rules is not None:
-        found = rules_ladder(managed_club_id, clubs, tables, fixture_counts, seasons or {}, rules)
-        if found is not None:
-            return found
-    me = clubs[managed_club_id]
-
-    def ours(c: int) -> bool:
-        club = clubs.get(c)
-        if club is None or club.nation_id != me.nation_id:
-            return False
-        return me.gender is Gender.UNKNOWN or club.gender is me.gender
-
-    table_size: dict[int, int] = {}
-    for t in tables:
-        if t.competition_id is not None:
-            size = max(len(t.club_ids), table_size.get(t.competition_id, 0))
-            table_size[t.competition_id] = size
-
-    leagues: dict[int, set[int]] = {}
-    for cid, members in _competition_clubs(tables, fixture_counts).items():
-        if not members or sum(1 for c in members if ours(c)) < DOMESTIC_SHARE * len(members):
-            continue
-        counts = fixture_counts.get(cid, {})
-        most = max((counts.get(c, 0) for c in members), default=0)
-        if counts:
-            if most < max(2, (len(members) - 1) / 2):
-                continue
-        elif table_size.get(cid, 0) < MIN_TABLE_LEAGUE:
-            continue
-        leagues[cid] = members
-
-    home: dict[int, tuple[tuple[int, int, int], int]] = {}
-    for cid, members in leagues.items():
-        for c in members:
-            if not ours(c):
-                continue
-            rank = (fixture_counts.get(cid, {}).get(c, 0), table_size.get(cid, 0), -cid)
-            if c not in home or rank > home[c][0]:
-                home[c] = (rank, cid)
-    members_of: dict[int, set[int]] = {}
-    for c, (_, cid) in home.items():
-        members_of.setdefault(cid, set()).add(c)
-
-    rated = []
-    for cid, members in members_of.items():
-        reps = [r for c in members if (r := clubs[c].reputation) is not None]
-        if reps:
-            rated.append((cid, frozenset(members), reps))
-    rated.sort(key=lambda x: (-_median(x[2]), x[0]))
-
-    out: list[League] = []
-    top_reps: list[int] = []
-    level = -1
-    for cid, members, reps in rated:
-        if level < 0 or _separation(top_reps, reps) >= LEVEL_SEPARATION:
-            level += 1
-            top_reps = reps
-        out.append(League(cid, members, _median(reps), level))
-    mine = next((lg for lg in out if managed_club_id in lg.club_ids), None)
-    return Ladder(tuple(out), mine)
-
-
-def continental_competitions(
-    managed_club_id: int | None,
-    clubs: Mapping[int, ClubRecord],
-    tables: Sequence[LeagueTableRecord],
-    fixture_counts: Mapping[int, Mapping[int, int]],
-    listed: frozenset[int] = frozenset(),
-    *,
-    seasons: Mapping[int, int] | None = None,
-    game_date: date | None = None,
-) -> frozenset[int]:
-    """The continental competitions my club's first team plays in.
-
-    - The UEFA club competitions (UEFA_CLUB_COMPETITIONS) count when my club's first team has
-      a fixture in their current edition (`uefa_season` of the game date; `seasons` gives the
-      edition the fixtures are from). An earlier edition leaves this one unconfirmed: nothing.
-    - `listed` (settings `eligibility.continental_competition_ids`) overrides the search: then
-      the listed competitions my club plays in, with the same edition check.
-    - Otherwise any other competition counts when my club has a table row or fixture in it, it
-      has at least MIN_CONTINENTAL_CLUBS clubs, at least DOMESTIC_SHARE of them are from other
-      nations (the domestic test reversed), and no nation has more than MAX_PER_NATION of them.
-    """
-    if managed_club_id is None or managed_club_id not in clubs:
-        return frozenset()
-    nation = clubs[managed_club_id].nation_id
-    edition = uefa_season(game_date)
-    found = set()
-    for cid, members in _competition_clubs(tables, fixture_counts).items():
-        if managed_club_id not in members:
-            continue
-        if cid in UEFA_CLUB_COMPETITIONS:
-            played = fixture_counts.get(cid, {})
-            season = (seasons or {}).get(cid)
-            if played and managed_club_id not in played:
-                continue  # only a table row, from an earlier edition
-            if edition is not None and season is not None and season < edition:
-                continue
-        if listed:
-            if cid in listed:
-                found.add(cid)
-            continue
-        if cid in UEFA_CLUB_COMPETITIONS:
-            found.add(cid)
-            continue
-        if len(members) < MIN_CONTINENTAL_CLUBS:
-            continue
-        nations: dict[int | None, int] = {}
-        for c in members:
-            n = clubs[c].nation_id if c in clubs else None
-            nations[n] = nations.get(n, 0) + 1
-        foreign = len(members) - nations.get(nation, 0)
-        if foreign >= DOMESTIC_SHARE * len(members) and max(nations.values()) <= MAX_PER_NATION:
-            found.add(cid)
-    return frozenset(found)
-
-
-# --- the league ladder from the save's own rules (docs/research.md sections 23-25) ------------
 
 _MAX_NESTING = 3
 
@@ -396,16 +234,17 @@ def pyramids(rules: CompetitionRules, gender: Gender) -> list[tuple[tuple[int, .
     return out
 
 
-def rules_ladder(
-    managed_club_id: int,
+def league_ladder(
+    managed_club_id: int | None,
     clubs: Mapping[int, ClubRecord],
     tables: Sequence[LeagueTableRecord],
     fixture_counts: Mapping[int, Mapping[int, int]],
-    seasons: Mapping[int, int],
-    rules: CompetitionRules,
-) -> Ladder | None:
-    """My pyramid's leagues by level, as the save's rules list them; None where they do not place
-    my club's league (the reputation method then decides).
+    *,
+    seasons: Mapping[int, int] | None = None,
+    rules: CompetitionRules | None = None,
+) -> Ladder:
+    """My pyramid's leagues by level, as the save's rules list them; an empty ladder where they
+    do not place my club's league, so the rules for the leagues above and below pick nobody.
 
     - My league is the division (a group, for a regional level) where my club's first team plays
       in the latest season, then the most fixtures; a table counts only for a competition with
@@ -415,11 +254,13 @@ def rules_ladder(
       pyramid), belongs to the division of my pyramid it plays in the same way.
     - A level is the division's place in the list; parallel groups share it. A level with no
       club playing in it is left out, so "the league below" is only ever the next level.
-    - My league in two lists, or a list the rules disagree about, gives None.
+    - No managed club, no rules read, my league in no list or in two, or a list the rules
+      disagree about: an empty ladder.
     """
-    me = clubs.get(managed_club_id)
-    if me is None:
-        return None
+    if managed_club_id is None or managed_club_id not in clubs or rules is None:
+        return Ladder()
+    me = clubs[managed_club_id]
+    season_of = seasons or {}
     found = pyramids(rules, me.gender)
     where: dict[int, list[int]] = {}
     for index, levels in enumerate(found):
@@ -436,17 +277,17 @@ def rules_ladder(
         played = fixture_counts.get(c, {})
         size = len(table_clubs.get(c, ()))
         if played.get(club):
-            return seasons.get(c, -1), played[club], size, -c
+            return season_of.get(c, -1), played[club], size, -c
         if not played and club in table_clubs.get(c, ()):
             return -1, 0, size, -c
         return None
 
     ranked = [(r, c) for c in where if (r := rank(c, managed_club_id)) is not None]
     if not ranked:
-        return None
+        return Ladder()
     mine_id = max(ranked)[1]
     if len(where[mine_id]) != 1:
-        return None
+        return Ladder()
     levels = found[where[mine_id][0]]
     level_of = {c: level for level, members in enumerate(levels) for c in members}
 
@@ -467,14 +308,12 @@ def rules_ladder(
     for club, (_, c) in home.items():
         members_of.setdefault(c, set()).add(club)
 
-    leagues = []
-    for c in sorted(members_of, key=lambda c: (level_of[c], c)):
-        reps = [r for club in members_of[c] if (r := clubs[club].reputation) is not None]
-        leagues.append(
-            League(c, frozenset(members_of[c]), _median(reps) if reps else 0.0, level_of[c])
-        )
+    leagues = tuple(
+        League(c, frozenset(members_of[c]), level_of[c])
+        for c in sorted(members_of, key=lambda c: (level_of[c], c))
+    )
     mine = next((lg for lg in leagues if managed_club_id in lg.club_ids), None)
-    return Ladder(tuple(leagues), mine, from_rules=True)
+    return Ladder(leagues, mine)
 
 
 def my_league(
@@ -483,11 +322,76 @@ def my_league(
     clubs: Mapping[int, ClubRecord],
     tables: Sequence[LeagueTableRecord],
     fixture_counts: Mapping[int, Mapping[int, int]],
+    *,
+    seasons: Mapping[int, int] | None = None,
 ) -> tuple[frozenset[int], frozenset[int]]:
-    """My league's competitions and clubs: the division the save's rules place my club in, with
-    the clubs whose division it is; otherwise (`my_league_competitions`) the domestic competition
-    my club plays the most in, with every club in its tables and fixtures."""
-    if ladder.from_rules and ladder.mine is not None:
+    """My league's competitions and clubs: the ladder's division for my club, with the clubs whose
+    division it is; without a ladder (`my_league_competitions`) the domestic competition my club
+    plays the most in, with its clubs (`clubs_in_competitions`); nothing when the seasons
+    conflict."""
+    if ladder.mine is not None:
         return frozenset({ladder.mine.competition_id}), ladder.mine.club_ids
-    competitions = my_league_competitions(managed_club_id, clubs, tables, fixture_counts)
+    competitions = my_league_competitions(managed_club_id, clubs, tables, fixture_counts, seasons)
     return competitions, clubs_in_competitions(competitions, tables, fixture_counts)
+
+
+# --- continental competitions ----------------------------------------------------------------
+
+MIN_CONTINENTAL_CLUBS = 8
+MAX_PER_NATION = 8
+"""A continental competition holds a few clubs from each nation. A friendlies "competition"
+holds hundreds of one nation's clubs, and my club appears in it."""
+
+
+def continental_competitions(
+    managed_club_id: int | None,
+    clubs: Mapping[int, ClubRecord],
+    tables: Sequence[LeagueTableRecord],
+    fixture_counts: Mapping[int, Mapping[int, int]],
+    listed: frozenset[int] = frozenset(),
+    *,
+    seasons: Mapping[int, int] | None = None,
+    game_date: date | None = None,
+) -> frozenset[int]:
+    """The continental competitions my club's first team plays in.
+
+    - The UEFA club competitions (UEFA_CLUB_COMPETITIONS) count when my club's first team has
+      a fixture in their current edition (`uefa_season` of the game date; `seasons` gives the
+      edition the fixtures are from). An earlier edition leaves this one unconfirmed: nothing.
+    - `listed` (settings `eligibility.continental_competition_ids`) overrides the search: then
+      the listed competitions my club plays in, with the same edition check.
+    - Otherwise any other competition counts when my club has a table row or fixture in it, it
+      has at least MIN_CONTINENTAL_CLUBS clubs, at least DOMESTIC_SHARE of them are from other
+      nations (the domestic test reversed), and no nation has more than MAX_PER_NATION of them.
+    """
+    if managed_club_id is None or managed_club_id not in clubs:
+        return frozenset()
+    nation = clubs[managed_club_id].nation_id
+    edition = uefa_season(game_date)
+    found = set()
+    for cid, members in _competition_clubs(tables, fixture_counts).items():
+        if managed_club_id not in members:
+            continue
+        if cid in UEFA_CLUB_COMPETITIONS:
+            season = (seasons or {}).get(cid)
+            if managed_club_id not in fixture_counts.get(cid, {}):
+                continue  # only a table row, maybe of an earlier edition: unconfirmed
+            if edition is not None and season is not None and season < edition:
+                continue
+        if listed:
+            if cid in listed:
+                found.add(cid)
+            continue
+        if cid in UEFA_CLUB_COMPETITIONS:
+            found.add(cid)
+            continue
+        if len(members) < MIN_CONTINENTAL_CLUBS:
+            continue
+        nations: dict[int | None, int] = {}
+        for c in members:
+            n = clubs[c].nation_id if c in clubs else None
+            nations[n] = nations.get(n, 0) + 1
+        foreign = len(members) - nations.get(nation, 0)
+        if foreign >= DOMESTIC_SHARE * len(members) and max(nations.values()) <= MAX_PER_NATION:
+            found.add(cid)
+    return frozenset(found)

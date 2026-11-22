@@ -11,6 +11,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 from facegen.core.estimate import Drawn
+from facegen.core.man_traits import ManSheet
 from facegen.core.traits import CharacterSheet, personality_from_json, personality_leans
 from facegen.persistence import photo_index, player_queries
 from facegen.persistence.player_queries import SORTS
@@ -145,19 +146,29 @@ def player_detail(
             and restorable(image["master_path"], image["check"])
             and (data_dir / image["master_path"]).is_file()
         )
+    # The sheet the current picture was drawn from (its version, and the men's sheet for a man);
+    # without a picture, the one the next picture uses.
+    current = next((i for i in images if i["is_current"]), None)
+    shown = current["traits_version"] if current is not None else None
     sheet_row = conn.execute(
-        "SELECT version, base_seed, sheet, created_at FROM traits"
-        " WHERE career_id = ? AND unique_id = ? AND version = COALESCE("
+        "SELECT version, base_seed, sheet, man_sheet, created_at FROM traits"
+        " WHERE career_id = ? AND unique_id = ? AND version = COALESCE(?,"
         " (SELECT active_traits_version FROM players WHERE career_id = ? AND unique_id = ?),"
         " (SELECT MAX(version) FROM traits WHERE career_id = ? AND unique_id = ?))",
-        (career_id, uid, career_id, uid, career_id, uid),
+        (career_id, uid, shown, career_id, uid, career_id, uid),
     ).fetchone()
     sheet = None
     if sheet_row is not None:
-        cs = CharacterSheet.from_json(sheet_row["sheet"], sheet_row["base_seed"])
+        man = current is not None and current["gender"] == "man" and sheet_row["man_sheet"]
+        cs: CharacterSheet | ManSheet = (
+            ManSheet.from_json(sheet_row["man_sheet"], sheet_row["base_seed"])
+            if man
+            else CharacterSheet.from_json(sheet_row["sheet"], sheet_row["base_seed"])
+        )
         sheet = {
             "version": sheet_row["version"],
             "created_at": sheet_row["created_at"],
+            "man": bool(man),
             "fields": {k: v for k, v in asdict(cs).items()},
         }
     jobs = [
@@ -171,7 +182,7 @@ def player_detail(
     return {
         "player": player,
         "images": images,
-        "current": next((i for i in images if i["is_current"]), None),
+        "current": current,
         "sheet": sheet,
         "leans": [
             {"reason": lean.describe(), "expression": lean.expression}

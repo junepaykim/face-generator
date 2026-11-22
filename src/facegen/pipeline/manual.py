@@ -628,6 +628,7 @@ def pick_candidate(
     settings: Settings,
     *,
     active_only: bool = False,
+    version: int | None = None,
 ) -> Picked:
     """Show another candidate of the current picture in FM27, and publish it.
 
@@ -636,6 +637,10 @@ def pick_candidate(
     check's own choice is kept under `auto` in the check result, so picking it again puts its
     master (with the detail pass, when there was one) back. Group, club and age band stay the
     same, so nothing is re-planned.
+
+    `version` is the picture the page showed: when another has been drawn since, nothing is
+    picked. The pick is stored before the pack is written; picking the same candidate again
+    while it is not published yet (that write failed) publishes it.
     """
     data_dir: Path = settings.paths.data_dir
     with _action_transaction(conn, career_id, active_only):
@@ -652,6 +657,12 @@ def pick_candidate(
         ).fetchone()
         if img is None:
             raise ManualError(f"{p['name']} has no picture", "no_current", name=p["name"])
+        if version is not None and img["version"] != version:
+            raise ManualError(
+                f"v{img['version']} has been drawn since the page showed v{version}",
+                "picture_changed",
+                version=img["version"],
+            )
         version = img["version"]
         check = json.loads(img["check_result"] or "{}")
         cand = next(
@@ -672,55 +683,72 @@ def pick_candidate(
                 "candidate_failed",
             )
         chosen = check.get("chosen") or {}
-        if (chosen.get("attempt"), chosen.get("index")) == (attempt, index):
+        if (chosen.get("attempt"), chosen.get("index")) != (attempt, index):
+            _choose(conn, data_dir, img, check, cand, attempt, index)
+        elif img["published_path"] is not None:
             raise ManualError(
                 f"that candidate is already v{version}'s picture",
                 "already_picked",
                 version=version,
             )
-        auto = check.get("auto")
-        if auto is not None and (auto.get("attempt"), auto.get("index")) == (attempt, index):
-            master, seed = auto["master"], auto["seed"]
-            if not (data_dir / master).is_file():
-                raise ManualError(
-                    f"v{version}'s picture file is missing from data/",
-                    "file_missing",
-                    version=version,
-                )
-            del check["auto"]
-        else:
-            folder = Path(img["master_path"]).parent
-            master = (folder / f"v{version:03d}-pick-a{attempt}c{index}.png").as_posix()
-            seed = int(cand["seed"])
-            if not (data_dir / master).is_file():
-                source = Path(str(cand.get("path") or ""))
-                if (
-                    source.is_absolute()
-                    or ".." in source.parts
-                    or source.parts[:1] != ("masters",)
-                    or not (data_dir / source).is_file()
-                ):
-                    raise ManualError(
-                        f"v{version}'s candidate file is missing from data/",
-                        "candidate_missing",
-                        version=version,
-                    )
-                _write_pick(data_dir / source, data_dir / master, img, seed, attempt, index)
-            if auto is None:
-                check["auto"] = {
-                    "attempt": chosen.get("attempt"),
-                    "index": chosen.get("index"),
-                    "seed": img["seed"],
-                    "master": img["master_path"],
-                }
-        check["chosen"] = {"attempt": attempt, "index": index, "seed": seed}
-        conn.execute(
-            "UPDATE images SET master_path = ?, seed = ?, published_path = NULL,"
-            " check_result = ? WHERE id = ?",
-            (master, seed, json.dumps(check), img["id"]),
-        )
     report = publish_pack(conn, settings, career_id, career_key)
     return Picked(version, report)
+
+
+def _choose(
+    conn: sqlite3.Connection,
+    data_dir: Path,
+    img: sqlite3.Row,
+    check: dict[str, Any],
+    cand: dict[str, Any],
+    attempt: int,
+    index: int,
+) -> None:
+    """Make the candidate the picture's master, waiting to be published (in the caller's
+    transaction)."""
+    version = img["version"]
+    chosen = check.get("chosen") or {}
+    auto = check.get("auto")
+    if auto is not None and (auto.get("attempt"), auto.get("index")) == (attempt, index):
+        master, seed = auto["master"], auto["seed"]
+        if not (data_dir / master).is_file():
+            raise ManualError(
+                f"v{version}'s picture file is missing from data/",
+                "file_missing",
+                version=version,
+            )
+        del check["auto"]
+    else:
+        folder = Path(img["master_path"]).parent
+        master = (folder / f"v{version:03d}-pick-a{attempt}c{index}.png").as_posix()
+        seed = int(cand["seed"])
+        if not (data_dir / master).is_file():
+            source = Path(str(cand.get("path") or ""))
+            if (
+                source.is_absolute()
+                or ".." in source.parts
+                or source.parts[:1] != ("masters",)
+                or not (data_dir / source).is_file()
+            ):
+                raise ManualError(
+                    f"v{version}'s candidate file is missing from data/",
+                    "candidate_missing",
+                    version=version,
+                )
+            _write_pick(data_dir / source, data_dir / master, img, seed, attempt, index)
+        if auto is None:
+            check["auto"] = {
+                "attempt": chosen.get("attempt"),
+                "index": chosen.get("index"),
+                "seed": img["seed"],
+                "master": img["master_path"],
+            }
+    check["chosen"] = {"attempt": attempt, "index": index, "seed": seed}
+    conn.execute(
+        "UPDATE images SET master_path = ?, seed = ?, published_path = NULL,"
+        " check_result = ? WHERE id = ?",
+        (master, seed, json.dumps(check), img["id"]),
+    )
 
 
 def _write_pick(

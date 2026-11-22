@@ -769,6 +769,7 @@ above = "League above"
 below = "League below"
 continental = "Continental"
 clubs = { one = "{count} club", other = "{count} clubs" }
+none = "none"
 no_league = "No league was found in the latest save: only the everywhere cuts pick players at other clubs."
 not_synced = "Values show once a save is synced."
 
@@ -1075,6 +1076,7 @@ no_candidate = "v{version} has no such picture."
 candidate_failed = "That picture failed the quality check, so it is never put into FM27."
 already_picked = "That picture is already in use for v{version}."
 candidate_missing = "The picture file is missing."
+picture_changed = "v{version} has been drawn since this page was opened. Reload the page and pick again."
 
 [error_page]
 not_found = "Not found"

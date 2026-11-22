@@ -241,6 +241,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                         try:
                             attempt = int(str(form.get("attempt") or ""))
                             index = int(str(form.get("index") or ""))
+                            shown = int(str(form.get("version") or ""))
                         except ValueError:
                             raise ManualError(t("msg.player.bad_picture")) from None
                         picked = manual.pick_candidate(
@@ -252,6 +253,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                             index,
                             settings,
                             active_only=True,
+                            version=shown,
                         )
                         where = t(
                             "msg.reload_hint"

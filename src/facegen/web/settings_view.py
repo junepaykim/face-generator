@@ -24,6 +24,9 @@ from facegen.i18n import Translator
 from facegen.persistence import league_stats
 from facegen.persistence.league_stats import FoundLeague
 
+OFF_SCOPES = ("league", "above", "below")
+"""The scopes whose cells are shown turned off when the latest sync did not find them: my league
+(unknown, or its seasons conflict) and the leagues above and below it."""
 NONE = "–"
 """What a live value shows before any save is synced, or where no league was found."""
 
@@ -37,6 +40,9 @@ class CutoffView:
     """Everyone in each group (players, staff, media); None before any sync."""
     leagues: list[FoundLeague] = field(default_factory=list)
     synced: bool = False
+    off: tuple[str, ...] = ()
+    """The scopes of OFF_SCOPES the latest sync did not find: their cells (and Light switch) are
+    shown turned off, as their rules pick nobody."""
 
 
 def tier_counts(conn: sqlite3.Connection, career_id: int) -> dict[str, int]:
@@ -97,6 +103,7 @@ def cutoff_view(
         tier_counts(conn, career_id),
         league_stats.found_leagues(conn, career_id),
         synced=True,
+        off=tuple(scope for scope in OFF_SCOPES if scope not in stats),
     )
 
 

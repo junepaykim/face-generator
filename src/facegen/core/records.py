@@ -29,7 +29,7 @@ class ClubRecord:
     """Save-local ID of the nation whose league the club plays in."""
     reputation: int | None = None
     """Club reputation from 1 to 10000 (fmsave's verified field); None where it cannot be read.
-    It orders my nation's leagues into a ladder (core/leagues.py)."""
+    The Cutoffs tab names a league by its best-known clubs (persistence/league_stats.py)."""
 
 
 @dataclass(frozen=True, slots=True)

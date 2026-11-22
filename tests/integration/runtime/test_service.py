@@ -1014,6 +1014,20 @@ def test_the_models_check_follows_the_selected_model(env: Env) -> None:
     assert asked == ["realvis", "animagine"] and len(env.drawn()) == 1
 
 
+def test_switching_to_a_model_not_downloaded_frees_the_one_loaded(env: Env) -> None:
+    """With one model loaded and jobs waiting, choosing a model whose files are missing frees
+    the GPU at once: the loaded model is not kept while the download is awaited."""
+    svc = env.service(models_ready=lambda model: model == "animagine")
+    assert svc.step() == 0.0
+    assert svc.status().models_loaded
+    set_overrides(env.conn, {"style.model": "realvis"}, env.config)
+    assert svc.step() == FM_POLL_SECONDS
+    status = svc.status()
+    assert status.reason == "models_missing" and not status.models_loaded
+    (renderer,) = env.gpu.renderers
+    assert renderer.closed
+
+
 def test_an_empty_queue_does_not_ask_for_the_models(env: Env) -> None:
     asked = []
     svc = env.service(models_ready=lambda model: asked.append(1) or True)

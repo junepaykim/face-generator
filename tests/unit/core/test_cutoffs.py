@@ -101,6 +101,34 @@ def test_share_of_a_number_nobody_reaches_is_the_smallest_share() -> None:
     assert share_at_or_above(hist(50, 60), 150) == 0.1
 
 
+def test_a_number_nobody_holds_becomes_the_share_that_picks_the_same_people() -> None:
+    h = hist(90, 80, 60)
+    assert h.at_or_above(85) == 1  # "at least 85" picks the 90 alone
+    share = share_at_or_above(h, 85)
+    assert share == 33.3  # 33.4% would be rank 2 and pick the 80 too
+    cut = cut_for_share(h, share)
+    assert cut == 90 and h.at_or_above(cut) == 1
+
+
+@pytest.mark.parametrize("n", [3, 7, 50, 450])
+@pytest.mark.parametrize("number", [41, 55, 63, 86, 99, 118])
+def test_every_number_becomes_a_share_that_picks_the_same_people(n: int, number: int) -> None:
+    h = hist(*(40 + (i * 37) % 81 for i in range(n)))
+    share = share_at_or_above(h, number)
+    assert share is not None
+    cut = cut_for_share(h, share)
+    assert cut is not None
+    if h.at_or_above(number):  # nobody reaching it is the smallest share (above)
+        assert h.at_or_above(cut) == h.at_or_above(number)
+
+
+def test_a_number_nobody_holds_converts_to_the_share_that_keeps_its_people() -> None:
+    league = stats(hist(90, 80, 60))
+    manual = replace(DEFAULT, mode="manual", manual={**DEFAULT.manual, "a_ca": 85})
+    changes = convert_mode(manual, "auto", {"league": league})
+    assert changes["cutoffs.share.a_ca"] == 33.3  # picks the 90 alone, as 85 did
+
+
 def test_cell_names_and_share_text() -> None:
     assert split_cell("b_ca") == ("b", "ca")
     assert split_cell("above_c_ca") == ("c", "ca")

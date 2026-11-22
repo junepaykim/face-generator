@@ -769,6 +769,7 @@ above = "상위 리그"
 below = "하위 리그"
 continental = "대륙 대회"
 clubs = "{count}개 구단"
+none = "없음"
 no_league = "최근 세이브에서 리그를 찾지 못했습니다. 다른 구단 선수는 전체 기준으로만 고릅니다."
 not_synced = "세이브를 동기화하면 값이 표시됩니다."
 
@@ -1075,6 +1076,7 @@ no_candidate = "v{version}에 그런 그림이 없습니다."
 candidate_failed = "그 그림은 품질 검사를 통과하지 못해 FM27에 쓰지 않습니다."
 already_picked = "이미 v{version}에 쓰고 있는 그림입니다."
 candidate_missing = "그림 파일이 없습니다."
+picture_changed = "이 화면을 연 뒤 v{version}이(가) 그려졌습니다. 새로고침한 뒤 다시 고르세요."
 
 [error_page]
 not_found = "찾을 수 없습니다"

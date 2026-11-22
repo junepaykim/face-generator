@@ -387,10 +387,12 @@ def test_pick_another_candidate_on_the_player_page(env: Env) -> None:
     )
     assert len(forms) == 2  # group A's other two candidates passed; the chosen one is a link
     found = re.search(
-        r'name="attempt" value="(\d+)".*?name="index" value="(\d+)"', forms[0], re.DOTALL
+        r'name="version" value="(\d+)".*?name="attempt" value="(\d+)".*?name="index" value="(\d+)"',
+        forms[0],
+        re.DOTALL,
     )
-    assert found is not None
-    pick = {"attempt": found[1], "index": found[2]}
+    assert found is not None and found[1] == "1"  # the picture the page shows
+    pick = {"version": found[1], "attempt": found[2], "index": found[3]}
     image_id = env.one("SELECT id FROM images WHERE unique_id = ? AND is_current = 1", MINE)
     first = env.client.get(f"/pictures/{image_id}", params={"size": 96})
     assert first.headers["cache-control"] == "private, no-cache"
@@ -406,7 +408,10 @@ def test_pick_another_candidate_on_the_player_page(env: Env) -> None:
 
     text = follow(env, post_player_action(env.client, f"/players/{MINE}/pick", data=pick))
     assert "already in use for v1" in text
-    bad = {"attempt": "x", "index": "0"}
+    stale = {**pick, "version": "0"}  # a page opened before the picture now shown was drawn
+    text = follow(env, post_player_action(env.client, f"/players/{MINE}/pick", data=stale))
+    assert "v1 has been drawn since this page was opened" in text
+    bad = {"attempt": "x", "index": "0", "version": "1"}
     text = follow(env, post_player_action(env.client, f"/players/{MINE}/pick", data=bad))
     assert "Bad picture ID" in text
 

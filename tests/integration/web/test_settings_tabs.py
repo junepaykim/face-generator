@@ -10,7 +10,16 @@ from html import unescape
 from pathlib import Path
 
 import pytest
-from factories import MY_CLUB, NEWGEN, RIVAL, RIVAL_2, player, snapshot, staff_member
+from factories import (
+    MY_CLUB,
+    MY_LEAGUE_COMP,
+    NEWGEN,
+    RIVAL,
+    RIVAL_2,
+    player,
+    snapshot,
+    staff_member,
+)
 from fastapi.testclient import TestClient
 from support.web import KOREAN_WINDOWS, client_for, fake_worker
 
@@ -129,6 +138,53 @@ def test_the_cutoffs_tab_shows_live_values_counts_and_the_leagues(client: TestCl
     assert re.search(r"Light</span>\s*<strong>4</strong>", page)
 
 
+def off(page: str, key: str) -> bool:
+    """Whether the setting's control is shown turned off (disabled, so never sent)."""
+    found = re.findall(rf'<input type="(?:text|checkbox)"[^>]* name="{re.escape(key)}"[^>]*>', page)
+    assert len(found) == 1, found
+    return found[0].endswith(" disabled>")
+
+
+def test_the_league_above_and_below_are_off_when_the_save_gives_none(client: TestClient) -> None:
+    """The test save holds no division list, so no league above or below: their cells and Light
+    switches are turned off, and the list says so; my league's are not."""
+    page = unescape(client.get("/settings/advanced").text)
+    for key in ("above_b_ca", "above_c_ca", "below_c_ca"):
+        assert off(page, f"cutoffs.share.{key}")
+    assert off(page, "cutoffs.light_above") and off(page, "cutoffs.light_below")
+    assert re.search(r'name="cutoffs.light_above" value="off" disabled>', page)
+    assert not off(page, "cutoffs.share.b_ca") and not off(page, "cutoffs.share.continental_b_ca")
+    assert re.search(r'Above:</span> none</li>\s*<li><span class="muted">Below:</span> none', page)
+
+
+def test_my_league_is_off_when_its_season_conflicts_with_another(config_file: Path) -> None:
+    """Just promoted: the old division's season has the most fixtures, but another domestic
+    competition my club plays in is a season newer. My league's cells are turned off."""
+    new_division = 777
+    db_path = load_settings(defaults_path=config_file).paths.db_path
+    conn = db.connect(db_path)
+    fixtures = {
+        MY_LEAGUE_COMP: {c: 46 for c in (MY_CLUB, RIVAL, RIVAL_2)},
+        new_division: {MY_CLUB: 3, RIVAL: 3},
+    }
+    shot = snapshot(
+        world(),
+        tables=(),
+        fixture_counts=fixtures,
+        fixture_seasons={MY_LEAGUE_COMP: 2026, new_division: 2027},
+    )
+    run_sync(conn, shot, load_settings(conn, config_file), save_file="career.fm")
+    conn.close()
+    c = client_for(config_file, db_path, fake_worker(config_file, db_path))
+    page = unescape(c.get("/settings/advanced").text)
+    for key in ("a_ca", "a_pa", "b_ca", "b_pa", "c_ca", "c_pa"):
+        assert off(page, f"cutoffs.share.{key}")
+    assert 'data-effective="cutoffs.share.b_ca">–' in page
+    assert not off(page, "cutoffs.share.continental_b_ca")
+    assert re.search(r"My league:</span> none", page) or "No league was found" in page
+    c.close()
+
+
 def test_switching_to_manual_converts_and_redraws_the_page(client: TestClient) -> None:
     data = save(client, **{"cutoffs.mode": "manual"})
     assert data["ok"] and data["reload"]
@@ -148,6 +204,7 @@ def test_before_any_sync_the_live_values_are_dashes(config_file: Path) -> None:
     page = unescape(c.get("/settings/advanced").text)
     assert 'data-effective="cutoffs.share.a_ca">–' in page
     assert "Values show once a save is synced." in page
+    assert not off(page, "cutoffs.share.above_b_ca") and not off(page, "cutoffs.light_below")
     assert re.search(r"Detailed</span>\s*–", page)
     c.close()
 

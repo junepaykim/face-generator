@@ -104,19 +104,21 @@ def share_at_or_above(hist: Histogram, value: int) -> float | None:
     empty league.
 
     The largest one-decimal share at most count(>= value) / n is taken, so the cut picks the
-    same people; if no one-decimal share lands between the people above `value` and those at
-    it (a very large league), the nearest one above is taken instead. Nobody reaching the value
-    gives the smallest share, 0.1.
+    same people; if no one-decimal share lands between the people above the lowest of them and
+    the lowest themselves (a very large league), the nearest one above is taken instead. Nobody
+    reaching the value gives the smallest share, 0.1.
     """
     n = hist.total
     if n == 0:
         return None
     at = hist.at_or_above(value)
-    above = hist.at_or_above(value + 1)
     if at == 0:
         return 0.1
+    # The value of the last person picked: nobody may hold `value` itself (85 with 90, 80, 60).
+    lowest = next(v for v in range(max(0, value), TOP + 1) if hist.counts[v])
+    above = hist.at_or_above(lowest + 1)
     tenths = (1000 * at) // n  # floor of the share in tenths of a percent
-    if tenths * n <= 1000 * above:  # rank would fall among those above the value
+    if tenths * n <= 1000 * above:  # rank would fall among those above the lowest picked
         tenths = -((-1000 * at) // n)  # ceiling instead
     return max(1, min(1000, tenths)) / 10
 

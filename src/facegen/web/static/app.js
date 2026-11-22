@@ -246,37 +246,42 @@ setInterval(progress, 1000);
 progress();
 
 // Hover texts for facegen's own words (Phase 12): a group chip says what the group is, and so
-// do a few terms such as auto-update and pinned (data-tip). One floating box, placed by the
-// word, so no table or card cuts it off; keyboard focus shows it too.
+// do a few terms such as auto-update and pinned (data-tip), and each ⓘ (its hidden .tip, which
+// may hold group chips). One floating box, placed by the word inside the window, so no table
+// or card cuts it off and it never widens the page; keyboard focus shows it too.
 (function hoverTips() {
   const tip = document.createElement("div");
   tip.className = "hover-tip";
   tip.setAttribute("role", "tooltip");
   tip.hidden = true;
   document.body.appendChild(tip);
+  const target = (node) => node.closest("[data-tip], .info");
   let current = null;
   const hide = () => { current = null; tip.hidden = true; };
   const show = (el) => {
     current = el;
-    tip.textContent = el.dataset.tip;
+    const source = el.matches(".info") ? el.querySelector(".tip") : null;
+    if (source) tip.replaceChildren(...source.cloneNode(true).childNodes);
+    else tip.textContent = el.dataset.tip;
     tip.style.visibility = "hidden";
     tip.hidden = false;
     const word = el.getBoundingClientRect();
     const box = tip.getBoundingClientRect();
-    const left = Math.min(Math.max(8, word.left), window.innerWidth - box.width - 8);
+    const width = document.documentElement.clientWidth;  // without the scroll bar
+    const left = Math.min(Math.max(8, word.left - (source ? 8 : 0)), width - box.width - 8);
     let top = word.bottom + 6;
     if (top + box.height > window.innerHeight - 8) top = word.top - box.height - 6;
-    tip.style.left = left + "px";
+    tip.style.left = Math.max(8, left) + "px";
     tip.style.top = Math.max(8, top) + "px";
     tip.style.visibility = "";
   };
   document.addEventListener("mouseover", (e) => {
-    const el = e.target.closest("[data-tip]");
+    const el = target(e.target);
     if (el && el !== current) show(el);
     else if (!el && current) hide();
   });
   document.addEventListener("focusin", (e) => {
-    const el = e.target.closest("[data-tip]");
+    const el = target(e.target);
     if (el) show(el);
   });
   document.addEventListener("focusout", hide);
@@ -374,6 +379,7 @@ function localTimes(root) {
   const dirty = () => Array.from(inputs.values()).filter((el) => read(el) !== saved.get(el.name));
   let running = 0;
   let leaving = false;
+  let reloading = false;
   let chain = Promise.resolve();
 
   const say = (text, kind) => {
@@ -443,8 +449,9 @@ function localTimes(root) {
       syncTicks();
       Object.entries(data.presets || {}).forEach(([kind, name]) => showPreset(kind, name));
       say(data.message, data.changed ? "ok" : "");
-      // A new language or theme, or a mode switch, shows once the page loads again.
-      if (data.reload) { leaving = true; location.reload(); return; }
+      // A new language or theme, or a mode switch, shows once the page loads again
+      // (`reloadIfAsked`, after the edits made meanwhile are saved).
+      if (data.reload) { reloading = true; return; }
       // What each cutoff gives in the latest save, and the counts and lists it changes.
       Object.entries(data.effective || {}).forEach(([key, value]) => {
         document.querySelectorAll(`[data-effective="${CSS.escape(key)}"]`).forEach((el) => { el.textContent = value; });
@@ -464,8 +471,16 @@ function localTimes(root) {
       running -= 1;
     }
   }
+  // A save asked for the page to load again: edits made while it was on its way are sent
+  // first, so the reload does not lose them.
+  async function reloadIfAsked() {
+    if (!reloading) return;
+    if (dirty().length || chosen.size) await saveDirty();
+    leaving = true;
+    location.reload();
+  }
   // Saves run one at a time, in order; each sends whatever differs from the server then.
-  const save = () => (chain = chain.then(saveDirty));
+  const save = () => (chain = chain.then(saveDirty).then(reloadIfAsked));
 
   // A list of groups shown as tick boxes: the hidden field holds "a, c" and is what is saved.
   const syncTicks = () => {

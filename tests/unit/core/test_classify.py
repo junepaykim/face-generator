@@ -380,10 +380,17 @@ def test_the_tiers_of_my_club_come_from_the_settings(cuts: Cutoffs) -> None:
     assert classify(youth(youth=False, ca=100), replace(cuts, first_team="c")).group is Group.A
 
 
-def test_academy_youth_keep_the_academy_reason(cuts: Cutoffs) -> None:
+def test_academy_youth_take_my_youth_tier_and_stay_tracked(cuts: Cutoffs) -> None:
+    """The academy's B applies once they leave (spec section 2); while in my youth teams their
+    tier is the youth one. They are tracked as academy players either way."""
     c = classify(youth(is_newgen=True, academy=True, ca=40, pa=90), cuts)
     assert c.group is Group.B and c.tracked is True
-    assert "came through my academy" in c.reasons
+    assert c.reasons == ("in my club's youth or reserve team", "tracked: came through my academy")
+    light = classify(youth(is_newgen=True, academy=True, ca=40, pa=90), replace(cuts, youth="c"))
+    assert (light.group, light.tracked) == (Group.C, True)
+    assert "came through my academy" not in light.reasons
+    gone = classify(facts(is_newgen=True, academy=True, ca=40, pa=90), replace(cuts, youth="c"))
+    assert gone.group is Group.B and "came through my academy" in gone.reasons
 
 
 def test_the_youth_rule_is_about_my_club(cuts: Cutoffs) -> None:

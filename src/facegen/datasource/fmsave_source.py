@@ -416,8 +416,8 @@ class FmsaveDataSource:
                 rules = read_league_rules(save)
             except Exception as exc:  # noqa: BLE001 - experimental reader; the sync goes on
                 notes.append(
-                    "the save's league levels unavailable, so the leagues are ordered by club "
-                    f"reputation ({type(exc).__name__}: {exc})"
+                    "the save's league levels unavailable, so no league above or below "
+                    f"({type(exc).__name__}: {exc})"
                 )
             # Staff-reader failures must not prevent player syncs.
             staff: tuple[StaffRecord, ...] = ()
@@ -434,7 +434,9 @@ class FmsaveDataSource:
                         seasons=fixture_seasons,
                         rules=rules,
                     )
-                    _, league_clubs = my_league(ladder, managed_id, clubs, tables, fixture_counts)
+                    _, league_clubs = my_league(
+                        ladder, managed_id, clubs, tables, fixture_counts, seasons=fixture_seasons
+                    )
                     staff = convert_staff(
                         all_staff,
                         uid_map,

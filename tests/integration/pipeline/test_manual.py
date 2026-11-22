@@ -520,6 +520,74 @@ def test_pick_shows_another_candidate_and_the_automatic_pick_comes_back(env: Env
     assert _image(env, MINE, 3)["is_current"] and not _image(env, MINE, 2)["is_current"]
 
 
+def test_a_pick_from_a_page_showing_an_older_picture_is_refused(env: Env) -> None:
+    """The form names the picture it showed: a candidate of a picture drawn since (the same
+    attempt and index) is not picked in its place."""
+    v2 = _picked_draw(env)
+    check = _check(v2)
+    other = next(
+        c for c in check["candidates"] if c["passed"] and c["index"] != check["chosen"]["index"]
+    )
+    with pytest.raises(ManualError) as e:
+        manual.pick_candidate(
+            env.conn,
+            env.cid,
+            env.key,
+            MINE,
+            other["attempt"],
+            other["index"],
+            env.settings,
+            version=1,
+        )
+    assert e.value.code == "picture_changed" and e.value.values == {"version": 2}
+    row = _image(env, MINE, 2)
+    assert (row["master_path"], row["seed"]) == (v2["master_path"], v2["seed"])
+    r = manual.pick_candidate(
+        env.conn, env.cid, env.key, MINE, other["attempt"], other["index"], env.settings, version=2
+    )
+    assert r.version == 2 and _image(env, MINE, 2)["seed"] == other["seed"]
+
+
+def test_picking_again_finishes_a_publish_that_failed(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The pick is stored before the pack is written. When writing fails, the same pick again
+    publishes it instead of saying it is already in use."""
+    from facegen.pipeline import publish
+
+    v2 = _picked_draw(env)
+    check = _check(v2)
+    other = next(
+        c for c in check["candidates"] if c["passed"] and c["index"] != check["chosen"]["index"]
+    )
+    published = Path(v2["published_path"])
+    before = published.read_bytes()
+    real = publish._write_atomic
+
+    def full_disk(path: Path, data: bytes) -> None:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(publish, "_write_atomic", full_disk)
+    with pytest.raises(OSError):
+        manual.pick_candidate(
+            env.conn, env.cid, env.key, MINE, other["attempt"], other["index"], env.settings
+        )
+    row = _image(env, MINE, 2)
+    assert row["seed"] == other["seed"] and row["published_path"] is None
+    assert published.read_bytes() == before  # FM27 still shows the old one
+
+    monkeypatch.setattr(publish, "_write_atomic", real)
+    r = manual.pick_candidate(
+        env.conn, env.cid, env.key, MINE, other["attempt"], other["index"], env.settings
+    )
+    assert r.publish.written == 1 and published.read_bytes() != before
+    with pytest.raises(ManualError) as e:  # now it is in FM27
+        manual.pick_candidate(
+            env.conn, env.cid, env.key, MINE, other["attempt"], other["index"], env.settings
+        )
+    assert e.value.code == "already_picked"
+
+
 def test_pick_refuses_what_must_not_be_shown(env: Env) -> None:
     v2 = _picked_draw(env)
     check = _check(v2)

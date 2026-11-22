@@ -219,6 +219,9 @@ form.settings legend { font-weight: 600; padding: 0 6px; }
 .field input[type=number] { width: 140px; }
 .field.changed .name { font-weight: 600; }
 .field.error input { border-color: var(--bad); }
+/* Off: the latest save has no such league, so the setting has nothing to do (Cutoffs tab). */
+.field.off, .cell-field.off { opacity: .5; }
+.field.off, .field.off input { cursor: default; }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
        vertical-align: middle; }
 .preview { border-color: var(--accent); }
@@ -289,8 +292,8 @@ a.button:hover { border-color: var(--accent); text-decoration: none; }
 h2 .small { font-weight: 400; margin-left: 6px; }
 h2.inline { display: inline; }
 
-/* What a group or a term means, on hover (app.js places one box by the word). */
-.hover-tip { position: fixed; z-index: 50; max-width: min(300px, 80vw); padding: 7px 10px;
+/* What a group or a term means, and an ⓘ's text, on hover (app.js places one box by the word). */
+.hover-tip { position: fixed; z-index: 50; max-width: min(320px, 80vw); padding: 7px 10px;
              border-radius: 6px; background: var(--fg); color: var(--bg); font-size: 12px;
              line-height: 1.45; pointer-events: none; box-shadow: 0 4px 14px rgb(0 0 0 / .18);
              word-break: keep-all; overflow-wrap: anywhere; }
@@ -298,17 +301,14 @@ h2.inline { display: inline; }
 .term[data-tip] { cursor: help; border-bottom: 1px dotted var(--muted); }
 .term[data-tip]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
 
-/* ⓘ: a short explanation on hover or keyboard focus (Phase 12). */
+/* ⓘ: a short explanation on hover or keyboard focus (Phase 12). Its text shows in the floating
+   box above (app.js), which stays inside the window: a tip drawn beside the ⓘ could reach past
+   the right edge, widen the page, and make the cards re-flow under the mouse. */
 .info { position: relative; display: inline-flex; vertical-align: middle; color: var(--muted);
         cursor: help; border-radius: 50%; }
 .info:hover, .info:focus-visible { color: var(--accent); outline: none; }
-.info .tip { display: none; position: absolute; z-index: 20; top: calc(100% + 6px); left: -8px;
-             width: max-content; max-width: min(320px, 80vw); padding: 8px 10px; border-radius: 6px;
-             background: var(--fg); color: var(--bg); font-size: 12px; font-weight: 400;
-             line-height: 1.45; white-space: normal; text-align: left; box-shadow: 0 4px 14px rgb(0 0 0 / .18);
-             word-break: keep-all; overflow-wrap: anywhere; }
-.info:hover .tip, .info:focus .tip, .info:focus-within .tip { display: block; }
-.info .tip .grp { color: var(--grp-fg); }
+.info .tip { display: none; }
+.hover-tip .grp { color: var(--grp-fg); }
 legend .info, h1 .info, h2 .info { margin-left: 2px; }
 
 /* The queue at a glance: what is left per group as one bar (Phase 12c feedback). */

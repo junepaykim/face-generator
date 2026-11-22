@@ -87,7 +87,7 @@
     {% if d.sheet %}
       <table class="kv">
         {% for k, v in d.sheet.fields.items() if k != "base_seed" %}
-          <tr><th>{{ t("trait." ~ k) if tr.has("trait." ~ k) else k|replace("_", " ") }}</th><td>{{ v }}{% if k in trait_tables and trait_tables[k][v].words %} <span class="muted small">({{ trait_tables[k][v].words }})</span>{% endif %}</td></tr>
+          <tr><th>{{ t("trait." ~ k) if tr.has("trait." ~ k) else k|replace("_", " ") }}</th><td>{{ v }}{% if not d.sheet.man and k in trait_tables and trait_tables[k][v].words %} <span class="muted small">({{ trait_tables[k][v].words }})</span>{% endif %}</td></tr>
         {% endfor %}
         <tr><th>{{ t("player.base_seed") }}</th><td>{{ d.sheet.fields.base_seed }}</td></tr>
         <tr><th>{{ t("player.version") }}</th><td>{{ d.sheet.version }} <span class="muted small">({{ d.sheet.created_at[:10] }})</span></td></tr>
@@ -122,7 +122,7 @@
       {% set pickable = pickable_any and c.passed and not chosen %}
       <figure class="cand {{ 'chosen' if chosen }}">
         {% if pickable %}
-        <form method="post" action="/players/{{ p.unique_id }}/pick">{% include "_player_action_fields.html" %}<input type="hidden" name="attempt" value="{{ c.attempt }}"><input type="hidden" name="index" value="{{ c.index }}">
+        <form method="post" action="/players/{{ p.unique_id }}/pick">{% include "_player_action_fields.html" %}<input type="hidden" name="version" value="{{ cur.version }}"><input type="hidden" name="attempt" value="{{ c.attempt }}"><input type="hidden" name="index" value="{{ c.index }}">
           <button class="pick" title="{{ tr('player.pick_title') }}"><img src="/files?path={{ c.path|urlencode }}&amp;size=192" loading="lazy" alt="{{ tr('player.pick_title') }}"></button>
         </form>
         <a class="full" href="/files?path={{ c.path|urlencode }}" target="_blank" title="{{ tr('player.full_size') }}" aria-label="{{ tr('player.full_size') }}">⤢</a>

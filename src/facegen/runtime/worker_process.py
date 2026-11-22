@@ -17,8 +17,10 @@ Commands from parent to child stdin:
 
     {"cmd": "pause" | "resume" | "generate-now" | "wake" | "stop"}
 
-`stop` and stdin EOF end the child after its current job. Pause exits after publication.
-The queue remains in SQLite, shared with the parent and web app.
+`stop` and stdin EOF end the child at once while it draws a job (Quit does not wait for the
+picture: the job is drawn again at the next start), otherwise once its loop ends. Pause exits
+after the current job and its publication. The queue remains in SQLite, shared with the parent
+and web app.
 
 `WorkerProxy` implements runtime.contracts.WorkerControl, starts children unless paused and
 retains log/counters across them. supervision.FailureHistory governs backoff and job review.
@@ -63,8 +65,9 @@ from facegen.runtime.policy import BUSY_TIMEOUT_MS
 from facegen.runtime.supervision import DEFAULT_POLICY, FailureHistory, RestartPolicy
 from facegen.runtime.worker_service import WorkerService
 
-STOP_TIMEOUT = 60.0
-"""Quit waits this long for the job being drawn, then ends the worker process."""
+STOP_TIMEOUT = 5.0
+"""Quit waits this long for the worker process to end, then ends it. A process drawing a job
+ends at once; one between jobs ends when a publication under way is done."""
 RESPAWN_SECONDS = 1.0
 """The wait before a new worker process when the last one ended with nothing wrong (it freed
 the GPU): a floor, so a child that keeps ending at once cannot spin."""
@@ -185,7 +188,9 @@ class _ForwardHandler(logging.Handler):
             self.handleError(record)
 
 
-def _read_commands(commands: Iterable[str], svc: WorkerService) -> None:
+def _read_commands(
+    commands: Iterable[str], svc: WorkerService, exit_now: Callable[[int], Any] = os._exit
+) -> None:
     try:
         for raw in commands:
             message = decode(raw)
@@ -204,7 +209,7 @@ def _read_commands(commands: Iterable[str], svc: WorkerService) -> None:
                     logger.warning("worker process: not a command: %r", raw[:200])
     except (OSError, ValueError):
         pass  # the pipe broke: the parent is gone
-    svc.stop()
+    svc.stop_now(exit_now)
 
 
 def serve_child(
@@ -219,9 +224,11 @@ def serve_child(
     generate_now: bool = False,
     kits: KitTable | None = None,
     models_ready: Callable[[str], bool] | None = None,
+    exit_now: Callable[[int], Any] = os._exit,
 ) -> Exit:
     """`facegen worker`: run the worker loop, talking to the parent, until it ends. Returns
-    why it ended, as told to the parent."""
+    why it ended, as told to the parent. A stop while a job is drawn calls `exit_now`
+    (`WorkerService.stop_now`)."""
     link = ChildLink(out)
     handler = _ForwardHandler(link)
     saved = logger.level, logger.propagate
@@ -248,7 +255,10 @@ def serve_child(
             models_ready=models_ready,
         )
         reader = threading.Thread(
-            target=_read_commands, args=(commands, svc), name="facegen-commands", daemon=True
+            target=_read_commands,
+            args=(commands, svc, exit_now),
+            name="facegen-commands",
+            daemon=True,
         )
         reader.start()
         svc.run()
@@ -428,13 +438,17 @@ class WorkerProxy:
         self._thread.start()
 
     def stop(self, timeout: float | None = None) -> None:
-        """Stop the child after its current job, or end it after `stop_timeout` seconds;
-        then wait up to `timeout` seconds for the supervisor."""
+        """Quit: stop the child (at once while it draws: the job is drawn again at the next
+        start), or end it after `stop_timeout` seconds; then wait up to `timeout` seconds for
+        the supervisor."""
         with self._lock:
             self._stop.set()
             child = self._child
+            current = self._child_status.current if self._child_status is not None else None
         self._wake.set()
         if child is not None:
+            if current is not None:
+                self.log(f"Quit: {current.name} is drawn again at the next start.")
             self._send("stop")
             try:
                 child.wait(timeout=self.stop_timeout)

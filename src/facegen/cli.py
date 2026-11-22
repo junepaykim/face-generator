@@ -541,7 +541,8 @@ def cmd_serve(
                 )
             if name == "worker":
                 print(
-                    f"Stopping the worker after the current job (at most {STOP_TIMEOUT:.0f} s)...",
+                    "Stopping the worker; a picture being drawn is drawn again at the next"
+                    f" start (at most {STOP_TIMEOUT:.0f} s)...",
                     file=out,
                     flush=True,
                 )

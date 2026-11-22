@@ -11,6 +11,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from facegen.core.man_traits import ManSheet
 from facegen.core.traits import CharacterSheet
 
 _CSS = """
@@ -67,7 +68,8 @@ def _rel(path: str | None, career_key: str) -> str:
 def collect(conn: sqlite3.Connection, career_id: int) -> list[dict[str, Any]]:
     """Current and rejected pictures for the career."""
     rows = conn.execute(
-        "SELECT i.*, p.name, p.age, p.is_goalkeeper, c.name AS club, t.sheet, t.base_seed"
+        "SELECT i.*, p.name, p.age, p.is_goalkeeper, c.name AS club, t.sheet, t.man_sheet,"
+        " t.base_seed"
         " FROM images i"
         " JOIN players p ON p.career_id = i.career_id AND p.unique_id = i.unique_id"
         " LEFT JOIN clubs c ON c.career_id = i.career_id AND c.club_id = i.club_id"
@@ -85,9 +87,12 @@ def render_page(title: str, career_key: str, entries: list[dict[str, Any]]) -> s
     for e in entries:
         check = json.loads(e["check_result"] or "{}")
         render = json.loads(e["render"] or "{}")
-        sheet = (
-            CharacterSheet.from_json(e["sheet"], e["base_seed"]).describe() if e["sheet"] else ""
-        )
+        if e["gender"] == "man" and e["man_sheet"]:  # a man: the men's sheet he was drawn from
+            sheet = ManSheet.from_json(e["man_sheet"], e["base_seed"]).describe()
+        elif e["sheet"]:
+            sheet = CharacterSheet.from_json(e["sheet"], e["base_seed"]).describe()
+        else:
+            sheet = ""
         chosen = check.get("chosen", {})
         cands = []
         for c in check.get("candidates", []):

@@ -26,7 +26,14 @@ from facegen.core.settings_values import Settings
 from facegen.persistence import league_stats
 from facegen.persistence.db import transaction
 from facegen.persistence.jobs import load_career
-from facegen.persistence.settings import load_defaults, load_settings, read_overrides, set_overrides
+from facegen.persistence.settings import (
+    SettingsError,
+    load_defaults,
+    load_settings,
+    merge_overrides,
+    read_overrides,
+    set_overrides,
+)
 from facegen.persistence.settings_store import write_overrides
 from facegen.pipeline.reclassification import ChangeReport, reclassify_with_report
 
@@ -126,22 +133,36 @@ def _reclassify(
 
 
 def mode_changes(
-    conn: sqlite3.Connection, changes: Mapping[str, Any], current: Settings
+    conn: sqlite3.Connection,
+    changes: Mapping[str, Any],
+    current: Settings,
+    defaults_path: Path | None = None,
 ) -> dict[str, Any]:
     """The changes with each mode switch carried out (Phase 16): my league's cutoffs switched
     between Auto and Manual convert each cell from the latest save (core/cutoffs.py
     `convert_mode`); my club's staff ages switched from Auto to Manual copy the spread into the
-    looks. Values the changes set themselves are kept."""
+    looks. Values the changes set themselves are kept, and the other values they set count:
+    a share edited in the same save is the one converted, not the share before it."""
     out = dict(changes)
     mode = changes.get("cutoffs.mode")
-    if mode is not None and mode != current.cutoffs.mode:
+    switching = mode is not None and mode != current.cutoffs.mode
+    if not switching and changes.get("age.staff.mode") != "manual":
+        return out
+    edits = {k: v for k, v in changes.items() if k not in ("cutoffs.mode", "age.staff.mode")}
+    basis = current
+    if edits:
+        try:
+            basis = merge_overrides(conn, edits, defaults_path)
+        except SettingsError:
+            pass  # refused by name when the changes are stored
+    if switching:
         career = load_career(conn)
         stats = league_stats.load(conn, career.id) if career is not None else {}
-        converted = convert_mode(current.cutoffs, mode, stats, no_photo=current.no_photo.enabled)
+        converted = convert_mode(basis.cutoffs, mode, stats, no_photo=basis.no_photo.enabled)
         out = converted | out
-    spread = current.age.staff_spread
+    spread = basis.age.staff_spread
     if changes.get("age.staff.mode") == "manual" and spread is not None:
-        firsts = {wording: first for first, wording in current.age.staff}
+        firsts = {wording: first for first, wording in basis.age.staff}
         copied = {f"age.staff.{w}": firsts.get(w, "-") for w in WORDINGS}
         out = copied | out
     return out
@@ -165,7 +186,7 @@ def save(
     with transaction(conn):
         current = load_settings(conn, defaults_path)
         if convert:
-            changes = mode_changes(conn, changes, current)
+            changes = mode_changes(conn, changes, current, defaults_path)
         # An unknown key is kept, so set_overrides refuses it by name.
         changes = {
             k: v for k, v in changes.items() if k not in current.values or v != current.values[k]

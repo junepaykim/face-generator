@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import json
 import sqlite3
 from dataclasses import dataclass, replace
@@ -989,6 +990,29 @@ def test_everyone_drawn_as_a_man_is_recorded_with_his_sheet_and_age(env: Env) ->
         assert man == sample_man_sheet(career.key, uid, 1, nation=nation)
         assert man == next(p.man for p in previews if p.job.unique_id == uid)
         assert json.loads(image["render"])["man_sheet"] == man.describe()
+
+
+def test_a_mans_details_show_the_mens_sheet_he_was_drawn_from(env: Env) -> None:
+    """The player page and the gallery describe a man by his men's sheet, not the women's sheet
+    stored with the same version."""
+    from facegen.core.man_traits import ManSheet
+    from facegen.web.queries import player_detail
+
+    men = _style(env.settings, "realvis", "man")
+    w, _, _ = env.worker(renderer=FakeRenderer("realvis"), settings=men)
+    w.run(MINE, publish=False)
+    row = env.conn.execute(
+        "SELECT base_seed, man_sheet FROM traits WHERE unique_id = ?", (OLD_HAND,)
+    ).fetchone()
+    man = ManSheet.from_json(row["man_sheet"], row["base_seed"])
+    career = load_career(env.conn)
+    assert career is not None
+    detail = player_detail(env.conn, career.id, OLD_HAND)
+    assert detail is not None and detail["sheet"]["man"] is True
+    assert detail["sheet"]["fields"]["facial_hair"] == man.facial_hair
+    assert detail["sheet"]["version"] == detail["current"]["traits_version"]
+    page = write_gallery(env.conn, career.id, career.key, "Test career", env.data)
+    assert html.escape(man.describe()) in page.read_text(encoding="utf-8")
 
 
 def test_a_mans_look_stays_when_his_nation_changes(env: Env) -> None:

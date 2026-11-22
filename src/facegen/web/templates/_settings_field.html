@@ -1,8 +1,9 @@
 {# One setting as a labelled field (Advanced page). `errors` maps keys to their error text. #}
 {% from "_icons.html" import info as tip %}
-{% macro input(fd, label=None) %}
+{# `off`: shown turned off (disabled) and never sent, as the latest save gives it nothing to do. #}
+{% macro input(fd, label=None, off=False) %}
   {% if fd.kind == "bool" %}
-    <input type="hidden" name="{{ fd.key }}" value="off"><input type="checkbox" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" {{ "checked" if fd.value is sameas true }}{% if label %} aria-label="{{ label }}"{% endif %}>
+    <input type="hidden" name="{{ fd.key }}" value="off"{{ " disabled" if off }}><input type="checkbox" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" {{ "checked" if fd.value is sameas true }}{% if label %} aria-label="{{ label }}"{% endif %}{{ " disabled" if off }}>
   {% elif fd.kind == "int" %}
     <input type="number" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}" step="1"{% if label %} aria-label="{{ label }}"{% endif %}>
   {% elif fd.kind == "float" %}
@@ -10,7 +11,7 @@
   {% elif fd.kind == "band" %}
     <input type="text" class="band" inputmode="numeric" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}" aria-label="{{ label or fd.label }}">
   {% elif fd.kind == "cell" %}
-    <input type="text" class="cell" inputmode="decimal" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}" aria-label="{{ label or fd.label }}">
+    <input type="text" class="cell" inputmode="decimal" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}" aria-label="{{ label or fd.label }}"{{ " disabled" if off }}>
   {% elif fd.kind == "groups" %}
     <span class="group-ticks">
       <input type="hidden" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}">
@@ -26,27 +27,27 @@
   {% endif %}
 {% endmacro %}
 
-{% macro note(fd, errors) -%}
+{% macro note(fd, errors, off=False) -%}
   <span class="muted small">{{ t("settings.default", value=fd.default_text) }}
-    <button type="button" class="link small" data-use-default {{ "hidden" if not fd.changed }}>{{ t("settings.use_default") }}</button>
+    <button type="button" class="link small" data-use-default {{ "hidden" if not fd.changed }}{{ " disabled" if off }}>{{ t("settings.use_default") }}</button>
     <span class="bad" data-error>{% if fd.key in errors %} · {{ errors[fd.key] }}{% endif %}</span></span>
 {%- endmacro %}
 
-{% macro field(fd, errors) %}
+{% macro field(fd, errors, off=False) %}
   {% set box = "div" if fd.kind == "groups" else "label" %}
-  <{{ box }} class="field {{ 'changed' if fd.changed }} {{ 'error' if fd.key in errors }}" data-field>
+  <{{ box }} class="field {{ 'changed' if fd.changed }} {{ 'error' if fd.key in errors }} {{ 'off' if off }}" data-field>
     {% set field_tip = "settings.field_tip." ~ fd.key.rsplit(".", 1)[-1] %}
     <span class="name">{% if fd.label_key %}{{ t(fd.label_key, **fd.label_values) }}{% else %}{{ fd.label }}{% endif %}{% if tr.has(field_tip) %} {{ tip(t(field_tip)) }}{% endif %} <span class="dot" data-dot title="{{ t('settings.default', value=fd.default_text) }}" {{ "hidden" if not fd.changed }}></span></span>
-    {{ input(fd) }}
-    {{ note(fd, errors) }}
+    {{ input(fd, off=off) }}
+    {{ note(fd, errors, off) }}
   </{{ box }}>
 {% endmacro %}
 
 {# A field inside a table cell: the input, the live value beside it, the default dot and error. #}
-{% macro cell(fd, errors, label, effective=None) %}
-  <span class="cell-field {{ 'changed' if fd.changed }} {{ 'error' if fd.key in errors }}" data-field>
+{% macro cell(fd, errors, label, effective=None, off=False) %}
+  <span class="cell-field {{ 'changed' if fd.changed }} {{ 'error' if fd.key in errors }} {{ 'off' if off }}" data-field>
     {% if fd.key.startswith("cutoffs.share.") %}<span class="muted small">{{ t("cutoffs.top") }}</span>{% endif %}
-    {{ input(fd, label) }}{% if fd.key.startswith("cutoffs.share.") %}<span class="muted small">%</span>{% endif %}
+    {{ input(fd, label, off) }}{% if fd.key.startswith("cutoffs.share.") %}<span class="muted small">%</span>{% endif %}
     <span class="dot" data-dot title="{{ t('settings.default', value=fd.default_text) }}" {{ "hidden" if not fd.changed }}></span>
     {% if effective is not none %}<span class="effective" data-effective="{{ fd.key }}">{{ effective }}</span>{% endif %}
     <span class="bad small" data-error>{% if fd.key in errors %}{{ errors[fd.key] }}{% endif %}</span>

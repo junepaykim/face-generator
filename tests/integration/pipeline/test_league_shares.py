@@ -1,6 +1,7 @@
-"""League-share cutoffs through the sync and the settings history (Phase 16): the ladder and the
-candidates' stats are stored by the sync, a settings change reclassifies from them without a new
-save, and switching Auto <-> Manual is one change that picks the same people."""
+"""League-share cutoffs through the sync and the settings history (Phase 16): the ladder (from the
+save's own rules) and the candidates' stats are stored by the sync, a settings change
+reclassifies from them without a new save, and switching Auto <-> Manual is one change that
+picks the same people."""
 
 from __future__ import annotations
 
@@ -22,7 +23,13 @@ MY_CLUB = 100
 MINE = range(100, 110)  # my league: 10 clubs, reputation about 3000
 ABOVE = range(200, 210)  # the league above: about 4500
 BELOW_N, BELOW_S = range(400, 410), range(410, 420)  # two parallel leagues below: about 2000
-LEAGUE, UP, NORTH, SOUTH = 50, 51, 52, 53
+LEAGUE, UP, NORTH, SOUTH, REGIONAL = 50, 51, 52, 53, 54
+RULES = CompetitionRules(
+    division_lists=(DivisionList(1, False, (UP, LEAGUE, REGIONAL)),),
+    levels={UP: 0, LEAGUE: 1, REGIONAL: 2},
+    children={REGIONAL: (NORTH, SOUTH)},
+)
+"""The save's own division list: the league above, mine, and a level of two regional groups."""
 
 
 def clubs() -> dict[int, ClubRecord]:
@@ -52,8 +59,10 @@ def newgens() -> list:
     return people
 
 
-def world(conn: sqlite3.Connection) -> None:
-    snap = snapshot(newgens(), clubs=clubs(), tables=(), fixture_counts=fixtures())
+def world(conn: sqlite3.Connection, rules: CompetitionRules | None = RULES) -> None:
+    snap = snapshot(
+        newgens(), clubs=clubs(), tables=(), fixture_counts=fixtures(), competition_rules=rules
+    )
     run_sync(conn, snap, load_settings(conn), save_file="career.fm")
 
 
@@ -180,6 +189,19 @@ def test_auto_manual_auto_is_one_change_each_and_picks_the_same_people(
     assert read_overrides(conn) == {} and groups(conn) == auto
 
 
+def test_a_share_sent_with_the_switch_to_manual_is_the_one_converted(
+    conn: sqlite3.Connection,
+) -> None:
+    """A share edited while a save was on its way reaches the server with the switch: the
+    number comes from that share, not the one stored before it."""
+    world(conn)
+    out = history.save(conn, {"cutoffs.share.b_ca": 40.0, "cutoffs.mode": "manual"}, convert=True)
+    (entry,) = out.entries
+    assert entry.after["cutoffs.share.b_ca"] == 40.0
+    assert entry.after["cutoffs.manual.b_ca"] == 80  # top 40%: rank 4 is CA 80, not 90
+    assert group(conn, NEWGEN + 6) == "b"
+
+
 def test_a_number_set_by_hand_becomes_its_share(conn: sqlite3.Connection) -> None:
     world(conn)
     history.save(conn, {"cutoffs.mode": "manual"}, convert=True)
@@ -188,6 +210,22 @@ def test_a_number_set_by_hand_becomes_its_share(conn: sqlite3.Connection) -> Non
     out = history.save(conn, {"cutoffs.mode": "auto"}, convert=True)
     assert out.entries[0].after["cutoffs.share.b_ca"] == 66.6  # rank ceil(5.99) = 6
     assert groups(conn) == manual
+
+
+def test_without_the_saves_rules_there_is_no_league_above_or_below(
+    conn: sqlite3.Connection,
+) -> None:
+    """No guess from the clubs' reputations: my league still comes from my club's fixtures, and
+    only the everywhere cuts pick players in other leagues (the Cutoffs tab turns the league
+    above's and below's settings off)."""
+    world(conn, rules=None)
+    offsets = dict(conn.execute("SELECT club_id, league_offset FROM clubs"))
+    assert offsets[101] is None and offsets[205] is None and offsets[401] is None
+    stats = league_stats.load(conn, 1)
+    assert set(stats) == {"league"} and stats["league"].competitions == (LEAGUE,)
+    g = groups(conn)
+    assert g[NEWGEN + 9] == "a"  # my league's shares still pick
+    assert all(g[NEWGEN + 100 * k + i] is None for k in (1, 2, 3) for i in range(10))
 
 
 def test_without_a_league_only_the_global_cuts_pick(conn: sqlite3.Connection) -> None:

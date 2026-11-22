@@ -218,4 +218,5 @@ def test_groups_and_terms_say_what_they_mean_on_hover(drawn: TestClient) -> None
         in english
     )
     script = drawn.get(re.search(r'src="(/static/app.js[^"]*)"', drawn.get("/").text)[1]).text
-    assert 'closest("[data-tip]")' in script and 'tip.className = "hover-tip"' in script
+    # ⓘ tips share the floating box, kept inside the window (user, 2026-11-22).
+    assert 'closest("[data-tip], .info")' in script and 'tip.className = "hover-tip"' in script

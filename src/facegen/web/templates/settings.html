@@ -28,6 +28,7 @@
 {% set auto = f["cutoffs.mode"].value == "auto" %}
 {% set kind = "share" if auto else "manual" %}
 {% set ev = cutoffs.effective %}
+{% set off = cutoffs.off %}
 
 <nav class="pills" aria-label="{{ t('settings.tabs') }}" data-tab-pills data-anchors="{{ tab_anchors|tojson|forceescape }}">
   {% for tab in tabs %}<a href="#tab-{{ tab }}" data-tab="{{ tab }}">{{ t("settings.tab." ~ tab) }}</a>{% endfor %}
@@ -59,17 +60,17 @@
             {% for attr in ("ca", "pa") %}
               {% set key = "cutoffs." ~ kind ~ "." ~ g ~ "_" ~ attr %}
               {% set column = tr("cutoffs.col.league_ca") if attr == "ca" else tr("cutoffs.col.league_pa") %}
-              <td data-label="{{ column }}">{{ cell(f[key], errors, tr("group." ~ g) ~ " · " ~ column, ev[key]) }}</td>
+              <td data-label="{{ column }}">{{ cell(f[key], errors, tr("group." ~ g) ~ " · " ~ column, ev[key], "league" in off) }}</td>
             {% endfor %}
             <td class="others" data-label="{{ tr('cutoffs.col.elsewhere') }}">
               {% if g == "a" %}<span class="muted">–</span>{% endif %}
               {% if g == "b" %}
-                <div><span class="where">{{ t("cutoffs.above") }} CA</span>{{ cell(f["cutoffs.share.above_b_ca"], errors, tr("group.b") ~ " · " ~ tr("cutoffs.above"), ev["cutoffs.share.above_b_ca"]) }}</div>
+                <div><span class="where">{{ t("cutoffs.above") }} CA</span>{{ cell(f["cutoffs.share.above_b_ca"], errors, tr("group.b") ~ " · " ~ tr("cutoffs.above"), ev["cutoffs.share.above_b_ca"], "above" in off) }}</div>
                 <div><span class="where">{{ t("cutoffs.continental") }} CA</span>{{ cell(f["cutoffs.share.continental_b_ca"], errors, tr("group.b") ~ " · " ~ tr("cutoffs.continental"), ev["cutoffs.share.continental_b_ca"]) }}</div>
               {% endif %}
               {% if g == "c" %}
-                <div><span class="where">{{ t("cutoffs.above") }} CA</span>{{ cell(f["cutoffs.share.above_c_ca"], errors, tr("group.c") ~ " · " ~ tr("cutoffs.above"), ev["cutoffs.share.above_c_ca"]) }}</div>
-                <div><span class="where">{{ t("cutoffs.below") }} CA</span>{{ cell(f["cutoffs.share.below_c_ca"], errors, tr("group.c") ~ " · " ~ tr("cutoffs.below"), ev["cutoffs.share.below_c_ca"]) }}</div>
+                <div><span class="where">{{ t("cutoffs.above") }} CA</span>{{ cell(f["cutoffs.share.above_c_ca"], errors, tr("group.c") ~ " · " ~ tr("cutoffs.above"), ev["cutoffs.share.above_c_ca"], "above" in off) }}</div>
+                <div><span class="where">{{ t("cutoffs.below") }} CA</span>{{ cell(f["cutoffs.share.below_c_ca"], errors, tr("group.c") ~ " · " ~ tr("cutoffs.below"), ev["cutoffs.share.below_c_ca"], "below" in off) }}</div>
               {% endif %}
             </td>
           </tr>
@@ -77,14 +78,17 @@
         </tbody>
       </table>
       </div>
-      {{ field(f["cutoffs.light_above"], errors) }}
-      {{ field(f["cutoffs.light_below"], errors) }}
+      {{ field(f["cutoffs.light_above"], errors, "above" in off) }}
+      {{ field(f["cutoffs.light_below"], errors, "below" in off) }}
       <div class="found-leagues small">
         {% if not cutoffs.synced %}<p class="muted">{{ t("cutoffs.not_synced") }}</p>
         {% elif not cutoffs.leagues %}<p class="muted">{{ t("cutoffs.no_league") }}</p>
         {% else %}
         <ul>
-          {% for lg in cutoffs.leagues %}<li><span class="muted">{{ t("cutoffs.found." ~ lg.scope) }}</span> {% if lg.name %}{{ lg.name }}{% else %}{{ lg.clubs|join(", ") }}{% endif %} <span class="muted">({{ t("cutoffs.clubs", count=lg.club_count) }})</span></li>{% endfor %}
+          {% for scope in ("league", "above", "below", "continental") %}
+          {% for lg in cutoffs.leagues if lg.scope == scope %}<li><span class="muted">{{ t("cutoffs.found." ~ lg.scope) }}</span> {% if lg.name %}{{ lg.name }}{% else %}{{ lg.clubs|join(", ") }}{% endif %} <span class="muted">({{ t("cutoffs.clubs", count=lg.club_count) }})</span></li>{% endfor %}
+          {% if scope in off %}<li><span class="muted">{{ t("cutoffs.found." ~ scope) }}</span> {{ t("cutoffs.none") }}</li>{% endif %}
+          {% endfor %}
         </ul>
         {% endif %}
       </div>

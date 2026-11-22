@@ -201,7 +201,8 @@ def rule_matches(
     everywhere(Group.A)
     if f.in_my_league:
         league(Group.A, "in my league", cuts.league_cut("a_ca"), cuts.league_cut("a_pa"))
-    if f.is_newgen and cuts.academy_alumni and f.academy:
+    if f.is_newgen and cuts.academy_alumni and f.academy and part is None:
+        # Once they leave (spec section 2): while at my club, my club's tier is theirs.
         matches.append((Group.B, "came through my academy"))
     if f.in_my_league:
         league(Group.B, "in my league", cuts.league_cut("b_ca"), cuts.league_cut("b_pa"))

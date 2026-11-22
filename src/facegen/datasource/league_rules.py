@@ -65,7 +65,14 @@ class _Unreadable(Exception):
     """Bytes that do not decode as the format above."""
 
 
-Record = list[tuple[str, object]]
+class Record(list[tuple[str, object]]):
+    """A decoded record: its (tag, value) fields in order. A type of its own, so a list (whose
+    items are values without tags) is never read as a record: an odd list in one nation's rules
+    makes that list unreadable, not every nation's."""
+
+
+def _is_list(value: object) -> bool:
+    return isinstance(value, list) and not isinstance(value, Record)
 
 
 def _value(db: bytes, pos: int, kind: int, depth: int = 0) -> tuple[object, int]:
@@ -104,7 +111,7 @@ def _value(db: bytes, pos: int, kind: int, depth: int = 0) -> tuple[object, int]
     if kind == 0x0A:
         if count > _MAX_FIELDS:
             raise _Unreadable("too many fields")
-        record: Record = []
+        record = Record()
         for _ in range(count):
             if pos + 6 > len(db) or db[pos + 4] != 0x01:
                 raise _Unreadable(f"no field at {pos}")
@@ -134,7 +141,7 @@ def _record_at(db: bytes, start: int) -> tuple[Record, list[int], int] | None:
     if count > _MAX_FIELDS:
         return None
     pos = start + 6
-    record: Record = []
+    record = Record()
     positions: list[int] = []
     try:
         for _ in range(count):
@@ -165,7 +172,7 @@ def _record_holding(db: bytes, at: int) -> Record | None:
 
 
 def _field(record: object, tag: str) -> object:
-    if not isinstance(record, list):
+    if not isinstance(record, Record):
         return None
     return next((v for k, v in record if k == tag), None)
 
@@ -179,10 +186,10 @@ def _id(value: object) -> int | None:
         return int(value[0])
     if isinstance(value, str) and value.isdigit():
         return int(value)
-    if isinstance(value, list):
+    if isinstance(value, Record):
         inner = _id(_field(value, "comp"))
         dbid = _field(value, "DBID")
-        if inner is not None and not isinstance(_field(value, "comp"), list):
+        if inner is not None and not isinstance(_field(value, "comp"), Record):
             return inner if dbid is None or _id(dbid) == inner else None
     return None
 
@@ -190,13 +197,13 @@ def _id(value: object) -> int | None:
 def competition_id(item: object) -> int | None:
     """A list item's competition: a number, or a record whose `comp` is one (or a
     `{id, comp, DBID}` record whose IDs agree). None when it is neither."""
-    bare = _id(item) if not isinstance(item, list) else None
+    bare = _id(item) if not isinstance(item, Record) else None
     return bare if bare is not None else _id(_field(item, "comp"))
 
 
 def _nation(record: Record) -> int | None:
     nati = _field(record, "nati")
-    if isinstance(nati, list):
+    if isinstance(nati, Record):
         return _id(_field(nati, "Nnat"))
     return _id(nati)
 
@@ -215,7 +222,7 @@ def division_lists(db: bytes) -> tuple[DivisionList, ...]:
     for at in _hits(db, _DIVISIONS):
         record = _record_holding(db, at)
         items = _field(record, "dvlv")
-        if record is None or not isinstance(items, list):
+        if record is None or not _is_list(items):
             continue
         ids = [competition_id(i) for i in items]
         if not ids or any(i is None for i in ids):
@@ -250,7 +257,7 @@ def competition_rules(db: bytes) -> CompetitionRules:
         record = _record_holding(db, at)
         comp = _id(_field(record, "comp"))
         items = _field(record, "chdc")
-        if comp is None or not isinstance(items, list):
+        if comp is None or not _is_list(items):
             continue
         read = [competition_id(i) for i in items]
         kids = tuple(k for k in read if k is not None)

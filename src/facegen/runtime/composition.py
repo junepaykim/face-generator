@@ -4,10 +4,10 @@
 and the update check. The update check is not a quit step (it only waits between checks):
 `Runtime.stop_updates` ends it when facegen stops.
 `Runtime.stop_steps` stops downloads, a running sync (a committed sync gets time to
-publish its pack), the watcher, then the worker, allowing its
-current job up to `worker_process.STOP_TIMEOUT` seconds before releasing the GPU by ending
-the process. Each sync runs in a process of its own by default. Tests can explicitly
-select in-thread execution by injecting an inline source.
+publish its pack), the watcher, then the worker: a picture being drawn is abandoned at once
+(drawn again at the next start), and a process not gone after `worker_process.STOP_TIMEOUT`
+seconds is ended, releasing the GPU. Each sync runs in a process of its own by default.
+Tests can explicitly select in-thread execution by injecting an inline source.
 `serve` runs uvicorn in the main thread and cleans up afterward. The desktop shell runs
 `ServerThread` and stops it after the runtime steps.
 """
