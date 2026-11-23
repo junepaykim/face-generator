@@ -3,13 +3,16 @@
 "use strict";
 
 // The page's own texts, in its language (the message catalog, Phase 12a). "{count}" and the
-// like are filled in here.
+// like are filled in here; "{count:,}" with a thousands separator, as Python writes it.
 const TEXTS = (() => {
   try { return JSON.parse(document.getElementById("texts").textContent); } catch (e) { return {}; }
 })();
 function text(key, values) {
   let s = TEXTS[key] || key;
-  for (const [name, value] of Object.entries(values || {})) s = s.split("{" + name + "}").join(String(value));
+  for (const [name, value] of Object.entries(values || {})) {
+    const grouped = typeof value === "number" ? value.toLocaleString("en-US") : String(value);
+    s = s.split("{" + name + ":,}").join(grouped).split("{" + name + "}").join(String(value));
+  }
   return s;
 }
 const LANG = document.documentElement.lang || undefined;

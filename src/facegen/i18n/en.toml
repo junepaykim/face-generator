@@ -168,7 +168,7 @@ no_browse = "Type or paste the folder: Browse cannot open a window from here."
 
 [setup.models]
 title = "Set up: the models"
-file = "Downloading file {index} of {files}: <code>{name}</code>"
+file = "Downloading file {index:,} of {files:,}: <code>{name}</code>"
 starting = "Downloading: starting"
 progress = "{percent}% · {done} of {total}"
 stop_note = "Closing facegen stops the download. The next download skips completed files and restarts the interrupted file."
@@ -215,7 +215,7 @@ never = "Never synced."
 syncing = "syncing"
 running = "Started {started}; this takes about half a minute."
 nothing_new = "Nothing new in the save."
-warnings = { one = "{count} warning", other = "{count} warnings" }
+warnings = { one = "{count:,} warning", other = "{count:,} warnings" }
 now = "Sync now"
 now_title = "Read the newest save and update the queue"
 
@@ -226,14 +226,14 @@ command = "facegen sync"
 
 [dash.counts]
 title = "Players"
-my_club = "{count} at my club"
-staff = ", <a href=\"/players?role=staff\">{count} staff</a>"
-youth = "<a href=\"/players?role=youth\">{count} in my youth teams</a>"
-media = "<a href=\"/players?role=media&amp;group=grouped\">{count} journalists and press officers</a>"
+my_club = "{count:,} at my club"
+staff = ", <a href=\"/players?role=staff\">{count:,} staff</a>"
+youth = "<a href=\"/players?role=youth\">{count:,} in my youth teams</a>"
+media = "<a href=\"/players?role=media&amp;group=grouped\">{count:,} journalists and press officers</a>"
 tracked = "Auto-update"
 pinned = "Pinned"
 pictures = "Pictures"
-pictures_value = "<a href=\"/players?picture=yes\">{current}</a> ({published} in FM27)"
+pictures_value = "<a href=\"/players?picture=yes\">{current:,}</a> ({published:,} in FM27)"
 no_photo = "No photo"
 no_photo_value = "<a href=\"/players?origin=existing&amp;role=players&amp;photo=none\">{count:,}</a> pre-existing players, {picked:,} of them in a group"
 off_in_settings = "(off in Settings)"
@@ -242,15 +242,15 @@ no_career = "No career yet. Sync a save to begin."
 
 [dash.queue]
 title = "Queue"
-left = { one = "{count} picture left", other = "{count} pictures left" }
+left = { one = "{count:,} picture left", other = "{count:,} pictures left" }
 eta = "about {time}"
 eta_unknown = "the time shows after a few pictures"
-held = { one = "{count} of them waits for Generate now", other = "{count} of them wait for Generate now" }
+held = { one = "{count:,} of them waits for Generate now", other = "{count:,} of them wait for Generate now" }
 empty = "The queue is empty."
 list = "Show the list"
-first = "The first {count}"
+first = "The first {count:,}"
 reference = "reference picture"
-cancel = "cancel"
+cancel = "Cancel"
 
 [log]
 title = "Log"
@@ -264,7 +264,7 @@ checked = "checked {time}"
 not_watching = "not watching (<code>--no-watch</code>): press Sync now after saving"
 
 [gallery]
-total = { one = "{count} picture", other = "{count:,} pictures" }
+total = { one = "{count:,} picture", other = "{count:,} pictures" }
 none = "No pictures yet."
 to_dashboard = "See the progress on the Dashboard"
 none_match = "No pictures match."
@@ -287,14 +287,14 @@ generate = "Generate"
 new_picture = "New picture"
 pin = "Pin"
 total = "{count:,} players"
-page = "page {page} of {pages}"
+page = "page {page:,} of {pages:,}"
 tick_all = "Tick every player on this page"
 tick = "Tick {name}"
 none = "No players match."
-first = "« first"
-previous = "‹ previous"
-next = "next ›"
-last = "last »"
+first = "« First"
+previous = "‹ Previous"
+next = "Next ›"
+last = "Last »"
 photos_unknown_sync = "Who has a photo is not known: the last sync could not read FM27's photo list."
 photos_unknown_next = "Who has a photo is not known yet: it is read at the next sync."
 media_local = "my club's country"
@@ -306,8 +306,8 @@ origin_existing = "pre-existing"
 
 [players.filter]
 name = "Name or unique ID"
-club_chip = "club: {club}"
-any_club = "any club"
+club_chip = "Club: {club}"
+any_club = "Any club"
 league = "League"
 min = "min"
 max = "max"
@@ -322,65 +322,65 @@ photo_title = "The photo FM27 shows without a facegen picture: its own, or a fac
 scope = "Scope"
 sort = "Sort"
 apply = "Filter"
-clear = "clear"
+clear = "Clear"
 
 [players.bulk]
 as_group = "as"
 generate_title = "Queue a picture in this group, before the automatic ones"
 new_picture_title = "A new picture of the same character"
-pin_never = "never draw"
-pin_clear = "clear pin"
+pin_never = "Never draw"
+pin_clear = "Clear pin"
 
 [players.league]
-any = "any league"
-mine = "my league"
-continental = "continental competition"
-other = "elsewhere"
+any = "Any league"
+mine = "My league"
+continental = "Continental competition"
+other = "Elsewhere"
 
 [players.origin]
-any = "newgen or pre-existing"
-newgen = "newgens"
-existing = "pre-existing"
+any = "Newgen or pre-existing"
+newgen = "Newgens"
+existing = "Pre-existing"
 
 [players.role]
-any = "everyone"
-players = "players"
-youth = "my club's youth teams"
-staff = "my club's staff"
-media = "journalists and press officers"
+any = "Everyone"
+players = "Players"
+youth = "My club's youth teams"
+staff = "My club's staff"
+media = "Journalists and press officers"
 
 [players.group]
-any = "any group"
-grouped = "in a group"
+any = "Any group"
+grouped = "In a group"
 a = "{a} group"
 b = "{b} group"
 c = "{c} group"
-none = "no group"
-pinned = "pinned"
+none = "No group"
+pinned = "Pinned"
 
 [players.picture]
-any = "any picture state"
-yes = "has a picture"
-no = "no picture"
-queued = "queued or generating"
-review = "in review"
+any = "Any picture state"
+yes = "Has a picture"
+no = "No picture"
+queued = "Queued or generating"
+review = "In review"
 
 [players.photo]
-any = "any photo"
+any = "Any photo"
 game = "FM27 photo"
-facepack = "facepack picture"
-none = "no photo or facepack"
+facepack = "Facepack picture"
+none = "No photo or facepack"
 
 [players.scope]
-mens = "men's football"
-all = "all players"
+mens = "Men's football"
+all = "All players"
 
 [players.sort]
-ca = "sort by CA"
-pa = "sort by PA"
-name = "sort by name"
-age = "sort by age"
-club = "sort by club"
+ca = "Sort by CA"
+pa = "Sort by PA"
+name = "Sort by name"
+age = "Sort by age"
+club = "Sort by club"
 
 [player]
 current_alt = "Current picture of {name}"
@@ -429,8 +429,8 @@ retry = "Retry"
 cancel_request = "Cancel request"
 remove = "Remove picture"
 remove_confirm = "Remove {name}'s picture from FM27 and never draw them? The game's own photo comes back after Reload Skin."
-pin_none = "no pin (rules decide)"
-pin_never = "never draw"
+pin_none = "No pin (rules decide)"
+pin_never = "Never draw"
 pin_set = "Set"
 pin_tip = "Pinning to a group generates a picture in that group, whatever the rules say. Never draw leaves this person out."
 pin_tip_media = "Pin a regular at my club to {a}: drawn at {a} quality, and updated when their age look changes."
@@ -515,7 +515,7 @@ reset_title = "Every setting back to its default, as one change you can undo"
 save = "Save"
 noscript = "With JavaScript off, changes are saved with this button."
 default = "default {value}"
-use_default = "use default"
+use_default = "Use default"
 age_label = "{band} ({tags})"
 age_label_plain = "{band}"
 tabs = "Settings sections"
@@ -533,13 +533,13 @@ model = "Image model"
 model_loaded = "loaded"
 model_not_loaded = "not loaded"
 session = "This run"
-session_value = "{done} made, {failed} sent to review"
+session_value = "{done:,} made, {failed:,} sent to review"
 watcher = "Save watcher"
 watching = "watching the saves folder"
 not_watching = "off (<code>--no-watch</code>): press Sync now after saving"
 photos = "FM27's photo list"
 photos_value = "{count:,} photos"
-facepacks = { one = "; {count} facepack with {mapped:,}", other = "; {count} facepacks with {mapped:,}" }
+facepacks = { one = "; {count:,} facepack with {mapped:,}", other = "; {count:,} facepacks with {mapped:,}" }
 photos_unknown = "could not be read"
 no_worker = "not generated in this process"
 version = "Version"
@@ -702,7 +702,7 @@ auto_groups = "Groups drawn automatically"
 [settings.choice.detail_size]
 "x1.5" = "x1.5 (best)"
 smaller = "Smaller (less graphics memory)"
-off = "off"
+off = "Off"
 
 [settings.choice.mode]
 auto = "Auto (top %)"
@@ -770,7 +770,7 @@ either = "CA {ca}+ or PA {pa}+"
 above = "League above"
 below = "League below"
 continental = "Continental"
-clubs = { one = "{count} club", other = "{count} clubs" }
+clubs = { one = "{count:,} club", other = "{count:,} clubs" }
 none = "none"
 no_league = "No league was found in the latest save: only the everywhere cuts pick players at other clubs."
 not_synced = "Values show once a save is synced."
@@ -803,11 +803,11 @@ title = "Recent changes"
 defaults = "reset to defaults"
 auto_configure = "auto-configured for the graphics card"
 undone = "undone"
-more = "{count} more"
-changed = { one = "{count} player changed group", other = "{count} players changed group" }
-highest = "; the {count} with the highest PA"
-undo = "undo"
-undo_later = "undo this and every later change"
+more = "{count:,} more"
+changed = { one = "{count:,} player changed group", other = "{count:,} players changed group" }
+highest = "; the {count:,} with the highest PA"
+undo = "Undo"
+undo_later = "Undo this and every later change"
 none = "No changes yet."
 
 [hardware]
@@ -823,7 +823,7 @@ why = "Why"
 ask_again = "Ask the card again"
 preset_heading = "Preset: {title}"
 tip = "Who gets a picture never changes here: a smaller card is slower, it does not draw fewer people. Pictures already made stay as they are."
-apply = { one = "Apply this {count} change", other = "Apply these {count} changes" }
+apply = { one = "Apply this {count:,} change", other = "Apply these {count:,} changes" }
 nothing = "Nothing to change: the settings already suit this card."
 
 [hardware.col]
@@ -849,18 +849,18 @@ title = "no CUDA graphics card"
 note = "Nothing changes: facegen needs an NVIDIA card with CUDA, and none was found."
 
 [manual]
-queued = "{count} queued"
-pinned = "{count} pinned (already have a picture)"
-skipped = "{count} skipped ({why})"
+queued = "{count:,} queued"
+pinned = "{count:,} pinned (already have a picture)"
+skipped = "{count:,} skipped ({why})"
 join = ", "
 nothing = "nothing to do"
 
 [report]
-count = "{name} {before} → {after}"
+count = "{name} {before:,} → {after:,}"
 tracked = "auto-update"
-queued = "{count} queued"
-updated = "{count} updated"
-cancelled = "{count} cancelled"
+queued = "{count:,} queued"
+updated = "{count:,} updated"
+cancelled = "{count:,} cancelled"
 queue = "queue: {what}"
 unchanged = "no player moved; the queue is unchanged"
 
@@ -922,8 +922,8 @@ new_face = "New face: {summary}."
 generate = "Generate in the {group} group: {summary}."
 new_picture = "New picture: {summary}."
 pin = "Pin to {group}: {summary}."
-pinned_never = "{count} player(s) pinned to never."
-unpinned = "{count} player(s) unpinned."
+pinned_never = "{count:,} player(s) pinned to never."
+unpinned = "{count:,} player(s) unpinned."
 
 [msg.settings]
 saved = "Saved: {what}."
@@ -967,12 +967,12 @@ updating = "facegen closes now and a window shows the update to {version}. When 
 starting = "Starting…"
 no_career = "No career yet: generating starts once facegen has read a save."
 queue_empty = "Every picture is up to date. New ones are queued when FM27 saves."
-held = { one = "{count} picture in {groups} is not drawn automatically. Generate now draws it.", other = "{count} pictures in {groups} are not drawn automatically. Generate now draws them." }
+held = { one = "{count:,} picture in {groups} is not drawn automatically. Generate now draws it.", other = "{count:,} pictures in {groups} are not drawn automatically. Generate now draws them." }
 paused = "Paused."
 paused_error = "Paused after an error."
-models_missing = { one = "{count} picture waits for the models to be downloaded.", other = "{count} pictures wait for the models to be downloaded." }
-fm_running = { one = "Waiting for FM27 to close, so the game keeps the graphics card. {count} picture waits.", other = "Waiting for FM27 to close, so the game keeps the graphics card. {count} pictures wait." }
-fm_unknown = { one = "facegen cannot tell whether FM27 is open, so it waits to be safe. {count} picture waits.", other = "facegen cannot tell whether FM27 is open, so it waits to be safe. {count} pictures wait." }
+models_missing = { one = "{count:,} picture waits for the models to be downloaded.", other = "{count:,} pictures wait for the models to be downloaded." }
+fm_running = { one = "Waiting for FM27 to close, so the game keeps the graphics card. {count:,} picture waits.", other = "Waiting for FM27 to close, so the game keeps the graphics card. {count:,} pictures wait." }
+fm_unknown = { one = "facegen cannot tell whether FM27 is open, so it waits to be safe. {count:,} picture waits.", other = "facegen cannot tell whether FM27 is open, so it waits to be safe. {count:,} pictures wait." }
 other_worker = "Another facegen is generating; this one waits for it."
 drawing = "Generating {name} · {kind} · {group}"
 next_job = "Picture done; on to the next."
@@ -982,7 +982,7 @@ crashed = "Stopped after an error. Close facegen and start it again."
 gpu_fault = "The graphics driver reported an error. Close facegen and start it again to go on; the queue is kept."
 gpu_fault_child = "The graphics driver reported an error; starting again by itself."
 restarting = "{cause}{then}. Starting again in {seconds} s."
-gave_up = "Stopped: the graphics card or its driver failed {count} times within {minutes} minutes. The queue is kept. Resume tries again; if it keeps happening, close other programs that use the graphics card, or restart the PC."
+gave_up = "Stopped: the graphics card or its driver failed {count:,} times within {minutes} minutes. The queue is kept. Resume tries again; if it keeps happening, close other programs that use the graphics card, or restart the PC."
 stopped = "Stopped."
 
 [worker.cause]
@@ -1004,7 +1004,7 @@ hours_minutes = "{hours} h {minutes} min"
 saving = "Saving…"
 no_answer = "Not saved: facegen did not answer. Is it still running?"
 unsaved_confirm = "Some changes could not be saved (see the fields marked in red). Leave them unsaved?"
-ticked = "{count} ticked"
+ticked = "{count:,} ticked"
 switch_failed = "Not changed: facegen did not answer."
 
 [problem]
@@ -1107,7 +1107,7 @@ hint = "It holds the <code>games</code> and <code>graphics</code> folders, usual
 [guide.gpu]
 asking = "Checking the graphics card…"
 fine = "{card}, {gib} GB: the settings suit it."
-suggest = { one = "{card}, {gib} GB: {count} setting should change for this card.", other = "{card}, {gib} GB: {count} settings should change for this card." }
+suggest = { one = "{card}, {gib} GB: {count:,} setting should change for this card.", other = "{card}, {gib} GB: {count:,} settings should change for this card." }
 apply = "Apply"
 none = "No NVIDIA graphics card with CUDA was found, so pictures cannot be made on this PC."
 
@@ -1122,7 +1122,7 @@ save = "Save the game in FM27; facegen reads it by itself."
 press = "Save the game in FM27, then press Sync now."
 
 [guide.pictures]
-done = { one = "{count} picture made. In FM27: Settings → Reload Skin to see it.", other = "{count} pictures made. In FM27: Settings → Reload Skin to see them." }
+done = { one = "{count:,} picture made. In FM27: Settings → Reload Skin to see it.", other = "{count:,} pictures made. In FM27: Settings → Reload Skin to see them." }
 wait = "Starts once the save is read and the models are here."
 drawing = "Generating {name}…"
 starting = "Starting…"

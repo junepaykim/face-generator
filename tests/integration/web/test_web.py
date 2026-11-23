@@ -221,11 +221,11 @@ def test_players_pager_preserves_filter_and_sort(env: Env) -> None:
     first = unescape(env.client.get(first_url).text)
     assert "101 players" in first and "page 1 of 2" in first
     assert re.findall(rows, first) == expected[:100]
-    assert f'href="{second_url}">next ›</a>' in first
+    assert f'href="{second_url}">Next ›</a>' in first
     second = unescape(env.client.get(second_url).text)
     assert "page 2 of 2" in second
     assert re.findall(rows, second) == expected[100:]
-    assert f'href="{first_url}">‹ previous</a>' in second
+    assert f'href="{first_url}">‹ Previous</a>' in second
 
 
 def test_find_tick_and_generate_a_pre_existing_player(env: Env) -> None:
@@ -1004,3 +1004,39 @@ def test_pages_link_the_script_and_styles_by_version(env: Env) -> None:
     page = env.client.get("/settings/advanced").text
     assert f'/static/app.js?v={version}"' in page and f'/static/style.css?v={version}"' in page
     assert env.client.get(f"/static/app.js?v={version}").status_code == 200
+
+
+def test_every_page_starts_with_the_same_header(env: Env) -> None:
+    """Phase 17a: one header first on every page, above any message, so switching pages keeps
+    the title and what is below it in place. Settings keeps its two levels in it."""
+    titles = {
+        "/": "Dashboard",
+        "/gallery": "Gallery",
+        "/players": "Players",
+        "/review": "Review",
+        "/log": "Log",
+        "/settings": "Settings",
+        "/settings/advanced": "Settings",
+        "/hardware": "Auto-configure for my GPU",
+        f"/players/{MINE}": "Mine Player",
+    }
+    for url, title in titles.items():
+        main = env.client.get(f"{url}?msg=Done").text.split("<main>", 1)[1]
+        assert re.match(rf'\s*<header class="page-head">\s*<h1>{re.escape(title)}\b', main), url
+        assert main.count('class="page-head"') == 1 and main.count("<h1>") == 1, url
+        assert main.index("</header>") < main.index('<div class="flash ok" role="status">Done'), url
+    page = env.client.get("/settings").text
+    head = page[page.index('<header class="page-head">') : page.index("</header>")]
+    assert 'class="page-actions"' in head and 'class="tabs"' in head and 'class="info"' in head
+    page = env.client.get("/hardware").text
+    head = page[page.index('<header class="page-head">') : page.index("</header>")]
+    assert '<a href="/settings">← Settings</a>' in head
+
+
+def test_option_labels_start_with_a_capital(env: Env) -> None:
+    """Phase 17a: "Any group", not "any group", in the lists of choices (English)."""
+    for url in ("/players", "/gallery", f"/players/{MINE}"):
+        options = re.findall(r"<option[^>]*>([^<]+)</option>", unescape(env.client.get(url).text))
+        assert options, url
+        assert [o for o in options if o[0].islower()] == [], url
+    assert '<a href="/players">Clear</a>' in env.client.get("/players?group=a").text

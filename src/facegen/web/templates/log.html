@@ -1,6 +1,7 @@
 {% extends "base.html" %}
+{% from "_page.html" import page_head %}
 {% block title %}{{ t("nav.log") }}{% endblock %}
+{% block head %}{{ page_head(t("log.title")) }}{% endblock %}
 {% block content %}
-<h1>{{ t("log.title") }}</h1>
 <div data-refresh="/log/part" data-topic="log" data-rev="{{ rev }}">{% include "_log.html" %}</div>
 {% endblock %}

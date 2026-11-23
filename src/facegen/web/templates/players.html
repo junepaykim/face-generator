@@ -1,5 +1,7 @@
 {% extends "base.html" %}
+{% from "_page.html" import page_head %}
 {% block title %}{{ t("nav.players") }}{% endblock %}
+{% block head %}{{ page_head(t("nav.players")) }}{% endblock %}
 {% block content %}
 {% set photos_known = photo_status and photo_status.game_known %}
 <form class="filters" method="get" action="/players">

@@ -1,8 +1,7 @@
-{% from "_icons.html" import info as tip %}
-<div class="page-head">
-  <h1>{{ t("nav.settings") }} {{ tip(t("settings.intro_tip")) }}</h1>
+{% from "_page.html" import page_head %}
+{% call page_head(t("nav.settings"), t("settings.intro_tip")) %}
   <nav class="tabs" aria-label="{{ t('nav.settings') }}">
     <a href="/settings/basic"{% if level == "basic" %} class="on" aria-current="page"{% endif %}>{{ t("settings.level.basic") }}</a>
     <a href="/settings/advanced"{% if level == "advanced" %} class="on" aria-current="page"{% endif %}>{{ t("settings.level.advanced") }}</a>
   </nav>
-</div>
+{% endcall %}

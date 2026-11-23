@@ -54,10 +54,10 @@
     {% set left = estimate.seconds() if estimate.will_draw else estimate.seconds(held=True) %}
     <p class="queue-left"><strong class="big">{{ t("dash.queue.left", count=estimate.queued) }}</strong>
       <span class="muted">{% if left is not none %}{{ t("dash.queue.eta", time=dur(left)) }}{% else %}{{ t("dash.queue.eta_unknown") }}{% endif %}</span></p>
-    <div class="qbar" role="img" aria-label="{% for g in estimate.groups if g.queued %}{{ tr('group.' ~ g.group) }} {{ g.queued }}{{ ', ' if not loop.last }}{% endfor %}">
+    <div class="qbar" role="img" aria-label="{% for g in estimate.groups if g.queued %}{{ tr('group.' ~ g.group) }} {{ g.queued|num }}{{ ', ' if not loop.last }}{% endfor %}">
       {% for g in estimate.groups if g.queued %}<span class="qseg qseg-{{ g.group }}{{ ' held' if g.held == g.queued }}" style="flex-grow: {{ g.queued }}"></span>{% endfor %}
     </div>
-    <p class="qlegend">{% for g in estimate.groups if g.queued %}<span>{{ grp(g.group) }} {{ g.queued }}</span>{% endfor %}</p>
+    <p class="qlegend">{% for g in estimate.groups if g.queued %}<span>{{ grp(g.group) }} {{ g.queued|num }}</span>{% endfor %}</p>
     {% if estimate.held %}<p class="muted small">{{ t("dash.queue.held", count=estimate.held) }}</p>{% endif %}
     {% if queue %}
     <details id="queue-list"><summary>{{ t("dash.queue.list") }}</summary>
@@ -135,17 +135,17 @@
     <h2>{{ t("dash.counts.title") }}</h2>
     {% if counts %}
       <table class="kv">
-        <tr><th>{{ grp("a") }}</th><td><a href="/players?group=a">{{ counts.a }}</a> <span class="muted">({{ t("dash.counts.my_club", count=counts.a_my_club) }}{% if counts.a_staff %}{{ t("dash.counts.staff", count=counts.a_staff) }}{% endif %})</span></td></tr>
-        <tr><th>{{ grp("b") }}</th><td><a href="/players?group=b">{{ counts.b }}</a>{% if counts.youth or counts.media %} <span class="muted">({% if counts.youth %}{{ t("dash.counts.youth", count=counts.youth) }}{% endif %}{% if counts.youth and counts.media %}, {% endif %}{% if counts.media %}{{ t("dash.counts.media", count=counts.media) }}{% endif %})</span>{% endif %}</td></tr>
-        <tr><th>{{ grp("c") }}</th><td><a href="/players?group=c">{{ counts.c }}</a></td></tr>
-        <tr><th><span class="term" tabindex="0" data-tip="{{ tr('term.tracked') }}">{{ t("dash.counts.tracked") }}</span></th><td>{{ counts.tracked }}</td></tr>
-        <tr><th><span class="term" tabindex="0" data-tip="{{ tr('term.pinned') }}">{{ t("dash.counts.pinned") }}</span></th><td><a href="/players?group=pinned">{{ counts.pinned }}</a></td></tr>
+        <tr><th>{{ grp("a") }}</th><td><a href="/players?group=a">{{ counts.a|num }}</a> <span class="muted">({{ t("dash.counts.my_club", count=counts.a_my_club) }}{% if counts.a_staff %}{{ t("dash.counts.staff", count=counts.a_staff) }}{% endif %})</span></td></tr>
+        <tr><th>{{ grp("b") }}</th><td><a href="/players?group=b">{{ counts.b|num }}</a>{% if counts.youth or counts.media %} <span class="muted">({% if counts.youth %}{{ t("dash.counts.youth", count=counts.youth) }}{% endif %}{% if counts.youth and counts.media %}, {% endif %}{% if counts.media %}{{ t("dash.counts.media", count=counts.media) }}{% endif %})</span>{% endif %}</td></tr>
+        <tr><th>{{ grp("c") }}</th><td><a href="/players?group=c">{{ counts.c|num }}</a></td></tr>
+        <tr><th><span class="term" tabindex="0" data-tip="{{ tr('term.tracked') }}">{{ t("dash.counts.tracked") }}</span></th><td>{{ counts.tracked|num }}</td></tr>
+        <tr><th><span class="term" tabindex="0" data-tip="{{ tr('term.pinned') }}">{{ t("dash.counts.pinned") }}</span></th><td><a href="/players?group=pinned">{{ counts.pinned|num }}</a></td></tr>
         <tr><th>{{ t("dash.counts.pictures") }}</th><td>{{ t("dash.counts.pictures_value", current=counts.pictures, published=counts.published) }}</td></tr>
         {% if photo_status %}
         <tr><th>{{ t("dash.counts.no_photo") }}</th><td>{% if photo_status.game_known %}{{ t("dash.counts.no_photo_value", count=counts.without_photo, picked=counts.without_photo_picked) }}{% if not settings.no_photo.enabled %} <span class="muted">{{ t("dash.counts.off_in_settings") }}</span>{% endif %}
           {% else %}<span class="bad">{{ t("dash.counts.photos_unknown") }}</span>{% endif %}</td></tr>
         {% endif %}
-        <tr><th>{{ t("nav.review") }}</th><td><a href="/review">{{ counts.review }}</a></td></tr>
+        <tr><th>{{ t("nav.review") }}</th><td><a href="/review">{{ counts.review|num }}</a></td></tr>
       </table>
     {% else %}
       <p class="muted">{{ t("dash.counts.no_career") }}</p>

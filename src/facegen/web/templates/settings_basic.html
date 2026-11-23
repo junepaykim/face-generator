@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% from "_icons.html" import info as tip %}
-{% block title %}{{ t("nav.settings") }}{% endblock %}
-{% block content %}
 {% set level = "basic" %}
-{% include "_settings_head.html" %}
+{% block title %}{{ t("nav.settings") }}{% endblock %}
+{% block head %}{% include "_settings_head.html" %}{% endblock %}
+{% block content %}
 {% include "_settings_bar.html" %}
 
 {% macro tick(key, text, field_tip="") %}

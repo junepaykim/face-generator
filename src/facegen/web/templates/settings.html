@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% from "_icons.html" import info as tip %}
 {% from "_settings_field.html" import field, cell with context %}
-{% block title %}{{ t("nav.settings") }}{% endblock %}
-{% block content %}
 {% set level = "advanced" %}
-{% include "_settings_head.html" %}
+{% block title %}{{ t("nav.settings") }}{% endblock %}
+{% block head %}{% include "_settings_head.html" %}{% endblock %}
+{% block content %}
 
 {% if error %}<div class="flash bad">{{ error }}</div>{% endif %}
 

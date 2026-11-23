@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% from "_icons.html" import info as tip %}
+{% from "_page.html" import page_head %}
 {% block title %}{{ t("hardware.page_title") }}{% endblock %}
+{% block head %}{% call page_head(t("hardware.heading")) %}<a href="/settings">{{ t("hardware.back") }}</a>{% endcall %}{% endblock %}
 {% block content %}
-<h1>{{ t("hardware.heading") }}</h1>
-<p class="muted"><a href="/settings">{{ t("hardware.back") }}</a></p>
 
 <section class="card">
   <h2>{{ t("hardware.card_title") }}</h2>

@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% from "_icons.html" import info as tip %}
 {% from "_problem.html" import problem %}
+{% from "_page.html" import page_head %}
 {% block title %}{{ p.name }}{% endblock %}
+{% block head %}{% set title %}{{ p.name }}{% if p.is_goalkeeper %} <span class="tag">GK</span>{% endif %}{% if p.is_staff %} <span class="tag">{{ p.staff_job or t("tag.staff") }}</span>{% endif %}{% if p.media_role %} <span class="tag">{{ t("tag.media." ~ p.media_role) if tr.has("tag.media." ~ p.media_role) else p.media_role }}</span>{% endif %}{% if p.youth_team %} <span class="tag">{{ t("tag.youth_team") }}</span>{% endif %}{% endset %}{{ page_head(title) }}{% endblock %}
 {% block content %}
 {% set cur = d.current %}
 {% set portrait_gender = cur.gender if cur else settings.style.gender %}
@@ -16,7 +18,6 @@
   </div>
 
   <div class="facts">
-    <h1>{{ p.name }}{% if p.is_goalkeeper %} <span class="tag">GK</span>{% endif %}{% if p.is_staff %} <span class="tag">{{ p.staff_job or t("tag.staff") }}</span>{% endif %}{% if p.media_role %} <span class="tag">{{ t("tag.media." ~ p.media_role) if tr.has("tag.media." ~ p.media_role) else p.media_role }}</span>{% endif %}{% if p.youth_team %} <span class="tag">{{ t("tag.youth_team") }}</span>{% endif %}</h1>
     <p class="muted">{{ t("player.unique_id", uid=p.unique_id) }} · {% if p.is_staff %}{{ t("player.staff_now" if p.present else "player.staff_was") }}{% if p.staff_job %} ({{ p.staff_job }}){% endif %}{% elif p.media_role == "journalist" %}{{ t("player.journalist_local" if p.local_media else "player.journalist") }}{% elif p.media_role %}{{ t("player.press_local" if p.local_media else "player.press") }}{% else %}{{ t("players.origin_newgen" if p.is_newgen else "players.origin_existing") }}{% if p.youth_team %}{{ t("player.in_youth") }}{% endif %}{% endif %}{% if p.academy %}{{ t("player.from_academy") }}{% endif %}{% if p.is_staff or p.media_role %} · {% if p.female is none %}{{ t("player.gender_unknown") }}{% else %}{{ t("player.woman_in_save" if p.female else "player.man_in_save") }}{% endif %}{{ t("player.drawn_man" if portrait_gender == "man" else "player.drawn_woman") }}{% endif %}{% if not p.present %} · <strong>{{ t("player.left_staff" if p.is_staff else "player.not_in_save") }}</strong>{% endif %}</p>
     <table class="kv">
       <tr><th>{{ t("col.club") }}</th><td>{% if p.club_id is not none %}<a href="/players?club_id={{ p.club_id }}">{{ p.club or p.club_id }}</a>{% elif p.media_role %}<span class="muted">{{ t("common.none") }}</span>{% else %}{{ t("common.free_agent") }}{% endif %}

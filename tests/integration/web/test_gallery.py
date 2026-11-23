@@ -108,7 +108,7 @@ def test_filters_and_sorts(env: Env) -> None:
     assert "Mine Alpha" in groups["a"]
     assert get("role=staff") == []
     page = env.client.get("/gallery?role=staff").text
-    assert "No pictures match." in page and 'href="/gallery">clear' in page
+    assert "No pictures match." in page and 'href="/gallery">Clear' in page
     # Anything malformed falls back to its default.
     f = GalleryFilter.from_query({"where": "moon", "group": "z", "sort": "x", "page": "-3"})
     assert f == GalleryFilter()

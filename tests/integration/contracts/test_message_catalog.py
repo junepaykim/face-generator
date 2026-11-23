@@ -94,6 +94,34 @@ def test_every_text_formats() -> None:
             assert "{{" not in text, key
 
 
+# Values that count something: shown with a thousands separator, "1,552" (Phase 17a). The
+# durations ("{count} min") and the download sizes are worded by their own helpers.
+COUNT_FIELDS = {"count", "current", "published", "picked", "mapped", "done", "failed", "before",
+                "after", "page", "pages", "index", "files"}  # fmt: skip
+NOT_COUNTS = ("dur.", "setup.models.progress")
+
+
+def test_every_count_has_a_thousands_separator() -> None:
+    for lang in LANGUAGES:
+        for key, text in catalog(lang).items():
+            if key.startswith(NOT_COUNTS):
+                continue
+            for _, name, spec, _ in string.Formatter().parse(text):
+                if name in COUNT_FIELDS:
+                    assert spec == ",", f"{lang} {key}: {{{name}}}"
+
+
+@pytest.mark.parametrize(
+    ("lang", "expected"),
+    [("en", "1,552</a> (1,203 in FM27)"), ("ko", "1,552장</a> (FM27 적용 1,203장)")],
+)
+def test_big_numbers_read_the_same_way_everywhere(lang: str, expected: str) -> None:
+    t = presentation.HtmlText(Translator(lang))
+    assert expected in t("dash.counts.pictures_value", current=1552, published=1203)
+    num = presentation.create_templates().env.filters["num"]
+    assert (num(1552), num(12), num("?")) == ("1,552", "12", "?")
+
+
 def used_keys() -> set[str]:
     sources = [*(WEB / "templates").glob("*.html"), *WEB.rglob("*.py")]
     keys: set[str] = set()

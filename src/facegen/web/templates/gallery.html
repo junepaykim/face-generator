@@ -1,7 +1,8 @@
 {% extends "base.html" %}
+{% from "_page.html" import page_head %}
 {% block title %}{{ t("nav.gallery") }}{% endblock %}
+{% block head %}{{ page_head(t("nav.gallery")) }}{% endblock %}
 {% block content %}
-<h1>{{ t("nav.gallery") }}</h1>
 <form class="filters" method="get" action="/gallery" data-autosubmit>
   <input type="search" name="q" value="{{ f.q }}" placeholder="{{ t('players.filter.name') }}" aria-label="{{ t('players.filter.name') }}">
   <select name="where" aria-label="{{ t('gallery.where') }}">{% for k in wheres %}<option value="{{ k }}" {{ "selected" if f.where == k }}>{{ t("gallery.where_option." ~ k) }}</option>{% endfor %}</select>

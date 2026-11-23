@@ -1,8 +1,9 @@
 {% extends "base.html" %}
+{% from "_page.html" import page_head %}
 {% block title %}{{ t("update.updating_title") }}{% endblock %}
+{% block head %}{{ page_head(t("update.updating_title")) }}{% endblock %}
 {% block content %}
 <section class="card" id="updating">
-  <h2>{{ t("update.updating_title") }}</h2>
   <p>{{ t("update.updating", version=update.latest) }}</p>
 </section>
 {% endblock %}

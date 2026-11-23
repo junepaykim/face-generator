@@ -1,9 +1,10 @@
 {% extends "base.html" %}
 {% from "_icons.html" import info as tip %}
 {% from "_problem.html" import problem %}
+{% from "_page.html" import page_head %}
 {% block title %}{{ t("nav.review") }}{% endblock %}
+{% block head %}{{ page_head(t("nav.review"), t("review.tip")) }}{% endblock %}
 {% block content %}
-<h1>{{ t("nav.review") }} {{ tip(t("review.tip")) }}</h1>
 {% if items %}
 {# One form for the list: the ticked players go to the bar's buttons; each player's own buttons
    post to their page's action (formaction). Phase 12i. #}

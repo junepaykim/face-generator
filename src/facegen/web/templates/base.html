@@ -17,7 +17,7 @@
     <a href="/" class="{{ 'on' if path == '/' }}" title="{{ t('nav.dashboard') }}">{{ icon("dashboard") }}<span class="label">{{ t("nav.dashboard") }}</span>{% if worker_state %}<span class="dot-state state-{{ worker_state }}" title="{{ t('worker.state.' ~ worker_state) }}"></span>{% endif %}</a>
     <a href="/gallery" class="{{ 'on' if path == '/gallery' }}" title="{{ t('nav.gallery') }}">{{ icon("pictures") }}<span class="label">{{ t("nav.gallery") }}</span></a>
     <a href="/players" class="{{ 'on' if path.startswith('/players') }}" title="{{ t('nav.players') }}">{{ icon("players") }}<span class="label">{{ t("nav.players") }}</span></a>
-    <a href="/review" class="{{ 'on' if path == '/review' }}" title="{{ t('nav.review') }}">{{ icon("review") }}<span class="label">{{ t("nav.review") }}</span>{% if review_count %} <span class="count">{{ review_count }}</span>{% endif %}</a>
+    <a href="/review" class="{{ 'on' if path == '/review' }}" title="{{ t('nav.review') }}">{{ icon("review") }}<span class="label">{{ t("nav.review") }}</span>{% if review_count %} <span class="count">{{ review_count|num }}</span>{% endif %}</a>
     <a href="/log" class="{{ 'on' if path == '/log' }}" title="{{ t('nav.log') }}">{{ icon("log") }}<span class="label">{{ t("nav.log") }}</span></a>
     <a href="/settings" class="{{ 'on' if path.startswith('/settings') or path == '/hardware' }}" title="{{ t('nav.settings') }}">{{ icon("settings") }}<span class="label">{{ t("nav.settings") }}</span></a>
   </nav>
@@ -39,6 +39,7 @@
   </div>
 </aside>
 <main>
+{% block head %}{% endblock %}
 {% if setup and setup.state != "ready" and path != "/" %}
 <div class="flash setup">
   {% if setup.needs_folder %}<strong>{{ t("setup.banner.title") }}</strong> {% if setup.folder_gone %}{{ t("setup.banner.folder_gone", folder=folder_now) }}{% else %}{{ t("setup.banner.folder_missing") }}{% endif %} {{ t("setup.banner.choose") }}
