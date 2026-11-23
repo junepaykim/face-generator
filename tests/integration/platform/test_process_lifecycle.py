@@ -7,6 +7,7 @@ import subprocess
 import threading
 from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 from typing import cast
 
 import pytest
@@ -106,7 +107,17 @@ def test_worker_reaps_a_child_still_alive_after_stdout_eof(
         reader.join()
 
 
-def test_worker_stop_allows_the_child_to_finish_before_its_deadline(tmp_path: Path) -> None:
+def _fixed_clock(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """The worker proxy's monotonic clock, set by the test: [now]."""
+    now = [100.0]
+    monkeypatch.setattr(worker_process, "time", SimpleNamespace(monotonic=lambda: now[0]))
+    return now
+
+
+def test_worker_stop_allows_the_child_to_finish_before_its_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fixed_clock(monkeypatch)
     child = ChildAfterEOF()
     worker = WorkerProxy(
         child.args, db_path=tmp_path / "unused.db", stop_timeout=5, echo_stderr=False
@@ -115,9 +126,34 @@ def test_worker_stop_allows_the_child_to_finish_before_its_deadline(tmp_path: Pa
     stopping = Background(worker.stop)
     try:
         assert child.waiting.wait(3)
-        assert child.timeouts == [5]
+        assert child.timeouts == [5]  # Quit began just now: the whole budget is left
         assert pipes.decode(child.stdin.getvalue()) == {"cmd": "stop"}
         assert not stopping.done.is_set() and not child.killed.is_set()
+        child.finish()
+        stopping.join()
+        assert not child.killed.is_set() and child.poll() == 0
+    finally:
+        child.finish()
+        stopping.join()
+
+
+def test_worker_stop_waits_only_for_what_is_left_of_the_quit_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stop budget counts from the Quit request, not from the wait that follows it."""
+    now = _fixed_clock(monkeypatch)
+    child = ChildAfterEOF()
+    worker = WorkerProxy(
+        child.args, db_path=tmp_path / "unused.db", stop_timeout=5, echo_stderr=False
+    )
+    worker._child = child.process
+    worker.request_stop()
+    now[0] += 3  # other services stopped first
+    stopping = Background(worker.stop)
+    try:
+        assert child.waiting.wait(3)
+        assert child.timeouts == [2]
+        assert pipes.decode(child.stdin.getvalue()) == {"cmd": "stop"}  # sent once
         child.finish()
         stopping.join()
         assert not child.killed.is_set() and child.poll() == 0
