@@ -53,6 +53,7 @@ def test_request_and_result_contain_only_message_data() -> None:
         "unsupported": False,
         "warnings": ["a warning"],
         "notice": "unchanged",
+        "numbers": {},
     }
 
 

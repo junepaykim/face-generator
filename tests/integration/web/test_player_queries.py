@@ -173,6 +173,21 @@ def test_the_review_filter_is_the_players_whose_latest_job_failed(
     assert [r["unique_id"] for r in rows] == [queued_again] and rows[0]["job_status"] == "queued"
 
 
+def test_the_auto_update_filter_is_the_tracked_players(conn: sqlite3.Connection) -> None:
+    """The dashboard's Auto-update count links to this list (Phase 17e)."""
+    tracked = [add(conn, 100, 100, 10), add(conn, 90, 90, None)]
+    add(conn, 120, 120, 10)  # not tracked
+    gone = add(conn, 100, 100, 10, present=0)  # left the save: counted nowhere
+    elsewhere = add(conn, 100, 100, 10, career=2)
+    conn.execute(
+        "UPDATE players SET tracked = 1 WHERE unique_id IN (?, ?, ?, ?)",
+        (*tracked, gone, elsewhere),
+    )
+    rows, total = players_page(conn, CAREER, PlayerFilter(group="tracked"))
+    assert {r["unique_id"] for r in rows} == set(tracked) and total == 2
+    assert all(r["tracked"] == 1 for r in rows)
+
+
 def test_counting_joins_nothing_for_the_lookups() -> None:
     for f in (PlayerFilter(picture="review"), PlayerFilter(club="tel")):
         where, _ = player_queries._where(f)

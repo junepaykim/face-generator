@@ -150,10 +150,14 @@ def test_stopping_the_server_ends_the_streams(setup: tuple[TestClient, WorkerSer
     assert client.get("/events").text == f"retry: {live.RETRY_MS}\n\n"
 
 
-def test_the_progress_bar_moves_in_the_page(setup: tuple[TestClient, WorkerService]) -> None:
-    """The page has the script that moves it; the server sends no event for it."""
+def test_the_clocks_tick_in_the_page(setup: tuple[TestClient, WorkerService]) -> None:
+    """The time a picture has taken and when the queue will be done (Phase 17e) move in the
+    page itself; the server sends no event for them, and they are not a change of the part."""
     client, _ = setup
     script = client.get(re.search(r'src="(/static/app.js[^"]*)"', client.get("/").text)[1]).text
     assert 'new EventSource("/events")' in script
-    assert "progress[data-since][data-each]" in script
+    assert '"[data-since] [data-elapsed]"' in script and '"[data-done-in]"' in script
+    assert 'querySelectorAll("[data-elapsed], [data-done-in]")' in script  # key() blanks them
+    assert "new Intl.DateTimeFormat(LANG, shown)" in script
+    assert "progress[data-since]" not in script
     assert "setInterval(refresh, 3000)" in script  # only without EventSource

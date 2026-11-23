@@ -193,28 +193,34 @@ advice = "Existing pictures and the queue are kept, and nothing new is queued fr
 
 [dash.worker]
 title = "Status"
-drawing = "Generating <a href=\"{url}\">{name}</a> · {kind} · {group}"
+drawing = "Generating {name} · {kind} · {group}"
 restart = "Close Kitshot and start it again to go on."
 resume = "Resume"
 pause = "Pause"
 generate_now = "Generate now"
-generate_now_title = "Generate the whole queue now, every group, even while FM27 is running"
 absent = "Pictures are not generated in this process (<code>facegen serve --no-worker</code>)."
+
+[dash.worker.generate_now_why]
+fm = "Generate now, even while FM27 is running"
+held = { one = "Also generate the {count:,} picture in groups not drawn automatically", other = "Also generate the {count:,} pictures in groups not drawn automatically" }
+both = "Generate the whole queue now, every group, even while FM27 is running"
 
 [dash.now]
 current_alt = "{name}'s current picture"
-each = "About {each} per picture"
+current = "Current"
+timing = "{elapsed} / avg {each}"
 
 [dash.recent]
 title = "Latest pictures"
-all = "Gallery"
+all = "View all in Gallery →"
 
 [dash.sync]
-careers = "FM27 is shown the pack of <strong>{newest}</strong>, whose save is the newest. Other careers: {others}."
+active = "Active pack: <strong>{name}</strong> (newest save)"
+others = "Other careers: {names}"
+recovered = "Recovered the active career's FM27 pack."
 title = "Last sync"
 save = "Save"
 when = "When"
-in_game = "In-game"
 failed = "Failed: {error}"
 never = "Never synced."
 syncing = "syncing"
@@ -223,6 +229,14 @@ nothing_new = "Nothing new in the save."
 warnings = { one = "{count:,} warning", other = "{count:,} warnings" }
 now = "Sync now"
 now_title = "Read the newest save and update the queue"
+
+[dash.sync.chip]
+queued = "{count:,} queued"
+new_at_my_club = "{count:,} new at my club"
+new_staff = "{count:,} new staff"
+updated = "{count:,} updated"
+cancelled = "{count:,} cancelled"
+none = "Queue unchanged"
 
 [dash.sync.trigger]
 poller = "the save watcher"
@@ -369,6 +383,7 @@ b = "{b} group"
 c = "{c} group"
 none = "No group"
 pinned = "Pinned"
+tracked = "Auto-update"
 
 [players.picture]
 any = "Any picture state"
@@ -997,6 +1012,15 @@ restarting = "{cause}{then}. Starting again in {seconds} s."
 gave_up = "Stopped: the graphics card or its driver failed {count:,} times within {minutes} minutes. The queue is kept. Resume tries again; if it keeps happening, close other programs that use the graphics card, or restart the PC."
 stopped = "Stopped."
 
+# The picture being drawn, by job kind (Phase 17e): an upgrade names its group once.
+[worker.drawing]
+initial = "Generating {name} · first picture · {group}"
+kit = "Generating {name} · new kit · {group}"
+age = "Generating {name} · older look · {group}"
+upgrade = "Upgrading {name} to {group}"
+reroll = "Generating {name} · new face · {group}"
+redraw = "Generating {name} · new picture · {group}"
+
 [worker.short]
 starting = "Starting"
 no_career = "No career yet"
@@ -1033,12 +1057,14 @@ seconds = "{count} s"
 minutes = "{count} min"
 hours = "{count} h"
 hours_minutes = "{hours} h {minutes} min"
+minutes_seconds = "{minutes} min {seconds} s"
 
 [js]
 saving = "Saving…"
 no_answer = "Not saved: Kitshot did not answer. Is it still running?"
 unsaved_confirm = "Some changes could not be saved (see the fields marked in red). Leave them unsaved?"
 ticked = "{count:,} ticked"
+done_at = "done ≈ {time}"
 
 [problem]
 details = "Technical details"

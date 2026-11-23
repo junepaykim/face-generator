@@ -83,7 +83,7 @@ def test_every_current_picture_newest_first(env: Env) -> None:
     )
     assert "그림 4장" in env.client.get("/gallery", headers=KOREAN_WINDOWS).text
     # The dashboard's link goes here.
-    assert 'href="/gallery">Gallery</a>' in env.client.get("/status").text
+    assert 'href="/gallery">View all in Gallery →</a>' in env.client.get("/status").text
 
     # A picture FM27 no longer shows is not on the wall.
     with env.conn() as conn:

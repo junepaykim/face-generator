@@ -99,7 +99,13 @@ class SyncStatus:
     warnings: list[str] = field(default_factory=list)
     notice: str | None = None
     """Sync now read a save that was already synced: FM27 has not saved since."""
+    numbers: dict[str, int] = field(default_factory=dict)
+    """What the last sync did to the queue, by SYNC_NUMBERS name; empty unless it synced."""
 
+
+SYNC_NUMBERS = ("queued", "new_at_my_club", "new_staff", "updated", "cancelled")
+"""The counts a sync reports (SyncResult.numbers), in the order a page shows them (Phase 17e):
+pictures queued, newcomers at my club and on its staff, queued jobs changed and cancelled."""
 
 SYNCED, UNREADABLE, FAILED = "synced", "unreadable", "failed"
 """How a sync ended. UNREADABLE is recorded in the database and not retried until the save
@@ -126,6 +132,9 @@ class SyncResult:
     unsupported: bool = False
     warnings: tuple[str, ...] = ()
     notice: str | None = None
+    numbers: dict[str, int] = field(default_factory=dict)
+    """SYNC_NUMBERS -> count, for the pages to word; `message` keeps the English line for the
+    log and the tray."""
 
 
 class SyncControl(Protocol):

@@ -1111,8 +1111,17 @@ def test_dashboard_names_the_career_fm27_is_shown(env: Env) -> None:
     )
     c.close()
     text = env.client.get("/").text
-    assert "FM27 is shown the pack of <strong>two</strong>" in text
-    assert "Other careers: career" in text
+    # Phase 17e: the active pack on a line of its own, the other careers muted below it.
+    assert (
+        '<p class="small careers-active">Active pack: <strong>two</strong> (newest save)</p>'
+        in text
+    )
+    assert '<p class="muted small careers-others">Other careers: career</p>' in text
+    korean = env.client.get("/", headers=KOREAN_WINDOWS).text
+    assert (
+        "FM27 적용: <strong>two</strong> (최신 세이브)" in korean
+        and "다른 커리어: career" in korean
+    )
 
 
 def test_pages_link_the_script_and_styles_by_version(env: Env) -> None:

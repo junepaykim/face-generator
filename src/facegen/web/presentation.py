@@ -22,7 +22,7 @@ from facegen.persistence.jobs import load_career
 from facegen.setup.models import REPOS, gigabytes
 from facegen.web import live
 from facegen.web.dependencies import AppDependencies, translator_for
-from facegen.web.messages import band_name, duration, side_line
+from facegen.web.messages import band_name, clock, drawing_key, duration, side_line
 
 HERE = Path(__file__).resolve().parent
 
@@ -31,6 +31,10 @@ JS_TEXTS = (
     "js.no_answer",
     "js.unsaved_confirm",
     "js.ticked",
+    "js.done_at",
+    "dur.seconds",
+    "dur.minutes_seconds",
+    "dur.hours_minutes",
 )
 """Catalog texts the page's script uses, handed to it in the page."""
 
@@ -96,6 +100,9 @@ def text_context(tr: Translator, settings: Settings) -> dict[str, Any]:
         "display": settings.display,
         "js_texts": {key: tr.template(key) for key in JS_TEXTS},
         "dur": lambda seconds: duration(seconds, tr),
+        "clock": lambda seconds: clock(seconds, tr),
+        # The sentence for the picture being drawn, by its job kind (Phase 17e).
+        "drawing_key": lambda kind: drawing_key(kind, tr, "dash.worker.drawing"),
         "grp": lambda group: group_chip(group, tr),
         "band": lambda wording: band_name(wording, tr),
     }

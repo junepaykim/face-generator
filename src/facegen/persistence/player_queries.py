@@ -134,6 +134,8 @@ def _where(f: PlayerFilter) -> tuple[str, list[Any]]:
             clauses.append("p.group_name IS NULL")
         case "pinned":
             clauses.append("p.pin IS NOT NULL")
+        case "tracked":  # auto-update: kept up to date when they move or age (Phase 17e)
+            clauses.append("p.tracked = 1")
     match f.picture:
         case "yes":
             clauses.append("i.id IS NOT NULL")

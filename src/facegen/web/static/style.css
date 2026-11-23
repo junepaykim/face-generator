@@ -363,15 +363,30 @@ a.button:hover { border-color: var(--accent); text-decoration: none; }
 .now-pic-none { display: grid; place-items: center; background: var(--row); border: 1px dashed var(--line); }
 .now-pic-none .now-pic-mark { width: 40%; height: auto; aspect-ratio: 1; object-fit: contain; border-radius: 0;
                               opacity: .7; }
-.now-pic-none.busy .now-pic-mark { animation: pulse 1.6s ease-in-out infinite; }
-@keyframes pulse { 50% { opacity: .35; } }
-@media (prefers-reduced-motion: reduce) { .now-pic-none.busy .now-pic-mark { animation: none; } }
+/* While a picture is drawn (Phase 17e): the one FM27 shows now, labelled "Current", under a faint
+   shimmer; or the placeholder, shimmering, for someone drawn for the first time. */
+.now-current { display: block; width: 120px; border-radius: 8px; }
+.now-current.shimmer::after { opacity: .45; }
+@media (prefers-reduced-motion: reduce) {
+  .now-pic-none.shimmer { background-image: repeating-linear-gradient(-45deg, transparent 0 6px, var(--shine) 6px 12px); }
+}
+.now-label { position: absolute; left: 6px; bottom: 6px; z-index: 1; font-size: 11px;
+             background: var(--veil-button); color: var(--veil-fg); }
 .now-main h2 { display: flex; align-items: center; gap: 8px; }
 .now-text { font-size: 15px; margin: 4px 0 8px; }
 .now-progress { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 8px; }
+.now-progress .shimmer-bar { flex: 1 1 160px; }
+.now-clock { white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* Status and Queue side by side in a wide window (Phase 17e); one above the other below. */
+@media (min-width: 1200px) {
+  #status:has(> #now + #queue) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+                                 column-gap: 14px; align-items: start; }
+  #status:has(> #now + #queue) > * { grid-column: 1 / -1; }
+  #status > #now:has(+ #queue), #status > #now + #queue { grid-column: auto; }
+}
 @media (max-width: 600px) {
   .card.now { grid-template-columns: 72px minmax(0, 1fr); gap: 12px; }
-  .now-pic img, .now-pic-none { width: 72px; }
+  .now-pic img, .now-pic-none, .now-current { width: 72px; }
 }
 .thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
 /* A card's picture opens the lightbox and its name the player's page (Phase 17b). */
@@ -396,6 +411,9 @@ a.button:hover { border-color: var(--accent); text-decoration: none; }
 .thumb-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 6px; min-width: 0; }
 .thumb-meta time { white-space: nowrap; }
 h2 .small { font-weight: 400; margin-left: 6px; }
+/* A card's title with a link at its right end ("View all in Gallery →", Phase 17e). */
+h2.card-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
+h2.card-head > a { margin-left: auto; }
 h2.inline { display: inline; }
 
 /* What a group or a term means, and an ⓘ's text, on hover (app.js places one box by the word). */
@@ -429,6 +447,18 @@ legend .info, h1 .info, h2 .info { margin-left: 2px; }
 .qlegend span { display: inline-flex; align-items: center; gap: 4px; }
 details > summary { margin-top: 6px; }
 #queue-list table { margin-top: 6px; }
+
+/* Last sync (Phase 17e): what it did as chips, its warnings as a badge that opens their list,
+   and which career's pack FM27 is shown. */
+.sync-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+.sync-warnings > summary { list-style: none; cursor: pointer; width: fit-content; border-radius: 999px; }
+.sync-warnings > summary::-webkit-details-marker { display: none; }
+.sync-warnings > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.careers-active { margin: 10px 0 0; }
+.careers-others { margin: 2px 0 0; }
+/* The Players card's rows in three groups with a line between them (Phase 17e). */
+table.kv-groups tbody + tbody tr:first-child > * { border-top: 1px solid var(--line); padding-top: 6px; }
+table.kv-groups tbody tr:last-child > * { padding-bottom: 6px; }
 
 /* Settings: an age table's first age, or - for a look left out; group tick boxes. */
 .field input.band { width: 72px; text-align: right; }

@@ -138,6 +138,18 @@ def sync_save(
     )
 
 
+def sync_numbers(report: SyncReport) -> dict[str, int]:
+    """What the sync did to the queue, by name (runtime.contracts.SYNC_NUMBERS): the pages word
+    these (Phase 17e), while `describe_sync` keeps the English line for the log and the tray."""
+    return {
+        "queued": sum(report.enqueued.values()),
+        "new_at_my_club": report.new_at_my_club,
+        "new_staff": report.new_staff,
+        "updated": report.updated,
+        "cancelled": report.cancelled,
+    }
+
+
 def describe_sync(report: SyncReport) -> str:
     queued = sum(report.enqueued.values())
     text = (
@@ -207,6 +219,7 @@ def execute_sync(
     outcome: SyncOutcome = FAILED
     warnings: list[str] = []
     notice = None
+    numbers: dict[str, int] = {}
     conn = db.connect(Path(request.db_path), busy_timeout_ms=BUSY_TIMEOUT_MS)
     try:
         settings = load_settings(conn, defaults_path)
@@ -230,6 +243,7 @@ def execute_sync(
             )
             on_committed()
             message = describe_sync(report)
+            numbers = sync_numbers(report)
             warnings = list(report.warnings)
             log(message)
             if notice:
@@ -272,6 +286,7 @@ def execute_sync(
             unsupported=unsupported,
             warnings=tuple(warnings),
             notice=notice if outcome == SYNCED else None,
+            numbers=numbers if outcome == SYNCED else {},
         )
         on_result(result)
     return result

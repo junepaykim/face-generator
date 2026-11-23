@@ -166,5 +166,6 @@ class SyncService:
                 unsupported=result.unsupported,
                 warnings=list(result.warnings),
                 notice=result.notice,
+                numbers=dict(result.numbers),
             )
             self._lock.notify_all()

@@ -10,13 +10,13 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 from starlette.concurrency import run_in_threadpool
 
-from facegen.core.estimate import estimate_queue, seconds_per_picture
+from facegen.core.estimate import QueueEstimate, estimate_queue, seconds_per_picture
 from facegen.core.job_records import Career
 from facegen.core.settings_values import Settings
 from facegen.i18n import Translator
 from facegen.persistence import photo_index
 from facegen.persistence.jobs import load_career
-from facegen.runtime.contracts import ERROR_REASONS, SyncStatus, WorkerStatus
+from facegen.runtime.contracts import ERROR_REASONS, SYNC_NUMBERS, SyncStatus, WorkerStatus
 from facegen.web import guide, live, queries
 from facegen.web.context import SetupState
 from facegen.web.dependencies import AppDependencies, translator_for
@@ -24,6 +24,21 @@ from facegen.web.forms import describe_key, value_text
 from facegen.web.messages import problem, seconds_since, worker_sentence
 from facegen.web.presentation import Presentation
 from facegen.web.responses import _redirect, _safe_next
+
+WAITING_FOR_FM = frozenset({"fm_running", "fm_unknown"})
+
+
+def generate_now_offer(worker: WorkerStatus | None, estimate: QueueEstimate | None) -> str | None:
+    """Why Generate now would change something, which its button's tip says (Phase 17e):
+    "fm" while the worker waits for FM27 to close, "held" while pictures wait in groups not
+    drawn automatically, "both"; None when it would do nothing, so the button is not shown."""
+    if worker is None or worker.gpu_fault or worker.generate_now:
+        return None
+    fm = worker.reason in WAITING_FOR_FM
+    held = bool(estimate and estimate.held)
+    if fm and held:
+        return "both"
+    return "fm" if fm else "held" if held else None
 
 
 def create_router(deps: AppDependencies, presentation: Presentation) -> APIRouter:
@@ -60,7 +75,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                 "job": job,
                 "picture": queries.current_picture_id(conn, career.id, job.unique_id),
                 "each": each,
-                "percent": min(99, round(100 * elapsed / each)) if elapsed and each else None,
+                "elapsed": elapsed or 0.0,  # ticks on in the page (app.js, data-since)
             }
         raw = None
         if worker is not None and worker.reason in ERROR_REASONS:
@@ -70,6 +85,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             "worker_text": worker_sentence(worker, t) if worker else "",
             "drawing": drawing,
             "estimate": estimate,
+            "generate_now": generate_now_offer(worker, estimate),
             "recent": queries.recent_pictures(conn, career.id) if career else [],
         }
 
@@ -141,6 +157,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             "careers": queries.careers(conn),
             "worker": worker,
             "sync": sync,
+            "sync_numbers": SYNC_NUMBERS,
             "sync_problem": problem("sync", t("problem.sync"), sync_raw, t),
             "download_problem": problem("download", t("problem.download"), download_error, t),
             "settings": settings,

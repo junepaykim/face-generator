@@ -193,28 +193,34 @@ advice = "기존 그림과 대기열은 그대로이며, 이 세이브로는 대
 
 [dash.worker]
 title = "상태"
-drawing = "<a href=\"{url}\">{name}</a> 생성 중 · {kind} · {group}"
+drawing = "{name} 생성 중 · {kind} · {group}"
 restart = "Kitshot을 다시 시작하면 이어서 생성합니다."
 resume = "다시 시작"
 pause = "일시 정지"
 generate_now = "생성 시작"
-generate_now_title = "FM27 실행 여부와 관계없이 모든 그룹의 대기열을 지금 생성합니다"
 absent = "이 프로세스에서는 그림을 생성하지 않습니다(<code>facegen serve --no-worker</code>)."
+
+[dash.worker.generate_now_why]
+fm = "FM27이 실행 중이어도 지금 생성합니다"
+held = "자동으로 생성하지 않는 그룹의 그림 {count:,}장도 생성합니다"
+both = "FM27 실행 여부와 관계없이 모든 그룹의 대기열을 지금 생성합니다"
 
 [dash.now]
 current_alt = "{name}의 현재 그림"
-each = "한 장에 약 {each} 소요"
+current = "현재 그림"
+timing = "{elapsed} / 평균 {each}"
 
 [dash.recent]
 title = "방금 생성된 그림"
-all = "그림 갤러리"
+all = "갤러리에서 모두 보기 →"
 
 [dash.sync]
-careers = "FM27에는 세이브가 가장 최신인 <strong>{newest}</strong>의 그림이 보입니다. 다른 커리어: {others}."
+active = "FM27 적용: <strong>{name}</strong> (최신 세이브)"
+others = "다른 커리어: {names}"
+recovered = "중단됐던 FM27 그림 적용을 마쳤습니다."
 title = "마지막 동기화"
 save = "세이브"
 when = "시각"
-in_game = "게임 날짜"
 failed = "실패: {error}"
 never = "아직 동기화하지 않았습니다."
 syncing = "동기화 중"
@@ -223,6 +229,14 @@ nothing_new = "세이브에 바뀐 내용이 없습니다."
 warnings = "경고 {count:,}개"
 now = "지금 동기화"
 now_title = "최신 세이브를 읽고 대기열을 갱신합니다"
+
+[dash.sync.chip]
+queued = "대기열 {count:,}장 추가"
+new_at_my_club = "내 구단 새 선수 {count:,}명"
+new_staff = "새 스태프 {count:,}명"
+updated = "{count:,}장 갱신"
+cancelled = "{count:,}장 취소"
+none = "대기열 변화 없음"
 
 [dash.sync.trigger]
 poller = "세이브 감시"
@@ -369,6 +383,7 @@ b = "{b} 그룹"
 c = "{c} 그룹"
 none = "그룹 없음"
 pinned = "고정됨"
+tracked = "연동"
 
 [players.picture]
 any = "그림 상태 전체"
@@ -997,6 +1012,14 @@ restarting = "{cause}{then}. {seconds}초 뒤 다시 시작합니다."
 gave_up = "생성을 멈췄습니다. {minutes}분 동안 그래픽카드나 드라이버 오류가 {count:,}번 났습니다. 대기열은 그대로입니다. ‘다시 시작’을 누르면 다시 시도하고, 계속 반복되면 그래픽카드를 쓰는 다른 프로그램을 닫거나 PC를 다시 시작하세요."
 stopped = "멈췄습니다."
 
+[worker.drawing]
+initial = "{name} 생성 중 · 첫 그림 · {group}"
+kit = "{name} 생성 중 · 새 유니폼 · {group}"
+age = "{name} 생성 중 · 나이 변화 · {group}"
+upgrade = "{name} {group}로 승격 중"
+reroll = "{name} 생성 중 · 새 얼굴 · {group}"
+redraw = "{name} 생성 중 · 새 그림 · {group}"
+
 [worker.short]
 starting = "시작 중"
 no_career = "커리어 없음"
@@ -1033,12 +1056,14 @@ seconds = "{count}초"
 minutes = "{count}분"
 hours = "{count}시간"
 hours_minutes = "{hours}시간 {minutes}분"
+minutes_seconds = "{minutes}분 {seconds}초"
 
 [js]
 saving = "저장 중…"
 no_answer = "저장하지 못했습니다. Kitshot이 응답하지 않습니다. 실행 중인지 확인하세요."
 unsaved_confirm = "저장하지 못한 변경이 있습니다(빨간 칸). 저장하지 않고 넘어갈까요?"
 ticked = "{count:,}명 선택"
+done_at = "{time}쯤 완료"
 
 [problem]
 details = "자세히"

@@ -14,16 +14,21 @@
 {% elif worker %}
 <section class="card now" id="now">
   <div class="now-pic">
-    {% if drawing and drawing.picture %}<a href="/players/{{ drawing.job.unique_id }}"><img src="/pictures/{{ drawing.picture }}?size=192" alt="{{ tr('dash.now.current_alt', name=drawing.job.name) }}"></a>
-    {% else %}<div class="now-pic-none{{ ' busy' if drawing }}" aria-hidden="true"><img class="now-pic-mark" src="/static/kitshot.svg?v={{ static_version }}" alt="" width="48" height="48"></div>{% endif %}
+    {# The picture FM27 shows now, labelled, while its replacement is drawn; a placeholder
+       for someone drawn for the first time. Both shimmer while drawing (Phase 17e). #}
+    {% if drawing and drawing.picture %}<a class="now-current shimmer" href="/players/{{ drawing.job.unique_id }}"><img src="/pictures/{{ drawing.picture }}?size=192" alt="{{ tr('dash.now.current_alt', name=drawing.job.name) }}"><span class="badge now-label">{{ t("dash.now.current") }}</span></a>
+    {% else %}<div class="now-pic-none{{ ' shimmer' if drawing }}" aria-hidden="true"><img class="now-pic-mark" src="/static/kitshot.svg?v={{ static_version }}" alt="" width="48" height="48"></div>{% endif %}
   </div>
   <div class="now-main">
     <h2>{{ t("dash.worker.title") }} <span class="state state-{{ worker.state }}">{{ t("worker.state." ~ worker.state) }}</span></h2>
     {% if drawing %}
-      <p class="now-text">{{ t("dash.worker.drawing", url="/players/" ~ drawing.job.unique_id, name=drawing.job.name, kind=tr("kind." ~ drawing.job.kind), group=grp(drawing.job.group)) }}</p>
+      {% set who %}<a href="/players/{{ drawing.job.unique_id }}">{{ drawing.job.name }}</a>{% endset %}
+      <p class="now-text">{{ t(drawing_key(drawing.job.kind), name=who, kind=tr("kind." ~ drawing.job.kind), group=grp(drawing.job.group)) }}</p>
+      {# No end is known, so no percentage: a shimmer, and the time so far against the usual. #}
       <div class="now-progress">
-        {% if drawing.percent is not none %}<progress max="100" value="{{ drawing.percent }}" data-since="{{ worker.since }}" data-each="{{ drawing.each }}"></progress>{% else %}<progress></progress>{% endif %}
-        {% if drawing.each %}<span class="muted small">{{ t("dash.now.each", each=dur(drawing.each)) }}</span>{% endif %}
+        <span class="shimmer shimmer-bar" aria-hidden="true"></span>
+        {% set ticking %}<span data-elapsed>{{ clock(drawing.elapsed) }}</span>{% endset %}
+        <span class="muted small now-clock" data-since="{{ worker.since or '' }}">{% if drawing.each %}{{ t("dash.now.timing", elapsed=ticking, each=dur(drawing.each)) }}{% else %}{{ ticking }}{% endif %}</span>
       </div>
     {% else %}
       <p class="now-text">{{ worker_text }}</p>
@@ -37,8 +42,8 @@
       {% else %}
         <form method="post" action="/worker/pause"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button>{{ t("dash.worker.pause") }}</button></form>
       {% endif %}
-      {% if not worker.generate_now and not worker.gpu_fault %}
-        <form method="post" action="/worker/generate-now"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button title="{{ t('dash.worker.generate_now_title') }}">{{ t("dash.worker.generate_now") }}</button></form>
+      {% if generate_now %}
+        <form method="post" action="/worker/generate-now"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button title="{{ tr('dash.worker.generate_now_why.' ~ generate_now, count=estimate.held if estimate else 0) }}">{{ t("dash.worker.generate_now") }}</button></form>
       {% endif %}
     </div>
   </div>
@@ -53,7 +58,7 @@
   {% if estimate.queued %}
     {% set left = estimate.seconds() if estimate.will_draw else estimate.seconds(held=True) %}
     <p class="queue-left"><strong class="big">{{ t("dash.queue.left", count=estimate.queued) }}</strong>
-      <span class="muted">{% if left is not none %}{{ t("dash.queue.eta", time=dur(left)) }}{% else %}{{ t("dash.queue.eta_unknown") }}{% endif %}</span></p>
+      <span class="muted">{% if left is not none %}{{ t("dash.queue.eta", time=dur(left)) }}{% if worker and worker.state == "running" %}<span data-done-in="{{ left|round|int }}"></span>{% endif %}{% else %}{{ t("dash.queue.eta_unknown") }}{% endif %}</span></p>
     <div class="qbar" role="img" aria-label="{% for g in estimate.groups if g.queued %}{{ tr('group.' ~ g.group) }} {{ g.queued|num }}{{ ', ' if not loop.last }}{% endfor %}">
       {% for g in estimate.groups if g.queued %}<span class="qseg qseg-{{ g.group }}{{ ' held' if g.held == g.queued }}" style="flex-grow: {{ g.queued }}"></span>{% endfor %}
     </div>
@@ -88,7 +93,7 @@
 
 {% if recent %}
 <section class="card" id="recent" data-pictures>
-  <h2>{{ t("dash.recent.title") }} <a class="small" href="/gallery">{{ t("dash.recent.all") }}</a></h2>
+  <h2 class="card-head">{{ t("dash.recent.title") }} <a class="small" href="/gallery">{{ t("dash.recent.all") }}</a></h2>
   <div class="thumbs">
     {% for r in recent %}
     {% set version = r.master_path|picture_filename %}
@@ -110,21 +115,25 @@
       <table class="kv">
         <tr><th>{{ t("dash.sync.save") }}</th><td>{{ last_sync.save_file }}</td></tr>
         <tr><th>{{ t("dash.sync.when") }}</th><td><time datetime="{{ last_sync.finished_at or last_sync.started_at }}">{{ (last_sync.finished_at or last_sync.started_at)[:16]|replace("T", " ") }}</time></td></tr>
-        <tr><th>{{ t("dash.sync.in_game") }}</th><td>{{ last_sync.game_date or t("common.unknown") }}</td></tr>
       </table>
-
     {% else %}
       <p class="muted">{{ t("dash.sync.never") }}</p>
     {% endif %}
     {% if sync %}
+      {# What the sync did, as chips worded here (Phase 17e); the career and the in-game date
+         are in the sidebar. #}
       {% if sync.running %}<p><span class="state state-running">{{ t("dash.sync.syncing") }}</span> {{ t("dash.sync.running", started=sync.started) }}</p>
+      {% elif sync.numbers %}<p class="sync-chips">{% for name in sync_numbers if sync.numbers.get(name) %}<span class="badge">{{ t("dash.sync.chip." ~ name, count=sync.numbers[name]) }}</span>{% else %}<span class="badge">{{ t("dash.sync.chip.none") }}</span>{% endfor %}</p>
+      {% elif sync.message and sync.trigger == "publish recovery" %}<p class="ok small">{{ t("dash.sync.recovered") }}</p>
       {% elif sync.message %}<p class="ok small">{{ sync.message }}</p>{% endif %}
       {% if sync.notice and not sync.running %}<p class="small"><strong>{{ t("dash.sync.nothing_new") }}</strong> {{ sync.notice }}</p>{% endif %}
-      {% if sync.warnings %}<details class="problem-detail" id="sync-warnings"><summary>{{ t("dash.sync.warnings", count=sync.warnings|length) }}</summary><pre>{{ sync.warnings|join("\n") }}</pre></details>{% endif %}
+      {% if sync.warnings %}<details class="problem-detail sync-warnings" id="sync-warnings"><summary><span class="badge badge-warn">{{ t("dash.sync.warnings", count=sync.warnings|length) }}</span></summary><pre>{{ sync.warnings|join("\n") }}</pre></details>{% endif %}
     {% endif %}
     {% if sync_problem %}{{ problem(sync_problem) }}{% endif %}
     {% if careers|length > 1 %}
-      <p class="muted small">{{ t("dash.sync.careers", newest=careers[0].display_name, others=careers[1:]|map(attribute="display_name")|join(", ")) }}</p>
+      {# The newest save decides the pack FM27 is shown (spec section 8); no switch. #}
+      <p class="small careers-active">{{ t("dash.sync.active", name=careers[0].display_name) }}</p>
+      <p class="muted small careers-others">{{ t("dash.sync.others", names=careers[1:]|map(attribute="display_name")|join(", ")) }}</p>
     {% endif %}
     <div class="buttons">
       <form method="post" action="/sync"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button {% if not sync or sync.running %}disabled{% endif %} title="{{ t('dash.sync.now_title') }}">{{ t("dash.sync.now") }}</button></form>
@@ -134,18 +143,25 @@
   <div class="card">
     <h2>{{ t("dash.counts.title") }}</h2>
     {% if counts %}
-      <table class="kv">
+      {# Three groups of rows, each row a link to who it counts (Phase 17e). #}
+      <table class="kv kv-groups">
+        <tbody>
         <tr><th>{{ grp("a") }}</th><td><a href="/players?group=a">{{ counts.a|num }}</a> <span class="muted">({{ t("dash.counts.my_club", count=counts.a_my_club) }}{% if counts.a_staff %}{{ t("dash.counts.staff", count=counts.a_staff) }}{% endif %})</span></td></tr>
         <tr><th>{{ grp("b") }}</th><td><a href="/players?group=b">{{ counts.b|num }}</a>{% if counts.youth or counts.media %} <span class="muted">({% if counts.youth %}{{ t("dash.counts.youth", count=counts.youth) }}{% endif %}{% if counts.youth and counts.media %}, {% endif %}{% if counts.media %}{{ t("dash.counts.media", count=counts.media) }}{% endif %})</span>{% endif %}</td></tr>
         <tr><th>{{ grp("c") }}</th><td><a href="/players?group=c">{{ counts.c|num }}</a></td></tr>
-        <tr><th><span class="term" tabindex="0" data-tip="{{ tr('term.tracked') }}">{{ t("dash.counts.tracked") }}</span></th><td>{{ counts.tracked|num }}</td></tr>
+        </tbody>
+        <tbody>
+        <tr><th><span class="term" tabindex="0" data-tip="{{ tr('term.tracked') }}">{{ t("dash.counts.tracked") }}</span></th><td><a href="/players?group=tracked">{{ counts.tracked|num }}</a></td></tr>
         <tr><th><span class="term" tabindex="0" data-tip="{{ tr('term.pinned') }}">{{ t("dash.counts.pinned") }}</span></th><td><a href="/players?group=pinned">{{ counts.pinned|num }}</a></td></tr>
+        </tbody>
+        <tbody>
         <tr><th>{{ t("dash.counts.pictures") }}</th><td>{{ t("dash.counts.pictures_value", current=counts.pictures, published=counts.published) }}</td></tr>
         {% if photo_status %}
         <tr><th>{{ t("dash.counts.no_photo") }}</th><td>{% if photo_status.game_known %}{{ t("dash.counts.no_photo_value", count=counts.without_photo, picked=counts.without_photo_picked) }}{% if not settings.no_photo.enabled %} <span class="muted">{{ t("dash.counts.off_in_settings") }}</span>{% endif %}
           {% else %}<span class="bad">{{ t("dash.counts.photos_unknown") }}</span>{% endif %}</td></tr>
         {% endif %}
         <tr><th>{{ t("nav.review") }}</th><td><a href="/review">{{ counts.review|num }}</a></td></tr>
+        </tbody>
       </table>
     {% else %}
       <p class="muted">{{ t("dash.counts.no_career") }}</p>

@@ -37,8 +37,8 @@ const LANG = document.documentElement.lang || undefined;
   // keeps its elements, so no picture in it is drawn again; the latest pictures keep theirs
   // and only a new one is added. New pictures are decoded before they show.
   const key = (el) => {
-    const copy = el.cloneNode(true);  // the moving progress bar is not a change
-    copy.querySelectorAll("progress[data-since]").forEach((bar) => bar.removeAttribute("value"));
+    const copy = el.cloneNode(true);  // the ticking clock and the done-at time are not a change
+    copy.querySelectorAll("[data-elapsed], [data-done-in]").forEach((t) => { t.textContent = ""; });
     return copy.outerHTML;
   };
   const sent = new Map();
@@ -93,7 +93,7 @@ const LANG = document.documentElement.lang || undefined;
           try { input.setSelectionRange(start, end); } catch (e) { /* not a text box */ }
         }
         localTimes(box);
-        progress();
+        clocks();
         if (before !== null && career() !== before) location.reload();
       }
     } catch (e) { /* the server may be restarting */ }
@@ -225,18 +225,41 @@ const LANG = document.documentElement.lang || undefined;
   });
 })();
 
-// The picture being generated: its bar moves with the time since it started, against the usual
-// time per picture (data-since, data-each), between the server's updates.
-function progress() {
-  document.querySelectorAll("progress[data-since][data-each]").forEach((bar) => {
-    const since = Date.parse(bar.dataset.since);
-    const each = parseFloat(bar.dataset.each);
-    if (isNaN(since) || !(each > 0)) return;
-    bar.value = Math.min(99, Math.max(0, ((Date.now() - since) / 1000 / each) * 100));
+// Time gone by, as messages.clock words it: "19 s", "1 min 5 s", "1 h 2 min"; rounded down.
+function clockText(seconds) {
+  const s = Math.max(0, Math.floor(seconds));
+  if (s < 60) return text("dur.seconds", { count: s });
+  const m = Math.floor(s / 60);
+  if (m < 60) return text("dur.minutes_seconds", { minutes: m, seconds: s % 60 });
+  return text("dur.hours_minutes", { hours: Math.floor(m / 60), minutes: m % 60 });
+}
+
+// The dashboard's clocks (Phase 17e), between the server's updates: the time the picture being
+// generated has taken so far (data-since: when it started), and when the queue will be done
+// (data-done-in: seconds from when the part arrived), in this PC's own time and the page's
+// language. A part kept from the last update keeps its done-at time; a new part brings its own.
+function clocks() {
+  const now = Date.now();
+  document.querySelectorAll("[data-since] [data-elapsed]").forEach((t) => {
+    const since = Date.parse(t.closest("[data-since]").dataset.since);
+    if (!isNaN(since)) t.textContent = clockText((now - since) / 1000);
+  });
+  document.querySelectorAll("[data-done-in]").forEach((t) => {
+    if (t.dataset.doneAt) return;
+    const seconds = parseFloat(t.dataset.doneIn);
+    if (!(seconds >= 0)) return;
+    const at = new Date(now + seconds * 1000);
+    t.dataset.doneAt = at.toISOString();
+    const today = at.toDateString() === new Date(now).toDateString();
+    const shown = { hour: "numeric", minute: "2-digit" };
+    if (!today) shown.weekday = "short";
+    let time;
+    try { time = new Intl.DateTimeFormat(LANG, shown).format(at); } catch (e) { time = at.toLocaleTimeString(); }
+    t.textContent = " · " + text("js.done_at", { time });
   });
 }
-setInterval(progress, 1000);
-progress();
+setInterval(clocks, 1000);
+clocks();
 
 // Hover texts for facegen's own words (Phase 12): a group chip says what the group is, and so
 // do a few terms such as auto-update and pinned (data-tip), and each ⓘ (its hidden .tip, which

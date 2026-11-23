@@ -218,6 +218,12 @@ def test_the_right_folder_is_saved_and_synced_without_a_restart(env: Env) -> Non
     status = env.syncer.status()
     assert status.error is None and (status.message or "").startswith("Synced career.fm")
     assert env.one("SELECT COUNT(*) FROM careers") == 1
+    # The dashboard words what it did from its numbers, not the English line (Phase 17e).
+    queued = env.one("SELECT COUNT(*) FROM jobs WHERE status = 'queued'")
+    assert queued > 0 and status.numbers["queued"] == queued
+    page = env.client.get("/").text
+    assert f'<span class="badge">{queued:,} queued</span>' in page
+    assert "Synced career.fm" not in page
     assert "Set up:" not in env.client.get("/").text
     assert "Set up:" not in env.client.get("/players").text
 

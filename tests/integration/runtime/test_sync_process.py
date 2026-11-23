@@ -30,7 +30,14 @@ from facegen.pipeline.sync import run_sync
 from facegen.platform import procs
 from facegen.platform.pipes import decode, encode
 from facegen.runtime import sync_process
-from facegen.runtime.contracts import FAILED, SYNCED, UNREADABLE, SyncRequest, SyncResult
+from facegen.runtime.contracts import (
+    FAILED,
+    SYNC_NUMBERS,
+    SYNCED,
+    UNREADABLE,
+    SyncRequest,
+    SyncResult,
+)
 from facegen.runtime.poller_service import PollerService
 from facegen.runtime.sync_process import (
     STOPPED_ERROR,
@@ -101,6 +108,12 @@ def test_requests_and_results_survive_the_pipe() -> None:
     line = encode({"type": "result", "result": result_to_json(result)})
     message = decode(line)
     assert message is not None and result_from_json(message["result"]) == result
+    # What a sync did to the queue reaches the dashboard as numbers (Phase 17e).
+    numbers = {"queued": 1552, "new_at_my_club": 1, "new_staff": 0, "updated": 2, "cancelled": 0}
+    synced = SyncResult(SYNCED, "Synced x.fm", numbers=numbers)
+    line = encode({"type": "result", "result": result_to_json(synced)})
+    message = decode(line)
+    assert message is not None and result_from_json(message["result"]).numbers == numbers
     with pytest.raises(ValueError, match="not a sync outcome"):
         result_from_json({"outcome": "finished"})
 
@@ -277,6 +290,12 @@ def test_sync_now_runs_in_a_child_and_reports_as_before(child: Child) -> None:
     assert not status.running and status.error is None and status.trigger == "sync now"
     assert status.message is not None and status.message.startswith("Synced career.fm")
     assert child.log[0] == status.message  # the child's lines reach the log, in order
+    # And what it did, as numbers for the dashboard to word (Phase 17e).
+    assert set(status.numbers) == set(SYNC_NUMBERS)
+    n = status.numbers
+    assert f"{n['queued']} queued, {n['updated']} updated, {n['cancelled']} cancelled" in (
+        status.message
+    )
     assert done == [1] and child.starts() == ["world"]
     assert syncer.process is not None and syncer.process.child_pid is None
     assert child.runs()[-1]["trigger"] == "sync now"

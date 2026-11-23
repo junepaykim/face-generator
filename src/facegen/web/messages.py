@@ -62,6 +62,14 @@ def report_summary(report: ChangeReport, t: Translator) -> str:
     return "; ".join(parts) or t("report.unchanged")
 
 
+def drawing_key(kind: str, t: Translator, fallback: str) -> str:
+    """The sentence for a picture being drawn, one per job kind ("worker.drawing.<kind>"), so
+    an upgrade names its group once: "Upgrading {name} to {group}" (Phase 17e). `fallback`
+    (with {kind}) for a kind the catalog does not word."""
+    key = f"worker.drawing.{kind}"
+    return key if kind and t.has(key) else fallback
+
+
 def worker_sentence(status: WorkerStatus, t: Translator) -> str:
     """What the worker is doing or waiting for, in plain words: its reason code worded by the
     catalog ("worker.reason.<code>"), or its English detail line when it gives none."""
@@ -69,6 +77,8 @@ def worker_sentence(status: WorkerStatus, t: Translator) -> str:
     if not status.reason or not t.has(key):
         return status.detail
     values = dict(status.values)
+    if status.reason == "drawing":
+        key = drawing_key(str(values.get("kind") or ""), t, key)
     if "kind" in values:
         values["kind"] = t(f"kind.{values['kind']}")
     if "group" in values:
@@ -126,6 +136,18 @@ def duration(seconds: float, t: Translator) -> str:
     if rest == 0:
         return t("dur.hours", count=hours)
     return t("dur.hours_minutes", hours=hours, minutes=rest)
+
+
+def clock(seconds: float, t: Translator) -> str:
+    """Time gone by, as a ticking clock shows it (Phase 17e): "19 s", "1 min 5 s", "1 h 2 min";
+    rounded down, so it never runs ahead (app.js `clockText` words it the same way)."""
+    whole = max(0, math.floor(seconds))
+    if whole < 60:
+        return t("dur.seconds", count=whole)
+    minutes = whole // 60
+    if minutes < 60:
+        return t("dur.minutes_seconds", minutes=minutes, seconds=whole % 60)
+    return t("dur.hours_minutes", hours=minutes // 60, minutes=minutes % 60)
 
 
 def band_name(wording: str | None, t: Translator) -> str:

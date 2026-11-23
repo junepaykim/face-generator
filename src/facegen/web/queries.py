@@ -39,6 +39,7 @@ GROUP_FILTERS = {
     "c": "group C",
     "none": "no group",
     "pinned": "pinned",
+    "tracked": "auto-update",
 }
 PICTURE_FILTERS = {
     "any": "any picture state",

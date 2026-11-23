@@ -29,7 +29,7 @@ from facegen.core.settings_values import (
 from facegen.i18n import LANGUAGES, Translator, catalog
 from facegen.persistence.settings import load_defaults
 from facegen.pipeline.manual import REFUSALS
-from facegen.runtime.contracts import WORKER_REASONS
+from facegen.runtime.contracts import SYNC_NUMBERS, WORKER_REASONS
 from facegen.setup import hardware
 from facegen.setup.models import REPOS
 from facegen.web import presentation
@@ -162,12 +162,17 @@ def vocabulary_keys() -> list[str]:
         keys += [f"hardware.preset.{preset.name}.title", f"hardware.preset.{preset.name}.note"]
     keys += [f"tag.media.{role}" for role in ("journalist", "press officer")]
     keys += [f"dash.sync.trigger.{k}" for k in ("poller", "sync now", "command")]
+    keys += [f"dash.sync.chip.{k}" for k in SYNC_NUMBERS]
+    keys += [f"dash.worker.generate_now_why.{k}" for k in ("fm", "held", "both")]
+    keys += [f"worker.drawing.{k}" for k in JOB_KINDS]
     keys += list(presentation.JS_TEXTS)
     keys += [f"worker.reason.{code}" for code in WORKER_REASONS]
     keys += [f"worker.short.{code}" for code in WORKER_REASONS]
     keys += [f"worker.cause.{c}" for c in ("gpu", "crash", "spawn")]
     keys += [f"worker.then.{c}" for c in ("review", "queue")]
-    keys += [f"dur.{k}" for k in ("seconds", "minutes", "hours", "hours_minutes")]
+    keys += [
+        f"dur.{k}" for k in ("seconds", "minutes", "hours", "hours_minutes", "minutes_seconds")
+    ]
     keys += ["settings.field_tip.banned_traits"]
     keys += [f"term.{k}" for k in ("a", "b", "c", "tracked", "pinned")]
     keys += [f"problem.{part}.{kind}" for kind in PROBLEM_KINDS for part in ("cause", "do")]

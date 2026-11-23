@@ -122,6 +122,7 @@ def result_from_json(data: dict[str, Any]) -> SyncResult:
         unsupported=bool(data.get("unsupported")),
         warnings=tuple(str(w) for w in data.get("warnings") or ()),
         notice=_text(data.get("notice")),
+        numbers={str(k): int(v) for k, v in (data.get("numbers") or {}).items()},
     )
 
 
