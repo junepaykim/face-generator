@@ -281,6 +281,13 @@ def drawn_times(conn: sqlite3.Connection, limit: int = TIMING_PICTURES) -> list[
     return out
 
 
+def queued_count(conn: sqlite3.Connection, career_id: int) -> int:
+    """Pictures waiting in the career's queue (the one being drawn is not counted)."""
+    return conn.execute(
+        "SELECT COUNT(*) FROM jobs WHERE career_id = ? AND status = 'queued'", (career_id,)
+    ).fetchone()[0]
+
+
 def queued_by_group(conn: sqlite3.Connection, career_id: int) -> dict[str, tuple[int, int]]:
     """Group -> (queued jobs, of them requested by hand)."""
     return {

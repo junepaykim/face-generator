@@ -15,28 +15,32 @@
 <aside class="side">
   <a class="brand" href="/" title="{{ tr('app.name') }}"><img class="logo" src="/static/kitshot.svg?v={{ static_version }}" alt="" width="28" height="28"><span class="label">{{ t("app.name") }}</span></a>
   <nav aria-label="{{ t('nav.label') }}">
-    <a href="/" class="{{ 'on' if path == '/' }}" title="{{ t('nav.dashboard') }}">{{ icon("dashboard") }}<span class="label">{{ t("nav.dashboard") }}</span>{% if worker_state %}<span class="dot-state state-{{ worker_state }}" title="{{ t('worker.state.' ~ worker_state) }}"></span>{% endif %}</a>
+    <a href="/" class="{{ 'on' if path == '/' }}" title="{{ t('nav.dashboard') }}">{{ icon("dashboard") }}<span class="label">{{ t("nav.dashboard") }}</span>{% if side.state %}<span class="dot-state state-{{ side.state }}" title="{{ t('worker.state.' ~ side.state) }}"></span>{% endif %}</a>
     <a href="/gallery" class="{{ 'on' if path == '/gallery' }}" title="{{ t('nav.gallery') }}">{{ icon("pictures") }}<span class="label">{{ t("nav.gallery") }}</span></a>
     <a href="/players" class="{{ 'on' if path.startswith('/players') }}" title="{{ t('nav.players') }}">{{ icon("players") }}<span class="label">{{ t("nav.players") }}</span></a>
-    <a href="/review" class="{{ 'on' if path == '/review' }}" title="{{ t('nav.review') }}">{{ icon("review") }}<span class="label">{{ t("nav.review") }}</span>{% if review_count %} <span class="count">{{ review_count|num }}</span>{% endif %}</a>
-    <a href="/log" class="{{ 'on' if path == '/log' }}" title="{{ t('nav.log') }}">{{ icon("log") }}<span class="label">{{ t("nav.log") }}</span></a>
+    <a href="/review" class="{{ 'on' if path == '/review' }}" title="{{ t('nav.review') }}">{{ icon("review") }}<span class="label">{{ t("nav.review") }}</span>{% if side.review %}<span class="count badge badge-count">{{ side.review|num }}</span>{% endif %}</a>
+    <span class="nav-sep" aria-hidden="true"></span>
+    <a href="/log" class="{{ 'on' if path == '/log' }}" title="{{ t('nav.log') }}">{{ icon("log") }}<span class="label">{{ t("nav.log") }}</span><span class="dot-warn" data-sync-warn role="img" title="{{ tr('side.sync_warn') }}" aria-label="{{ tr('side.sync_warn') }}"{{ " hidden" if not side.sync_warn }}></span></a>
     <a href="/settings" class="{{ 'on' if path.startswith('/settings') or path == '/hardware' }}" title="{{ t('nav.settings') }}">{{ icon("settings") }}<span class="label">{{ t("nav.settings") }}</span></a>
   </nav>
+  {# The career and what the worker is doing, with Pause or Resume (Phase 17d); hidden in a
+     narrow window, where the Dashboard icon keeps its state dot. #}
   <div class="side-foot">
-    <div class="career">
-      {% if career %}<strong>{{ career.display_name }}</strong><br><span class="muted small">{{ t("side.in_game", date=game_date or t("side.unknown")) }}</span>
-      {% else %}<span class="muted">{{ t("side.no_career") }}</span>{% endif %}
+    <div class="side-card">
+      {% if career %}<p class="side-career" title="{{ career.display_name }}{% if game_date %} · {{ tr('side.in_game', date=game_date) }}{% endif %}"><strong>{{ career.display_name }}</strong>{% if game_date %} <span class="muted when">{{ game_date }}</span>{% endif %}</p>
+      {% else %}<p class="side-career muted">{{ t("side.no_career") }}</p>{% endif %}
+      {% if side.state %}
+      <div class="side-state">
+        <span class="dot-state state-{{ side.state }}" aria-hidden="true"></span>
+        <span class="side-state-text" data-side-text>{{ side_text }}</span>
+        <form method="post" action="/worker/pause" data-side-pause{{ " hidden" if side.paused or side.fault }}><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="{{ here }}"><button class="side-act" title="{{ tr('dash.worker.pause') }}" aria-label="{{ tr('dash.worker.pause') }}">{{ icon("pause") }}</button></form>
+        <form method="post" action="/worker/resume" data-side-resume{{ " hidden" if not side.paused or side.fault }}><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="{{ here }}"><button class="side-act" title="{{ tr('dash.worker.resume') }}" aria-label="{{ tr('dash.worker.resume') }}">{{ icon("play") }}</button></form>
+      </div>
+      {% endif %}
     </div>
-    <div class="switches">
-      <label><span class="muted small">{{ t("side.language") }}</span>
-        <select data-display="display.language" aria-label="{{ t('side.language') }}">
-          {% for value in ("auto", "en", "ko") %}<option value="{{ value }}" {{ "selected" if display.language == value }}>{{ t("settings.choice.language." ~ value) }}</option>{% endfor %}
-        </select></label>
-      <label><span class="muted small">{{ t("side.theme") }}</span>
-        <select data-display="display.theme" aria-label="{{ t('side.theme') }}">
-          {% for value in ("auto", "light", "dark") %}<option value="{{ value }}" {{ "selected" if display.theme == value }}>{{ t("settings.choice.theme." ~ value) }}</option>{% endfor %}
-        </select></label>
-    </div>
+    {% if update %}{% set u = update.status %}
+    <p class="side-version"><span class="muted">{{ t("side.version", version=u.current) }}</span>{% if u.offered and not u.checkout %} <a class="badge tone-accent" href="/#update" title="{{ tr('update.title', version=u.latest) }}">{{ t("side.update") }}</a>{% endif %}</p>
+    {% endif %}
   </div>
 </aside>
 <main>

@@ -8,6 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
+from starlette.concurrency import run_in_threadpool
 
 from facegen.core.estimate import estimate_queue, seconds_per_picture
 from facegen.core.job_records import Career
@@ -22,7 +23,7 @@ from facegen.web.dependencies import AppDependencies, translator_for
 from facegen.web.forms import describe_key, value_text
 from facegen.web.messages import problem, seconds_since, worker_sentence
 from facegen.web.presentation import Presentation
-from facegen.web.responses import _redirect
+from facegen.web.responses import _redirect, _safe_next
 
 
 def create_router(deps: AppDependencies, presentation: Presentation) -> APIRouter:
@@ -187,22 +188,31 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
         return presentation.fragment(request, "_log.html", conn, **log_context(conn))
 
     @router.post("/worker/{action}")
-    def worker_action(action: str, request: Request) -> Response:
-        t = deps.translator(request)
-        if ctx.worker is None:
-            return _redirect("/", err=t("msg.worker_absent"))
-        match action:
-            case "pause":
-                ctx.worker.pause()
-            case "resume":
-                if not ctx.worker.resume():
-                    return _redirect("/", err=t("msg.gpu_fault_advice"))
-            case "generate-now":
-                if not ctx.worker.generate_now():
-                    return _redirect("/", err=t("msg.gpu_fault_advice"))
-            case _:
-                raise HTTPException(404)
-        return _redirect("/")
+    async def worker_action(action: str, request: Request) -> Response:
+        """Pause, Resume and Generate now, from the dashboard or the sidebar's card (Phase
+        17d): back to the page the button was on ("next")."""
+        if action not in ("pause", "resume", "generate-now"):
+            raise HTTPException(404)
+        form = await request.form()
+        back = _safe_next(str(form.get("next") or ""), "/")
+        t = await run_in_threadpool(deps.translator, request)
+        worker = ctx.worker
+        if worker is None:
+            return _redirect(back, err=t("msg.worker_absent"))
+
+        def act() -> bool:
+            match action:
+                case "pause":
+                    worker.pause()
+                    return True
+                case "resume":
+                    return worker.resume()
+                case _:
+                    return worker.generate_now()
+
+        if not await run_in_threadpool(act):
+            return _redirect(back, err=t("msg.gpu_fault_advice"))
+        return _redirect(back)
 
     @router.post("/sync")
     def sync_now(request: Request) -> Response:

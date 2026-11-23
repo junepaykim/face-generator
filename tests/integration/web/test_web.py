@@ -698,7 +698,7 @@ def test_review_page_and_retry(env: Env) -> None:
     candidate = re.search(r'src="/files\?path=([^"&]+)&amp;size=192"', page)
     assert candidate is not None
     assert env.client.get(f"/files?path={candidate.group(1)}&size=192").status_code == 200
-    assert '<span class="count">1</span>' in env.client.get("/").text
+    assert '<span class="count badge badge-count">1</span>' in env.client.get("/").text
     r = post_player_action(env.client, f"/players/{B_NEWGEN}/retry", data={"next": "/review"})
     assert r.headers["location"].startswith("/review?msg=")
     assert "No players to review right now." in follow(env, r)

@@ -20,9 +20,9 @@ from facegen.i18n import GROUPS, Translator
 from facegen.persistence.image_store import reference_problem
 from facegen.persistence.jobs import load_career
 from facegen.setup.models import REPOS, gigabytes
-from facegen.web import queries
+from facegen.web import live
 from facegen.web.dependencies import AppDependencies, translator_for
-from facegen.web.messages import band_name, duration
+from facegen.web.messages import band_name, duration, side_line
 
 HERE = Path(__file__).resolve().parent
 
@@ -31,7 +31,6 @@ JS_TEXTS = (
     "js.no_answer",
     "js.unsaved_confirm",
     "js.ticked",
-    "js.switch_failed",
 )
 """Catalog texts the page's script uses, handed to it in the page."""
 
@@ -143,14 +142,27 @@ class Presentation:
         ctx = self.dependencies.ctx
         career = context["career"] if "career" in context else load_career(conn)
         settings = context.get("settings") or self.dependencies.settings_now(conn)
+        texts = self.texts(request, settings)
+        # The sidebar (Phase 17d). The dashboard hands in the sync state it shows, so a page
+        # reads it once.
+        worker = ctx.worker.status() if ctx.worker else None
+        if "sync" in context:
+            sync = context["sync"]
+        else:
+            sync = ctx.syncer.status() if ctx.syncer else None
+        side = live.sidebar(conn, career, worker, sync)
         return self.templates.TemplateResponse(
             request,
             name,
             {
-                **self.texts(request, settings),
+                **texts,
                 "career": career,
                 "game_date": career.game_date if career else None,
-                "review_count": queries.review_count(conn, career.id) if career else 0,
+                "side": side,
+                "side_text": side_line(side, texts["tr"]),
+                "update": (
+                    context["update"] if "update" in context else self.dependencies.update_offer()
+                ),
                 "msg": request.query_params.get("msg"),
                 "err": request.query_params.get("err"),
                 "path": request.url.path,
@@ -158,7 +170,6 @@ class Presentation:
                 "setup": context["setup"] if "setup" in context else ctx.setup(settings),
                 "folder_text": request.query_params.get("folder"),
                 "folder_now": settings.paths.fm_user_dir,
-                "worker_state": ctx.worker.status().state if ctx.worker else None,
                 **context,
             },
         )

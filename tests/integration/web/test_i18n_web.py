@@ -1,4 +1,5 @@
-"""Korean and English pages, the language and theme switches, and the sidebar (Phase 12a/b)."""
+"""Korean and English pages, the language and theme settings, and the sidebar (Phase 12a/b,
+17d)."""
 
 from __future__ import annotations
 
@@ -50,7 +51,8 @@ def test_every_page_renders_in_korean_without_raw_keys(client: TestClient, url: 
     visible = re.sub(r"<[^>]+>", " ", text)
     # A key no catalog holds shows as itself: "dash.queue.title" and the like.
     raw = re.findall(
-        r"\b(?:nav|dash|setup|players|player|settings|msg|col|tag|kind|tier)\.[a-z_]+", visible
+        r"\b(?:nav|side|worker|dash|setup|players|player|settings|msg|col|tag|kind|tier)\.[a-z_]+",
+        visible,
     )
     assert raw == [], url
 
@@ -112,17 +114,19 @@ def test_display_settings_are_checked(client: TestClient) -> None:
     assert '<html lang="en" data-theme="auto">' in client.get("/").text
 
 
-def test_the_theme_switch(client: TestClient) -> None:
+def test_the_theme_setting(client: TestClient) -> None:
     assert save(client, **{"display.theme": "dark"})["reload"]
-    page = client.get("/").text
-    assert 'data-theme="dark"' in page
-    assert re.search(r'<option value="dark" selected>Dark</option>', page)
+    assert 'data-theme="dark"' in client.get("/").text
+    settings = client.get("/settings/advanced").text
+    assert re.search(r'<option value="dark" selected>Dark</option>', settings)
 
 
 def test_the_sidebar_names_the_pages_and_marks_the_current_one(client: TestClient) -> None:
     page = client.get("/players").text
     assert '<aside class="side">' in page and '<header class="top">' not in page
     assert re.search(r'<a href="/players" class="on"[^>]*>', page)
-    assert 'select data-display="display.language"' in page
-    assert 'select data-display="display.theme"' in page
-    assert 'id="csrf"' in page  # the switches post with the form token
+    # Language and Theme live in Settings only (Phase 17d).
+    assert "data-display" not in page
+    settings = client.get("/settings/advanced").text
+    assert 'name="display.language"' in settings and 'name="display.theme"' in settings
+    assert 'id="csrf"' in page  # fetch requests post with the form token

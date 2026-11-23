@@ -10,7 +10,7 @@ function page() {
     addEventListener(type, fn) { if (type === "change") listeners.push(fn); },
     querySelector() { return { value: "token" }; },
     querySelectorAll(selector) {
-      if (selector === "[data-key]") return [mode, cutoff];
+      if (selector === "[data-key]") return [mode, cutoff, theme];
       if (selector.includes('name="preset.quality"')) return [preset];
       return [];
     },
@@ -30,10 +30,7 @@ function page() {
   const mode = input("cutoffs.mode", "auto");
   const cutoff = input("cutoffs.everywhere.a_ca", "165");
   const preset = input("preset.quality", "medium", true);
-  const sidebar = {
-    dataset: { display: "display.theme" }, value: "auto", type: "select-one", closest: () => null,
-    addEventListener(type, fn) { if (type === "change") this.change = fn; },
-  };
+  const theme = input("display.theme", "auto");  // Settings' field; the sidebar has none (17d)
   const status = {};
   const buttons = {};
   const document = {
@@ -41,7 +38,6 @@ function page() {
     addEventListener() {}, getElementById: () => null,
     querySelectorAll(s) {
       if (s === "form[data-autosave]") return [form];
-      if (s === "select[data-display]") return [sidebar];
       return [];
     },
     querySelector(s) {
@@ -67,7 +63,7 @@ function page() {
   vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
     window, document, fetch, location: { reload() { reloads++; } }, FormData, setInterval() {},
   });
-  return { mode, cutoff, preset, sidebar, requests, status, reloads: () => reloads };
+  return { mode, cutoff, preset, theme, requests, status, reloads: () => reloads };
 }
 
 async function main() {
@@ -113,8 +109,7 @@ async function main() {
 
   const r = page();
   r.cutoff.change("175");
-  r.sidebar.value = "dark";
-  r.sidebar.change();
+  r.theme.change("dark");
   assert.equal(r.requests.length, 1);
   r.requests[0].reply({});
   await tick();

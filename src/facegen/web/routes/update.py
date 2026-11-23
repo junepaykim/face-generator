@@ -61,7 +61,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
         def render() -> Response:
             conn: sqlite3.Connection = deps.connect()
             try:
-                return presentation.page(request, "updating.html", conn, update=status)
+                return presentation.page(request, "updating.html", conn, release=status)
             finally:
                 conn.close()
 

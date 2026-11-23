@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any
 
 from facegen.core.problems import UNKNOWN, diagnose
 from facegen.i18n import Translator
@@ -87,6 +89,17 @@ def worker_sentence(status: WorkerStatus, t: Translator) -> str:
         return t(key, **values)
     except (KeyError, IndexError, ValueError):  # a value missing: the English line instead
         return status.detail
+
+
+def side_line(side: Mapping[str, Any], t: Translator) -> str:
+    """The sidebar's state in a few words (Phase 17d): "Generating · 821 left". The worker's
+    reason in short ("worker.short.<code>"), or its state's name when it gives none."""
+    state, reason, queued = side.get("state"), side.get("reason"), side.get("queued") or 0
+    if not state:
+        return ""
+    key = f"worker.short.{reason}"
+    words = t(key) if reason and t.has(key) else t(f"worker.state.{state}")
+    return t("side.left", words=words, count=queued) if queued else words
 
 
 def seconds_since(iso: str | None, now: datetime | None = None) -> float | None:

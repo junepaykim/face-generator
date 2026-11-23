@@ -4,6 +4,6 @@
 {% block head %}{{ page_head(t("update.updating_title")) }}{% endblock %}
 {% block content %}
 <section class="card" id="updating">
-  <p>{{ t("update.updating", version=update.latest) }}</p>
+  <p>{{ t("update.updating", version=release.latest) }}</p>
 </section>
 {% endblock %}

@@ -164,6 +164,7 @@ def vocabulary_keys() -> list[str]:
     keys += [f"dash.sync.trigger.{k}" for k in ("poller", "sync now", "command")]
     keys += list(presentation.JS_TEXTS)
     keys += [f"worker.reason.{code}" for code in WORKER_REASONS]
+    keys += [f"worker.short.{code}" for code in WORKER_REASONS]
     keys += [f"worker.cause.{c}" for c in ("gpu", "crash", "spawn")]
     keys += [f"worker.then.{c}" for c in ("review", "queue")]
     keys += [f"dur.{k}" for k in ("seconds", "minutes", "hours", "hours_minutes")]

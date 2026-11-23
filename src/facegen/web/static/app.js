@@ -1,5 +1,5 @@
-// facegen: dashboard refresh, tick-all, confirmations, settings autosave and the language and
-// theme switches. No libraries, nothing loaded from the web.
+// Kitshot: live pages and the sidebar, tick-all, confirmations, the lightbox and settings
+// autosave. No libraries, nothing loaded from the web.
 "use strict";
 
 // The page's own texts, in its language (the message catalog, Phase 12a). "{count}" and the
@@ -17,33 +17,9 @@ function text(key, values) {
 }
 const LANG = document.documentElement.lang || undefined;
 
-// The language and theme switches at the foot of the sidebar: saved as a setting (one change
-// that Settings can undo), then the page loads again in the new language or theme.
-(function displaySwitches() {
-  if (document.querySelector("form[data-autosave]")) return;  // settings shares its save queue
-  const token = document.getElementById("csrf");
-  document.querySelectorAll("select[data-display]").forEach((select) => {
-    select.addEventListener("change", async () => {
-      const body = new FormData();
-      body.append(select.dataset.display, select.value);
-      try {
-        const res = await fetch("/settings/save", {
-          method: "POST", body,
-          headers: { "X-CSRF-Token": token.value, "Accept": "application/json" },
-        });
-        const data = await res.json();
-        if (!res.ok || !data.ok) throw new Error(data.error || res.status);
-        location.reload();
-      } catch (e) {
-        window.alert(text("js.switch_failed"));
-      }
-    });
-  });
-})();
-
 // Live pages (Phase 12d). The server says when a part of the page has changed (server-sent
 // events from /events, one topic per part: "status" on the dashboard, "log" on the Log page);
-// the page then fetches that part again. The sidebar's state dot and review count follow on
+// the page then fetches that part again. The sidebar's card, dots and review count follow on
 // every page. When the career changes (the first sync, or a save of another career), the whole
 // page is out of date: it reloads. Without EventSource the part is fetched every 3 s instead.
 (function live() {
@@ -195,22 +171,35 @@ const LANG = document.documentElement.lang || undefined;
     if (!document.hidden && stale) { stale = false; refresh(); }
   });
 
+  // The sidebar on every page (Phase 17d): the state dots, the card's words and its Pause or
+  // Resume, Review's count and Log's dot when the last sync went wrong.
   function sidebar(data) {
-    const dot = document.querySelector(".side .dot-state");
-    if (dot && data.state) {
-      dot.className = "dot-state state-" + data.state;
-      if (data.label) dot.title = data.label;
+    const side = document.querySelector(".side");
+    if (!side) return;
+    if (data.state) {
+      side.querySelectorAll(".dot-state").forEach((dot) => {
+        dot.className = "dot-state state-" + data.state;
+        if (data.label && dot.title) dot.title = data.label;
+      });
+      const words = side.querySelector("[data-side-text]");
+      if (words && data.short) words.textContent = data.short;
+      const pause = side.querySelector("[data-side-pause]");
+      const resume = side.querySelector("[data-side-resume]");
+      if (pause) pause.hidden = Boolean(data.paused || data.fault);
+      if (resume) resume.hidden = !data.paused || Boolean(data.fault);
     }
-    const link = document.querySelector('.side nav a[href="/review"]');
+    const warn = side.querySelector("[data-sync-warn]");
+    if (warn) warn.hidden = !data.sync_warn;
+    const link = side.querySelector('nav a[href="/review"]');
     if (!link) return;
     let count = link.querySelector(".count");
     if (data.review) {
       if (!count) {
         count = document.createElement("span");
-        count.className = "count";
+        count.className = "count badge badge-count";
         link.appendChild(count);
       }
-      count.textContent = data.review;
+      count.textContent = Number(data.review).toLocaleString("en-US");
     } else if (count) {
       count.remove();
     }
@@ -567,12 +556,6 @@ function localTimes(root) {
   const redoButton = document.querySelector("[data-redo]");
   const inputs = new Map();
   forms.forEach((form) => form.querySelectorAll("[data-key]").forEach((el) => inputs.set(el.name, el)));
-  const displaySwitches = document.querySelectorAll("select[data-display]");
-  displaySwitches.forEach((select) => {
-    // On Basic this is the only input for the setting; Advanced has a field in its System tab.
-    select.name = select.dataset.display;
-    if (!inputs.has(select.name)) inputs.set(select.name, select);
-  });
   const within = (selector) => forms.flatMap((form) => Array.from(form.querySelectorAll(selector)));
   const read = (el) => (el.type === "checkbox" ? (el.checked ? "on" : "") : el.value.trim());
   // What the server holds for each field, as the field would show it.
@@ -590,7 +573,7 @@ function localTimes(root) {
   const fieldOf = (el) => el.closest("[data-field]");
   const showError = (el, message) => {
     const field = fieldOf(el);
-    if (!field) return;  // sidebar display switch
+    if (!field) return;
     field.classList.toggle("error", Boolean(message));
     field.querySelector("[data-error]").textContent = message ? " · " + message : "";
   };
@@ -691,12 +674,6 @@ function localTimes(root) {
     if (!saving) saving = drain().finally(() => { saving = null; });
     return saving;
   }
-
-  displaySwitches.forEach((select) => {
-    const field = inputs.get(select.name);
-    select.addEventListener("change", () => { field.value = select.value; save(); });
-    if (field !== select) field.addEventListener("change", () => { select.value = field.value; });
-  });
 
   // A list of groups shown as tick boxes: the hidden field holds "a, c" and is what is saved.
   const syncTicks = () => {

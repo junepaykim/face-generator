@@ -13,6 +13,7 @@ from starlette.concurrency import run_in_threadpool
 
 from facegen.web import live
 from facegen.web.dependencies import AppDependencies
+from facegen.web.messages import side_line
 
 
 def create_router(deps: AppDependencies) -> APIRouter:
@@ -53,8 +54,9 @@ def create_router(deps: AppDependencies) -> APIRouter:
                 for topic, data in (await run_in_threadpool(look)).items():
                     if sent.get(topic) != data["rev"]:
                         sent[topic] = data["rev"]
-                        if data.get("state"):  # the sidebar dot's title, in the page's language
+                        if data.get("state"):  # the sidebar's words, in the page's language
                             data["label"] = t(f"worker.state.{data['state']}")
+                            data["short"] = side_line(data, t)
                         yield live.event(topic, data)
                         last_ping = now
                 if now - last_ping >= live.PING_SECONDS:

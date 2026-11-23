@@ -120,6 +120,37 @@ def test_without_the_desktop_app_it_says_how_to_update(config_file: Path, tmp_pa
         assert shown is not None and "git pull" in shown
 
 
+def side_version(client: TestClient, **kw: Any) -> str:
+    """The sidebar's last line (Phase 17d), on a page without the update card."""
+    page = unescape(client.get("/players", **kw).text)
+    m = re.search(r'<p class="side-version">(.*?)</p>', page, re.DOTALL)
+    assert m is not None
+    return m[1]
+
+
+def test_the_sidebar_shows_the_version_and_an_update_badge(env: Env) -> None:
+    with env.client(can_install=True) as client:
+        line = side_version(client)
+        assert '<span class="muted">v0.9.0</span>' in line and "badge" not in line
+        env.updates.check_now()
+        line = side_version(client)
+        assert '<a class="badge tone-accent" href="/#update" title="Kitshot 1.0.0 is out">' in line
+        assert ">Update</a>" in line
+        assert ">업데이트</a>" in side_version(client, headers=KOREAN_WINDOWS)
+        assert card(client) is not None  # where the badge leads
+        client.post("/update/later", data={"next": "/", "version": "1.0.0"})
+        line = side_version(client)  # put off with Later: no card, so no badge either
+        assert "v0.9.0" in line and "badge" not in line
+
+
+def test_a_checkout_shows_the_version_only(config_file: Path, tmp_path: Path) -> None:
+    env = Env(config_file, tmp_path, checkout=True)
+    env.updates.check_now()
+    with env.client() as client:
+        line = side_version(client)
+    assert "v0.9.0" in line and "badge" not in line
+
+
 def test_later_puts_the_offer_off(env: Env) -> None:
     env.updates.check_now()
     with env.client(can_install=True) as client:

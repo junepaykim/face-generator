@@ -83,6 +83,36 @@ def test_a_change_sends_the_part_again(setup: tuple[TestClient, WorkerService]) 
     assert len(logs) >= 2  # the worker's log grew
 
 
+def test_the_status_event_carries_the_sidebar(setup: tuple[TestClient, WorkerService]) -> None:
+    """Phase 17d: pictures left, the card's words and its buttons' state on every page."""
+    client, worker = setup
+    later = threading.Timer(0.15, worker.step)  # a picture is drawn while the page is open
+    later.start()
+    body = client.get("/events").text
+    later.join()
+    statuses = [data for topic, data in events(body) if topic == "status"]
+    first, last = statuses[0], statuses[-1]
+    left = first["queued"]
+    assert left > 0 and first["short"] == f"Starting · {left:,} left"
+    assert (first["paused"], first["fault"], first["sync_warn"], first["review"]) == (
+        False, False, False, 0,
+    )  # fmt: skip
+    assert last["state"] == "running" and last["queued"] == left - 1
+    assert last["short"] == (f"Generating · {left - 1:,} left" if left > 1 else "Generating")
+
+
+def test_a_sync_that_went_wrong_reaches_the_sidebar(config_file: Path) -> None:
+    db_path = synced(config_file, [player(1001)])
+    syncer = Mock(spec=SyncControl)
+    warned = SyncStatus(message="Sync finished.", warnings=["a club could not be read"])
+    syncer.status.side_effect = chain([SyncStatus(message="Sync finished.")], repeat(warned))
+    app = create_app(AppContext(db_path, config_file, syncer=syncer))
+    with TestClient(app, base_url=BASE) as client:
+        statuses = [data for topic, data in events(client.get("/events").text) if topic == "status"]
+    assert [data["sync_warn"] for data in statuses] == [False, True]
+    assert "short" not in statuses[0]  # no worker here: the card has no state line
+
+
 def test_sync_is_read_once_per_render_and_again_on_each_live_tick(config_file: Path) -> None:
     db_path = synced(config_file, [player(1001)])
     running = SyncStatus(running=True, started="12:34:56")
@@ -111,6 +141,7 @@ def test_the_state_is_named_in_the_pages_language(setup: tuple[TestClient, Worke
     client, _ = setup
     sent = events(client.get("/events", headers=KOREAN_WINDOWS).text)
     assert sent[0][1]["label"] == "시작 중"
+    assert sent[0][1]["short"] == f"시작 중 · {sent[0][1]['queued']:,}장 남음"
 
 
 def test_stopping_the_server_ends_the_streams(setup: tuple[TestClient, WorkerService]) -> None:
