@@ -49,15 +49,15 @@
       {% if p.present and p.in_scope and p.job_status != "running" %}
         {% if not cur %}
         <form method="post" action="/players/{{ p.unique_id }}/generate" class="inline">{% include "_player_action_fields.html" %}
-          <label>{{ t("players.bulk.as_group") }} <select name="group">{% for g in groups %}<option value="{{ g }}" {{ "selected" if g == (p.group_name or "b") }}>{{ tr("group." ~ g) }}</option>{% endfor %}</select></label>
-          <button class="primary">{{ t("players.generate") }}</button>
+          <label>{{ t("players.draw_in") }} <select name="group">{% for g in groups %}<option value="{{ g }}" {{ "selected" if g == (p.group_name or "b") }}>{{ tr("group." ~ g) }}</option>{% endfor %}</select></label>
+          <button class="primary">{{ t("players.draw") }}</button>
         </form>
         {% endif %}
         {% if p.pin != "never" and (group_for_redraw or p.latest_job == "failed") %}
         <form method="post" action="/players/{{ p.unique_id }}/new-face">{% include "_player_action_fields.html" %}<button title="{{ t('player.new_face_title') }}">{{ t("player.new_face") }}</button></form>
         {% endif %}
         {% if cur and p.pin != "never" %}
-        <form method="post" action="/players/{{ p.unique_id }}/new-picture">{% include "_player_action_fields.html" %}<button title="{{ t('player.new_picture_title_ref' if redraw_reference else 'player.new_picture_title') }}">{{ t("players.new_picture") }}</button></form>
+        <form method="post" action="/players/{{ p.unique_id }}/new-picture">{% include "_player_action_fields.html" %}<button title="{{ t('player.new_picture_title_ref' if redraw_reference else 'player.new_picture_title') }}">{{ t("players.redraw") }}</button></form>
         {% endif %}
         {% if p.latest_job == "failed" %}
         <form method="post" action="/players/{{ p.unique_id }}/retry">{% include "_player_action_fields.html" %}<button>{{ t("player.retry") }}</button></form>

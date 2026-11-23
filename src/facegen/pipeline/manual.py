@@ -103,7 +103,7 @@ REFUSALS: dict[str, str] = {
     "drawing": "being drawn right now",
     "never": "pinned to never; unpin first",
     "no_picture": "no picture to draw again; use Draw",
-    "no_group": "in no group; use Generate and choose one",
+    "no_group": "in no group; use Draw and choose one",
     "no_failed": "no failed picture to retry",
 }
 """Why no job can be queued for a player, by code: the reasons ActionResult.skipped and

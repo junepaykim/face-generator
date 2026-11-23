@@ -47,11 +47,11 @@
     <button type="button" class="link" data-clear-ticks hidden>{{ t("players.bulk.clear_selection") }}</button>
     <div class="bulk-acts" data-when-ticked hidden>
       <span class="bulk-group">
-        <label>{{ t("players.bulk.draw_in") }}
+        <label>{{ t("players.draw_in") }}
           <select name="group">{% for g in ("a", "b", "c") %}<option value="{{ g }}" {{ "selected" if g == "b" }}>{{ tr("group." ~ g) }}</option>{% endfor %}</select>
         </label>
-        <button class="primary" name="action" value="generate" data-needs-tick title="{{ t('players.bulk.draw_title') }}">{{ t("players.bulk.draw") }}</button>
-        <button name="action" value="new-picture" data-needs-tick title="{{ t('players.bulk.redraw_title') }}">{{ t("players.bulk.redraw") }}</button>
+        <button class="primary" name="action" value="generate" data-needs-tick title="{{ t('players.bulk.draw_title') }}">{{ t("players.draw") }}</button>
+        <button name="action" value="new-picture" data-needs-tick title="{{ t('players.bulk.redraw_title') }}">{{ t("players.redraw") }}</button>
       </span>
       <span class="sep" aria-hidden="true"></span>
       <span class="bulk-group">

@@ -206,8 +206,8 @@ def card_form(page: str, uid: int) -> str:
 
 
 def test_new_picture_and_new_face_from_a_card(env: Env) -> None:
-    """Phase 17f: each card on the wall and in the dashboard's latest pictures has New picture
-    and New face over its picture. The script posts them (the token in a header, the career the
+    """Phase 17f: each card on the wall and in the dashboard's latest pictures has Redraw (was
+    New picture, renamed in 17g) and New face over its picture. The script posts them (the token in a header, the career the
     card was drawn for) and gets JSON back, so the card says what happened and the page stays;
     without the script the form posts as usual and comes back to the same wall."""
     env.draw(4)
@@ -220,18 +220,18 @@ def test_new_picture_and_new_face_from_a_card(env: Env) -> None:
         assert 'name="csrf_token"' in form and 'name="career_id"' in form, url
         assert f'name="next" value="{back}"' in form, url
         assert 'role="group" aria-label="Mine Alpha"' in form, url
-        assert '<button title="A new picture of the same character">New picture</button>' in form
+        assert '<button title="A new picture of the same character">Redraw</button>' in form
         assert (
             '<button formaction="/players/1001/new-face"'
             ' title="A new character, then a picture of it">New face</button>'
         ) in form, url
         assert '</form><span class="thumb-note" role="status"></span></div>' in page, url
     korean = env.client.get("/gallery", headers=KOREAN_WINDOWS).text
-    assert ">새 그림</button>" in korean and ">새 얼굴</button>" in korean
+    assert ">다시 그리기</button>" in korean and ">새 얼굴</button>" in korean
     career = re.search(r'name="career_id" value="(\d+)"', form)[1]
 
     r = env.client.post("/players/1001/new-picture", data={"career_id": career}, headers=BY_SCRIPT)
-    assert r.status_code == 200 and r.json() == {"ok": True, "message": "New picture queued."}
+    assert r.status_code == 200 and r.json() == {"ok": True, "message": "Redraw queued."}
     r = env.client.post(
         "/players/1002/new-face", data={"career_id": career}, headers=BY_SCRIPT | KOREAN_WINDOWS
     )
@@ -248,7 +248,7 @@ def test_new_picture_and_new_face_from_a_card(env: Env) -> None:
         data={"career_id": career, "next": "/gallery?where=league"},
     )
     assert r.status_code == 303
-    assert r.headers["location"] == "/gallery?where=league&msg=New%20picture%20queued."
+    assert r.headers["location"] == "/gallery?where=league&msg=Redraw%20queued."
     assert env.jobs(NEWGEN + 2) == [(int(career), "redraw")]
 
 

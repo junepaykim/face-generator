@@ -244,3 +244,38 @@ def test_age_ca_and_pa_line_up_on_the_right(env: Env) -> None:
     row = rows(page)["Famous Striker"]
     numbers = re.findall(r'<td class="num">([^<]+)</td>', row)
     assert numbers[0].isdigit() and numbers[1:] == ["185", "190"]
+
+
+def test_the_player_page_says_draw_and_redraw_too(env: Env) -> None:
+    """Draw and Redraw on a player's page as on the list's bar (Phase 17g, at the user's
+    request); the Gallery's cards say Redraw too (test_gallery.py)."""
+    page = unescape(env.client.get(f"/players/{STAR}").text)  # no picture yet
+    assert re.search(
+        rf'<form method="post" action="/players/{STAR}/generate" class="inline">.*?'
+        r'<label>Draw in <select name="group">.*?<button class="primary">Draw</button>',
+        page,
+        re.DOTALL,
+    )
+    assert f'action="/players/{STAR}/new-picture"' not in page
+    env.worker.step()  # Mine Player gets a picture
+    page = unescape(env.client.get(f"/players/{MINE}").text)
+    assert f'action="/players/{MINE}/generate"' not in page
+    assert re.search(
+        rf'<form method="post" action="/players/{MINE}/new-picture">.*?'
+        r'<button title="A new picture of the same character[^"]*">Redraw</button></form>',
+        page,
+        re.DOTALL,
+    )
+    korean = unescape(env.client.get(f"/players/{MINE}", headers=KOREAN_WINDOWS).text)
+    assert ">다시 그리기</button></form>" in korean
+    korean = unescape(env.client.get(f"/players/{STAR}", headers=KOREAN_WINDOWS).text)
+    assert "<label>그룹 <select" in korean and '<button class="primary">그리기</button>' in korean
+    # The messages name the buttons.
+    r = post_player_action(env.client, f"/players/{MINE}/new-picture")
+    assert "Redraw queued." in unescape(env.client.get(r.headers["location"]).text)
+    r = post_player_action(env.client, f"/players/{STAR}/new-face")
+    text = unescape(env.client.get(r.headers["location"]).text)
+    assert "Famous Striker: in no group; use Draw and choose one" in text
+    r = post_player_action(env.client, f"/players/{STAR}/new-face", headers=KOREAN_WINDOWS)
+    korean = unescape(env.client.get(r.headers["location"], headers=KOREAN_WINDOWS).text)
+    assert "그룹이 없습니다. ‘그리기’로 그룹을 골라 주세요" in korean
