@@ -22,6 +22,8 @@ class ImageModel:
     """What a `style.model` choice means for the pictures it draws."""
 
     name: str
+    repo: str
+    """Model identifier stored with each picture, also used for loading its weights."""
     photo: bool
     """Draws photos: a man gets the photo prompt in sentences (core/man_prompt.py)."""
     reference: bool
@@ -31,9 +33,19 @@ class ImageModel:
 
 
 IMAGE_MODELS: dict[str, ImageModel] = {
-    "animagine": ImageModel("Animagine XL 4.0", photo=False, reference=True, negative=True),
-    "realvis": ImageModel("RealVisXL V5.0", photo=True, reference=True, negative=True),
-    "zimage_turbo": ImageModel("Z-Image-Turbo", photo=True, reference=False, negative=False),
+    "animagine": ImageModel(
+        "Animagine XL 4.0",
+        "cagliostrolab/animagine-xl-4.0",
+        photo=False,
+        reference=True,
+        negative=True,
+    ),
+    "realvis": ImageModel(
+        "RealVisXL V5.0", "SG161222/RealVisXL_V5.0", photo=True, reference=True, negative=True
+    ),
+    "zimage_turbo": ImageModel(
+        "Z-Image-Turbo", "Tongyi-MAI/Z-Image-Turbo", photo=True, reference=False, negative=False
+    ),
 }
 MODEL_CHOICES = tuple(IMAGE_MODELS)
 """`style.model`: the image model everyone is drawn with (user, 2026-11-20)."""

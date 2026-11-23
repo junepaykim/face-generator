@@ -14,6 +14,7 @@ import json
 import sqlite3
 from typing import Any
 
+from facegen.persistence.image_store import picture_revision
 from facegen.persistence.jobs import load_career
 from facegen.runtime.contracts import SyncStatus
 from facegen.web import queries
@@ -68,6 +69,8 @@ def snapshot(
             "SELECT MAX(id), COUNT(*), TOTAL(id) FROM images WHERE is_current = 1"
         ).fetchone()
     )
+    if career:
+        current.append(picture_revision(conn, career.id))
     shown = None
     if worker is not None:
         shown = [
@@ -84,6 +87,7 @@ def snapshot(
     status = {
         "extra": extra,  # the first-run guide's own state (Phase 12f): the card's answer
         "career": career.id if career else None,
+        "pictures": current,
         "db": db,
         "worker": shown,
         "sync": repr(sync),

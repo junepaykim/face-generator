@@ -184,8 +184,9 @@ def _id(value: object) -> int | None:
         return value
     if isinstance(value, tuple) and len(value) == 2 and value[0] == value[1]:
         return int(value[0])
-    if isinstance(value, str) and value.isdigit():
-        return int(value)
+    if isinstance(value, str) and len(value) <= 19 and value.isascii() and value.isdigit():
+        number = int(value)
+        return number if number < 1 << 63 else None  # the largest numeric field is a signed int64
     if isinstance(value, Record):
         inner = _id(_field(value, "comp"))
         dbid = _field(value, "DBID")

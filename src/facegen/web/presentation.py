@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -13,9 +14,10 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 
 from facegen.core.planner import reference_scale
-from facegen.core.settings_values import IMAGE_MODELS, Settings
+from facegen.core.settings_values import Settings
 from facegen.core.traits import TRAIT_TABLES
 from facegen.i18n import GROUPS, Translator
+from facegen.persistence.image_store import reference_problem
 from facegen.persistence.jobs import load_career
 from facegen.setup.models import REPOS, gigabytes
 from facegen.web import queries
@@ -45,13 +47,14 @@ def static_version(folder: Path) -> str:
     return digest.hexdigest()[:10]
 
 
-def uses_reference(kind: str, at_my_club: bool, settings: Settings) -> bool:
-    """Whether a job would draw with the player's current picture as a reference: never with
-    a model that takes none (Z-Image-Turbo). The worker also draws without one when the current
-    picture shows another gender or was drawn by another model."""
-    if not IMAGE_MODELS[settings.style.model].reference:
-        return False
-    return reference_scale(kind, at_my_club, settings.reference) is not None
+def uses_reference(
+    kind: str, at_my_club: bool, settings: Settings, current: Mapping[str, Any] | None
+) -> bool:
+    """Whether the job can use the current master as a reference."""
+    return (
+        reference_scale(kind, at_my_club, settings.reference) is not None
+        and reference_problem(settings, current) is None
+    )
 
 
 def group_chip(group: str, tr: Translator) -> Markup:
@@ -110,6 +113,7 @@ def create_templates() -> Jinja2Templates:
         static_version=static_version(HERE / "static"),
     )
     env.filters["upper_group"] = lambda g: (g or "-").upper()
+    env.filters["picture_filename"] = lambda path: Path(path).name
     env.filters["num"] = lambda n: f"{n:,}" if isinstance(n, int) else n
     return templates
 

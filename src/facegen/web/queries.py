@@ -229,9 +229,11 @@ def queue(conn: sqlite3.Connection, career_id: int, limit: int = 15) -> list[dic
         dict(r)
         for r in conn.execute(
             "SELECT j.id, j.unique_id, j.kind, j.group_name, j.manual, j.tier, j.status, j.reason,"
-            " p.name, p.at_my_club, c.name AS club FROM jobs j"
+            " p.name, p.at_my_club, c.name AS club, i.master_path, i.model, i.gender FROM jobs j"
             " JOIN players p ON p.career_id = j.career_id AND p.unique_id = j.unique_id"
             " LEFT JOIN clubs c ON c.career_id = p.career_id AND c.club_id = p.club_id"
+            " LEFT JOIN images i ON i.career_id = j.career_id AND i.unique_id = j.unique_id"
+            "  AND i.is_current = 1"
             " WHERE j.career_id = ? AND j.status IN ('queued', 'running')"
             " ORDER BY j.status = 'queued', j.tier, j.rank, j.id LIMIT ?",
             (career_id, limit),
@@ -277,7 +279,8 @@ def recent_pictures(
     return [
         dict(r)
         for r in conn.execute(
-            "SELECT i.id, i.unique_id, i.group_name, i.reason, i.created_at, i.is_current, p.name"
+            "SELECT i.id, i.unique_id, i.group_name, i.reason, i.created_at, i.is_current,"
+            " i.master_path, p.name"
             " FROM images i JOIN players p"
             " ON p.career_id = i.career_id AND p.unique_id = i.unique_id"
             " WHERE i.career_id = ? AND i.master_path IS NOT NULL"
@@ -380,7 +383,7 @@ def gallery_page(
     )
     total = conn.execute(f"SELECT COUNT(*){joins} WHERE {where}", args).fetchone()[0]
     rows = conn.execute(
-        "SELECT i.id, i.unique_id, i.group_name, i.created_at, p.name, p.at_my_club,"
+        "SELECT i.id, i.unique_id, i.group_name, i.created_at, i.master_path, p.name, p.at_my_club,"
         " p.is_staff, p.media_role, c.name AS club"
         f"{joins} LEFT JOIN clubs c ON c.career_id = p.career_id AND c.club_id = p.club_id"
         f" WHERE {where} ORDER BY {GALLERY_SORTS[f.sort]} LIMIT ? OFFSET ?",

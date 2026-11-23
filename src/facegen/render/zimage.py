@@ -23,6 +23,7 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 from facegen.core.prompt import Prompt
+from facegen.core.settings_values import IMAGE_MODELS
 from facegen.platform.memory import release_free_memory
 from facegen.render.gpu import on_gpu
 from facegen.render.prompt_cache import EmbeddingCache
@@ -32,7 +33,7 @@ from facegen.render.renderer import DETAIL_STRENGTH, HEIGHT, TEXT_CACHE_SIZE, WI
 if TYPE_CHECKING:
     from PIL.Image import Image
 
-ZIMAGE_REPO = "Tongyi-MAI/Z-Image-Turbo"
+ZIMAGE_REPO = IMAGE_MODELS["zimage_turbo"].repo
 STEPS = 9
 """The card's 9 steps: 8 transformer passes."""
 GUIDANCE = 0.0

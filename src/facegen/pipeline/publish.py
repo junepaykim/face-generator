@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 from facegen.core.settings_values import ASPECTS
 from facegen.persistence import publication
 from facegen.persistence.db import active_career_id, transaction
+from facegen.persistence.image_store import mark_pictures_changed
 from facegen.platform import native
 from facegen.platform.locking import file_lock
 from facegen.render.picture import ASPECT, Box, aspect_box, crop_to_aspect, published_size
@@ -262,6 +263,8 @@ def publish_career(
         _write_atomic(dest, data)
         conn.execute("UPDATE images SET published_path = ? WHERE id = ?", (str(dest), image_id))
     written = len(todo)
+    if written:
+        mark_pictures_changed(conn, career_id)
     shown = mapped if active else []
     config_changed = (
         write_config(folder, shown, fm_user_dir) if mapped or folder.exists() else False

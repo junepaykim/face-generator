@@ -94,18 +94,9 @@
       </div>
     </fieldset>
 
-    {% set every = namespace(parts=[]) %}
-    {% for g in ("a", "b", "c") %}
-      {% set ca = f["cutoffs.everywhere." ~ g ~ "_ca"].value %}{% set pa = f["cutoffs.everywhere." ~ g ~ "_pa"].value %}
-      {% if ca == "-" and pa == "-" %}{% set text = tr("settings.value.off") %}
-      {% elif pa == "-" %}{% set text = "CA " ~ ca ~ "+" %}
-      {% elif ca == "-" %}{% set text = "PA " ~ pa ~ "+" %}
-      {% else %}{% set text = tr("cutoffs.either", ca=ca, pa=pa) %}{% endif %}
-      {% set every.parts = every.parts + [(g, text)] %}
-    {% endfor %}
     {% set bad = namespace(here=false) %}{% for k in errors %}{% if k.startswith("cutoffs.everywhere.") %}{% set bad.here = true %}{% endif %}{% endfor %}
     <details class="everywhere" id="section-cutoffs-everywhere"{% if bad.here %} open{% endif %}>
-      <summary><strong>{{ t("settings.title.cutoffs.everywhere") }}</strong>: {% for g, text in every.parts %}{{ grp(g) }} {{ text }}{% if not loop.last %} · {% endif %}{% endfor %}</summary>
+      <summary data-part="everywhere-summary">{% include "_everywhere_summary.html" %}</summary>
       <table class="cutoff-table">
         <thead><tr><th></th><th>CA</th><th>PA</th></tr></thead>
         <tbody>

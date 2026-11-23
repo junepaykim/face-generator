@@ -38,7 +38,11 @@ from facegen.web.presentation import Presentation
 from facegen.web.responses import _redirect, _safe_next
 from facegen.web.settings_view import live_parts
 
-LIVE_PARTS = {"tier-summary": "_tier_summary.html", "staff-looks": "_staff_looks.html"}
+LIVE_PARTS = {
+    "tier-summary": "_tier_summary.html",
+    "staff-looks": "_staff_looks.html",
+    "everywhere-summary": "_everywhere_summary.html",
+}
 """The Advanced page's parts drawn again after each save (Phase 16e), by `data-part` name."""
 RELOAD_PREFIXES = ("display.", "cutoffs.mode", "age.staff.mode")
 """Settings whose change redraws the page: its language or theme, or which fields it shows."""
@@ -227,6 +231,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             tabs=settings_tabs(sections),
             tab_anchors=tab_anchors(),
             fields={f.key: f for _, _, _, fs in sections for f in fs},
+            values=shown,
             card=deps.card.known(),
             **live_parts(conn, current, career.id if career else None, t),
             info={
@@ -463,7 +468,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                 )
                 texts = presentation.texts(request, outcome.settings)
                 parts = {
-                    name: templates.get_template(file).render(**texts, **live)
+                    name: templates.get_template(file).render(**texts, **live, values=current)
                     for name, file in LIVE_PARTS.items()
                 }
                 chosen_now = {

@@ -6,6 +6,7 @@ import io
 import json
 import threading
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
@@ -156,10 +157,10 @@ def test_pipe_errors_remain_caller_policy(
         models.run_child(FailsOnce(), cache=models.HubCache(tmp_path), files=())
 
 
-def test_model_progress_and_file_messages_share_a_writer() -> None:
+def test_model_progress_and_file_messages_share_a_writer(monkeypatch: pytest.MonkeyPatch) -> None:
     files = tuple(models.ModelFile("made/up", f"{i}.json", 10) for i in range(4))
     have: set[models.ModelFile] = set()
-    cache = SimpleNamespace(has=lambda f: f in have, partial_bytes=lambda repo: 3)
+    cache = SimpleNamespace(has=lambda f: f in have)
     reported = threading.Event()
 
     class ProgressOutput(FragmentedOutput):
@@ -169,12 +170,16 @@ def test_model_progress_and_file_messages_share_a_writer() -> None:
                 reported.set()
             return count
 
-    def fetch(f: models.ModelFile) -> None:
+    def fetch(f: models.ModelFile, report: Callable[[int], None]) -> None:
+        callback = threading.Thread(target=report, args=(3,))
+        callback.start()
         assert reported.wait(5)
+        callback.join(5)
         have.add(f)
 
+    monkeypatch.setattr(models, "hf_fetch", fetch)
     out = ProgressOutput()
-    assert models.run_child(out, cache=cache, files=files, fetch=fetch, interval=0.001) == 0
+    assert models.run_child(out, cache=cache, files=files, interval=0) == 0
     messages = [json.loads(line) for line in "".join(out.parts).splitlines()]
     assert messages[0]["type"] == "plan"
     assert messages[-1]["type"] == "done"

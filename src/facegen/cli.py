@@ -493,7 +493,6 @@ def cmd_serve(
         build_runtime,
     )
     from facegen.runtime.logging import log_to_file
-    from facegen.runtime.worker_process import STOP_TIMEOUT
 
     try:
         rt = build_runtime(
@@ -531,22 +530,23 @@ def cmd_serve(
         else:
             run_server(rt.app, host=rt.host, port=rt.port)
     finally:
-        rt.stop_updates()
-        for name, stop in rt.stop_steps():
-            if name == "sync" and rt.syncer.status().running:
-                print(
-                    "Stopping the sync; the save is read again at the next start...",
-                    file=out,
-                    flush=True,
-                )
-            if name == "worker":
-                print(
-                    "Stopping the worker; a picture being drawn is drawn again at the next"
-                    f" start (at most {STOP_TIMEOUT:.0f} s)...",
-                    file=out,
-                    flush=True,
-                )
-            stop()
+        try:
+            for name, stop in rt.stop_steps():
+                if name == "sync" and rt.syncer.status().running:
+                    print(
+                        "Stopping the sync; the save is read again at the next start...",
+                        file=out,
+                        flush=True,
+                    )
+                if name == "drawing":
+                    print(
+                        "Stopping the worker. Interrupted jobs will retry on restart.",
+                        file=out,
+                        flush=True,
+                    )
+                stop()
+        finally:
+            rt.stop_updates()
     return 0
 
 

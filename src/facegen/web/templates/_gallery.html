@@ -3,8 +3,9 @@
 <section id="wall-grid" data-pictures>
   <div class="thumbs wall">
     {% for r in rows %}
-    <a class="thumb-card" href="/players/{{ r.unique_id }}" data-id="{{ r.id }}">
-      <img src="/pictures/{{ r.id }}?size=192" srcset="/pictures/{{ r.id }}?size=192 1x, /pictures/{{ r.id }}?size=384 2x" loading="lazy" alt="{{ r.name }}">
+    {% set version = r.master_path|picture_filename %}
+    <a class="thumb-card" href="/players/{{ r.unique_id }}" data-id="{{ r.id }}:{{ version }}">
+      <img src="/pictures/{{ r.id }}?size=192&amp;v={{ version }}" srcset="/pictures/{{ r.id }}?size=192&amp;v={{ version }} 1x, /pictures/{{ r.id }}?size=384&amp;v={{ version }} 2x" loading="lazy" alt="{{ r.name }}">
       <span class="thumb-name">{{ r.name }}</span>
       <span class="thumb-club muted small">{% if r.club %}{{ r.club }}{% elif r.media_role %}{{ t("players.origin_media") }}{% else %}{{ t("common.free_agent") }}{% endif %}</span>
       <span class="thumb-meta">{{ grp(r.group_name) }} <time class="muted small" datetime="{{ r.created_at }}" data-short>{{ r.created_at[5:10] }}</time></span>

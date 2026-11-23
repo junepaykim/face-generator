@@ -100,20 +100,19 @@ def cut_for_share(hist: Histogram, share: float) -> int | None:
 
 
 def share_at_or_above(hist: Histogram, value: int) -> float | None:
-    """The share (one decimal) whose cut is exactly `value`, for Manual -> Auto; None for an
-    empty league.
+    """The share (one decimal) corresponding to a Manual cutoff, or None for an empty league.
 
     The largest one-decimal share at most count(>= value) / n is taken, so the cut picks the
     same people; if no one-decimal share lands between the people above the lowest of them and
     the lowest themselves (a very large league), the nearest one above is taken instead. Nobody
-    reaching the value gives the smallest share, 0.1.
+    reaching the value gives 0%, represented by an off cell in Auto.
     """
     n = hist.total
     if n == 0:
         return None
     at = hist.at_or_above(value)
     if at == 0:
-        return 0.1
+        return 0.0
     # The value of the last person picked: nobody may hold `value` itself (85 with 90, 80, 60).
     lowest = next(v for v in range(max(0, value), TOP + 1) if hist.counts[v])
     above = hist.at_or_above(lowest + 1)
@@ -205,8 +204,8 @@ def effective_cutoffs(
     """The numbers in force per tier and scope.
 
     `stats` is the last sync's candidates by scope (missing: no league found there, so its
-    share rules pick nobody). `no_photo` says whether pre-existing players without a photo are
-    candidates (`no_photo.enabled`). In Manual, my league's cells are the numbers set by hand.
+    rules pick nobody). `no_photo` says whether pre-existing players without a photo are
+    candidates (`no_photo.enabled`). In Manual, a found league uses the numbers set by hand.
     """
     stats = stats or {}
 
@@ -220,7 +219,7 @@ def effective_cutoffs(
     league: dict[str, Cut] = {}
     for cell in LEAGUE_CELLS:
         if settings.mode == "manual":
-            number = settings.manual.get(cell)
+            number = settings.manual.get(cell) if "league" in stats else None
             league[cell] = Cut(number) if number is not None else NO_CUT
         else:
             league[cell] = from_share("league", cell, settings.share.get(cell))
@@ -257,9 +256,9 @@ def convert_mode(
 ) -> dict[str, float | int | str]:
     """The setting values that switching my league's cells to `to` ("auto" or "manual") sets,
     converted from the current save: each Auto share becomes the number it gives ("top 6%" ->
-    "98"), each Manual number the share that gives it. A cell whose other form already gives
-    the same people is kept as it is, so Auto -> Manual -> Auto keeps "6"; "-" stays "-". With
-    no save synced, only the mode changes. `cutoffs.mode` is in the result.
+    "98"), each Manual number the share that gives it. Keep an existing value that already
+    selects the same candidates. A Manual number above every candidate becomes "-" in Auto.
+    With no league found, only the mode changes. `cutoffs.mode` is in the result.
     """
     changes: dict[str, float | int | str] = {"cutoffs.mode": to}
     league = (stats or {}).get("league")
@@ -270,23 +269,24 @@ def convert_mode(
         hist = league.candidates(attribute, no_photo)
         share = settings.share.get(cell)
         number = settings.manual.get(cell)
+        cut = cut_for_share(hist, share) if share is not None else None
+        if number is not None and hist.total:
+            selected = hist.at_or_above(cut) if cut is not None else 0
+            if hist.at_or_above(number) == selected:
+                continue  # the stored value in the other mode already selects these candidates
         if to == "manual":
             if share is None:
                 if number is not None:
                     changes[f"cutoffs.manual.{cell}"] = OFF
                 continue
-            cut = cut_for_share(hist, share)
-            if cut is None or (number is not None and number == cut):
-                continue
-            changes[f"cutoffs.manual.{cell}"] = max(1, cut)
+            if cut is not None:
+                changes[f"cutoffs.manual.{cell}"] = max(1, cut)
         else:
             if number is None:
                 if share is not None:
                     changes[f"cutoffs.share.{cell}"] = OFF
                 continue
-            if share is not None and cut_for_share(hist, share) == number:
-                continue
             converted = share_at_or_above(hist, number)
             if converted is not None:
-                changes[f"cutoffs.share.{cell}"] = converted
+                changes[f"cutoffs.share.{cell}"] = converted if converted > 0 else OFF
     return changes

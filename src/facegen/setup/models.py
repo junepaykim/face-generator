@@ -8,8 +8,8 @@ the offline flags. The child emits JSON lines on stdout: plan, current file, byt
 completion or error.
 
 The caller must obtain consent in the UI or CLI (including `--yes`) before starting a
-download, for the model it names. Finished files are skipped; huggingface_hub resumes partial
-files.
+download, for the model it names. Finished files are skipped. After an interruption the Hub
+starts a fresh temporary file for each missing file.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, TextIO
 
+from facegen.core.settings_values import IMAGE_MODELS
 from facegen.platform import procs
 from facegen.platform.pipes import JsonWriter, drain_lines
 
@@ -51,9 +52,9 @@ class ModelFile:
         return f"{self.repo}/{self.filename}"
 
 
-ANIMAGINE = "cagliostrolab/animagine-xl-4.0"
-REALVIS = "SG161222/RealVisXL_V5.0"
-ZIMAGE_TURBO = "Tongyi-MAI/Z-Image-Turbo"
+ANIMAGINE = IMAGE_MODELS["animagine"].repo
+REALVIS = IMAGE_MODELS["realvis"].repo
+ZIMAGE_TURBO = IMAGE_MODELS["zimage_turbo"].repo
 IP_ADAPTER = "h94/IP-Adapter"
 TAGGER = "SmilingWolf/wd-eva02-large-tagger-v3"
 
@@ -251,7 +252,7 @@ class HubCache:
         return missing(files, lambda f: _snapshot_has(snapshot(f.repo), f.filename))
 
     def partial_bytes(self, repo: str) -> int:
-        """Bytes in the repository's unfinished downloads (`blobs/*.incomplete`)."""
+        """Total size of unfinished blobs for cache inspection, including abandoned transfers."""
         total = 0
         try:
             with os.scandir(self.repo_dir(repo) / "blobs") as entries:
@@ -358,13 +359,30 @@ def child_env(base: dict[str, str] | None = None) -> dict[str, str]:
     return env
 
 
-def hf_fetch(f: ModelFile) -> None:
-    """Download one file into the cache with huggingface_hub (resumes a partial one)."""
+def hf_fetch(f: ModelFile, on_bytes: Callable[[int], None] | None = None) -> None:
+    """Download one file; report its reconstructed byte count for both HTTP and Xet."""
     for name in CHILD_ENV_DROP:  # read when huggingface_hub is imported
         os.environ.pop(name, None)
     from huggingface_hub import hf_hub_download
+    from tqdm import tqdm
 
-    hf_hub_download(f.repo, f.filename, revision=REVISION)
+    class FileProgress(tqdm):
+        def __init__(self, **kwargs: Any) -> None:
+            super().__init__(**{**kwargs, "disable": True})
+
+        def update(self, n: int = 1) -> None:
+            self.n += n
+            if on_bytes is not None:
+                on_bytes(self.n)
+
+        # Xet supplies network transfer separately from reconstructed file bytes.
+        def update_transfer(self, n: int) -> None:
+            pass
+
+        def set_transfer_postfix_str(self, postfix: str, refresh: bool = False) -> None:
+            pass
+
+    hf_hub_download(f.repo, f.filename, revision=REVISION, tqdm_class=FileProgress)
 
 
 def run_child(
@@ -372,7 +390,7 @@ def run_child(
     *,
     files: Sequence[ModelFile],
     cache: HubCache | None = None,
-    fetch: Callable[[ModelFile], None] = hf_fetch,
+    fetch: Callable[[ModelFile], None] | None = None,
     interval: float = PROGRESS_SECONDS,
 ) -> int:
     """`facegen models --child --model KEY`: download what is missing of `files` (that model's
@@ -388,37 +406,28 @@ def run_child(
     total = total_size(todo)
     send({"type": "plan", "files": len(todo), "bytes": total})
     finished = 0
-    current: list[ModelFile] = []
-    stop = threading.Event()
+    last_report = 0.0
 
-    def bytes_now() -> int:
-        if not current:
-            return finished
-        f = current[0]
-        return finished + min(cache.partial_bytes(f.repo), f.size)
+    def report(file_bytes: int) -> None:
+        nonlocal last_report
+        now = time.monotonic()
+        if now - last_report >= interval:
+            send({"type": "progress", "done": finished + min(file_bytes, f.size)})
+            last_report = now
 
-    def report() -> None:
-        while not stop.wait(interval):
-            send({"type": "progress", "done": bytes_now()})
-
-    reporter = threading.Thread(target=report, name="facegen-models-progress", daemon=True)
-    reporter.start()
     try:
         for i, f in enumerate(todo, start=1):
-            current[:] = [f]
             send({"type": "file", "index": i, "name": f.label, "size": f.size})
-            fetch(f)
+            if fetch is None:
+                hf_fetch(f, report)
+            else:
+                fetch(f)
             finished += f.size
-            current.clear()
             send({"type": "progress", "done": finished})
     except BaseException as exc:  # noqa: BLE001 - say why, then end
-        stop.set()
         message = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
         send({"type": "error", "message": message[:1000]})
         return 1
-    finally:
-        stop.set()
-        reporter.join(interval + 1)
     left = missing(files, cache.has)
     if left:
         names = ", ".join(f.label for f in left[:3])
@@ -508,7 +517,7 @@ class ModelDownload:
             self._thread.join(timeout)
 
     def stop(self) -> None:
-        """End a running download (facegen is quitting); it resumes at the next start."""
+        """End a running download on Quit. Completed files are reused on retry."""
         with self._lock:
             self._stopping = True  # a child not started yet is ended as soon as it is
             child = self._child

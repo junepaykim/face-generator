@@ -17,7 +17,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from facegen.core.leagues import league_ladder, my_league
+from facegen.core.leagues import UEFA_CLUB_COMPETITIONS, domestic_membership, uefa_season
 from facegen.core.records import (
     ClubRecord,
     CompetitionRules,
@@ -300,16 +300,23 @@ def convert_league_tables(
 
 
 def convert_fixtures(
-    fixtures: Iterable[Any], uid_map: Mapping[int, int], comp_keys: Mapping[int, int]
+    fixtures: Iterable[Any],
+    uid_map: Mapping[int, int],
+    comp_keys: Mapping[int, int],
+    game_date: date | None = None,
 ) -> tuple[dict[int, dict[int, int]], dict[int, int]]:
-    """First-team fixtures per club in each competition's latest season, and that season (its
-    start year) for each competition whose fixtures give one."""
+    """First-team fixtures in the current UEFA edition or each other competition's latest
+    season, and the start year of the selected fixtures where known."""
     by_season: dict[int, dict[int, Counter[int]]] = defaultdict(lambda: defaultdict(Counter))
+    edition = uefa_season(game_date)
     for f in fixtures:
         if f.competition_id is None or f.competition_id not in comp_keys:
             continue
+        cid = comp_keys[f.competition_id]
+        if cid in UEFA_CLUB_COMPETITIONS and (edition is None or f.season_start_year != edition):
+            continue
         season = f.season_start_year if f.season_start_year is not None else -1
-        counts = by_season[comp_keys[f.competition_id]][season]
+        counts = by_season[cid][season]
         for uid, slot in ((f.home_club_uid, f.home_team_slot), (f.away_club_uid, f.away_team_slot)):
             if uid is not None and uid in uid_map and slot in _FIRST_TEAM_SLOTS:
                 counts[uid_map[uid]] += 1
@@ -378,7 +385,7 @@ class FmsaveDataSource:
             notes = (unknown_build_note(snapshot.meta.build, reader),)
         messages = tuple(dict.fromkeys(str(w.message) for w in caught))
         meta = replace(snapshot.meta, warnings=notes + snapshot.meta.warnings + messages)
-        return replace(snapshot, meta=meta)
+        return replace(snapshot, meta=meta, read_domestic=snapshot.domestic)
 
     def _read(self, save: Any, fmsave: Any) -> Snapshot:
         info = save.info
@@ -404,7 +411,9 @@ class FmsaveDataSource:
         try:
             comp_keys = {c.id: competition_key(c.database_id, c.id) for c in save.competitions()}
             tables = convert_league_tables(save.league_tables(), uid_map, comp_keys)
-            fixture_counts, fixture_seasons = convert_fixtures(save.fixtures(), uid_map, comp_keys)
+            fixture_counts, fixture_seasons = convert_fixtures(
+                save.fixtures(), uid_map, comp_keys, info.game_date
+            )
         except fmsave.FmsaveError as exc:
             notes.append(f"competition data unavailable: {exc}")
         with ExitStack() as section:
@@ -419,6 +428,9 @@ class FmsaveDataSource:
                     "the save's league levels unavailable, so no league above or below "
                     f"({type(exc).__name__}: {exc})"
                 )
+            domestic = domestic_membership(
+                managed_id, clubs, tables, fixture_counts, fixture_seasons, rules
+            )
             # Staff-reader failures must not prevent player syncs.
             staff: tuple[StaffRecord, ...] = ()
             staff_read = True
@@ -426,23 +438,12 @@ class FmsaveDataSource:
             if managed:
                 try:
                     all_staff = list(save.staff())
-                    ladder = league_ladder(
-                        managed_id,
-                        clubs,
-                        tables,
-                        fixture_counts,
-                        seasons=fixture_seasons,
-                        rules=rules,
-                    )
-                    _, league_clubs = my_league(
-                        ladder, managed_id, clubs, tables, fixture_counts, seasons=fixture_seasons
-                    )
                     staff = convert_staff(
                         all_staff,
                         uid_map,
                         managed[0].club_uid,
                         info.game_date,
-                        manager_club_ids=league_clubs,
+                        manager_club_ids=domestic.club_ids,
                         nations=nations,
                     )
                     selected = {s.unique_id for s in staff}
@@ -492,6 +493,7 @@ class FmsaveDataSource:
             fixture_counts=fixture_counts,
             fixture_seasons=fixture_seasons,
             competition_rules=rules,
+            read_domestic=domestic,
             staff=staff,
             staff_read=staff_read,
             media=media,

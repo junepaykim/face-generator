@@ -97,8 +97,8 @@ def test_manual_from_auto_and_back_picks_the_same_people(n: int, share: float) -
     assert back == round(back, 1) and 0.1 <= back <= 100
 
 
-def test_share_of_a_number_nobody_reaches_is_the_smallest_share() -> None:
-    assert share_at_or_above(hist(50, 60), 150) == 0.1
+def test_share_of_a_number_nobody_reaches_is_zero() -> None:
+    assert share_at_or_above(hist(50, 60), 150) == 0.0
 
 
 def test_a_number_nobody_holds_becomes_the_share_that_picks_the_same_people() -> None:
@@ -117,16 +117,26 @@ def test_every_number_becomes_a_share_that_picks_the_same_people(n: int, number:
     share = share_at_or_above(h, number)
     assert share is not None
     cut = cut_for_share(h, share)
-    assert cut is not None
-    if h.at_or_above(number):  # nobody reaching it is the smallest share (above)
-        assert h.at_or_above(cut) == h.at_or_above(number)
+    assert (h.at_or_above(cut) if cut is not None else 0) == h.at_or_above(number)
 
 
 def test_a_number_nobody_holds_converts_to_the_share_that_keeps_its_people() -> None:
     league = stats(hist(90, 80, 60))
-    manual = replace(DEFAULT, mode="manual", manual={**DEFAULT.manual, "a_ca": 85})
+    manual = replace(
+        DEFAULT, mode="manual", manual={**DEFAULT.manual, "a_ca": 85}, share={"a_ca": 50.0}
+    )
     changes = convert_mode(manual, "auto", {"league": league})
     assert changes["cutoffs.share.a_ca"] == 33.3  # picks the 90 alone, as 85 did
+
+
+def test_switching_keeps_equivalent_cutoffs_across_a_gap_in_ability() -> None:
+    league = {"league": stats(hist(90, 80, 80, 60))}
+    settings = replace(
+        DEFAULT, manual={**DEFAULT.manual, "a_ca": 85}, share={**DEFAULT.share, "a_ca": 20.0}
+    )
+    assert "cutoffs.manual.a_ca" not in convert_mode(settings, "manual", league)
+    back = convert_mode(replace(settings, mode="manual"), "auto", league)
+    assert "cutoffs.share.a_ca" not in back
 
 
 def test_cell_names_and_share_text() -> None:
@@ -173,8 +183,9 @@ def test_photo_less_candidates_count_only_while_the_setting_is_on() -> None:
     assert off.league_cut("b_ca").value == 50  # newgens only
 
 
-def test_without_stats_only_the_global_cuts_work() -> None:
-    cuts = effective_cutoffs(DEFAULT, None)
+@pytest.mark.parametrize("mode", ["auto", "manual"])
+def test_without_stats_only_the_global_cuts_work(mode: str) -> None:
+    cuts = effective_cutoffs(replace(DEFAULT, mode=mode), None)
     assert all(cuts.league_cut(c) == NO_CUT for c in LEAGUE_CELLS)
     assert cuts.everywhere_cut("b_pa") == Cut(155)
 
@@ -188,7 +199,7 @@ def test_switching_to_manual_converts_each_share_to_its_number() -> None:
     assert changes["cutoffs.mode"] == "manual"
     assert changes["cutoffs.manual.a_ca"] == 95
     assert changes["cutoffs.manual.b_ca"] == 61
-    assert changes["cutoffs.manual.c_pa"] == "-"  # the share was off
+    assert "cutoffs.manual.c_pa" not in changes  # Manual 141 already picks nobody, as Auto off did
     assert not any(k.startswith("cutoffs.share.") for k in changes)
 
 

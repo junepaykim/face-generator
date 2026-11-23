@@ -99,7 +99,7 @@ def prepare_models(
     result = run_download(model)
     if result.error or not result.finished:
         report(f"The download did not finish: {result.error or 'stopped'}")
-        report("Run the same command again to go on where it stopped.")
+        report("Run the same command again. Completed files are kept.")
         return 3
     report("All model files are here.")
     return 0

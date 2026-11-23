@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
 from facegen.core.prompt import Prompt
+from facegen.core.settings_values import IMAGE_MODELS
 from facegen.render import quality_checks as qc
 from facegen.render.gpu import on_gpu
 from facegen.render.prompt_cache import EmbeddingCache
@@ -18,7 +19,7 @@ from facegen.render.prompt_cache import prepare as prepare_texts
 if TYPE_CHECKING:
     from PIL.Image import Image
 
-MODEL_REPO = "cagliostrolab/animagine-xl-4.0"
+MODEL_REPO = IMAGE_MODELS["animagine"].repo
 WIDTH, HEIGHT = 896, 1152
 """The 3:4 render size: Animagine's portrait size nearest 3:4 (its model card lists 896x1152),
 about SDXL's native million pixels. The master is cropped to exactly 3:4 (864x1152). A square
@@ -29,7 +30,7 @@ SAMPLER = "euler_a"
 
 DETAIL_STRENGTH = 0.35
 
-REALVIS_REPO = "SG161222/RealVisXL_V5.0"
+REALVIS_REPO = IMAGE_MODELS["realvis"].repo
 
 
 @dataclass(frozen=True, slots=True)

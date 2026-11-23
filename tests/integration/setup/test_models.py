@@ -352,6 +352,20 @@ def test_free_space_is_asked_where_the_cache_will_be(tmp_path: Path) -> None:
     assert models.free_space(tmp_path / "not" / "yet") is not None
 
 
+def test_free_space_budget_includes_the_whole_interrupted_file(
+    tmp_path: Path, small: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    put(tmp_path, SMALL[0])
+    put(tmp_path, SMALL[2])
+    blobs = tmp_path / "models--org--one" / "blobs"
+    blobs.mkdir()
+    (blobs / "etag.12345678.incomplete").write_bytes(b"x" * 800)
+    # The pinned Hub client opens a new temp file on retry, even for the same ETag.
+    monkeypatch.setattr(models, "free_space", lambda _path: models.SPACE_MARGIN + 200)
+    s = status(small, HubCache(tmp_path))
+    assert s.missing == (SMALL[1],) and s.missing_bytes == 1000 and not s.enough_space
+
+
 # --- the download process ---------------------------------------------------------------------
 
 
@@ -397,33 +411,31 @@ def test_the_child_reports_an_error_and_a_second_run_resumes(tmp_path: Path) -> 
     assert messages(out)[0] == {"type": "plan", "files": 1, "bytes": 500}
 
 
-def test_the_child_counts_a_partial_file_while_it_downloads(tmp_path: Path) -> None:
-    import threading
+def test_download_reports_only_current_file_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pytest.importorskip("tqdm")
+    for key in models.CHILD_ENV_DROP:
+        monkeypatch.setenv(key, "1")
+    blobs = tmp_path / "models--org--one" / "blobs"
+    blobs.mkdir(parents=True)
+    (blobs / "previous.12345678.incomplete").write_bytes(b"x" * 800)
+    (blobs / "other.incomplete").write_bytes(b"x" * 300)
+    f = SMALL[1]
 
-    started, release = threading.Event(), threading.Event()
+    def download(repo: str, filename: str, *, revision: str, tqdm_class: type) -> None:
+        assert (repo, filename, revision) == (f.repo, f.filename, "main")
+        with tqdm_class(total=f.size) as bar:
+            bar.update(400)
+            bar.update_transfer(375)  # Xet's transfer bytes are a separate measure
+            bar.set_transfer_postfix_str("speed", refresh=False)
+            bar.update(500)
+        put(tmp_path, f)
 
-    def slow(f: ModelFile) -> None:
-        blobs = tmp_path / "models--org--one" / "blobs"
-        blobs.mkdir(parents=True, exist_ok=True)
-        (blobs / "x.incomplete").write_bytes(b"x" * 400)
-        started.set()
-        release.wait(5)
-        (blobs / "x.incomplete").unlink()
-        put(tmp_path, f, b"x")
-
+    monkeypatch.setitem(sys.modules, "huggingface_hub", Mock(hf_hub_download=download))
     out = io.StringIO()
-    files = (SMALL[1],)
-    kwargs = {"cache": HubCache(tmp_path), "files": files, "fetch": slow, "interval": 0.02}
-    t = threading.Thread(target=run_child, args=(out,), kwargs=kwargs)
-    t.start()
-    started.wait(5)
-    for _ in range(200):
-        if any(m.get("done") == 400 for m in messages(out) if m["type"] == "progress"):
-            break
-        threading.Event().wait(0.01)
-    release.set()
-    t.join(5)
-    assert any(m.get("done") == 400 for m in messages(out) if m["type"] == "progress")
+    assert run_child(out, cache=HubCache(tmp_path), files=[f], interval=0) == 0
+    assert [m["done"] for m in messages(out) if m["type"] == "progress"] == [400, 900, 1000]
 
 
 def test_the_child_runs_online_and_quiet() -> None:

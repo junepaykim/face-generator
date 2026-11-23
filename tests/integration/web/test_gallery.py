@@ -60,7 +60,7 @@ def cards(page: str) -> list[str]:
 
 def ids(page: str) -> list[int]:
     return [
-        int(i) for i in re.findall(r'class="thumb-card" href="/players/\d+" data-id="(\d+)"', page)
+        int(i) for i in re.findall(r'class="thumb-card" href="/players/\d+" data-id="(\d+):', page)
     ]
 
 
@@ -78,7 +78,11 @@ def test_every_current_picture_newest_first(env: Env) -> None:
     assert sorted(cards(page)) == ["Abroad Star", "Mine Alpha", "Mine Beta", "Rival Kid"]
     assert ids(page) == sorted(ids(page), reverse=True)
     assert "4 pictures" in page
-    assert re.search(r'srcset="/pictures/\d+\?size=192 1x, /pictures/\d+\?size=384 2x"', page)
+    assert re.search(
+        r'srcset="/pictures/(\d+)\?size=192&amp;v=(v\d+\.png) 1x, '
+        r'/pictures/\1\?size=384&amp;v=\2 2x"',
+        page,
+    )
     assert "그림 4장" in env.client.get("/gallery", headers=KOREAN_WINDOWS).text
     # The dashboard's link goes here.
     assert 'href="/gallery">Gallery</a>' in env.client.get("/status").text

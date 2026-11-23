@@ -212,6 +212,22 @@ def test_a_number_set_by_hand_becomes_its_share(conn: sqlite3.Connection) -> Non
     assert groups(conn) == manual
 
 
+def test_switching_modes_preserves_a_manual_cutoff_that_picks_nobody(
+    conn: sqlite3.Connection,
+) -> None:
+    world(conn)
+    history.save(conn, {"cutoffs.mode": "manual"}, convert=True)
+    history.save(conn, {"cutoffs.manual.a_ca": 150, "cutoffs.manual.a_pa": "-"})
+    manual = groups(conn)
+    assert "a" not in manual.values()
+    history.save(conn, {"cutoffs.mode": "auto"}, convert=True)
+    assert load_settings(conn).cutoffs.share["a_ca"] is None
+    assert groups(conn) == manual
+    history.save(conn, {"cutoffs.mode": "manual"}, convert=True)
+    assert load_settings(conn).cutoffs.manual["a_ca"] == 150
+    assert groups(conn) == manual
+
+
 def test_without_the_saves_rules_there_is_no_league_above_or_below(
     conn: sqlite3.Connection,
 ) -> None:
@@ -234,6 +250,23 @@ def test_without_a_league_only_the_global_cuts_pick(conn: sqlite3.Connection) ->
     assert league_stats.load(conn, 1) == {}
     assert set(groups(conn).values()) == {None, "a"}
     assert group(conn, NEWGEN + 900) == "a"
+
+
+def test_manual_league_cutoffs_resume_when_a_sync_finds_the_league_again(
+    conn: sqlite3.Connection,
+) -> None:
+    youth = player(NEWGEN + 900, ca=110, club_id=MY_CLUB, team_slot=1)
+    known = snapshot([youth], clubs=clubs(), tables=(), fixture_counts=fixtures())
+    history.save(conn, {"cutoffs.mode": "manual", "cutoffs.manual.a_ca": 100})
+    run_sync(conn, known, load_settings(conn), save_file="career.fm")
+    assert group(conn, youth.unique_id) == "a"
+
+    run_sync(conn, replace(known, fixture_counts={}), load_settings(conn), save_file="career.fm")
+    assert group(conn, youth.unique_id) == "b"
+    assert load_settings(conn).cutoffs.manual["a_ca"] == 100
+
+    run_sync(conn, known, load_settings(conn), save_file="career.fm")
+    assert group(conn, youth.unique_id) == "a"
 
 
 @pytest.mark.parametrize("value", [True, False])

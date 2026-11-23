@@ -192,3 +192,9 @@ def test_an_odd_list_in_one_nations_rules_leaves_the_others_readable() -> None:
     assert rules.division_lists == (
         DivisionList(nation=765, women=False, divisions=(11, 12, 13, 14, 109201, 150990)),
     )
+
+
+def test_malformed_text_ids_leave_other_nations_readable() -> None:
+    for invalid in ("\xb2", "9" * 4500, str(1 << 63)):
+        odd = nation_rules(771, 0, [(0x0A, body(text("comp", invalid)))])
+        assert division_lists(save_bytes(odd, ENGLAND)) == division_lists(ENGLAND)

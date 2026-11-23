@@ -97,6 +97,19 @@ def test_a_uefa_competitions_clubs_leave_out_an_earlier_editions_table() -> None
     assert clubs_in_competitions(found, tables, fixtures) == {1, 2}
 
 
+def test_a_stale_table_cannot_establish_my_clubs_membership() -> None:
+    # The managed club was in both competitions last season; each now has other participants.
+    tables = (T(LEAGUE, (1, 2)), T(CONTINENTAL, (1, 2)))
+    clubs = {c: club(c, nation=1 if c < 10 else c) for c in range(1, 18)}
+    fixtures = {LEAGUE: {3: 2, 4: 2}, CONTINENTAL: {c: 2 for c in range(10, 18)}}
+    assert my_league(Ladder(), 1, clubs, tables, fixtures) == (frozenset(), frozenset())
+    assert continental_competitions(1, clubs, tables, fixtures) == frozenset()
+    assert (
+        continental_competitions(1, clubs, tables, fixtures, frozenset({CONTINENTAL}))
+        == frozenset()
+    )
+
+
 def test_my_league_is_off_when_its_season_is_older_than_another() -> None:
     """Just promoted, before the save's rules place my club: the old division's latest season
     (48 fixtures) against the new one's (46). The seasons conflict, so no league."""
@@ -313,3 +326,15 @@ def test_a_uefa_competition_counts_in_its_current_edition() -> None:
     assert UECL not in continental_competitions(
         110, clubs, stale, fixtures, seasons=seasons, game_date=today
     )
+
+
+def test_a_uefa_edition_must_be_known_and_match_the_save_date() -> None:
+    fixtures = {UCL: {1: 1, 2: 1}}
+    today = date(2027, 6, 30)  # the 2026/27 edition is current
+    for years, game_date in (({}, today), ({UCL: 2027}, today), ({UCL: 2026}, None)):
+        for listed in (frozenset(), frozenset({UCL})):
+            assert not continental_competitions(
+                1, CLUBS, (), fixtures, listed, seasons=years, game_date=game_date
+            )
+    # The qualifying clubs on the available fixture can both come from one nation.
+    assert not my_league_competitions(1, CLUBS, (), fixtures)

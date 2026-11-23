@@ -210,8 +210,7 @@ def archive_url(tag: str, repository: str = REPOSITORY) -> str:
 
 UPDATED, CHECKOUT, STILL_RUNNING, FAILED = 0, 3, 4, 5
 WAIT_SECONDS = 180.0
-"""How long the update waits for facegen to quit: the current picture (a minute at most),
-the worker and the web server."""
+"""How long the updater waits for the running app to finish cleanup and release its lock."""
 
 
 @dataclass

@@ -263,7 +263,7 @@ def test_the_app_from_start_to_quit(config_file: Path, tmp_path: Path) -> None:
     assert app.code == 0
     # The real worker's model check is in use, so there is a model download to stop too.
     assert controller.steps_run == [
-        "model download", "sync", "save watcher", "worker", "web server",
+        "drawing", "model download", "sync", "save watcher", "worker", "web server",
     ]  # fmt: skip
     assert tray.stopped.is_set() and window.closed.is_set()
     assert not port_answers("127.0.0.1", port)
@@ -320,7 +320,7 @@ def test_the_tray_alone_opens_the_dashboard_in_the_browser(config_file: Path) ->
     assert view.entry("pause").label == "Resume"  # type: ignore[union-attr]  # --paused
     app.quit()
     assert app.code == 0
-    assert app.controller.steps_run == ["sync", "save watcher", "worker", "web server"]
+    assert app.controller.steps_run == ["drawing", "sync", "save watcher", "worker", "web server"]
 
 
 def test_quit_during_a_sync_ends_its_process_at_once(
@@ -361,7 +361,7 @@ def test_quit_during_a_sync_ends_its_process_at_once(
     started = time.monotonic()
     app.quit()
     assert time.monotonic() - started < 10.0
-    assert app.code == 0 and app.controller.steps_run[0] == "sync"
+    assert app.code == 0 and app.controller.steps_run[:2] == ["drawing", "sync"]
     assert has_exited(pid)
     with closing(sqlite3.connect(settings.paths.db_path)) as conn:
         assert list(conn.iterdump()) == before

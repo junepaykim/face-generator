@@ -8,6 +8,7 @@ from typing import Any
 from PIL import Image, ImageDraw
 
 from facegen.core.prompt import Prompt
+from facegen.core.settings_values import IMAGE_MODELS
 from facegen.core.traits import ACCESSORY, EYE_COLOUR, FIELDS, HAIR_COLOUR, MARK
 from facegen.render.quality_checks import TagResult
 
@@ -105,7 +106,7 @@ def figure(width: int = 56, height: int = 72, top: float = 0.04, kind: str = "gr
 
 
 class FakeRenderer:
-    """Built by the worker as `renderer_factory(model)`; `model` reads "fake/<key>"."""
+    """A GPU-free renderer reporting the selected model's stored identifier."""
 
     def __init__(
         self,
@@ -114,7 +115,7 @@ class FakeRenderer:
         exc: BaseException | None = None,
     ) -> None:
         self.key = key
-        self.model = f"fake/{key}"
+        self.model = IMAGE_MODELS[key].repo
         self.calls: list[tuple[str, int]] = []
         self.prompts: list[Prompt] = []
         self.references: list[Any] = []

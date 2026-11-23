@@ -46,7 +46,7 @@ from facegen.core.age import age_wording, audience
 from facegen.core.classify import GROUP_RANK, Group
 from facegen.core.settings_values import Settings
 from facegen.persistence.db import active_career_id, transaction
-from facegen.persistence.image_store import save_png
+from facegen.persistence.image_store import mark_pictures_changed, save_png
 from facegen.persistence.jobs import queue_manual as _queue
 from facegen.persistence.sheet_store import select_sheet
 from facegen.pipeline.publish import PublishReport, publish_lock, publish_pack, unpublish
@@ -749,6 +749,7 @@ def _choose(
         " check_result = ? WHERE id = ?",
         (master, seed, json.dumps(check), img["id"]),
     )
+    mark_pictures_changed(conn, img["career_id"])
 
 
 def _write_pick(

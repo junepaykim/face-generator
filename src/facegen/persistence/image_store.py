@@ -5,11 +5,13 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 from facegen.core.job_records import Career, Job
 from facegen.core.prompt import Prompt
+from facegen.core.settings_values import IMAGE_MODELS, Settings
 from facegen.persistence.jobs import now
 from facegen.render.picture import ASPECT, crop_to_aspect
 
@@ -28,6 +30,54 @@ def master_dir(data_dir: Path, career_key: str, unique_id: int) -> Path:
     return data_dir / "masters" / career_key / str(unique_id)
 
 
+def mark_pictures_changed(conn: sqlite3.Connection, career_id: int) -> None:
+    """Record a change to existing pictures inside its write transaction."""
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS picture_revisions ("
+        "career_id INTEGER PRIMARY KEY REFERENCES careers(id) ON DELETE CASCADE,"
+        " revision INTEGER NOT NULL)"
+    )
+    conn.execute(
+        "INSERT INTO picture_revisions VALUES (?, 1) ON CONFLICT(career_id)"
+        " DO UPDATE SET revision = revision + 1",
+        (career_id,),
+    )
+
+
+def picture_revision(conn: sqlite3.Connection, career_id: int) -> int:
+    """A cheap live-page check, including databases created before manual picks."""
+    if not conn.execute(
+        "SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'picture_revisions'"
+    ).fetchone():
+        return 0
+    row = conn.execute(
+        "SELECT revision FROM picture_revisions WHERE career_id = ?", (career_id,)
+    ).fetchone()
+    return row[0] if row else 0
+
+
+def reference_problem(
+    settings: Settings,
+    current: Mapping[str, Any] | sqlite3.Row | None,
+    *,
+    renderer_model: str | None = None,
+    adapter: bool = True,
+) -> str | None:
+    """Why the current master cannot guide a redraw, or None if it can be used."""
+    model = IMAGE_MODELS[settings.style.model]
+    if not model.reference or not adapter:
+        return f"{model.name} takes no reference picture"
+    if current is None or not current["master_path"]:
+        return "no current picture"
+    if current["gender"] != settings.style.gender:
+        return f"the current picture is of a {current['gender']}"
+    if current["model"] != (renderer_model or model.repo):
+        return f"the current picture was drawn by {current['model']}"
+    if not (settings.paths.data_dir / current["master_path"]).is_file():
+        return f"picture file missing: {current['master_path']}"
+    return None
+
+
 class ImageStore:
     def __init__(self, conn: sqlite3.Connection, data_dir: Path, career: Career) -> None:
         self.conn = conn
@@ -43,6 +93,13 @@ class ImageStore:
 
     def rel(self, path: Path) -> str:
         return path.relative_to(self.data_dir).as_posix()
+
+    def current_reference(self, unique_id: int) -> sqlite3.Row | None:
+        return self.conn.execute(
+            "SELECT id, version, master_path, model, gender"
+            " FROM images WHERE career_id = ? AND unique_id = ? AND is_current = 1",
+            (self.career.id, unique_id),
+        ).fetchone()
 
     def insert_image(
         self,

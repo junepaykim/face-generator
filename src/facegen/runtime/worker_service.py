@@ -16,10 +16,10 @@ from facegen.core.job_records import Job, JobFilter
 from facegen.core.kit_values import KitTable
 from facegen.datasource.kits import load_kits
 from facegen.persistence import db
-from facegen.persistence.jobs import JobGone, load_career
+from facegen.persistence.jobs import JobGone, load_career, queued_counts
 from facegen.persistence.settings import load_settings
 from facegen.pipeline.publish import PublishError
-from facegen.pipeline.worker import Worker, WorkerBusy, fm_running, worker_lock
+from facegen.pipeline.worker import PRE_ENCODE_JOBS, Worker, WorkerBusy, fm_running, worker_lock
 from facegen.render.gpu import describe as describe_gpu
 from facegen.render.gpu import is_fatal
 from facegen.render.renderer import Renderer, Tagger
@@ -394,7 +394,7 @@ class WorkerService:
             f = JobFilter(manual_always=True)
         else:
             f = JobFilter(groups=settings.schedule.auto_groups, manual_always=True)
-        ready = worker.runnable(f)
+        ready = worker.runnable(f, limit=PRE_ENCODE_JOBS)
         if not ready:
             with self._lock:
                 self._generate_now = False
@@ -415,11 +415,12 @@ class WorkerService:
             if worker.unload():
                 self.log("The chosen model is not downloaded: the GPU is free.")
                 self._leave("freed")
+            count = sum(queued_counts(conn, worker.career.id, f).values())
             self._set(
                 "setup",
-                MODELS_MISSING.format(n=len(ready)),
+                MODELS_MISSING.format(n=count),
                 reason="models_missing",
-                count=len(ready),
+                count=count,
             )
             return FM_POLL_SECONDS
 
@@ -435,11 +436,12 @@ class WorkerService:
                     if running
                     else "cannot tell whether FM27 is running (tasklist.exe failed)"
                 )
+                count = sum(queued_counts(conn, worker.career.id, f).values())
                 self._set(
                     "waiting",
-                    f"{why}; {len(ready)} job(s) wait. Generate now overrides.",
+                    f"{why}; {count} job(s) wait. Generate now overrides.",
                     reason="fm_running" if running else "fm_unknown",
-                    count=len(ready),
+                    count=count,
                 )
                 return FM_POLL_SECONDS
 
@@ -495,17 +497,18 @@ class WorkerService:
 
     def _idle(self, worker: Worker) -> None:
         """Why nothing is drawn: the queue is empty, or what is held back."""
-        held = worker.runnable(JobFilter())  # every group; none of them drawn now
+        held = queued_counts(worker.conn, worker.career.id, JobFilter())
         if not held:
             self._set("idle", "the queue is empty", reason="queue_empty")
             return
-        groups = ", ".join(sorted({j.group.upper() for j in held}))
+        groups = ", ".join(g.upper() for g in sorted(held))
+        count = sum(held.values())
         self._set(
             "idle",
-            f"{len(held)} job(s) in group {groups} are not drawn automatically"
+            f"{count} job(s) in group {groups} are not drawn automatically"
             " (Settings, Worker); Generate now draws them",
             reason="held",
-            count=len(held),
+            count=count,
             groups=groups,
         )
 

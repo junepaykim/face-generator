@@ -220,7 +220,7 @@ def test_quit_runs_its_steps_in_order_then_closes_the_shell_once() -> None:
     release = threading.Event()
 
     def worker_stop() -> None:
-        release.wait(5)  # the job being drawn
+        release.wait(5)  # the process is being reaped
         order.append("worker")
 
     c = controller(
@@ -234,16 +234,14 @@ def test_quit_runs_its_steps_in_order_then_closes_the_shell_once() -> None:
     )
     c.quit()
     c.quit()  # a second click does nothing more
-    # While the worker finishes its picture, the tray says so and offers nothing.
+    # While waiting for the worker, the tray shows the current step and disables actions.
     deadline = threading.Event()
     for _ in range(200):
         if c.view().entry("status").label.startswith("Quitting: stopping the worker"):  # type: ignore[union-attr]
             break
         deadline.wait(0.01)
     view = c.view()
-    assert view.entry("status").label == (  # type: ignore[union-attr]
-        "Quitting: stopping the worker after the current picture"
-    )
+    assert view.entry("status").label == "Quitting: stopping the worker"  # type: ignore[union-attr]
     assert [e.key for e in view.menu if e.enabled] == []
     assert view.entry("quit").label == "Quitting…"  # type: ignore[union-attr]
     assert view.dot == "paused"

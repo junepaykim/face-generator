@@ -17,6 +17,7 @@ const LANG = document.documentElement.lang || undefined;
 // The language and theme switches at the foot of the sidebar: saved as a setting (one change
 // that Settings can undo), then the page loads again in the new language or theme.
 (function displaySwitches() {
+  if (document.querySelector("form[data-autosave]")) return;  // settings shares its save queue
   const token = document.getElementById("csrf");
   document.querySelectorAll("select[data-display]").forEach((select) => {
     select.addEventListener("change", async () => {
@@ -372,15 +373,21 @@ function localTimes(root) {
   const redoButton = document.querySelector("[data-redo]");
   const inputs = new Map();
   forms.forEach((form) => form.querySelectorAll("[data-key]").forEach((el) => inputs.set(el.name, el)));
+  const displaySwitches = document.querySelectorAll("select[data-display]");
+  displaySwitches.forEach((select) => {
+    // On Basic this is the only input for the setting; Advanced has a field in its System tab.
+    select.name = select.dataset.display;
+    if (!inputs.has(select.name)) inputs.set(select.name, select);
+  });
   const within = (selector) => forms.flatMap((form) => Array.from(form.querySelectorAll(selector)));
   const read = (el) => (el.type === "checkbox" ? (el.checked ? "on" : "") : el.value.trim());
   // What the server holds for each field, as the field would show it.
   const saved = new Map(Array.from(inputs, ([name, el]) => [name, read(el)]));
   const dirty = () => Array.from(inputs.values()).filter((el) => read(el) !== saved.get(el.name));
-  let running = 0;
+  let saving = null;
+  let queued = false;
   let leaving = false;
   let reloading = false;
-  let chain = Promise.resolve();
 
   const say = (text, kind) => {
     status.textContent = text;
@@ -389,17 +396,20 @@ function localTimes(root) {
   const fieldOf = (el) => el.closest("[data-field]");
   const showError = (el, message) => {
     const field = fieldOf(el);
+    if (!field) return;  // sidebar display switch
     field.classList.toggle("error", Boolean(message));
     field.querySelector("[data-error]").textContent = message ? " · " + message : "";
   };
   // The Basic page shows no default beside its fields.
   const showChanged = (el, changed) => {
     const field = fieldOf(el);
+    if (!field) return;
     field.classList.toggle("changed", changed);
     field.querySelectorAll("[data-dot], [data-use-default]").forEach((x) => { x.hidden = !changed; });
   };
   // A preset (Basic page) is a radio group: the choice sent, then the one the values match.
   const chosen = new Map();
+  const unsaved = () => dirty().length > 0 || chosen.size > 0;
   const radios = (kind) => within(`[data-preset][name="preset.${kind}"]`);
   const showPreset = (kind, name) => {
     radios(kind).forEach((r) => { r.checked = r.value === name; });
@@ -409,9 +419,7 @@ function localTimes(root) {
   async function saveDirty() {
     const fields = dirty();
     const picked = new Map(chosen);
-    chosen.clear();
-    if (!fields.length && !picked.size) return;
-    running += 1;
+    if (!fields.length && !picked.size) return true;
     say(text("js.saving"));
     const body = new FormData();
     const posted = new Map(fields.map((el) => [el.name, read(el)]));
@@ -432,14 +440,14 @@ function localTimes(root) {
       });
       if (!data.ok) {
         say(data.error, "bad");
-        return;
+        return false;
       }
       for (const [name, f] of Object.entries(data.fields)) {
         const el = inputs.get(name);
         if (!el) continue;
         const shown = el.type === "checkbox" ? (f.value ? "on" : "") : f.text;
         // Show the value as stored, unless it was edited again while this save was on its way.
-        if (read(el) === posted.get(name)) {
+        if (read(el) === (posted.get(name) ?? saved.get(name))) {
           if (el.type === "checkbox") el.checked = Boolean(f.value);
           else el.value = f.text;
         }
@@ -447,11 +455,14 @@ function localTimes(root) {
         showChanged(el, f.changed);
       }
       syncTicks();
-      Object.entries(data.presets || {}).forEach(([kind, name]) => showPreset(kind, name));
+      picked.forEach((value, name) => {
+        if (chosen.get(name) === value) chosen.delete(name);
+      });
+      Object.entries(data.presets || {}).forEach(([kind, name]) => {
+        if (!chosen.has("preset." + kind)) showPreset(kind, name);
+      });
       say(data.message, data.changed ? "ok" : "");
-      // A new language or theme, or a mode switch, shows once the page loads again
-      // (`reloadIfAsked`, after the edits made meanwhile are saved).
-      if (data.reload) { reloading = true; return; }
+      if (data.reload) reloading = true;
       // What each cutoff gives in the latest save, and the counts and lists it changes.
       Object.entries(data.effective || {}).forEach(([key, value]) => {
         document.querySelectorAll(`[data-effective="${CSS.escape(key)}"]`).forEach((el) => { el.textContent = value; });
@@ -465,22 +476,33 @@ function localTimes(root) {
       }
       undoButton.disabled = !data.can_undo;
       redoButton.disabled = !data.can_redo;
+      return true;
     } catch (e) {
       say(text("js.no_answer"), "bad");
-    } finally {
-      running -= 1;
+      return false;
     }
   }
-  // A save asked for the page to load again: edits made while it was on its way are sent
-  // first, so the reload does not lose them.
-  async function reloadIfAsked() {
-    if (!reloading) return;
-    if (dirty().length || chosen.size) await saveDirty();
-    leaving = true;
-    location.reload();
+  async function drain() {
+    do {
+      queued = false;
+      if (!await saveDirty() && !queued) return;  // keep failed edits visible for correction/retry
+    } while (queued || (reloading && unsaved()));
+    if (reloading) {
+      leaving = true;
+      location.reload();
+    }
   }
-  // Saves run one at a time, in order; each sends whatever differs from the server then.
-  const save = () => (chain = chain.then(saveDirty).then(reloadIfAsked));
+  function save() {
+    queued = true;
+    if (!saving) saving = drain().finally(() => { saving = null; });
+    return saving;
+  }
+
+  displaySwitches.forEach((select) => {
+    const field = inputs.get(select.name);
+    select.addEventListener("change", () => { field.value = select.value; save(); });
+    if (field !== select) field.addEventListener("change", () => { select.value = field.value; });
+  });
 
   // A list of groups shown as tick boxes: the hidden field holds "a, c" and is what is saved.
   const syncTicks = () => {
@@ -525,7 +547,7 @@ function localTimes(root) {
     e.preventDefault();
     const submitter = e.submitter;
     await save();
-    if (dirty().length && !window.confirm(text("js.unsaved_confirm"))) return;
+    if (unsaved() && !window.confirm(text("js.unsaved_confirm"))) return;
     // Come back to the same tab.
     const next = target.querySelector('input[name="next"]');
     if (next && location.hash && next.value.startsWith(location.pathname)) {
@@ -535,7 +557,7 @@ function localTimes(root) {
     target.requestSubmit(submitter);
   });
   window.addEventListener("beforeunload", (e) => {
-    if (!leaving && (running || dirty().length)) { e.preventDefault(); e.returnValue = ""; }
+    if (!leaving && (saving || unsaved())) { e.preventDefault(); e.returnValue = ""; }
   });
 })();
 

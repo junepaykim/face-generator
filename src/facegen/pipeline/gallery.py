@@ -145,7 +145,9 @@ def render_page(title: str, career_key: str, entries: list[dict[str, Any]]) -> s
             + "</div>",
             f'<div class="muted">{html.escape(sheet)}</div>',
         ]
-        if detail:
+        if check.get("auto"):
+            lines.append("<div>picked by hand</div>")
+        elif detail:
             lines.append(
                 f"<div>detail pass: {'used' if detail.get('used') else 'rejected by the check'}"
                 f", {detail.get('seconds', '?')} s</div>"

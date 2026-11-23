@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import sqlite3
 from collections.abc import Iterator
+from contextlib import closing
 from dataclasses import dataclass, replace
 from html import unescape
 from pathlib import Path
@@ -379,7 +380,42 @@ def test_restore_an_earlier_picture_from_the_history(env: Env) -> None:
     assert "Bad picture ID" in text
 
 
-def test_pick_another_candidate_on_the_player_page(env: Env) -> None:
+def test_male_portrait_opens_with_its_own_sheet_and_gender(env: Env) -> None:
+    conn = env.conn()
+    try:
+        settings = set_overrides(conn, {"style.gender": "man"}, env.config)
+        career = load_career(conn)
+        assert career is not None
+        worker = Worker(
+            conn,
+            settings,
+            load_kits(),
+            career,
+            renderer_factory=FakeRenderer,
+            tagger_factory=lambda: FakeTagger(default="boy"),
+            fm_check=lambda: False,
+            log=lambda line: None,
+        )
+        result = worker.run(JobFilter(groups=frozenset({"a"})), limit=1)
+        assert result.done[0].job.unique_id == MINE
+        set_overrides(conn, {"style.gender": "woman"}, env.config)
+        for staff, media in [(0, None), (1, None), (0, "journalist")]:
+            conn.execute(
+                "UPDATE players SET is_staff = ?, media_role = ? WHERE unique_id = ?",
+                (staff, media, MINE),
+            )
+            page = env.client.get(f"/players/{MINE}")
+            assert page.status_code == 200 and "facial hair" in page.text.lower()
+            assert "drawn as a woman" not in page.text
+            if staff or media:
+                assert "drawn as a man" in page.text
+    finally:
+        conn.close()
+
+
+def test_pick_another_candidate_on_the_player_page(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
     env.drain()
     page = env.client.get(f"/players/{MINE}").text
     forms = re.findall(
@@ -400,8 +436,40 @@ def test_pick_another_candidate_on_the_player_page(env: Env) -> None:
     asked = {"If-None-Match": etag}
     assert env.client.get(f"/pictures/{image_id}?size=96", headers=asked).status_code == 304
 
+    def revisions() -> tuple[str, ...]:
+        pages = [env.client.get(path).text for path in ("/", "/gallery")]
+        return tuple(
+            re.search(r'data-topic="(?:status|pictures)" data-rev="([^"]+)"', p)[1] for p in pages
+        )
+
+    before = revisions()
+
+    def disk_full(*args: object) -> None:
+        raise OSError(28, "No space left on device")
+
+    with monkeypatch.context() as patch:
+        patch.setattr("facegen.pipeline.publish._write_atomic", disk_full)
+        failure = follow(env, post_player_action(env.client, f"/players/{MINE}/pick", data=pick))
+    assert "Publishing failed" in failure and "The disk is full." in failure
+    retry_form = next(
+        form
+        for form in re.findall(
+            rf'<form method="post" action="/players/{MINE}/pick">.*?</form>', failure, re.DOTALL
+        )
+        if "Retry publishing this picture" in form
+    )
+    assert all(f'name="{key}" value="{value}"' in retry_form for key, value in pick.items())
+    updated = revisions()
+    assert all(old != new for old, new in zip(before, updated, strict=True))
+    version = f"v001-pick-a{pick['attempt']}c{pick['index']}.png"
+    for url in ("/status", "/gallery/part"):
+        part = env.client.get(url).text
+        assert f'data-id="{image_id}:{version}"' in part
+        assert f"/pictures/{image_id}?size=192&amp;v={version}" in part
+
     text = follow(env, post_player_action(env.client, f"/players/{MINE}/pick", data=pick))
     assert "v1 now uses the picture you picked" in text and "Reload Skin" in text
+    assert "Retry publishing this picture" not in text
     assert "picked by hand" in text and "automatic pick" in text
     again = env.client.get(f"/pictures/{image_id}?size=96", headers=asked)
     assert again.status_code == 200 and again.headers["etag"] != etag  # the picked file
@@ -427,6 +495,29 @@ def test_new_picture_for_ticked_players(env: Env) -> None:
     assert "1 queued, 1 skipped (no picture to draw again; use Generate)" in text
     dashboard = env.client.get("/").text
     assert "reference picture" in dashboard  # MINE's re-draw uses the current picture
+
+
+def test_reference_badges_follow_current_picture_model_gender_and_file(env: Env) -> None:
+    env.drain()
+    post_player_action(env.client, f"/players/{MINE}/new-picture")
+    with closing(env.conn()) as conn:
+        for model, gender, expected in (
+            ("realvis", "woman", False),
+            ("animagine", "man", False),
+            ("animagine", "woman", True),
+        ):
+            set_overrides(conn, {"style.model": model, "style.gender": gender}, env.config)
+            dashboard = env.client.get("/").text
+            page = env.client.get(f"/players/{MINE}").text
+            assert (">reference picture</span>" in dashboard) is expected
+            assert ("with the current face as a reference" in page) is expected
+            assert ("keeping the current face" in page) is expected
+        master = conn.execute(
+            "SELECT master_path FROM images WHERE unique_id = ? AND is_current = 1", (MINE,)
+        ).fetchone()[0]
+        (env.settings.paths.data_dir / master).unlink()
+    assert ">reference picture</span>" not in env.client.get("/").text
+    assert "with the current face as a reference" not in env.client.get(f"/players/{MINE}").text
 
 
 def test_review_page_and_retry(env: Env) -> None:

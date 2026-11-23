@@ -40,7 +40,7 @@ FALLBACK_LOG = PROJECT_ROOT / "data" / "logs" / "facegen.log"
 REFRESH_SECONDS = 1.0
 """How often the tray reads the state, answers a second start and shows notifications."""
 QUIT_WAIT_SECONDS = 120.0
-"""How long the end of `run` waits for Quit: the worker's 60 s, then the server's."""
+"""How long the shell waits for runtime, server and window cleanup on Quit."""
 UPDATE_QUIT_DELAY = 1.5
 """After Update now has started `Start.bat --update`: time for the page saying so to load."""
 APP_MUTEX = "facegen-app"

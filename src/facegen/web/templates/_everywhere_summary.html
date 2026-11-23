@@ -1,0 +1,10 @@
+<strong>{{ t("settings.title.cutoffs.everywhere") }}</strong>:
+{% for g in ("a", "b", "c") %}
+  {% set ca = values["cutoffs.everywhere." ~ g ~ "_ca"] %}
+  {% set pa = values["cutoffs.everywhere." ~ g ~ "_pa"] %}
+  {{ grp(g) }}
+  {% if ca == "-" and pa == "-" %}{{ t("settings.value.off") }}
+  {% elif pa == "-" %}CA {{ ca }}+
+  {% elif ca == "-" %}PA {{ pa }}+
+  {% else %}{{ t("cutoffs.either", ca=ca, pa=pa) }}{% endif %}{% if not loop.last %} · {% endif %}
+{% endfor %}

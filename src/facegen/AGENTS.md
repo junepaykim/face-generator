@@ -62,8 +62,8 @@ Use the web/datasource guides for HTTP, adapters and bundled kit data; use
 ## Runtime and rendering gotchas
 
 - `runtime.composition.build_runtime` constructs without starting. Desktop, tray and
-  development server share its lifecycle. Quit stops downloads, active sync, watcher
-  and worker in order, then closes the desktop server and UI.
+  development server share its lifecycle. Quit signals the worker immediately, then
+  stops downloads, the active sync and watcher, reaps the worker and closes the server and UI.
 - The GPU worker, WebView2 window and each production sync own a child process.
   Tests opt into inline sync explicitly. Snapshot access belongs in `datasource/snapshots.py`,
   orchestration in `pipeline/sync_operation.py`, and shutdown timing in

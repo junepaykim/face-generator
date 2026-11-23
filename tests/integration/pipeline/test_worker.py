@@ -24,7 +24,7 @@ from fakes import FakeRenderer, FakeTagger
 from PIL import Image
 
 from facegen.core.prompt import CONTENT_NEGATIVE, YOUNG_NEGATIVE
-from facegen.core.settings_values import StyleSettings
+from facegen.core.settings_values import IMAGE_MODELS, StyleSettings
 from facegen.core.traits import personality_to_json, sample_sheet
 from facegen.datasource.kits import load_kits
 from facegen.persistence.settings import Paths, PersonalitySettings, Settings, set_overrides
@@ -316,7 +316,11 @@ def test_my_club_run_generates_publishes_and_a_rerun_changes_nothing(env: Env) -
 
     for uid in (OLD_HAND, KEEPER):
         img = env.current(uid)
-        assert img is not None and img["model"] == "fake/animagine" and img["group_name"] == "a"
+        assert (
+            img is not None
+            and img["model"] == IMAGE_MODELS["animagine"].repo
+            and img["group_name"] == "a"
+        )
         assert img["prompt"].startswith("1girl, solo, safe, ")
         assert img["negative_prompt"].startswith(CONTENT_NEGATIVE)
         master = env.data / img["master_path"]
@@ -476,15 +480,19 @@ def test_a_new_model_setting_unloads_the_old_model_before_the_next_job(env: Env)
         log=lambda line: None,
     )
     first = w.renderer
-    assert first.model == "fake/animagine" and w.renderer is first  # kept between uses
+    assert (
+        first.model == IMAGE_MODELS["animagine"].repo and w.renderer is first
+    )  # kept between uses
     w.settings = replace(env.settings, style=StyleSettings(model="realvis", gender="woman"))
-    assert w.renderer.model == "fake/realvis"
+    assert w.renderer.model == IMAGE_MODELS["realvis"].repo
     assert first.closed == 1 and [r.key for r in built] == ["animagine", "realvis"]
 
     assert len(w.run(MINE).done) == 2
     models = {r[0] for r in env.conn.execute("SELECT model FROM images")}
-    assert models == {"fake/realvis"}
-    assert w.unload() and w.renderer.model == "fake/realvis"  # reloads the selected one
+    assert models == {IMAGE_MODELS["realvis"].repo}
+    assert (
+        w.unload() and w.renderer.model == IMAGE_MODELS["realvis"].repo
+    )  # reloads the selected one
     assert [r.key for r in built] == ["animagine", "realvis", "realvis"]
 
 
@@ -601,6 +609,7 @@ def test_a_missing_reference_file_draws_without_one(env: Env) -> None:
     (env.data / env.current(OLD_HAND)["master_path"]).unlink()
     _queue_job(env, OLD_HAND, "kit", RIVAL, "W08")
     w2, r2, _ = env.worker()
+    assert w2.preview(MINE)[0].reference_scale is None
     summary = w2.run(MINE)
     assert len(summary.done) == 1 and set(r2.references) == {None}
     info = json.loads(env.current(OLD_HAND)["render"])["reference"]
@@ -683,6 +692,31 @@ def test_gallery_lists_pictures_and_review(env: Env) -> None:
     assert 'src="masters/' not in text  # links are relative to the page
 
 
+def test_gallery_describes_the_detail_pass_of_the_current_pick(env: Env) -> None:
+    from facegen.pipeline.manual import pick_candidate
+
+    worker, _, _ = env.worker()
+    worker.run(MINE, limit=1)
+    career = worker.career
+    row = env.conn.execute("SELECT * FROM images WHERE is_current = 1").fetchone()
+    check = json.loads(row["check_result"])
+    chosen = check["chosen"]
+    other = next(c for c in check["candidates"] if c["passed"] and c["index"] != chosen["index"])
+    for pick, manual in ((other, True), (chosen, False)):
+        pick_candidate(
+            env.conn,
+            career.id,
+            career.key,
+            row["unique_id"],
+            pick["attempt"],
+            pick["index"],
+            env.settings,
+        )
+        page = write_gallery(env.conn, career.id, career.key, "Test", env.data).read_text("utf-8")
+        assert ("detail pass: used" in page) is (not manual)
+        assert ("picked by hand" in page) is manual
+
+
 # -- the prompts encoded ahead (facegen.prompt_cache) --
 
 EVERY = JobFilter()
@@ -742,10 +776,10 @@ def test_a_job_that_cannot_be_previewed_does_not_stop_the_one_running(
     first, second, third, _ = w.runnable(EVERY)
     preview = w._preview
 
-    def broken(job: object) -> object:
+    def broken(job: object, *, check_reference: bool = True) -> object:
         if job is second:
             raise KeyError("W99")
-        return preview(job)  # type: ignore[arg-type]
+        return preview(job, check_reference=check_reference)  # type: ignore[arg-type]
 
     monkeypatch.setattr(w, "_preview", broken)
     assert w.run_job(first, [second, third]).status == "done"
@@ -1132,6 +1166,8 @@ def test_a_reference_only_from_a_picture_of_the_same_model_and_gender(env: Env) 
 
     _queue_job(env, OLD_HAND, "kit", RIVAL, "W08")
     w2, r2, _ = env.worker(settings=men)
+    assert w2.preview(MINE)[0].reference_scale is None
+    assert not w2.models_loaded
     message = w2.run(MINE).done[0].message
     assert (
         set(r2.references) == {None}
@@ -1143,16 +1179,18 @@ def test_a_reference_only_from_a_picture_of_the_same_model_and_gender(env: Env) 
 
     _queue_job(env, OLD_HAND, "age", RIVAL, "W09")
     w3, r3, _ = env.worker(settings=men)
+    assert w3.preview(MINE)[0].reference_scale == 0.1
     w3.run(MINE)
     assert r3.references[0] is not None  # a man's picture for a man, by the same model
     assert json.loads(env.current(OLD_HAND)["render"])["reference"]["version"] == 2
 
     _queue_job(env, OLD_HAND, "redraw", RIVAL, "W09")
     w4, r4, _ = env.worker(renderer=FakeRenderer("realvis"), settings=_style(men, "realvis", "man"))
+    assert w4.preview(MINE)[0].reference_scale is None
     w4.run(MINE)
     assert set(r4.references) == {None}
     info = json.loads(env.current(OLD_HAND)["render"])["reference"]
-    assert info["why"] == "the current picture was drawn by fake/animagine"
+    assert info["why"] == f"the current picture was drawn by {IMAGE_MODELS['animagine'].repo}"
 
 
 def test_z_image_turbo_draws_without_a_reference_and_says_why(env: Env) -> None:
@@ -1165,7 +1203,9 @@ def test_z_image_turbo_draws_without_a_reference_and_says_why(env: Env) -> None:
     w, _, _ = env.worker()
     w.run(MINE)
     turbo = _style(env.settings, "zimage_turbo", "woman")
-    assert uses_reference("kit", True, env.settings) and not uses_reference("kit", True, turbo)
+    current = dict(env.current(OLD_HAND))
+    assert uses_reference("kit", True, env.settings, current)
+    assert not uses_reference("kit", True, turbo, current)
     _queue_job(env, OLD_HAND, "kit", RIVAL, "W08")
     w2, r2, _ = env.worker(renderer=FakeZImageRenderer(), settings=turbo)
     assert w2.preview(MINE)[0].reference_scale is None
@@ -1180,7 +1220,7 @@ def test_z_image_turbo_draws_without_a_reference_and_says_why(env: Env) -> None:
         "why": "Z-Image-Turbo takes no reference picture",
         "scale": 0.1,
     }
-    assert image["model"] == "fake/zimage_turbo" and image["negative_prompt"] == ""
+    assert image["model"] == IMAGE_MODELS["zimage_turbo"].repo and image["negative_prompt"] == ""
     assert render["prompt_tokens"] == len(image["prompt"].split())
     assert "prompt_chunks" not in render
     assert all(p.negative == "" for p in r2.prompts)

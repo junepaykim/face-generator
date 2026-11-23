@@ -289,10 +289,9 @@ class AppController:
         with self._lock:
             quitting, step = self._quitting, self._quit_step
         if quitting:
-            doing = f"quitting: stopping the {step}" if step else "quitting"
-            if step == "worker":
-                doing += " after the current picture"
-            status = doing
+            status = f"quitting: stopping the {step}" if step else "quitting"
+            if step == "drawing":
+                status = "quitting: stopping drawing"
         else:
             status = describe_worker(worker)
         working = worker is not None and not quitting

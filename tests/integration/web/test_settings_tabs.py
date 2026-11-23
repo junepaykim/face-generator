@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from collections.abc import Iterator
 from html import unescape
 from pathlib import Path
@@ -21,13 +22,43 @@ from factories import (
     staff_member,
 )
 from fastapi.testclient import TestClient
+from support.paths import ROOT
 from support.web import KOREAN_WINDOWS, client_for, fake_worker
 
+from facegen.i18n import Translator
 from facegen.persistence import db
 from facegen.persistence.settings import load_settings
 from facegen.pipeline.sync import run_sync
+from facegen.platform.procs import run_quiet
+from facegen.web.forms import describe_key, label_parts
 
 TABS = ("cutoffs", "quality", "targets", "ages", "system")
+
+
+def test_autosave_waits_for_edits_before_reload() -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is needed to exercise browser JavaScript")
+    run_quiet(
+        [
+            node,
+            Path(__file__).with_name("settings_autosave.cjs"),
+            ROOT / "src/facegen/web/static/app.js",
+        ],
+        check=True,
+        timeout=15,
+    )
+
+
+@pytest.mark.parametrize("lang", ["en", "ko"])
+def test_staff_spread_uses_translated_field_and_history_labels(lang: str) -> None:
+    t = Translator(lang)
+    for leaf in ("from", "to", "start", "end"):
+        key = f"age.staff.{leaf}"
+        label, values = label_parts(key, t)
+        expected = t(f"settings.label.{leaf}")
+        assert t(label, **values) == expected
+        assert describe_key(key, t).endswith(expected)
 
 
 def world() -> list:
@@ -59,6 +90,14 @@ def save(client: TestClient, **values: str) -> dict:
     r = client.post("/settings/save", data=values)
     assert r.status_code == 200, r.text
     return r.json()
+
+
+def test_everywhere_summary_matches_the_saved_cutoffs(client: TestClient) -> None:
+    data = save(client, **{"cutoffs.everywhere.a_ca": "175"})
+    summary = data["parts"]["everywhere-summary"]
+    assert "CA 175+ or PA 180+" in summary
+    page = client.get("/settings/advanced").text
+    assert f'<summary data-part="everywhere-summary">{summary}</summary>' in page
 
 
 def test_five_tabs_each_with_its_own_form_and_the_bar_outside(client: TestClient) -> None:
@@ -119,7 +158,9 @@ def test_the_cutoffs_tab_shows_live_values_counts_and_the_leagues(client: TestCl
     assert "My league:" in page and "Club 101" in page
     # The everywhere cuts are folded, their summary shows them.
     assert re.search(
-        r'<details class="everywhere" id="section-cutoffs-everywhere">\s*<summary>', page
+        r'<details class="everywhere" id="section-cutoffs-everywhere">\s*'
+        r'<summary data-part="everywhere-summary">',
+        page,
     )
     assert "CA 165+ or PA 180+" in page
 
@@ -188,10 +229,13 @@ def test_my_league_is_off_when_its_season_conflicts_with_another(config_file: Pa
 def test_switching_to_manual_converts_and_redraws_the_page(client: TestClient) -> None:
     data = save(client, **{"cutoffs.mode": "manual"})
     assert data["ok"] and data["reload"]
-    assert data["fields"]["cutoffs.manual.b_ca"]["value"] == 140  # converted from top 12%
+    # The top 12% are the two highest players. CA 131 already selects them, PA 151 selects four.
+    assert "cutoffs.manual.b_ca" not in data["fields"]
+    assert data["fields"]["cutoffs.manual.b_pa"]["value"] == 180
     assert data["effective"]["cutoffs.manual.b_ca"] == "≈ top 20%"  # 2 of 10 at 140 or more
     page = client.get("/settings/advanced").text
-    assert 'name="cutoffs.manual.b_ca"' in page and 'name="cutoffs.share.b_ca"' not in page
+    assert re.search(r'name="cutoffs.manual.b_ca"[^>]* value="131"', page)
+    assert 'name="cutoffs.share.b_ca"' not in page
     back = save(client, **{"cutoffs.mode": "auto"})
     assert back["ok"] and back["reload"]
     assert 'name="cutoffs.share.b_ca"' in client.get("/settings/advanced").text

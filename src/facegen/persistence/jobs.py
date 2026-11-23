@@ -48,22 +48,61 @@ def _date(text: str | None) -> date | None:
         return None
 
 
+def _queue_query(career_id: int, f: JobFilter) -> tuple[str, list[str | int]]:
+    """The queue and its selection predicates, shared by the job and count queries."""
+    query = (
+        " FROM jobs j JOIN players p ON p.career_id = j.career_id AND p.unique_id = j.unique_id"
+        " WHERE j.career_id = ? AND j.status = 'queued'"
+    )
+    params: list[str | int] = [career_id]
+    conditions = []
+    if f.groups is not None:
+        groups = sorted(f.groups)
+        placeholders = ", ".join("?" for _ in groups)
+        conditions.append(f"j.group_name IN ({placeholders})" if groups else "0")
+        params.extend(groups)
+    if f.my_club_only:
+        conditions.append("p.at_my_club = 1")
+    if conditions:
+        selection = " AND ".join(conditions)
+        if f.manual_always:
+            selection = f"j.manual = 1 OR ({selection})"
+        query += f" AND ({selection})"
+    return query, params
+
+
+def queued_counts(conn: sqlite3.Connection, career_id: int, f: JobFilter) -> dict[str, int]:
+    query, params = _queue_query(career_id, f)
+    return dict(
+        conn.execute("SELECT j.group_name, COUNT(*)" + query + " GROUP BY j.group_name", params)
+    )
+
+
 def queued_jobs(
-    conn: sqlite3.Connection, career_id: int, f: JobFilter, *, job_id: int | None = None
+    conn: sqlite3.Connection,
+    career_id: int,
+    f: JobFilter,
+    *,
+    job_id: int | None = None,
+    limit: int | None = None,
 ) -> list[Job]:
     """Queued jobs that match the filter, in queue order."""
+    query, params = _queue_query(career_id, f)
+    if job_id is not None:
+        query += " AND j.id = ?"
+        params.append(job_id)
+    query += " ORDER BY j.tier, j.rank, j.id"
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
     rows = conn.execute(
         "SELECT j.id, j.unique_id, j.kind, j.group_name, j.target_club_id, j.target_band,"
         " j.manual, j.traits_version, j.revision, p.name, p.at_my_club, p.is_goalkeeper,"
         " p.height_cm, p.strength, p.age, p.personality, p.is_staff,"
-        " p.staff_job, p.media_role, p.nation"
-        " FROM jobs j JOIN players p ON p.career_id = j.career_id AND p.unique_id = j.unique_id"
-        " WHERE j.career_id = ? AND j.status = 'queued'"
-        + (" AND j.id = ?" if job_id is not None else "")
-        + " ORDER BY j.tier, j.rank, j.id",
-        (career_id, job_id) if job_id is not None else (career_id,),
-    ).fetchall()
-    jobs = [
+        " p.staff_job, p.media_role, p.nation" + query,
+        params,
+    )
+    return [
         Job(
             id=r["id"],
             unique_id=r["unique_id"],
@@ -88,7 +127,6 @@ def queued_jobs(
         )
         for r in rows
     ]
-    return [j for j in jobs if f.accepts(j)]
 
 
 def claim(conn: sqlite3.Connection, career_id: int, selected: Job) -> Job:

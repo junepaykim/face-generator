@@ -69,8 +69,8 @@ def test_the_pictures_just_drawn_show_newest_first(drawn: TestClient) -> None:
     names = re.findall(r'<span class="thumb-name">([^<]+)</span>', wall)
     assert names[:3] == ["Kid 2", "Kid 1", "Kid 0"]  # my club was drawn first
     assert sorted(names[3:]) == ["Mine 0", "Mine 1", "Mine 2"]
-    first = re.search(r'<img src="(/pictures/\d+\?size=192)"', wall)
-    assert first is not None and drawn.get(first[1]).status_code == 200
+    first = re.search(r'<img src="(/pictures/\d+\?size=192&amp;v=v\d+\.png)"', wall)
+    assert first is not None and drawn.get(first[1].replace("&amp;", "&")).status_code == 200
     assert "그림 갤러리" in drawn.get("/", headers=KOREAN_WINDOWS).text
 
 

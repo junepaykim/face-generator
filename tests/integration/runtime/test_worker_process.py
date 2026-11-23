@@ -384,12 +384,14 @@ def test_wake_and_resume_reach_a_running_child(fake: Fake) -> None:
 
 
 def test_quit_while_a_picture_is_drawn_ends_the_worker_at_once(
-    tmp_path: Path, config_file: Path
+    tmp_path: Path, config_file: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Quit does not wait for the picture being drawn (user, 2026-11-22): the worker process
     ends at once, nothing is stored for the job, and the job goes back to the queue when a
     worker starts again."""
     from facegen.persistence import jobs
+    from facegen.runtime.composition import build_runtime
+    from facegen.runtime.dependencies import Gpu
 
     settings = load_settings(defaults_path=config_file)
     conn = db.connect(settings.paths.db_path)
@@ -397,17 +399,24 @@ def test_quit_while_a_picture_is_drawn_ends_the_worker_at_once(
     conn.close()
     marker = tmp_path / "drawing"
     program = (sys.executable, str(TESTS / "gpu_child.py"), str(marker), "--slow")
-    p = WorkerProxy(
-        worker_process.worker_command(program, config_file),
-        db_path=settings.paths.db_path,
-        echo_stderr=False,
+    rt = build_runtime(
+        settings, Gpu(program=program), config=config_file, watch=False, echo_stderr=False
     )
+    p = rt.worker
+    assert p is not None
+
+    def finish_sync() -> None:
+        # A committed sync can still be publishing. The worker must exit before it finishes.
+        wait_for(lambda: p.child_pid is None, timeout=worker_process.STOP_TIMEOUT)
+
+    monkeypatch.setattr(rt.syncer, "stop", finish_sync)
     p.start()
     try:
         wait_for(marker.exists, timeout=60)  # a minute's picture has started
         wait_for(lambda: p.status().state == "running")
         t0 = time.monotonic()
-        p.stop(timeout=10)
+        for _, step in rt.stop_steps():
+            step()
         took = time.monotonic() - t0
     finally:
         p.stop(timeout=10)

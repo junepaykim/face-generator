@@ -26,8 +26,6 @@ from facegen.core.leagues import (
     Ladder,
     clubs_in_competitions,
     continental_competitions,
-    league_ladder,
-    my_league,
 )
 from facegen.core.records import Gender, Snapshot
 from facegen.core.settings_values import Settings
@@ -286,23 +284,10 @@ def ingest(
     first_sync = not prev
     my_club = snapshot.managed_club_id
     elig = settings.eligibility
-    ladder = league_ladder(
-        my_club,
-        snapshot.clubs,
-        snapshot.league_tables,
-        snapshot.fixture_counts,
-        seasons=snapshot.fixture_seasons,
-        rules=snapshot.competition_rules,
-    )
+    ladder = snapshot.domestic.ladder
     ladder_clubs = ladder.club_leagues()
-    league_ids, league_clubs = my_league(
-        ladder,
-        my_club,
-        snapshot.clubs,
-        snapshot.league_tables,
-        snapshot.fixture_counts,
-        seasons=snapshot.fixture_seasons,
-    )
+    league_ids = snapshot.domestic.competition_ids
+    league_clubs = snapshot.domestic.club_ids
     continental_ids = continental_competitions(
         my_club,
         snapshot.clubs,

@@ -206,9 +206,9 @@ def label_parts(key: str, t: Translator = ENGLISH) -> tuple[str, dict[str, Any]]
     if key in LABELLED_IN_FULL:
         return f"settings.label_in.{key}", {}
     section, _, name = key.rpartition(".")
-    if section in ADULT_WORDED_TABLES:
-        return "settings.age_label_plain", {"band": band_name(name, t)}
-    if section.startswith("age."):
+    if is_age_wording(key):
+        if section in ADULT_WORDED_TABLES:
+            return "settings.age_label_plain", {"band": band_name(name, t)}
         return "settings.age_label", {"band": band_name(name, t), "tags": BAND_TAGS[name]}
     label = f"settings.label.{name}"
     return (label, {}) if t.has(label) else ("", {})
@@ -227,7 +227,7 @@ def section_title(section: str, t: Translator = ENGLISH) -> str:
 def describe_key(key: str, t: Translator = ENGLISH) -> str:
     """A setting's section and label, short enough for one line: "Detailed group · CA above"."""
     section, _, name = key.rpartition(".")
-    if section.startswith("age."):
+    if is_age_wording(key):
         return f"{section_title(section, t)} · {band_name(name, t)}"
     return f"{section_title(section, t)} · {_label(key, t)}"
 

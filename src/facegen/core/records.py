@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
 from datetime import date
 from enum import StrEnum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from facegen.core.leagues import DomesticMembership
 
 
 class Gender(StrEnum):
@@ -184,6 +188,7 @@ class Snapshot:
     league_tables: tuple[LeagueTableRecord, ...] = ()
     fixture_counts: Mapping[int, Mapping[int, int]] = field(default_factory=dict)
     """Competition ID to club ID to first-team fixtures in the competition's latest season.
+    The men's UEFA club competitions use the edition current on the save date.
 
     Competition IDs are the game's editor database IDs where the save links one (stable
     across saves, what the continental settings list), else minus one minus the save-local ID.
@@ -203,3 +208,22 @@ class Snapshot:
     media_read: bool = True
     """False when the media reader failed: the media people stored before are left as they
     were."""
+    read_domestic: InitVar[DomesticMembership | None] = None
+    domestic: DomesticMembership = field(init=False, compare=False, repr=False)
+    """The managed club's resolved division and pyramid for these competition records."""
+
+    def __post_init__(self, read_domestic: DomesticMembership | None) -> None:
+        from facegen.core.leagues import domestic_membership
+
+        # The save reader already needed this to select managers. Other snapshot producers
+        # (including dataclasses.replace with changed fixtures) resolve their own inputs.
+        if read_domestic is None:
+            read_domestic = domestic_membership(
+                self.managed_club_id,
+                self.clubs,
+                self.league_tables,
+                self.fixture_counts,
+                self.fixture_seasons,
+                self.competition_rules,
+            )
+        object.__setattr__(self, "domestic", read_domestic)

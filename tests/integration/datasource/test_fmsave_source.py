@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace as NS
@@ -222,6 +223,31 @@ def test_fixtures_count_first_team_games_in_the_latest_season() -> None:
     assert seasons == {2000132563: 2026}
 
 
+@pytest.mark.parametrize(
+    ("game_date", "edition", "uefa_counts"),
+    [
+        (date(2027, 6, 30), 2026, {1010: 1, 1011: 1}),
+        (date(2027, 7, 1), 2027, {1011: 1, 1012: 1}),
+        (None, None, {}),
+    ],
+)
+def test_uefa_fixtures_use_the_save_edition_before_discarding_other_seasons(
+    game_date: date | None, edition: int | None, uefa_counts: dict[int, int]
+) -> None:
+    ucl, league = 1301394, 11
+    fixtures = [
+        fixture(7, 2026, 10, 11),
+        fixture(7, 2027, 11, 12),
+        fixture(7, None, 10, 12),
+        fixture(8, 2026, 10, 11),
+        fixture(8, 2027, 11, 12),
+    ]
+    counts, years = convert_fixtures(fixtures, UID_MAP, {7: ucl, 8: league}, game_date)
+    assert counts.get(ucl, {}) == uefa_counts
+    assert years.get(ucl) == edition
+    assert counts[league] == {1011: 1, 1012: 1} and years[league] == 2027
+
+
 def test_staff_job_in_words() -> None:
     assert staff_job(NS(label=NS(name="DIRECTOR_OF_FOOTBALL"), raw=10)) == "director of football"
     assert staff_job(NS(label=NS(name="UNKNOWN"), raw=99)) is None
@@ -377,6 +403,27 @@ def test_load_reads_and_closes_the_save(monkeypatch: pytest.MonkeyPatch) -> None
     assert snap.staff_read
     assert snap.meta.known_build and save.closed
     assert not any("not one fmsave" in w for w in snap.meta.warnings)
+
+
+def test_reader_selects_managers_from_the_snapshots_domestic_membership(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    save = FakeSave()
+    monkeypatch.setattr(save, "clubs", lambda: [fm_club(uid, cid) for uid, cid in UID_MAP.items()])
+    monkeypatch.setattr(save, "competitions", lambda: [NS(id=7, database_id=11)])
+    monkeypatch.setattr(save, "fixtures", lambda: [fixture(7, 2026, 10, 11)])
+    monkeypatch.setattr(
+        save,
+        "staff",
+        lambda: [fm_staff(uid, club_uid=uid, job=coded("MANAGER"), team_slot=0) for uid in UID_MAP],
+    )
+    _patch_open(monkeypatch, save)
+    snap = FmsaveDataSource().load(Path("Career.fm"))
+    assert snap.domestic.competition_ids == {11}
+    assert snap.domestic.club_ids == {1010, 1011} == {s.club_id for s in snap.staff}
+    # Callers building a different snapshot from these records get its own membership.
+    changed = replace(snap, fixture_counts={11: {1010: 1, 1012: 1}})
+    assert changed.domestic.club_ids == {1010, 1012}
 
 
 def test_a_failing_staff_reader_leaves_the_staff_as_they_were(

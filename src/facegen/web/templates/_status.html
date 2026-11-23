@@ -69,7 +69,7 @@
           <tr class="{{ 'running' if j.status == 'running' }}">
             <td><a href="/players/{{ j.unique_id }}">{{ j.name }}</a></td>
             <td>{{ j.club or t("common.free_agent") }}</td>
-            <td>{{ t("kind." ~ j.kind) }}{% if j.status == "running" %} <span class="st run">{{ t("status.drawing") }}</span>{% endif %}{% if uses_reference(j.kind, j.at_my_club, settings) %} <span class="tag">{{ t("dash.queue.reference") }}</span>{% endif %}</td>
+            <td>{{ t("kind." ~ j.kind) }}{% if j.status == "running" %} <span class="st run">{{ t("status.drawing") }}</span>{% endif %}{% if uses_reference(j.kind, j.at_my_club, settings, j) %} <span class="tag">{{ t("dash.queue.reference") }}</span>{% endif %}</td>
             <td>{{ grp(j.group_name) }}</td>
             <td>{% if j.manual and j.status == "queued" %}<form method="post" action="/players/{{ j.unique_id }}/cancel">{% include "_player_action_fields.html" %}<input type="hidden" name="next" value="/"><button class="link">{{ t("dash.queue.cancel") }}</button></form>{% endif %}</td>
           </tr>
@@ -91,8 +91,9 @@
   <h2>{{ t("dash.recent.title") }} <a class="small" href="/gallery">{{ t("dash.recent.all") }}</a></h2>
   <div class="thumbs">
     {% for r in recent %}
-    <a class="thumb-card" href="/players/{{ r.unique_id }}" data-id="{{ r.id }}">
-      <img src="/pictures/{{ r.id }}?size=192" loading="lazy" alt="">
+    {% set version = r.master_path|picture_filename %}
+    <a class="thumb-card" href="/players/{{ r.unique_id }}" data-id="{{ r.id }}:{{ version }}">
+      <img src="/pictures/{{ r.id }}?size=192&amp;v={{ version }}" loading="lazy" alt="">
       <span class="thumb-name">{{ r.name }}</span>
       <span class="thumb-meta">{{ grp(r.group_name) }} <time class="muted small" datetime="{{ r.created_at }}" data-short>{{ r.created_at[11:16] }}</time></span>
     </a>

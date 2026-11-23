@@ -54,7 +54,7 @@ from facegen.core.traits import (
 from facegen.core.wardrobe import Outfit, media_pose, outfit_for
 from facegen.persistence import jobs
 from facegen.persistence.db import transaction
-from facegen.persistence.image_store import ImageStore, master_dir
+from facegen.persistence.image_store import ImageStore, master_dir, reference_problem
 from facegen.persistence.jobs import JobGone, load_career, queued_jobs
 from facegen.persistence.sheet_store import (
     load_man_sheet,
@@ -335,9 +335,9 @@ class Worker:
         except Exception as exc:  # noqa: BLE001 - report it; the model is gone either way
             self.log(f"  could not free the GPU cleanly: {type(exc).__name__}: {exc}")
 
-    def runnable(self, f: JobFilter) -> list[Job]:
+    def runnable(self, f: JobFilter, *, limit: int | None = None) -> list[Job]:
         """Queued jobs that match the filter, in queue order."""
-        return queued_jobs(self.conn, self.career.id, f)
+        return queued_jobs(self.conn, self.career.id, f, limit=limit)
 
     def reference_scale(self, job: Job) -> float | None:
         """The reference strength for a job, judged where the player is now (spec section 5)."""
@@ -353,9 +353,12 @@ class Worker:
 
         A player with no sheet yet is shown with the sheet they would get.
         """
-        return [self._preview(job) for job in self.runnable(f)[:limit]]
+        if limit is not None and limit < 0:
+            # Preserve the earlier Python slice for callers that omit the last N jobs.
+            limit = max(0, sum(jobs.queued_counts(self.conn, self.career.id, f).values()) + limit)
+        return [self._preview(job) for job in self.runnable(f, limit=limit)]
 
-    def _preview(self, job: Job) -> Preview:
+    def _preview(self, job: Job, *, check_reference: bool = True) -> Preview:
         """What one queued job would draw; reads only."""
         found = load_sheet(self.conn, self.career.id, job.unique_id, job.traits_version)
         man = None
@@ -387,6 +390,13 @@ class Worker:
             )
         portrait = self._prepare_portrait(job, sheet, man)
         setup = portrait.setup
+        scale = (
+            self.reference_scale(job) if check_reference and self.image_model.reference else None
+        )
+        if scale is not None and reference_problem(
+            self.settings, self.images.current_reference(job.unique_id)
+        ):
+            scale = None
         return Preview(
             job,
             sheet,
@@ -395,7 +405,7 @@ class Worker:
             setup.kit_source,
             f"{setup.pose_text()}, {setup.backdrop.describe()} backdrop",
             portrait.prompt,
-            self.reference_scale(job) if self.image_model.reference else None,
+            scale,
             man,
         )
 
@@ -419,13 +429,16 @@ class Worker:
             stale = self.requeue_stale()
             if stale:
                 self.log(f"Put {stale} interrupted job(s) back in the queue.")
-            tried: set[int] = set()
-            total = len(self.runnable(f))
+            total = sum(jobs.queued_counts(self.conn, self.career.id, f).values())
             if limit is not None:
                 total = min(total, limit)
             try:
                 while limit is None or len(summary.done) + len(summary.failed) < limit:
-                    ready = [j for j in self.runnable(f) if j.id not in tried]
+                    n = len(summary.done) + len(summary.failed) + 1
+                    batch = (
+                        PRE_ENCODE_JOBS if limit is None else min(PRE_ENCODE_JOBS, limit - n + 1)
+                    )
+                    ready = self.runnable(f, limit=batch)
                     if not ready:
                         break
                     if not generate_now and not self.settings.schedule.generate_while_fm_running:
@@ -440,17 +453,11 @@ class Worker:
                             summary.stopped = "FM27 is running; close it first (the queue is kept)"
                             break
                     job = ready[0]
-                    tried.add(job.id)
-                    n = len(summary.done) + len(summary.failed) + 1
                     total = max(total, n)
                     self.log(f"[{n}/{total}] {job.name} ({job.unique_id}), {job.kind} {job.group}")
-                    upcoming = ready[1:]
-                    if limit is not None:
-                        upcoming = upcoming[: limit - n]
                     try:
-                        outcome = self.run_job(job, upcoming)
+                        outcome = self.run_job(job, ready[1:])
                     except JobGone:
-                        tried.discard(job.id)
                         continue
                     (summary.done if outcome.status == "done" else summary.failed).append(outcome)
                     self.log(f"  {outcome.message} ({outcome.seconds:.1f} s)")
@@ -506,9 +513,7 @@ class Worker:
         reference, reference_info = None, None
         scale = self.reference_scale(job)
         if scale is not None:
-            reference, reference_info = self._reference(
-                job, scale, folder, version, portrait.gender
-            )
+            reference, reference_info = self._reference(job, scale, folder, version)
         cand_dir = folder / f"v{version:03d}-candidates"
         candidates: list[Candidate] = []
         winner: Candidate | None = None
@@ -711,7 +716,7 @@ class Worker:
         prompts = [prompt]
         for job in upcoming[: PRE_ENCODE_JOBS - 1]:
             try:
-                p = self._preview(job).prompt
+                p = self._preview(job, check_reference=False).prompt
             except Exception as exc:  # noqa: BLE001 - the job reports it again when it runs
                 self.log(f"  not encoded ahead: {job.name} ({type(exc).__name__}: {exc})")
                 continue
@@ -815,43 +820,29 @@ class Worker:
         )
 
     def _reference(
-        self, job: Job, scale: float, folder: Path, version: int, gender: str
+        self, job: Job, scale: float, folder: Path, version: int
     ) -> tuple[Reference | None, dict[str, Any]]:
         """The player's current picture as a reference, and what to record about it.
 
         The face is cropped from the current master (`picture.face_box`) and kept next to the
         new picture as vNNN-reference.webp. The job is drawn without a reference, and the
         record says why, when the model takes none (Z-Image-Turbo), with no current picture
-        or its file gone, or when the current picture shows another gender (`gender` is the
-        new picture's) or was drawn by another model: an anime woman's face must not lead a
-        photo of a man.
+        or its file gone, or when the current picture shows another gender or was drawn by
+        another model.
         """
         renderer = self.renderer
-        if not (self.image_model.reference and getattr(renderer, "reference_adapter", True)):
-            why = f"{self.image_model.name} takes no reference picture"
-            self.log(f"  drawn without a reference: {why}")
-            return None, {"used": False, "why": why, "scale": scale}
-        info: dict[str, Any] = {"scale": scale, **_reference_settings(renderer)}
-        row = self.conn.execute(
-            "SELECT id, version, master_path, model, gender"
-            " FROM images WHERE career_id = ? AND unique_id = ? AND is_current = 1",
-            (self.career.id, job.unique_id),
-        ).fetchone()
-        if row is None or not row["master_path"]:
-            return None, {"used": False, "why": "no current picture", **info}
-        why = None
-        if row["gender"] != gender:
-            why = f"the current picture is of a {row['gender']}"
-        elif row["model"] != renderer.model:
-            why = f"the current picture was drawn by {row['model']}"
+        adapter = self.image_model.reference and getattr(renderer, "reference_adapter", True)
+        info: dict[str, Any] = {"scale": scale}
+        row = None
+        if adapter:
+            info.update(_reference_settings(renderer))
+            row = self.images.current_reference(job.unique_id)
+        why = reference_problem(self.settings, row, renderer_model=renderer.model, adapter=adapter)
         if why is not None:
             self.log(f"  drawn without a reference: {why}")
             return None, {"used": False, "why": why, **info}
+        assert row is not None
         master = self.data_dir / row["master_path"]
-        if not master.is_file():
-            why = f"picture file missing: {row['master_path']}"
-            self.log(f"  drawn without a reference: {why}")
-            return None, {"used": False, "why": why, **info}
         from PIL import Image as PILImage
 
         with PILImage.open(master) as im:

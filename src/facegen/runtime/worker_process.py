@@ -305,6 +305,7 @@ class WorkerProxy:
         self._writer = JsonWriter()
         self._wake = threading.Event()
         self._stop = threading.Event()
+        self._stop_deadline = 0.0
         self._thread: threading.Thread | None = None
         self._child: subprocess.Popen[str] | None = None
         self._child_status: WorkerStatus | None = None
@@ -437,12 +438,13 @@ class WorkerProxy:
         self._thread = threading.Thread(target=self._main, name="facegen-supervisor", daemon=True)
         self._thread.start()
 
-    def stop(self, timeout: float | None = None) -> None:
-        """Quit: stop the child (at once while it draws: the job is drawn again at the next
-        start), or end it after `stop_timeout` seconds; then wait up to `timeout` seconds for
-        the supervisor."""
+    def request_stop(self) -> None:
+        """Signal Quit before other services finish. Prevent the supervisor spawning another child."""
         with self._lock:
+            if self._stop.is_set():
+                return
             self._stop.set()
+            self._stop_deadline = time.monotonic() + self.stop_timeout
             child = self._child
             current = self._child_status.current if self._child_status is not None else None
         self._wake.set()
@@ -450,8 +452,15 @@ class WorkerProxy:
             if current is not None:
                 self.log(f"Quit: {current.name} is drawn again at the next start.")
             self._send("stop")
+
+    def stop(self, timeout: float | None = None) -> None:
+        """Request Quit and reap the child, allowing an in-flight publication time to finish."""
+        self.request_stop()
+        with self._lock:
+            child = self._child
+        if child is not None:
             try:
-                child.wait(timeout=self.stop_timeout)
+                child.wait(timeout=max(0.0, self._stop_deadline - time.monotonic()))
             except subprocess.TimeoutExpired:
                 self.log(
                     f"The worker process did not stop within {self.stop_timeout:g} s; ended it."

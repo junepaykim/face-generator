@@ -3,10 +3,9 @@
 `build_runtime` constructs without starting; `Runtime.start` starts the watcher, the worker
 and the update check. The update check is not a quit step (it only waits between checks):
 `Runtime.stop_updates` ends it when facegen stops.
-`Runtime.stop_steps` stops downloads, a running sync (a committed sync gets time to
-publish its pack), the watcher, then the worker: a picture being drawn is abandoned at once
-(drawn again at the next start), and a process not gone after `worker_process.STOP_TIMEOUT`
-seconds is ended, releasing the GPU. Each sync runs in a process of its own by default.
+`Runtime.stop_steps` signals the worker immediately so it can abandon a picture being drawn.
+Downloads, sync and the watcher then stop, and the worker is reaped. A committed sync gets
+time to publish its pack. Each sync runs in a process of its own by default.
 Tests can explicitly select in-thread execution by injecting an inline source.
 `serve` runs uvicorn in the main thread and cleans up afterward. The desktop shell runs
 `ServerThread` and stops it after the runtime steps.
@@ -89,6 +88,8 @@ class Runtime:
     def stop_steps(self) -> list[tuple[str, Callable[[], None]]]:
         """How the parts stop, in order (module docstring); the web server is not among them."""
         steps: list[tuple[str, Callable[[], None]]] = []
+        if self.worker is not None:
+            steps.append(("drawing", self.worker.request_stop))
         if self.download is not None:
             steps.append(("model download", self.download.stop))
         # Before the watcher: its thread may be waiting for that sync.

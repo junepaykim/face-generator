@@ -44,11 +44,10 @@ def test_the_parts_stop_in_order(config_file: Path) -> None:
     rt = build_runtime(
         settings, fake_gpu(), inline_source=NoSource, config=config_file, paused=True
     )
-    # A running sync ends first: the save watcher's thread may be waiting for it (Phase 14).
-    assert [name for name, _ in rt.stop_steps()] == ["sync", "save watcher", "worker"]
+    assert [name for name, _ in rt.stop_steps()] == ["drawing", "sync", "save watcher", "worker"]
     assert rt.url == f"http://127.0.0.1:{settings.ui.port}/"
     assert rt.context.browse is None or callable(rt.context.browse)
-    # With the real worker's model check, the download is stopped first.
+    # With the real worker's model check, downloads also stop before waiting for the sync.
     rt = build_runtime(
         settings,
         fake_gpu(models_ready=lambda: True),
@@ -57,7 +56,7 @@ def test_the_parts_stop_in_order(config_file: Path) -> None:
         paused=True,
     )
     assert [name for name, _ in rt.stop_steps()] == [
-        "model download", "sync", "save watcher", "worker",
+        "drawing", "model download", "sync", "save watcher", "worker",
     ]  # fmt: skip
     rt = build_runtime(
         settings, fake_gpu(), inline_source=NoSource, worker=False, watch=False, browse=None

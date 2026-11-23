@@ -157,8 +157,11 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             p=p,
             settings=settings,
             age_table=table_name(p["group_name"], bool(p["at_my_club"]), **audience(p)),
-            redraw_reference=uses_reference("redraw", bool(p["at_my_club"]), settings),
+            redraw_reference=uses_reference(
+                "redraw", bool(p["at_my_club"]), settings, detail["current"]
+            ),
             eyes_round=bool(detail["sheet"])
+            and not detail["sheet"]["man"]
             and eyes_drawn_round(
                 detail["sheet"]["fields"]["eye_shape"],
                 detail["sheet"]["fields"]["base_seed"],
@@ -279,7 +282,9 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
         except HTTPException as exc:
             target = _safe_next(str(form.get("next") or ""), back)
             return _redirect(target, err=str(exc.detail))
-        except PublishError as exc:
+        except (PublishError, OSError) as exc:
+            if action not in {"pick", "restore", "remove"}:
+                raise
             logger.error("publishing failed for player %s", uid, exc_info=exc)
             return _redirect(
                 back, err=t("msg.player.publish_failed", error=problem_line(str(exc), t))

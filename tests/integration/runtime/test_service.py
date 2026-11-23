@@ -15,7 +15,7 @@ from factories import ABROAD, MANUAL, NEWGEN, RIVAL, player, snapshot
 from fakes import FakeRenderer, FakeTagger
 from support.paths import ROOT
 
-from facegen.core.records import Snapshot
+from facegen.core.records import Personality, Snapshot
 from facegen.datasource.kits import load_kits
 from facegen.persistence import db
 from facegen.persistence.db import transaction
@@ -145,6 +145,47 @@ def run_until_idle(svc: WorkerService, steps: int = 20) -> None:
         if svc.step() > 0:
             return
     raise AssertionError("the worker never went idle")
+
+
+def test_queue_filters_and_lookahead_apply_before_jobs_are_loaded(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from collections import Counter
+
+    from facegen.core.job_records import JobFilter
+    from facegen.persistence import jobs
+    from facegen.pipeline.worker import PRE_ENCODE_JOBS
+
+    many = [player(10_000 + i) for i in range(PRE_ENCODE_JOBS + 5)]
+    run_sync(env.conn, snapshot([*world(), *many]), env.settings, save_file="career.fm")
+    manual.generate(env.conn, env.cid, [STAR], env.settings, "c")
+    all_jobs = jobs.queued_jobs(env.conn, env.cid, JobFilter())
+    decoded = 0
+    original = jobs.personality_from_json
+
+    def decode(value: str | None) -> Personality | None:
+        nonlocal decoded
+        decoded += 1
+        return original(value)
+
+    monkeypatch.setattr(jobs, "personality_from_json", decode)
+    for groups in (None, frozenset(), frozenset({"a", "b"}), frozenset({"c"})):
+        for mine in (True, False):
+            for include_manual in (True, False):
+                selection = JobFilter(groups, my_club_only=mine, manual_always=include_manual)
+                expected = [job for job in all_jobs if selection.accepts(job)]
+                decoded = 0
+                assert jobs.queued_counts(env.conn, env.cid, selection) == Counter(
+                    job.group for job in expected
+                )
+                assert jobs.queued_jobs(env.conn, env.cid, selection, limit=2) == expected[:2]
+                assert decoded == len(expected[:2])
+
+    decoded = 0
+    svc = env.service(models_ready=lambda _model: False)
+    svc.step()
+    assert svc.status().values["count"] == len(all_jobs)
+    assert decoded <= PRE_ENCODE_JOBS < len(all_jobs)
 
 
 def test_draws_my_club_first_publishes_and_goes_idle(env: Env) -> None:
@@ -342,8 +383,8 @@ def test_a_job_cancelled_between_choosing_and_starting_is_skipped(env: Env) -> N
         w = original(conn)
         runnable = w.runnable
 
-        def runnable_then_cancel(f):  # type: ignore[no-untyped-def]
-            ready = runnable(f)
+        def runnable_then_cancel(f, *, limit=None):  # type: ignore[no-untyped-def]
+            ready = runnable(f, limit=limit)
             conn.execute("UPDATE jobs SET status = 'cancelled' WHERE id = ?", (ready[0].id,))
             return ready
 
