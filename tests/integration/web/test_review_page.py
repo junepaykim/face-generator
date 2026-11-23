@@ -148,9 +148,22 @@ def test_the_candidates_side_by_side_with_the_picture_fm27_shows(env: Env) -> No
     page = env.client.get("/review").text
     dialog = re.search(rf'<dialog class="compare" id="compare-{ONE}".*?</dialog>', page, re.DOTALL)
     assert dialog is not None
-    assert f'data-compare="compare-{ONE}"' in page  # the button and each thumbnail open it
+    assert page.count(f'data-compare="compare-{ONE}"') == 1  # its Compare button opens it
     # Group B draws one candidate a try, and a job has three tries.
     assert len(re.findall(r'<img data-src="/files\?path=', dialog[0])) == 3
+    # Each picture opens in the lightbox (Phase 17b): the thumbnails as one group, the
+    # dialog's pictures as another.
+    outside = page.replace(dialog[0], "")
+    assert (
+        len(
+            re.findall(
+                rf'data-lightbox="review-{ONE}" data-caption="[^"]+ · Candidate \d"', outside
+            )
+        )
+        == 3
+    )
+    assert len(re.findall(rf'data-lightbox="compare-{ONE}"', dialog[0])) == 3
+    assert 'target="_blank"' not in page
     assert "Now in FM27" not in dialog[0]  # a first picture: nothing to compare with yet
 
     # A new picture for a player who has one fails its checks: the current one is shown too.
@@ -171,5 +184,6 @@ def test_the_candidates_side_by_side_with_the_picture_fm27_shows(env: Env) -> No
     dialog = re.search(rf'<dialog class="compare" id="compare-{ONE}".*?</dialog>', page, re.DOTALL)
     assert dialog is not None
     assert f'<img data-src="/pictures/{current}" alt="Now in FM27">' in dialog[0]
+    assert f'<a href="/pictures/{current}" data-lightbox="compare-{ONE}"' in dialog[0]
     script = env.client.get(re.search(r'src="(/static/app.js[^"]*)"', page)[1]).text
     assert "dialog.showModal()" in script and "img.dataset.src" in script

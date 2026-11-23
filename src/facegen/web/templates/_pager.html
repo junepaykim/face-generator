@@ -1,0 +1,23 @@
+{# The pager (Phase 17b): ‹ [ 12 ] / 1,844 ›, beside a list's count and again under it. Type
+   a page and press Enter to go there; the server takes a page past the last as the last one.
+   It works without the script: the page box belongs to a GET form (`id`) that carries the
+   list's filters as hidden fields. Import it `with context` (it speaks the page's language).
+   Inside another form (Players' bar), put pager_form(...) outside that form and call
+   pager(..., form=False): forms cannot nest. #}
+{% macro pager_form(f, base, id) -%}
+<form id="{{ id }}" method="get" action="{{ base }}" novalidate data-pager hidden>
+{%- for name, value in f.params(page=1).items() %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor -%}
+</form>
+{%- endmacro %}
+
+{% macro pager(f, pages, base, id, form=True) -%}
+{% if form %}{{ pager_form(f, base, id) }}{% endif %}
+<nav class="pager" aria-label="{{ tr('pager.label') }}">
+  {%- if f.page > 1 %}<a class="pager-step" href="{{ base }}?{{ f.query(page=f.page - 1) }}" rel="prev" title="{{ tr('pager.previous') }}" aria-label="{{ tr('pager.previous') }}">‹</a>
+  {%- else %}<span class="pager-step off" aria-hidden="true">‹</span>{% endif %}
+  <input type="number" name="page" form="{{ id }}" min="1" max="{{ pages }}" value="{{ f.page }}" aria-label="{{ tr('pager.page') }}" title="{{ tr('pager.page') }}">
+  <span class="pager-of">/ {{ pages|num }}</span>
+  {%- if f.page < pages %}<a class="pager-step" href="{{ base }}?{{ f.query(page=f.page + 1) }}" rel="next" title="{{ tr('pager.next') }}" aria-label="{{ tr('pager.next') }}">›</a>
+  {%- else %}<span class="pager-step off" aria-hidden="true">›</span>{% endif %}
+</nav>
+{%- endmacro %}

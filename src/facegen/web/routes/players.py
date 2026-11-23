@@ -48,14 +48,18 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
     @router.get("/players", response_class=HTMLResponse)
     def players(request: Request, conn: sqlite3.Connection = Conn) -> Response:
         career = load_career(conn)
-        f = PlayerPageFilter.from_query(request.query_params)
-        rows, total = player_queries.players_page(conn, career.id, f) if career else ([], 0)
+        f, rows, total, pages = queries.one_page(
+            lambda asked: (
+                player_queries.players_page(conn, career.id, asked) if career else ([], 0)
+            ),
+            PlayerPageFilter.from_query(request.query_params),
+            player_queries.PER_PAGE,
+        )
         club_name = None
         if f.club_id is not None and career is not None:
             club_name = player_queries.club_name(conn, career.id, f.club_id)
             if club_name is None:
                 club_name = str(f.club_id)
-        pages = max(1, -(-total // player_queries.PER_PAGE))
         return page(
             request,
             "players.html",

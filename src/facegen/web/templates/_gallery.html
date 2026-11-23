@@ -1,25 +1,20 @@
-<p class="muted small" id="wall-count">{{ t("gallery.total", count=total) }}{% if pages > 1 %} · {{ t("players.page", page=f.page, pages=pages) }}{% endif %}</p>
+{% from "_pager.html" import pager with context %}
+<div class="list-head" id="wall-count"><span class="muted small">{{ t("gallery.total", count=total) }}</span>{% if pages > 1 %}{{ pager(f, pages, "/gallery", "jump-top") }}{% endif %}</div>
 {% if rows %}
 <section id="wall-grid" data-pictures>
   <div class="thumbs wall">
     {% for r in rows %}
     {% set version = r.master_path|picture_filename %}
-    <a class="thumb-card" href="/players/{{ r.unique_id }}" data-id="{{ r.id }}:{{ version }}">
-      <img src="/pictures/{{ r.id }}?size=192&amp;v={{ version }}" srcset="/pictures/{{ r.id }}?size=192&amp;v={{ version }} 1x, /pictures/{{ r.id }}?size=384&amp;v={{ version }} 2x" loading="lazy" alt="{{ r.name }}">
-      <span class="thumb-name">{{ r.name }}</span>
+    <div class="thumb-card" data-id="{{ r.id }}:{{ version }}">
+      <a class="thumb-pic" href="/pictures/{{ r.id }}" data-lightbox="wall" data-caption="{{ r.name }} · v{{ r.version }}" data-player="/players/{{ r.unique_id }}"><img src="/pictures/{{ r.id }}?size=192&amp;v={{ version }}" srcset="/pictures/{{ r.id }}?size=192&amp;v={{ version }} 1x, /pictures/{{ r.id }}?size=384&amp;v={{ version }} 2x" loading="lazy" alt="{{ r.name }}"></a>
+      <a class="thumb-name" href="/players/{{ r.unique_id }}">{{ r.name }}</a>
       <span class="thumb-club muted small">{% if r.club %}{{ r.club }}{% elif r.media_role %}{{ t("players.origin_media") }}{% else %}{{ t("common.free_agent") }}{% endif %}</span>
       <span class="thumb-meta">{{ grp(r.group_name) }} <time class="muted small" datetime="{{ r.created_at }}" data-short>{{ r.created_at[5:10] }}</time></span>
-    </a>
+    </div>
     {% endfor %}
   </div>
 </section>
-{% if pages > 1 %}
-<nav class="pager" id="wall-pages">
-  {% if f.page > 1 %}<a href="/gallery?{{ f.query(page=1) }}">{{ t("players.first") }}</a> <a href="/gallery?{{ f.query(page=f.page - 1) }}">{{ t("players.previous") }}</a>{% endif %}
-  <span>{{ t("players.page", page=f.page, pages=pages) }}</span>
-  {% if f.page < pages %}<a href="/gallery?{{ f.query(page=f.page + 1) }}">{{ t("players.next") }}</a> <a href="/gallery?{{ f.query(page=pages) }}">{{ t("players.last") }}</a>{% endif %}
-</nav>
-{% endif %}
+{% if pages > 1 %}<div class="pager-foot" id="wall-pages">{{ pager(f, pages, "/gallery", "jump-bottom") }}</div>{% endif %}
 {% elif f.active %}
 <p class="muted" id="wall-empty">{{ t("gallery.none_match") }} <a href="/gallery">{{ t("players.filter.clear") }}</a></p>
 {% else %}

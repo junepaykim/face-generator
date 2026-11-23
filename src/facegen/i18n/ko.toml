@@ -282,19 +282,26 @@ new = "최신순"
 name = "이름순"
 ca = "CA순"
 
+[pager]
+label = "쪽 이동"
+page = "쪽 번호"
+previous = "이전 쪽"
+next = "다음 쪽"
+
+[lightbox]
+title = "그림 크게 보기"
+reset = "원래 크기"
+previous = "이전 그림"
+next = "다음 그림"
+
 [players]
 generate = "생성"
 new_picture = "새 그림"
 pin = "고정"
 total = "선수 {count:,}명"
-page = "{page:,}/{pages:,}쪽"
 tick_all = "이 쪽 전체 선택"
 tick = "{name} 선택"
 none = "조건에 맞는 선수가 없습니다."
-first = "« 처음"
-previous = "‹ 이전"
-next = "다음 ›"
-last = "끝 »"
 photos_unknown_sync = "사진 여부를 알 수 없습니다. 마지막 동기화에서 FM27 사진 목록을 읽지 못했습니다."
 photos_unknown_next = "사진 여부는 다음 동기화 때 확인합니다."
 media_local = "내 구단의 나라"

@@ -55,13 +55,11 @@ def env(config_file: Path) -> Iterator[Env]:
 
 def cards(page: str) -> list[str]:
     """The names on the wall, in order."""
-    return re.findall(r'<span class="thumb-name">([^<]+)</span>', unescape(page))
+    return re.findall(r'<a class="thumb-name" href="/players/\d+">([^<]+)</a>', unescape(page))
 
 
 def ids(page: str) -> list[int]:
-    return [
-        int(i) for i in re.findall(r'class="thumb-card" href="/players/\d+" data-id="(\d+):', page)
-    ]
+    return [int(i) for i in re.findall(r'class="thumb-card" data-id="(\d+):', page)]
 
 
 def test_before_any_picture_the_wall_says_so(env: Env) -> None:
@@ -133,8 +131,22 @@ def test_pages_of_pictures(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(queries, "GALLERY_PER_PAGE", 3)
     first = env.client.get("/gallery?sort=name").text
     assert cards(first) == ["Abroad Star", "Mine Alpha", "Mine Beta"]
-    assert "page 1 of 2" in first and 'href="/gallery?sort=name&amp;page=2"' in first
+    assert 'href="/gallery?sort=name&amp;page=2" rel="next"' in first
     assert cards(env.client.get("/gallery?sort=name&page=2").text) == ["Rival Kid"]
+    # The pager beside the count and under the wall (Phase 17b): its page box belongs to a GET
+    # form carrying the filters. A page past the last shows the last; the live part agrees.
+    boxes = r'<input type="number" name="page" form="(jump-\w+)" min="1" max="(\d+)" value="(\d+)"'
+    assert re.findall(boxes, first) == [("jump-top", "2", "1"), ("jump-bottom", "2", "1")]
+    assert re.search(r'4 pictures</span><form id="jump-top" method="get" action="/gallery"', first)
+    hidden = re.findall(r'<form id="jump-top"[^>]*>(.*?)</form>', first)[0]
+    assert hidden == '<input type="hidden" name="sort" value="name">'
+    for url in ("/gallery?sort=name&page=50", "/gallery/part?sort=name&page=50"):
+        page = env.client.get(url).text
+        assert cards(page) == ["Rival Kid"], url
+        assert re.findall(boxes, page)[0] == ("jump-top", "2", "2"), url
+    assert cards(env.client.get("/gallery?sort=name&page=0").text) == cards(first)
+    gallery = env.client.get("/gallery?sort=name&page=50").text
+    assert 'data-refresh="/gallery/part?sort=name&amp;page=2"' in gallery
 
 
 def test_a_new_picture_reaches_an_open_wall(env: Env) -> None:
@@ -152,7 +164,7 @@ def test_a_new_picture_reaches_an_open_wall(env: Env) -> None:
     finally:
         conn.close()
     part = env.client.get("/gallery/part?where=mine").text
-    assert part.lstrip().startswith('<p class="muted small" id="wall-count">')
+    assert part.lstrip().startswith('<div class="list-head" id="wall-count">')
     assert '<section id="wall-grid" data-pictures>' in part and "<html" not in part
     # The page's script merges the wall like the dashboard's latest pictures.
     script = env.client.get(re.search(r'src="(/static/app.js[^"]*)"', page)[1]).text

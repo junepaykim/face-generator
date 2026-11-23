@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_page.html" import page_head %}
+{% from "_pager.html" import pager, pager_form with context %}
 {% block title %}{{ t("nav.players") }}{% endblock %}
 {% block head %}{{ page_head(t("nav.players")) }}{% endblock %}
 {% block content %}
@@ -29,6 +30,7 @@
 <p class="muted small">{{ t("players.photos_unknown_sync" if photo_status else "players.photos_unknown_next") }}</p>
 {% endif %}
 
+{% if pages > 1 %}{{ pager_form(f, "/players", "jump-top") }}{% endif %}
 <form method="post" action="/players/action" id="bulk">{% include "_player_action_fields.html" %}
   <input type="hidden" name="next" value="{{ here }}">
   <div class="bulk">
@@ -43,7 +45,8 @@
       <option value="never">{{ t("players.bulk.pin_never") }}</option><option value="">{{ t("players.bulk.pin_clear") }}</option>
     </select>
     <button name="action" value="pin" data-needs-tick>{{ t("players.pin") }}</button>
-    <span class="muted grow">{{ t("players.total", count=total) }}{% if pages > 1 %} · {{ t("players.page", page=f.page, pages=pages) }}{% endif %}</span>
+    <span class="muted grow">{{ t("players.total", count=total) }}</span>
+    {% if pages > 1 %}{{ pager(f, pages, "/players", "jump-top", form=False) }}{% endif %}
   </div>
 
   <div class="table-wrap">
@@ -57,7 +60,7 @@
     {% for r in rows %}
       <tr>
         <td><input type="checkbox" name="uid" value="{{ r.unique_id }}" aria-label="{{ t('players.tick', name=r.name) }}"></td>
-        <td>{% if r.image_id %}<img class="face" src="/pictures/{{ r.image_id }}?size=96" loading="lazy" alt="">{% else %}<span class="face none"></span>{% endif %}</td>
+        <td>{% if r.image_id %}<a class="face-link" href="/pictures/{{ r.image_id }}" data-lightbox="players" data-caption="{{ r.name }}" data-player="/players/{{ r.unique_id }}"><img class="face" src="/pictures/{{ r.image_id }}?size=96" loading="lazy" alt="{{ tr('player.current_alt', name=r.name) }}"></a>{% else %}<span class="face none"></span>{% endif %}</td>
         <td><a href="/players/{{ r.unique_id }}">{{ r.name }}</a>{% if r.is_goalkeeper %} <span class="tag">GK</span>{% endif %}{% if r.is_staff %} <span class="tag">{{ r.staff_job or t("tag.staff") }}</span>{% endif %}{% if r.media_role %} <span class="tag">{{ t("tag.media." ~ r.media_role) if tr.has("tag.media." ~ r.media_role) else r.media_role }}</span>{% endif %}{% if r.youth_team %} <span class="tag">{{ t("tag.youth_team") }}</span>{% endif %}</td>
         <td>{{ r.age if r.age is not none else "?" }}</td>
         <td>{% if r.club_id is not none %}<a href="/players?{{ f.query(club_id=r.club_id, club='', page=1) }}">{{ r.club or r.club_id }}</a>{% elif r.media_role %}<span class="muted">{{ t("players.media_local" if r.local_media else "players.media_elsewhere") }}</span>{% else %}<span class="muted">{{ t("common.free_agent") }}</span>{% endif %}
@@ -83,11 +86,5 @@
   </div>
 </form>
 
-{% if pages > 1 %}
-<nav class="pager">
-  {% if f.page > 1 %}<a href="/players?{{ f.query(page=1) }}">{{ t("players.first") }}</a> <a href="/players?{{ f.query(page=f.page - 1) }}">{{ t("players.previous") }}</a>{% endif %}
-  <span>{{ t("players.page", page=f.page, pages=pages) }}</span>
-  {% if f.page < pages %}<a href="/players?{{ f.query(page=f.page + 1) }}">{{ t("players.next") }}</a> <a href="/players?{{ f.query(page=pages) }}">{{ t("players.last") }}</a>{% endif %}
-</nav>
-{% endif %}
+{% if pages > 1 %}<div class="pager-foot">{{ pager(f, pages, "/players", "jump-bottom") }}</div>{% endif %}
 {% endblock %}

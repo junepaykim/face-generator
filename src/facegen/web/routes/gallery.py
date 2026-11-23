@@ -21,13 +21,16 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
 
     def wall(request: Request, conn: sqlite3.Connection) -> dict[str, Any]:
         career = load_career(conn)
-        f = GalleryFilter.from_query(request.query_params)
-        rows, total = queries.gallery_page(conn, career.id, f) if career else ([], 0)
+        f, rows, total, pages = queries.one_page(
+            lambda asked: queries.gallery_page(conn, career.id, asked) if career else ([], 0),
+            GalleryFilter.from_query(request.query_params),
+            queries.GALLERY_PER_PAGE,
+        )
         return {
             "f": f,
             "rows": rows,
             "total": total,
-            "pages": max(1, -(-total // queries.GALLERY_PER_PAGE)),
+            "pages": pages,
             "has_career": career is not None,
             "career": career,
         }

@@ -36,7 +36,7 @@
     <div class="cands">
       {% for c in cands %}
       <figure class="cand" title="{{ c.failures|join('; ') }}">
-        <a href="/files?path={{ c.path|urlencode }}" target="_blank" data-compare="compare-{{ it.unique_id }}" data-at="{{ loop.index }}"><img src="/files?path={{ c.path|urlencode }}&amp;size=192" loading="lazy" alt="{{ t('review.candidate', n=loop.index) }}"></a>
+        <a href="/files?path={{ c.path|urlencode }}" data-lightbox="review-{{ it.unique_id }}" data-caption="{{ it.name }} · {{ tr('review.candidate', n=loop.index) }}" data-player="/players/{{ it.unique_id }}"><img src="/files?path={{ c.path|urlencode }}&amp;size=192" loading="lazy" alt="{{ t('review.candidate', n=loop.index) }}"></a>
         <figcaption>{% for why in c.why %}<span class="b bad">{{ why }}</span>{% endfor %}</figcaption>
       </figure>
       {% endfor %}
@@ -49,13 +49,13 @@
       <div class="compare-row">
         {% if it.current_id %}
         <figure class="compare-pic now">
-          <a href="/pictures/{{ it.current_id }}" target="_blank"><img data-src="/pictures/{{ it.current_id }}" alt="{{ t('review.now') }}"></a>
+          <a href="/pictures/{{ it.current_id }}" data-lightbox="compare-{{ it.unique_id }}" data-caption="{{ it.name }} · {{ tr('review.now') }}" data-player="/players/{{ it.unique_id }}"><img data-src="/pictures/{{ it.current_id }}" alt="{{ t('review.now') }}"></a>
           <figcaption><span class="b ok">{{ t("review.now") }}</span></figcaption>
         </figure>
         {% endif %}
         {% for c in cands %}
-        <figure class="compare-pic" data-at="{{ loop.index }}">
-          <a href="/files?path={{ c.path|urlencode }}" target="_blank"><img data-src="/files?path={{ c.path|urlencode }}" alt="{{ t('review.candidate', n=loop.index) }}"></a>
+        <figure class="compare-pic">
+          <a href="/files?path={{ c.path|urlencode }}" data-lightbox="compare-{{ it.unique_id }}" data-caption="{{ it.name }} · {{ tr('review.candidate', n=loop.index) }}" data-player="/players/{{ it.unique_id }}"><img data-src="/files?path={{ c.path|urlencode }}" alt="{{ t('review.candidate', n=loop.index) }}"></a>
           <figcaption><span class="b">{{ t("review.candidate", n=loop.index) }}</span>{% for why in c.why %}<span class="b bad">{{ why }}</span>{% endfor %}</figcaption>
         </figure>
         {% endfor %}

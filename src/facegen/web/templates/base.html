@@ -51,6 +51,17 @@
 {% block content %}{% endblock %}
 </main>
 </div>
+{# Every picture opens here, over the page (Phase 17b): links marked data-lightbox (app.js). #}
+<dialog class="lightbox" id="lightbox" aria-label="{{ tr('lightbox.title') }}">
+  <div class="lb-stage"><img class="lb-img" alt="" draggable="false"></div>
+  <div class="lb-tools">
+    <button type="button" class="lb-button lb-reset" data-lb-reset hidden>{{ t("lightbox.reset") }}</button>
+    <button type="button" class="lb-button lb-close" data-lb-close title="{{ tr('common.close') }}" aria-label="{{ tr('common.close') }}">×</button>
+  </div>
+  <button type="button" class="lb-button lb-step lb-prev" data-lb-step="-1" title="{{ tr('lightbox.previous') }}" aria-label="{{ tr('lightbox.previous') }}" hidden>‹</button>
+  <button type="button" class="lb-button lb-step lb-next" data-lb-step="1" title="{{ tr('lightbox.next') }}" aria-label="{{ tr('lightbox.next') }}" hidden>›</button>
+  <p class="lb-caption" hidden></p>
+</dialog>
 <input type="hidden" id="csrf" value="{{ csrf_token }}">
 </body>
 </html>

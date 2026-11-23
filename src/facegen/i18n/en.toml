@@ -282,19 +282,26 @@ new = "Newest"
 name = "By name"
 ca = "By CA"
 
+[pager]
+label = "Pages"
+page = "Page number"
+previous = "Previous page"
+next = "Next page"
+
+[lightbox]
+title = "Picture"
+reset = "Reset"
+previous = "Previous picture"
+next = "Next picture"
+
 [players]
 generate = "Generate"
 new_picture = "New picture"
 pin = "Pin"
 total = "{count:,} players"
-page = "page {page:,} of {pages:,}"
 tick_all = "Tick every player on this page"
 tick = "Tick {name}"
 none = "No players match."
-first = "« First"
-previous = "‹ Previous"
-next = "Next ›"
-last = "Last »"
 photos_unknown_sync = "Who has a photo is not known: the last sync could not read FM27's photo list."
 photos_unknown_next = "Who has a photo is not known yet: it is read at the next sync."
 media_local = "my club's country"

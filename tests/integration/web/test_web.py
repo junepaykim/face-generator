@@ -24,7 +24,8 @@ from factories import (
 )
 from fakes import FakeRenderer, FakeTagger
 from fastapi.testclient import TestClient
-from support.web import post_player_action
+from support.paths import ROOT
+from support.web import KOREAN_WINDOWS, post_player_action
 
 from facegen.core.records import Snapshot
 from facegen.datasource.kits import load_kits
@@ -202,7 +203,7 @@ def test_players_list_filters(env: Env) -> None:
     assert names("group=none") == {"Famous Striker", "Abroad Kid"}
     assert names("picture=queued") == {"Mine Player", "Rival Kid"}
     assert names("picture=yes") == set()
-    assert names("sort=name&page=99") == set()
+    assert names("sort=name&page=99") == names("")  # past the last page: the last (Phase 17b)
     assert env.client.get("/players?ca_min=abc&league=bogus").status_code == 200
 
 
@@ -219,13 +220,130 @@ def test_players_pager_preserves_filter_and_sort(env: Env) -> None:
     rows = r'<a href="/players/(\d+)">([^<]+)</a>'
     expected = [(str(p.unique_id), p.name) for p in people]
     first = unescape(env.client.get(first_url).text)
-    assert "101 players" in first and "page 1 of 2" in first
+    assert "101 players" in first
+    assert page_boxes(first) == [("jump-top", "2", "1"), ("jump-bottom", "2", "1")]
     assert re.findall(rows, first) == expected[:100]
-    assert f'href="{second_url}">Next ›</a>' in first
+    assert f'href="{second_url}" rel="next"' in first and 'rel="prev"' not in first
     second = unescape(env.client.get(second_url).text)
-    assert "page 2 of 2" in second
+    assert page_boxes(second) == [("jump-top", "2", "2"), ("jump-bottom", "2", "2")]
     assert re.findall(rows, second) == expected[100:]
-    assert f'href="{first_url}">‹ Previous</a>' in second
+    assert f'href="{first_url}" rel="prev"' in second and 'rel="next"' not in second
+
+
+def page_boxes(page: str) -> list[tuple[str, str, str]]:
+    """Each pager's page box on a page: its form, the last page and the page shown."""
+    return re.findall(
+        r'<input type="number" name="page" form="([^"]+)" min="1" max="(\d+)" value="(\d+)"', page
+    )
+
+
+def test_players_pager_jumps_to_a_typed_page(env: Env) -> None:
+    """Phase 17b: ‹ [ 1 ] / 2 › beside the count and under the list. The page box belongs to a
+    GET form carrying the filters, outside the bulk form (forms cannot nest); a page past the
+    last shows the last one, and one below the first the first."""
+    people = [player(2000 - i, name=f"Trial player {i:03d}", club_id=ABROAD) for i in range(101)]
+    conn = env.conn()
+    try:
+        run_sync(conn, snapshot(people), env.settings, save_file="career.fm")
+    finally:
+        conn.close()
+    rows = r'<a href="/players/(\d+)">([^<]+)</a>'
+    expected = [(str(p.unique_id), p.name) for p in people]
+    page = unescape(env.client.get("/players?q=Trial+player&sort=name&group=any").text)
+    forms = dict(
+        re.findall(
+            r'<form id="(jump-\w+)" method="get" action="/players" novalidate data-pager hidden>'
+            r"(.*?)</form>",
+            page,
+        )
+    )
+    assert set(forms) == {"jump-top", "jump-bottom"}
+    hidden = r'<input type="hidden" name="([^"]+)" value="([^"]*)">'
+    for fields in forms.values():  # the filters as set, defaults left out, no page
+        assert re.findall(hidden, fields) == [("q", "Trial player"), ("sort", "name")]
+    bulk = page.index('id="bulk"')
+    assert page.index('<form id="jump-top"') < bulk < page.index('form="jump-top"')
+    assert page.index("</form>", bulk) < page.index('<form id="jump-bottom"')
+    assert re.search(r'101 players</span>\s*<nav class="pager"', page)
+
+    def jump(number: str) -> tuple[list[tuple[str, str]], list[tuple[str, str, str]]]:
+        typed = dict(re.findall(hidden, forms["jump-top"]), page=number)
+        text = unescape(env.client.get("/players", params=typed).text)
+        return re.findall(rows, text), page_boxes(text)
+
+    assert jump("2") == (expected[100:], [("jump-top", "2", "2"), ("jump-bottom", "2", "2")])
+    assert jump("9999") == jump("2")  # past the last page: the last
+    assert jump("100001")[0] == expected[100:]
+    assert jump("0")[0] == expected[:100] and jump("-4")[0] == expected[:100]
+    assert jump("x")[0] == expected[:100]
+    # One page: no pager.
+    single = env.client.get("/players?q=Trial+player+000").text
+    assert "1 players" in single and page_boxes(single) == [] and "data-pager" not in single
+    korean = env.client.get("/players?q=Trial+player", headers=KOREAN_WINDOWS).text
+    assert 'aria-label="다음 쪽"' in korean and 'aria-label="쪽 번호"' in korean
+
+
+# A link to a whole picture: the master by image ID or a file (candidate, reference).
+PICTURE_LINK = re.compile(r'<a [^>]*href="(?:/pictures/\d+|/files\?path=[^"]+)"[^>]*>')
+
+
+def test_every_picture_opens_in_the_lightbox(env: Env) -> None:
+    """Phase 17b: a picture opens over the page, never in the web browser (the app's window
+    hands a target="_blank" link to it). The link keeps its address, so it still opens the
+    picture without the script; the script groups links by their data-lightbox value."""
+    env.drain()
+    follow(env, post_player_action(env.client, f"/players/{MINE}/new-picture"))
+    env.drain()
+    v1 = env.one("SELECT id FROM images WHERE unique_id = ? AND version = 1", MINE)
+    v2 = env.one("SELECT id FROM images WHERE unique_id = ? AND is_current = 1", MINE)
+    for url in ("/", "/players", "/gallery", f"/players/{MINE}", "/review"):
+        page = env.client.get(url).text
+        assert 'target="_blank"' not in page, url
+        assert page.count('<dialog class="lightbox" id="lightbox"') == 1, url
+        links = PICTURE_LINK.findall(page)
+        assert links or url == "/review", url
+        assert [link for link in links if "data-lightbox=" not in link] == [], url
+
+    page = unescape(env.client.get(f"/players/{MINE}").text)
+    # The current picture and the history (the script counts the current one once), the
+    # candidates and the reference.
+    versions = r'<a href="/pictures/(\d+)" data-lightbox="versions" data-caption="([^"]+)">'
+    assert re.findall(versions, page) == [
+        (str(v2), "Mine Player · v2"),
+        (str(v2), "Mine Player · v2"),
+        (str(v1), "Mine Player · v1"),
+    ]
+    assert re.search(r'<a href="/files\?path=[^"]+" data-lightbox="reference"', page)
+    candidates = re.findall(r'data-lightbox="candidates" data-caption="([^"]+)"', page)
+    assert candidates and candidates[0] == "Mine Player · v2 · Candidate 1"
+    players = unescape(env.client.get("/players").text)
+    assert (
+        f'<a class="face-link" href="/pictures/{v2}" data-lightbox="players"'
+        f' data-caption="Mine Player" data-player="/players/{MINE}">'
+    ) in players
+    assert f'<a href="/players/{MINE}">Mine Player</a>' in players  # the name: the player page
+
+    korean = env.client.get(f"/players/{MINE}", headers=KOREAN_WINDOWS).text
+    assert 'aria-label="그림 크게 보기"' in korean and ">원래 크기</button>" in korean
+    script = env.client.get(re.search(r'src="(/static/app.js[^"]*)"', page)[1]).text
+    for piece in (
+        'closest("a[data-lightbox]")',
+        "{ passive: false }",  # the wheel zooms the picture, not the page
+        "setPointerCapture",
+        'e.key === "0"',
+        '"dblclick"',
+        "opener.focus(",
+        "form[data-pager]",
+    ):
+        assert piece in script, piece
+
+
+def test_only_outside_pages_open_in_the_web_browser() -> None:
+    """Phase 17b: in the app's window a target="_blank" link opens the web browser; only the
+    update's "What's new" (on GitHub) may do that."""
+    templates = ROOT / "src" / "facegen" / "web" / "templates"
+    blank = {p.name for p in templates.glob("*.html") if "_blank" in p.read_text(encoding="utf-8")}
+    assert blank == {"_update.html"}
 
 
 def test_find_tick_and_generate_a_pre_existing_player(env: Env) -> None:

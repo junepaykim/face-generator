@@ -92,11 +92,11 @@
   <div class="thumbs">
     {% for r in recent %}
     {% set version = r.master_path|picture_filename %}
-    <a class="thumb-card" href="/players/{{ r.unique_id }}" data-id="{{ r.id }}:{{ version }}">
-      <img src="/pictures/{{ r.id }}?size=192&amp;v={{ version }}" loading="lazy" alt="">
-      <span class="thumb-name">{{ r.name }}</span>
+    <div class="thumb-card" data-id="{{ r.id }}:{{ version }}">
+      <a class="thumb-pic" href="/pictures/{{ r.id }}" data-lightbox="recent" data-caption="{{ r.name }} · v{{ r.version }}" data-player="/players/{{ r.unique_id }}"><img src="/pictures/{{ r.id }}?size=192&amp;v={{ version }}" loading="lazy" alt="{{ r.name }}"></a>
+      <a class="thumb-name" href="/players/{{ r.unique_id }}">{{ r.name }}</a>
       <span class="thumb-meta">{{ grp(r.group_name) }} <time class="muted small" datetime="{{ r.created_at }}" data-short>{{ r.created_at[11:16] }}</time></span>
-    </a>
+    </div>
     {% endfor %}
   </div>
 </section>

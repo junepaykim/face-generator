@@ -10,7 +10,7 @@
 <div class="player-head">
   <div class="portrait">
     {% if cur %}
-      <a href="/pictures/{{ cur.id }}" target="_blank"><img src="/pictures/{{ cur.id }}?size=384" alt="{{ t('player.current_alt', name=p.name) }}"></a>
+      <a href="/pictures/{{ cur.id }}" data-lightbox="versions" data-caption="{{ p.name }} · v{{ cur.version }}"><img src="/pictures/{{ cur.id }}?size=384" alt="{{ t('player.current_alt', name=p.name) }}"></a>
       <p class="muted small">v{{ cur.version }} · {{ t("kind." ~ cur.reason) }} · {{ grp(cur.group_name) }} · {{ band(cur.age_band) }}{% if cur.restored_at %} · {{ t("player.restored_on", date=cur.restored_at[:10]) }}{% endif %} · {{ t("status.published" if cur.published_path else "player.not_published") }}</p>
     {% else %}
       <div class="portrait-none">{{ t("player.no_picture") }}</div>
@@ -110,7 +110,7 @@
   {% set ref = cur.render.reference %}
   {% if ref and ref.used %}
   <div class="ref">
-    <a href="/files?path={{ ref.crop|urlencode }}" target="_blank"><img src="/files?path={{ ref.crop|urlencode }}&amp;size=96" alt="{{ t('player.reference_alt') }}"></a>
+    <a href="/files?path={{ ref.crop|urlencode }}" data-lightbox="reference" data-caption="{{ tr('player.reference_alt') }}"><img src="/files?path={{ ref.crop|urlencode }}&amp;size=96" alt="{{ t('player.reference_alt') }}"></a>
     <p class="small">{{ t("player.reference_used", version=ref.version, scale=ref.scale) }}</p>
   </div>
   {% elif ref %}
@@ -128,9 +128,9 @@
         <form method="post" action="/players/{{ p.unique_id }}/pick">{% include "_player_action_fields.html" %}<input type="hidden" name="version" value="{{ cur.version }}"><input type="hidden" name="attempt" value="{{ c.attempt }}"><input type="hidden" name="index" value="{{ c.index }}">
           <button class="pick" title="{{ tr('player.retry_publish' if retry else 'player.pick_title') }}"><img src="/files?path={{ c.path|urlencode }}&amp;size=192" loading="lazy" alt="{{ '' if retry else tr('player.pick_title') }}">{% if retry %}{{ t("player.retry_publish") }}{% endif %}</button>
         </form>
-        <a class="full" href="/files?path={{ c.path|urlencode }}" target="_blank" title="{{ tr('player.full_size') }}" aria-label="{{ tr('player.full_size') }}">⤢</a>
+        <a class="full" href="/files?path={{ c.path|urlencode }}" data-lightbox="candidates" data-caption="{{ p.name }} · v{{ cur.version }} · {{ tr('review.candidate', n=loop.index) }}" title="{{ tr('player.full_size') }}" aria-label="{{ tr('player.full_size') }}">⤢</a>
         {% else %}
-        <a href="/files?path={{ c.path|urlencode }}" target="_blank"><img src="/files?path={{ c.path|urlencode }}&amp;size=192" loading="lazy" alt=""></a>
+        <a href="/files?path={{ c.path|urlencode }}" data-lightbox="candidates" data-caption="{{ p.name }} · v{{ cur.version }} · {{ tr('review.candidate', n=loop.index) }}"><img src="/files?path={{ c.path|urlencode }}&amp;size=192" loading="lazy" alt="{{ tr('review.candidate', n=loop.index) }}"></a>
         {% endif %}
         <figcaption>
           {% if chosen %}<span class="b ok">{{ t("player.chosen") }}</span>{% endif %}
@@ -158,7 +158,7 @@ negative: {{ cur.negative_prompt }}</pre></details>
     <tbody>
     {% for im in d.images %}
       <tr>
-        <td>{% if im.master_path %}<a href="/pictures/{{ im.id }}" target="_blank"><img class="thumb" src="/pictures/{{ im.id }}?size=96" loading="lazy" alt=""></a>{% endif %}</td>
+        <td>{% if im.master_path %}<a href="/pictures/{{ im.id }}" data-lightbox="versions" data-caption="{{ p.name }} · v{{ im.version }}"><img class="thumb" src="/pictures/{{ im.id }}?size=96" loading="lazy" alt="v{{ im.version }}"></a>{% endif %}</td>
         <td>v{{ im.version }}</td><td>{{ t("kind." ~ im.reason) }}{% if im.render.reference and im.render.reference.used %} <span class="muted small">{{ t("player.reference_version", version=im.render.reference.version) }}</span>{% endif %}</td><td>{{ grp(im.group_name) }}</td>
         <td>{{ im.club or "-" }}</td><td>{{ band(im.age_band) }}</td>
         <td>{% if im.is_current %}<span class="st ok">{{ t("player.state_current_restored" if im.restored_at else "player.state_current") }}</span>{% elif im.rejected %}<span class="st bad">{{ t("player.state_failed") }}</span>{% else %}<span class="muted">{{ t("player.state_replaced") }}</span>{% endif %}</td>

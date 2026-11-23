@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 from typing import Any
@@ -69,6 +69,24 @@ def _choice(value: str | None, options: Mapping[str, Any], default: str) -> str:
     return value if value in options else default
 
 
+MAX_PAGE = 100_000
+
+
+def _page(value: str | None) -> int:
+    """The page asked for: below 1, or not a number, is the first; a page past the last is
+    clamped by `one_page` once the number of pages is known (Phase 17b)."""
+    try:
+        n = int(str(value).strip())
+    except (TypeError, ValueError):
+        return 1
+    return min(max(n, 1), MAX_PAGE)
+
+
+def page_count(total: int, per_page: int) -> int:
+    """How many pages `total` rows fill; an empty list still has its one page."""
+    return max(1, -(-total // per_page))
+
+
 @dataclass(frozen=True, slots=True)
 class PlayerPageFilter(player_queries.PlayerFilter):
     """Roster filters with request parsing and URL generation for the Players page."""
@@ -93,20 +111,23 @@ class PlayerPageFilter(player_queries.PlayerFilter):
             photo=_choice(get("photo"), PHOTO_FILTERS, "any"),
             scope=_choice(get("scope"), SCOPES, "mens"),
             sort=_choice(get("sort"), SORTS, "ca"),
-            page=_int(get("page"), 1, 100_000) or 1,
+            page=_page(get("page")),
         )
+
+    def params(self, **changes: Any) -> dict[str, Any]:
+        """This filter's fields with some changed, defaults left out: the query string's
+        fields, and the pager's hidden ones."""
+        f = replace(self, **changes)
+        default = PlayerPageFilter()
+        return {
+            k: v
+            for k, v in asdict(f).items()
+            if v != getattr(default, k) and v is not None and v != ""
+        }
 
     def query(self, **changes: Any) -> str:
         """The query string for this filter with some fields changed; defaults are left out."""
-        f = replace(self, **changes)
-        default = PlayerPageFilter()
-        return urlencode(
-            {
-                k: v
-                for k, v in asdict(f).items()
-                if v != getattr(default, k) and v is not None and v != ""
-            }
-        )
+        return urlencode(self.params(**changes))
 
     @property
     def active(self) -> bool:
@@ -279,8 +300,8 @@ def recent_pictures(
     return [
         dict(r)
         for r in conn.execute(
-            "SELECT i.id, i.unique_id, i.group_name, i.reason, i.created_at, i.is_current,"
-            " i.master_path, p.name"
+            "SELECT i.id, i.unique_id, i.version, i.group_name, i.reason, i.created_at,"
+            " i.is_current, i.master_path, p.name"
             " FROM images i JOIN players p"
             " ON p.career_id = i.career_id AND p.unique_id = i.unique_id"
             " WHERE i.career_id = ? AND i.master_path IS NOT NULL"
@@ -328,19 +349,40 @@ class GalleryFilter:
             group=group if group in GALLERY_GROUPS else "any",
             role=_choice(get("role"), ROLES, "any"),
             sort=_choice(get("sort"), GALLERY_SORTS, "new"),
-            page=_int(get("page"), 1, 100_000) or 1,
+            page=_page(get("page")),
         )
+
+    def params(self, **changes: Any) -> dict[str, Any]:
+        """The fields with some changed, defaults left out (the query string, the pager)."""
+        f = replace(self, **changes)
+        default = GalleryFilter()
+        return {k: v for k, v in asdict(f).items() if v != getattr(default, k)}
 
     def query(self, **changes: Any) -> str:
         """The query string with some fields changed; defaults are left out."""
-        f = replace(self, **changes)
-        default = GalleryFilter()
-        return urlencode({k: v for k, v in asdict(f).items() if v != getattr(default, k)})
+        return urlencode(self.params(**changes))
 
     @property
     def active(self) -> bool:
         """Whether any filter other than the page and sort is set."""
         return replace(self, page=1, sort="new") != GalleryFilter()
+
+
+def one_page[PageFilter: (PlayerPageFilter, GalleryFilter)](
+    fetch: Callable[[PageFilter], tuple[list[dict[str, Any]], int]],
+    f: PageFilter,
+    per_page: int,
+) -> tuple[PageFilter, list[dict[str, Any]], int, int]:
+    """The filter's page of rows from `fetch(f)` (rows, total), as (filter, rows, total,
+    pages). A page past the last one (typed into the pager, or the list has shrunk since)
+    gives the last page, and the filter returned says so (Phase 17b)."""
+    rows, total = fetch(f)
+    pages = page_count(total, per_page)
+    if f.page > pages:
+        f = replace(f, page=pages)
+        rows, total = fetch(f)
+        pages = page_count(total, per_page)
+    return f, rows, total, pages
 
 
 def gallery_page(
@@ -380,8 +422,8 @@ def gallery_page(
     )
     total = conn.execute(f"SELECT COUNT(*){joins} WHERE {where}", args).fetchone()[0]
     rows = conn.execute(
-        "SELECT i.id, i.unique_id, i.group_name, i.created_at, i.master_path, p.name, p.at_my_club,"
-        " p.is_staff, p.media_role, c.name AS club"
+        "SELECT i.id, i.unique_id, i.version, i.group_name, i.created_at, i.master_path, p.name,"
+        " p.at_my_club, p.is_staff, p.media_role, c.name AS club"
         f"{joins} LEFT JOIN clubs c ON c.career_id = p.career_id AND c.club_id = p.club_id"
         f" WHERE {where} ORDER BY {GALLERY_SORTS[f.sort]} LIMIT ? OFFSET ?",
         (*args, per_page, (f.page - 1) * per_page),

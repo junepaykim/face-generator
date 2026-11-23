@@ -313,8 +313,8 @@ progress();
   update();
 })();
 
-// Review: a player's candidates side by side, with the picture FM27 shows now (Phase 12i). The
-// pictures load when the dialog opens; without a dialog the links open each picture.
+// Review: a player's candidates side by side, with the picture FM27 shows now (Phase 12i), opened
+// by its Compare button. The pictures load when the dialog opens; each opens in the lightbox.
 document.addEventListener("click", (e) => {
   const opener = e.target.closest("[data-compare]");
   if (opener) {
@@ -325,18 +325,209 @@ document.addEventListener("click", (e) => {
       img.src = img.dataset.src;
       img.removeAttribute("data-src");
     });
-    dialog.querySelectorAll(".compare-pic.picked").forEach((f) => f.classList.remove("picked"));
     dialog.showModal();
-    const at = opener.dataset.at && dialog.querySelector(`.compare-pic[data-at="${opener.dataset.at}"]`);
-    if (at) {
-      at.classList.add("picked");
-      at.scrollIntoView({ block: "nearest", inline: "center" });
-    }
     return;
   }
   // A click beside the dialog's box, or on Close, closes it.
   const dialog = e.target.closest("dialog.compare");
   if (dialog && (e.target === dialog || e.target.closest("[data-close]"))) dialog.close();
+});
+
+// The lightbox (Phase 17b): a link marked data-lightbox opens its picture over the page instead
+// of the web browser. The wheel zooms around the pointer (a touchpad pinch arrives as Ctrl+wheel
+// and does the same), a drag moves a zoomed picture, and a double-click, 0 or Reset puts it back
+// (a double-click on a whole picture zooms in). ← and → step through the links with the same
+// data-lightbox value. Esc, × or a click beside the picture closes it, and the link gets the
+// focus back. Without the script the link opens the picture itself.
+(function lightbox() {
+  const box = document.getElementById("lightbox");
+  if (!box || typeof box.showModal !== "function") return;
+  const stage = box.querySelector(".lb-stage");
+  const img = box.querySelector(".lb-img");
+  const caption = box.querySelector(".lb-caption");
+  const resetButton = box.querySelector("[data-lb-reset]");
+  const stepButtons = box.querySelectorAll("[data-lb-step]");
+  const MAX = 8;
+  const STEP = 1.15;
+  let items = [];
+  let at = 0;
+  let opener = null;
+  let scale = 1;
+  let x = 0;
+  let y = 0;
+  let drag = null;
+  let moved = false;
+
+  // A zoomed picture always covers the place it had at full view: it moves at most as far as
+  // it has grown. So zooming keeps the point under the pointer where it is, and the whole
+  // picture is centred again.
+  function apply() {
+    const spareX = (img.offsetWidth * (scale - 1)) / 2;
+    const spareY = (img.offsetHeight * (scale - 1)) / 2;
+    x = Math.min(spareX, Math.max(-spareX, x));
+    y = Math.min(spareY, Math.max(-spareY, y));
+    img.style.transform = scale === 1 ? "" : `translate(${x}px, ${y}px) scale(${scale})`;
+    box.classList.toggle("zoomed", scale > 1);
+    resetButton.hidden = scale === 1;
+  }
+  function home() {
+    scale = 1;
+    x = 0;
+    y = 0;
+    apply();
+  }
+  // Zoom by `factor`, keeping the point under (cx, cy) where it is.
+  function zoom(factor, cx, cy) {
+    let next = Math.min(MAX, Math.max(1, scale * factor));
+    if (next < 1.001) next = 1;
+    if (next === scale) return;
+    const r = img.getBoundingClientRect();
+    const ox = r.left + r.width / 2 - x;  // the picture's centre before any move
+    const oy = r.top + r.height / 2 - y;
+    const k = next / scale;
+    x = (cx - ox) * (1 - k) + k * x;
+    y = (cy - oy) * (1 - k) + k * y;
+    scale = next;
+    apply();
+  }
+
+  function show(index) {
+    at = (index + items.length) % items.length;
+    const link = items[at];
+    home();
+    const src = link.href;
+    if (img.getAttribute("src") !== src) {
+      box.classList.add("loading");
+      img.src = src;
+    }
+    const inner = link.querySelector("img");
+    const words = link.dataset.caption || (inner && inner.alt) || "";
+    img.alt = words;
+    caption.replaceChildren();
+    if (words) {
+      let name = document.createTextNode(words);
+      if (link.dataset.player) {
+        name = document.createElement("a");
+        name.href = link.dataset.player;
+        name.textContent = words;
+      }
+      caption.append(name);
+    }
+    if (items.length > 1) {
+      const count = document.createElement("span");
+      count.className = "lb-count";
+      count.textContent = `${at + 1} / ${items.length}`;
+      caption.append(count);
+    }
+    caption.hidden = !caption.childNodes.length;
+    stepButtons.forEach((b) => { b.hidden = items.length < 2; });
+  }
+  // The picture's shape, so the style fits it to the window, small ones made larger too.
+  const loaded = () => {
+    const ratio = img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight : 0.75;
+    img.style.setProperty("--ratio", String(ratio));
+    box.classList.remove("loading");
+    apply();
+  };
+  img.addEventListener("load", loaded);
+  img.addEventListener("error", loaded);
+
+  document.addEventListener("click", (e) => {
+    const link = e.target.closest("a[data-lightbox]");
+    if (!link || e.defaultPrevented || e.button !== 0) return;
+    if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;  // a new tab or window, as asked
+    e.preventDefault();
+    const group = link.dataset.lightbox;
+    const hrefs = new Set();
+    items = Array.from(document.querySelectorAll("a[data-lightbox]")).filter((a) => {
+      if (a.dataset.lightbox !== group || hrefs.has(a.href)) return false;
+      hrefs.add(a.href);  // the same picture twice (the player page's history) counts once
+      return true;
+    });
+    opener = link;
+    show(Math.max(0, items.findIndex((a) => a.href === link.href)));
+    if (!box.open) box.showModal();
+  });
+
+  box.addEventListener("close", () => {
+    drag = null;
+    box.classList.remove("dragging", "loading");
+    img.removeAttribute("src");
+    home();
+    items = [];
+    if (opener && opener.isConnected) opener.focus({ preventScroll: true });
+    opener = null;
+  });
+  // A click beside the picture closes it; a drag that ends there does not.
+  box.addEventListener("click", (e) => {
+    if (moved) { moved = false; return; }
+    if (e.target === box || e.target === stage) box.close();
+  });
+  box.querySelector("[data-lb-close]").addEventListener("click", () => box.close());
+  resetButton.addEventListener("click", home);
+  stepButtons.forEach((b) => b.addEventListener("click", () => show(at + Number(b.dataset.lbStep))));
+  box.addEventListener("keydown", (e) => {
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key === "0") home();
+    else if (e.key === "ArrowLeft" && items.length > 1) show(at - 1);
+    else if (e.key === "ArrowRight" && items.length > 1) show(at + 1);
+    else return;
+    e.preventDefault();
+  });
+
+  // A mouse notch is about 100 pixels of deltaY and zooms one step; a touchpad sends many small
+  // ones, and a pinch smaller still, so they zoom smoothly.
+  box.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    if (box.classList.contains("loading")) return;
+    const unit = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1;
+    const steps = Math.max(-1, Math.min(1, (-e.deltaY * unit) / (e.ctrlKey ? 10 : 100)));
+    zoom(Math.pow(STEP, steps), e.clientX, e.clientY);
+  }, { passive: false });
+  img.addEventListener("dblclick", (e) => {
+    if (scale > 1) home();
+    else zoom(2.5, e.clientX, e.clientY);
+  });
+
+  img.addEventListener("pointerdown", (e) => {
+    moved = false;
+    if (scale === 1 || e.button !== 0) return;
+    e.preventDefault();
+    img.setPointerCapture(e.pointerId);
+    drag = { id: e.pointerId, fromX: e.clientX, fromY: e.clientY, x, y };
+    box.classList.add("dragging");
+  });
+  img.addEventListener("pointermove", (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dx = e.clientX - drag.fromX;
+    const dy = e.clientY - drag.fromY;
+    if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
+    x = drag.x + dx;
+    y = drag.y + dy;
+    apply();
+  });
+  const drop = (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    drag = null;
+    box.classList.remove("dragging");
+  };
+  img.addEventListener("pointerup", drop);
+  img.addEventListener("pointercancel", drop);
+  window.addEventListener("resize", () => { if (box.open) apply(); });
+})();
+
+// The pager's page box (Phase 17b): Enter goes to the page typed, kept within 1 and the last.
+document.addEventListener("submit", (e) => {
+  const form = e.target;
+  if (!form.matches || !form.matches("form[data-pager]")) return;
+  const field = form.elements.page;
+  if (!field) return;
+  const last = parseInt(field.max, 10) || 1;
+  const now = parseInt(field.defaultValue, 10) || 1;
+  const asked = parseInt(field.value, 10);
+  const page = isNaN(asked) ? now : Math.min(last, Math.max(1, asked));
+  field.value = String(page);
+  if (page === now) e.preventDefault();  // already here
 });
 
 // Forms with data-confirm ask first.
