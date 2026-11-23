@@ -16,6 +16,9 @@ exchanges one JSON object per line over stdin/stdout:
 Closing hides the window while the tray/worker continue; Open Dashboard shows or restarts
 it, and Quit destroys it. Browse opens its folder dialog. Without WebView2, the child
 reports unavailability so the app uses a browser; pywebview's IE fallback cannot run the UI.
+"ready" says the child takes commands; it comes before pywebview starts its window, so it
+does not mean the window started. A process that fails within QUICK_FAILURE_SECONDS of its
+start counts as a window that could not start, whatever it said first.
 
 The child takes an AppUserModelID of its own (APP_ID) and `--icon`, facegen's .ico. The
 taskbar then shows facegen's icon on the window's button instead of Python's, and does
@@ -369,9 +372,7 @@ class WindowProcess:
 
     def _receive(self, message: dict[str, Any]) -> None:
         match message.get("type"):
-            case "ready":
-                with self._lock:
-                    self._quick_failures = 0
+            case "ready":  # sent before the window starts: the failures are counted at the end
                 self.ready.set()
             case "hidden":
                 self._on_hide()
@@ -397,6 +398,8 @@ class WindowProcess:
             failed = not self._closing and self.available and code != 0
             if failed and quick:
                 self._quick_failures += 1
+            elif not quick:  # it ran: a failure later on starts the count again
+                self._quick_failures = 0
             give_up = failed and self._quick_failures >= QUICK_FAILURES
         if give_up:
             self._give_up("the window could not be started (the log says why)")

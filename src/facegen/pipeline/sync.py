@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from typing import Any, NamedTuple
@@ -28,7 +28,7 @@ from facegen.core.leagues import (
     continental_competitions,
 )
 from facegen.core.records import Gender, Snapshot
-from facegen.core.settings_values import Settings
+from facegen.core.settings_values import Eligibility, Settings
 from facegen.core.traits import personality_to_json
 from facegen.datasource.photos import PhotoScan
 from facegen.persistence import league_stats, photo_index
@@ -258,6 +258,69 @@ def found_scopes(
     return scopes
 
 
+@dataclass(frozen=True, slots=True)
+class _Leagues:
+    """Which clubs are in my league, in the leagues around it and in my continental
+    competitions, and the scopes the share rules measure."""
+
+    league_clubs: Collection[int]
+    continental_clubs: Collection[int]
+    ladder_clubs: Mapping[int, tuple[int, int | None]]
+    """Club ID to (its league's competition ID, that league's offset from mine)."""
+    scopes: dict[str, tuple[int, ...]]
+    kept: bool = False
+    """The last sync's, kept because the save's competitions could not be read."""
+
+
+def _leagues_read(snapshot: Snapshot, elig: Eligibility) -> _Leagues:
+    """The leagues as this save's competitions say."""
+    ladder = snapshot.domestic.ladder
+    continental_ids = continental_competitions(
+        snapshot.managed_club_id,
+        snapshot.clubs,
+        snapshot.league_tables,
+        snapshot.fixture_counts,
+        elig.continental_competition_ids,
+        seasons=snapshot.fixture_seasons,
+        game_date=snapshot.meta.game_date,
+    )
+    return _Leagues(
+        league_clubs=snapshot.domestic.club_ids,
+        continental_clubs=clubs_in_competitions(
+            continental_ids, snapshot.league_tables, snapshot.fixture_counts
+        ),
+        ladder_clubs=ladder.club_leagues(),
+        scopes=found_scopes(snapshot.domestic.competition_ids, ladder, continental_ids),
+    )
+
+
+def _leagues_kept(conn: sqlite3.Connection, career_id: int, my_club: int | None) -> _Leagues | None:
+    """The leagues the last sync stored, for a save whose competitions could not be read.
+
+    None when there are none to keep: no league was found before, or my club is not in it
+    (a new job elsewhere), so the stored leagues are not mine. Then nothing is in my league.
+    """
+    rows = conn.execute(
+        "SELECT club_id, in_my_league, continental, league_id, league_offset FROM clubs"
+        " WHERE career_id = ?",
+        (career_id,),
+    ).fetchall()
+    league = {r["club_id"] for r in rows if r["in_my_league"]}
+    if my_club is None or my_club not in league:
+        return None
+    return _Leagues(
+        league_clubs=league,
+        continental_clubs={r["club_id"] for r in rows if r["continental"]},
+        ladder_clubs={
+            r["club_id"]: (r["league_id"], r["league_offset"])
+            for r in rows
+            if r["league_id"] is not None
+        },
+        scopes={scope: s.competitions for scope, s in league_stats.load(conn, career_id).items()},
+        kept=True,
+    )
+
+
 def ingest(
     conn: sqlite3.Connection,
     career: Career,
@@ -270,6 +333,10 @@ def ingest(
     Staff are stored as rows beside the players (`is_staff`), keyed on the same unique ID, and
     so are journalists and press officers (`media_role`). A person who is also a player (a
     player-coach) is stored once, as the player.
+
+    When the save's competitions could not be read (`Snapshot.competitions_read`), my league,
+    the leagues around it and the continental clubs stay as the last sync stored them, and so
+    do the other clubs' managers it read, rather than counting as gone.
     """
     cid = career.id
     prev = {
@@ -284,22 +351,10 @@ def ingest(
     first_sync = not prev
     my_club = snapshot.managed_club_id
     elig = settings.eligibility
-    ladder = snapshot.domestic.ladder
-    ladder_clubs = ladder.club_leagues()
-    league_ids = snapshot.domestic.competition_ids
-    league_clubs = snapshot.domestic.club_ids
-    continental_ids = continental_competitions(
-        my_club,
-        snapshot.clubs,
-        snapshot.league_tables,
-        snapshot.fixture_counts,
-        elig.continental_competition_ids,
-        seasons=snapshot.fixture_seasons,
-        game_date=snapshot.meta.game_date,
-    )
-    continental_clubs = clubs_in_competitions(
-        continental_ids, snapshot.league_tables, snapshot.fixture_counts
-    )
+    leagues = (
+        None if snapshot.competitions_read else _leagues_kept(conn, cid, my_club)
+    ) or _leagues_read(snapshot, elig)
+    league_clubs, continental_clubs = leagues.league_clubs, leagues.continental_clubs
     game_date = snapshot.meta.game_date
 
     rows = []
@@ -386,11 +441,13 @@ def ingest(
     rows.extend(staff_rows)
     rows.extend(_media_rows(career, snapshot, sync_id, prev))
     conn.executemany(_UPSERT_PLAYER, rows)
-    # People a reader could not read this time are left as they were, not counted as gone.
+    # People a reader could not read this time are left as they were, not counted as gone:
+    # without the competitions, the other clubs' managers could not be picked out.
     conn.execute(
         "UPDATE players SET present = 0 WHERE career_id = ? AND last_seen_sync != ?"
         + ("" if snapshot.staff_read else " AND is_staff = 0")
-        + ("" if snapshot.media_read else " AND media_role IS NULL"),
+        + ("" if snapshot.media_read else " AND media_role IS NULL")
+        + (" AND NOT (is_staff = 1 AND at_my_club = 0)" if leagues.kept else ""),
         (cid, sync_id),
     )
     conn.executemany(
@@ -411,7 +468,7 @@ def ingest(
                 int(c.club_id in league_clubs),
                 int(c.club_id in continental_clubs),
                 c.reputation,
-                *ladder_clubs.get(c.club_id, (None, None)),
+                *leagues.ladder_clubs.get(c.club_id, (None, None)),
             )
             for c in snapshot.clubs.values()
         ],
@@ -422,7 +479,7 @@ def ingest(
         len(continental_clubs),
         arrivals,
         staff_arrivals,
-        found_scopes(league_ids, ladder, continental_ids),
+        leagues.scopes,
     )
 
 
@@ -446,8 +503,8 @@ def _staff_rows(
     sync_id: int,
     prev: dict[int, sqlite3.Row],
     first_sync: bool,
-    league_clubs: set[int],
-    continental_clubs: set[int],
+    league_clubs: Collection[int],
+    continental_clubs: Collection[int],
 ) -> list[_PlayerRow]:
     """Snapshot facts for my staff and league managers."""
     my_club = snapshot.managed_club_id

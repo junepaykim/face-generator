@@ -177,7 +177,10 @@ def snapshot(
     media_read: bool = True,
     fixture_seasons: Mapping[int, int] | None = None,
     competition_rules: CompetitionRules | None = None,
+    competitions_read: bool = True,
 ) -> Snapshot:
+    if not competitions_read:  # as the reader leaves it: no competition records at all
+        tables, fixture_counts, fixture_seasons = (), {}, {}
     if tables is None:
         tables = (
             LeagueTableRecord(MY_LEAGUE_COMP, (MY_CLUB, RIVAL, RIVAL_2)),
@@ -205,6 +208,7 @@ def snapshot(
         media_read=media_read,
         fixture_seasons=dict(fixture_seasons or {}),
         competition_rules=competition_rules,
+        competitions_read=competitions_read,
     )
 
 

@@ -48,8 +48,9 @@ Use the web/datasource guides for HTTP, adapters and bundled kit data; use
 - `pipeline/worker.py` prepares the same portrait prompt for dry-run previews, encoding
   upcoming jobs and drawing. Preview reads or samples a sheet without storing it. A
   running job uses the sheet assigned by `persistence/jobs.py`.
-- Sync ingestion and planning use the settings current inside the write transaction.
-  Settings changes, Undo and Redo reclassify stored facts in `pipeline/reclassification.py`.
+- Sync ingestion, planning and manual actions use the settings current inside the write
+  transaction (`read_settings`). Settings changes, Undo and Redo reclassify stored facts in
+  `pipeline/reclassification.py`; a manual action re-plans only its own players (`only=`).
 - Commit the pending publication with the sync. In `pipeline/publish.py`,
   `publish_active` clears that marker only after publishing the active pack succeeds.
   The CLI publish command, worker and restore action call `publish_pack` for a selected career.

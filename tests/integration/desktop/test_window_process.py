@@ -139,6 +139,40 @@ def test_a_window_that_cannot_start_twice_gives_way_to_the_browser(tmp_path: Pat
     assert w.starts == 2 and not w.available
 
 
+def test_a_window_that_fails_after_saying_ready_gives_way_to_the_browser(tmp_path: Path) -> None:
+    # "ready" comes before pywebview starts the window, so it is no sign the window started.
+    w, seen, _ = window(tmp_path, "ready-crash")
+    w.start()
+    wait_for(lambda: w._child is not None and w._child.poll() is not None)
+    time.sleep(0.2)
+    assert seen.unavailable == []
+    w.show()
+    wait_for(lambda: seen.unavailable != [])
+    assert seen.unavailable == ["the window could not be started (the log says why)"]
+    assert w.starts == 2 and not w.available
+
+
+def test_a_window_that_ran_for_a_while_starts_its_failure_count_again(tmp_path: Path) -> None:
+    clock = [0.0]
+    w, seen, _ = window(tmp_path, "crash")
+    w._clock = lambda: clock[0]
+    w.start()
+    wait_for(lambda: w._child is not None and w._child.poll() is not None)
+    time.sleep(0.2)
+    assert w._quick_failures == 1
+    # The next one fails only when told to, once it has run past QUICK_FAILURE_SECONDS.
+    fail_when_told = "import sys; sys.stdin.readline(); raise SystemExit(1)"
+    w._command = lambda url, hidden: [sys.executable, "-c", fail_when_told]
+    w.show()
+    second = w._child
+    assert second is not None and w.starts == 2
+    clock[0] = app_window.QUICK_FAILURE_SECONDS + 1
+    assert w._send({"cmd": "show"})
+    wait_for(lambda: second.poll() is not None)
+    time.sleep(0.2)
+    assert w._quick_failures == 0 and seen.unavailable == [] and w.available
+
+
 def test_browse_gets_no_folder_when_the_window_process_ends(tmp_path: Path) -> None:
     w, _, _ = window(tmp_path, "ok")
     w.start()

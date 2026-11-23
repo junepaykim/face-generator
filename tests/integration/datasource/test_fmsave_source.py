@@ -400,7 +400,7 @@ def test_load_reads_and_closes_the_save(monkeypatch: pytest.MonkeyPatch) -> None
     snap = FmsaveDataSource().load(Path("Career.fm"))
     assert [p.unique_id for p in snap.players] == [2_002_100_000]
     assert [s.unique_id for s in snap.staff] == [3001, 3003]  # my club's staff only
-    assert snap.staff_read
+    assert snap.staff_read and snap.competitions_read
     assert snap.meta.known_build and save.closed
     assert not any("not one fmsave" in w for w in snap.meta.warnings)
 
@@ -424,6 +424,59 @@ def test_reader_selects_managers_from_the_snapshots_domestic_membership(
     # Callers building a different snapshot from these records get its own membership.
     changed = replace(snap, fixture_counts={11: {1010: 1, 1012: 1}})
     assert changed.domestic.club_ids == {1010, 1012}
+
+
+def _league_save(monkeypatch: pytest.MonkeyPatch) -> FakeSave:
+    """My club (1010) and 1011 in competition 7 (editor ID 11), with a manager at each club."""
+    save = FakeSave()
+    monkeypatch.setattr(save, "clubs", lambda: [fm_club(uid, cid) for uid, cid in UID_MAP.items()])
+    monkeypatch.setattr(save, "competitions", lambda: [NS(id=7, database_id=11)])
+    monkeypatch.setattr(save, "fixtures", lambda: [fixture(7, 2026, 10, 11)])
+    rows = (NS(club_uid=10, team_slot=0), NS(club_uid=11, team_slot=0))
+    monkeypatch.setattr(save, "league_tables", lambda: [NS(competition_id=7, rows=rows)])
+    monkeypatch.setattr(
+        save,
+        "staff",
+        lambda: [fm_staff(uid, club_uid=uid, job=coded("MANAGER"), team_slot=0) for uid in UID_MAP],
+    )
+    return save
+
+
+def _fail(message: str):  # type: ignore[no-untyped-def]
+    import fmsave
+
+    def reader() -> list[NS]:
+        raise fmsave.ReaderCheckError(message)
+
+    return reader
+
+
+def test_failing_league_tables_still_leave_the_fixtures(monkeypatch: pytest.MonkeyPatch) -> None:
+    save = _league_save(monkeypatch)
+    monkeypatch.setattr(save, "league_tables", _fail("league tables: checks failed"))
+    _patch_open(monkeypatch, save)
+    snap = FmsaveDataSource().load(Path("Career.fm"))
+    assert snap.competitions_read and snap.league_tables == ()
+    assert snap.fixture_counts == {11: {1010: 1, 1011: 1}}
+    assert snap.domestic.club_ids == {1010, 1011} == {s.club_id for s in snap.staff}
+    assert any("league tables unavailable" in w for w in snap.meta.warnings)
+
+
+@pytest.mark.parametrize("reader", ["competitions", "fixtures"])
+def test_unread_competitions_leave_no_league_and_say_so(
+    monkeypatch: pytest.MonkeyPatch, reader: str
+) -> None:
+    save = _league_save(monkeypatch)
+    monkeypatch.setattr(save, reader, _fail(f"{reader}: checks failed"))
+    _patch_open(monkeypatch, save)
+    snap = FmsaveDataSource().load(Path("Career.fm"))
+    # Neither half of what was read stands in for the rest: the sync keeps what it stored.
+    assert not snap.competitions_read
+    assert (snap.league_tables, snap.fixture_counts, snap.fixture_seasons) == ((), {}, {})
+    assert snap.domestic.club_ids == frozenset()
+    assert [s.club_id for s in snap.staff] == [1010]  # my club's staff only
+    assert snap.staff_read and snap.players
+    assert any("stay as the last sync read them" in w for w in snap.meta.warnings)
 
 
 def test_a_failing_staff_reader_leaves_the_staff_as_they_were(

@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
+import time
+from contextlib import closing
 from pathlib import Path
 
 import pytest
 
 from facegen.persistence import db
 from facegen.persistence.settings import load_settings
+from facegen.platform.locking import file_lock
 
 TABLES = {"careers", "clubs", "players", "traits", "images", "jobs", "settings", "sync_runs"}
 
@@ -98,6 +102,42 @@ def test_file_database_uses_wal(tmp_path: Path) -> None:
         assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
     finally:
         conn.close()
+
+
+def test_an_older_database_is_migrated_by_one_connection_at_a_time(tmp_path: Path) -> None:
+    path = tmp_path / "facegen.db"
+    with closing(sqlite3.connect(path, isolation_level=None)) as old:
+        for script in db.MIGRATIONS[:13]:
+            old.executescript(script)
+        old.execute("PRAGMA user_version = 13")
+    results: list[object] = []
+
+    def open_it() -> None:
+        try:
+            with closing(db.connect(path)) as conn:
+                results.append(db.schema_version(conn))
+        except Exception as exc:  # noqa: BLE001 - the test reports it
+            results.append(exc)
+
+    # Two of the app's processes open it together after an update: both wait for the lock,
+    # and the second finds the first has migrated it, rather than adding the same columns.
+    with file_lock(db.migration_lock(path)):
+        threads = [threading.Thread(target=open_it) for _ in range(2)]
+        for t in threads:
+            t.start()
+        time.sleep(0.3)
+        assert all(t.is_alive() for t in threads) and results == [], results
+    for t in threads:
+        t.join(20)
+    assert results == [len(db.MIGRATIONS)] * 2
+
+
+def test_an_up_to_date_database_opens_without_the_migration_lock(tmp_path: Path) -> None:
+    path = tmp_path / "facegen.db"
+    db.connect(path).close()
+    db.migration_lock(path).unlink()
+    with file_lock(db.migration_lock(path)):  # held elsewhere: no wait for it
+        db.connect(path).close()
 
 
 def test_newer_schema_is_refused(conn: sqlite3.Connection) -> None:

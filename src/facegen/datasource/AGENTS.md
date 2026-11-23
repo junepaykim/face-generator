@@ -25,7 +25,9 @@ uv run --no-sync python scripts/spikes/kit_colour_probe.py --help
 ## Gotchas
 
 - Staff/media reader failure must not become an empty successful read: preserve
-  `staff_read`/`media_read` flags so sync leaves existing people intact.
+  `staff_read`/`media_read` flags so sync leaves existing people intact. Likewise a failed
+  competitions or fixtures read sets `competitions_read` false and carries no competition
+  records, so sync keeps the stored leagues and managers; a tables failure alone does not.
   Optional competition/people failures warn without aborting player syncs.
 - `people.py` parses synthetic-testable bytes, not fmsave objects. Reject chance byte
   matches with the existing ID/name/date/personality checks.

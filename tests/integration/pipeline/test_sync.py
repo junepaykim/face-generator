@@ -16,9 +16,11 @@ from factories import (
     DEFAULT_CLUBS,
     MANUAL,
     MY_CLUB,
+    MY_LEAGUE_COMP,
     NEWGEN,
     PLAIN_PERSONALITY,
     RIVAL,
+    RIVAL_2,
     WOMENS,
     club,
     manual_cutoffs,
@@ -800,6 +802,65 @@ def test_staff_stay_as_they_were_when_the_staff_reader_failed(
     sync(conn, snapshot(world(), staff=(), staff_read=False), settings)
     assert player_row(conn, COACH)["present"] and player_row(conn, COACH)["group_name"] == "a"
     assert COACH in jobs_of(conn)
+
+
+RIVAL_MANAGER = NEWGEN + 102  # the first-team manager of a club in my league
+
+
+def league_state(conn: sqlite3.Connection) -> tuple:
+    """My league as stored: its clubs, its players and managers, and the scopes measured."""
+    from facegen.persistence import league_stats
+
+    clubs = {r[0] for r in conn.execute("SELECT club_id FROM clubs WHERE in_my_league = 1")}
+    people = {
+        r[0]
+        for r in conn.execute("SELECT unique_id FROM players WHERE in_my_league = 1 AND present")
+    }
+    career = conn.execute("SELECT id FROM careers").fetchone()[0]
+    scopes = {k: v.competitions for k, v in league_stats.load(conn, career).items()}
+    return clubs, people, scopes
+
+
+def test_unread_competitions_keep_my_league_and_its_managers(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    from factories import staff_member
+
+    manager = staff_member(RIVAL_MANAGER, job="manager", club_id=RIVAL)
+    sync(conn, snapshot(world(), staff=[*staff_world(), manager]), settings)
+    before = league_state(conn)
+    assert before[0] == {MY_CLUB, RIVAL, RIVAL_2} and RIVAL_MANAGER in before[1]
+    assert before[2] == {"league": (MY_LEAGUE_COMP,)}
+    before_groups = groups(conn)
+
+    # The save's competitions could not be read: the manager is not read either.
+    sync(conn, snapshot(world(), staff=staff_world(), competitions_read=False), settings)
+    assert league_state(conn) == before and groups(conn) == before_groups
+    assert player_row(conn, RIVAL_MANAGER)["present"]
+    assert player_row(conn, RIVAL_NEWGEN)["in_my_league"]
+
+    # Someone who joins a club of the kept league counts as in it.
+    moved = [replace(p, club_id=RIVAL) if p.unique_id == ABROAD_LOW else p for p in world()]
+    sync(conn, snapshot(moved, staff=staff_world(), competitions_read=False), settings)
+    assert player_row(conn, ABROAD_LOW)["in_my_league"]
+
+    # Read again: the manager who is no longer read is gone, as before.
+    sync(conn, snapshot(world(), staff=staff_world()), settings)
+    assert not player_row(conn, RIVAL_MANAGER)["present"]
+
+
+def test_unread_competitions_keep_no_league_after_a_move_to_another_club(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    from factories import staff_member
+
+    manager = staff_member(RIVAL_MANAGER, job="manager", club_id=RIVAL)
+    sync(conn, snapshot(world(), staff=[*staff_world(), manager]), settings)
+    # A new job abroad, in a save whose competitions could not be read: the stored league is
+    # not this club's, so nothing is in my league (turned off, not guessed).
+    sync(conn, snapshot(world(), managed=ABROAD, competitions_read=False), settings)
+    assert league_state(conn) == (set(), set(), {})
+    assert not player_row(conn, RIVAL_MANAGER)["present"]
 
 
 def test_staff_pictures_can_be_turned_off(conn: sqlite3.Connection, settings: Settings) -> None:

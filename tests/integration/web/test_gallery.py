@@ -114,6 +114,20 @@ def test_filters_and_sorts(env: Env) -> None:
     assert f == GalleryFilter()
 
 
+def test_the_search_is_the_players_pages(env: Env) -> None:
+    env.draw(4)
+
+    def get(q: str) -> list[str]:
+        response = env.client.get("/gallery", params={"q": q})
+        assert response.status_code == 200
+        return cards(response.text)
+
+    assert get("_") == [] and get("%") == []  # plain characters, not LIKE's wildcards
+    assert get("9" * 25) == []  # beyond SQLite's integers: no ID, so a name search
+    assert get("²") == []  # a digit, but no number
+    assert get(f"00{NEWGEN + 4}") == ["Abroad Star"]
+
+
 def test_pages_of_pictures(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
     env.draw(4)
     monkeypatch.setattr(queries, "GALLERY_PER_PAGE", 3)

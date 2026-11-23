@@ -352,12 +352,9 @@ def gallery_page(
     clauses = ["i.career_id = ?", "i.is_current = 1", "i.master_path IS NOT NULL"]
     args: list[Any] = [career_id]
     if f.q:
-        if f.q.isdigit():
-            clauses.append("(p.unique_id = ? OR p.name LIKE ?)")
-            args += [int(f.q), f"%{f.q}%"]
-        else:
-            clauses.append("p.name LIKE ?")
-            args.append(f"%{f.q}%")
+        name_match, name_args = player_queries.name_or_id_match(f.q)
+        clauses.append(name_match)
+        args += name_args
     match f.where:
         case "mine":
             clauses.append("p.at_my_club = 1")

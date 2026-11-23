@@ -61,9 +61,11 @@ def copy_snapshot(
         before = _signature(source)
         shutil.copyfile(source, partial)
         after = _signature(source)
-        if before == after and partial.stat().st_size == after[0]:
-            st = source.stat()
-            os.utime(partial, ns=(st.st_atime_ns, st.st_mtime_ns))
+        copied = partial.stat()
+        if before == after and copied.st_size == after[0]:
+            # The time checked with the copy, not one read later: a save written since then
+            # is newer than this copy, and the watcher must still see it as new.
+            os.utime(partial, ns=(copied.st_atime_ns, after[1]))
             os.replace(partial, dest)
             return dest
         if attempt + 1 < attempts:

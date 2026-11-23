@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from facegen.core.domain import ACTIVE_JOB_STATUSES, JOB_KINDS, JOB_STATUSES
+from facegen.platform.locking import file_lock
 
 
 def _in(values: tuple[str, ...]) -> str:
@@ -419,7 +420,10 @@ def schema_version(conn: sqlite3.Connection) -> int:
 
 
 def migrate(conn: sqlite3.Connection) -> int:
-    """Apply pending migrations, each in its own transaction. Returns the new version."""
+    """Apply pending migrations, each in its own transaction. Returns the new version.
+
+    It reads the version first and does not lock it: `connect` holds `migration_lock` for a
+    database that other connections may be opening at the same time."""
     version = schema_version(conn)
     if version > len(MIGRATIONS):
         raise RuntimeError(
@@ -563,6 +567,11 @@ def rename_settings(conn: sqlite3.Connection) -> int:
     return changed
 
 
+def migration_lock(path: Path) -> Path:
+    """The file `connect` locks while it migrates the database at `path`."""
+    return path.with_name(path.name + ".migrate.lock")
+
+
 def connect(path: Path | str, *, busy_timeout_ms: int = 5000) -> sqlite3.Connection:
     """Open (creating if needed) and migrate the state database.
 
@@ -575,9 +584,19 @@ def connect(path: Path | str, *, busy_timeout_ms: int = 5000) -> sqlite3.Connect
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute(f"PRAGMA busy_timeout = {int(busy_timeout_ms)}")
-    if str(path) != ":memory:":
-        conn.execute("PRAGMA journal_mode = WAL")
-    migrate(conn)
+    on_disk = str(path) != ":memory:"
+    if on_disk and schema_version(conn) < len(MIGRATIONS):
+        # The app's processes may open a new or older database at once (the first start, or
+        # after an update): one switches it to WAL and migrates at a time, and the next reads
+        # the version again under the lock, so it finds nothing left to apply instead of
+        # applying the same migration twice (or failing to switch while the other does).
+        with file_lock(migration_lock(Path(path))):
+            conn.execute("PRAGMA journal_mode = WAL")
+            migrate(conn)
+    else:
+        if on_disk:
+            conn.execute("PRAGMA journal_mode = WAL")  # already, once it has been migrated
+        migrate(conn)  # nothing to apply, or a newer schema, which it refuses
     rename_settings(conn)
     return conn
 

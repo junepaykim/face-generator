@@ -45,6 +45,28 @@ def test_copy_snapshot_copies_and_keeps_the_mtime(tmp_path: Path) -> None:
     assert src.read_bytes() == b"x" * 1000
 
 
+def test_copy_snapshot_keeps_the_time_it_checked_not_a_later_save(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    src = make(tmp_path / "games" / "c.fm", b"first", mtime=1_700_000_000)
+    calls = {"n": 0}
+    real_signature = snapshots._signature
+
+    def autosave_right_after_the_check(path: Path) -> tuple[int, int]:
+        signature = real_signature(path)
+        calls["n"] += 1
+        if calls["n"] == 2:  # the check after the copy has passed; then the game saves again
+            src.write_bytes(b"second")
+            os.utime(src, (1_700_000_100, 1_700_000_100))
+        return signature
+
+    monkeypatch.setattr(snapshots, "_signature", autosave_right_after_the_check)
+    dest = poller.copy_snapshot(src, tmp_path / "snap")
+    assert dest.read_bytes() == b"first"
+    # The copy carries the first save's time, so the newer save is still seen as new.
+    assert dest.stat().st_mtime == 1_700_000_000
+
+
 def test_copy_snapshot_retries_a_save_being_written(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

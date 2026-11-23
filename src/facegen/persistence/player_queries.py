@@ -65,17 +65,27 @@ def _substring_pattern(term: str) -> str:
     return f"%{escaped}%"
 
 
+def name_or_id_match(q: str, *, person: str = "p") -> tuple[str, list[Any]]:
+    """The search box's condition on the `person` table alias, and its arguments: the name
+    holds `q` as typed (`_` and `%` are plain characters), or, when `q` is decimal digits (in
+    any script), the unique ID is that number. The players page and the gallery share it."""
+    name_match = f"{person}.name LIKE ? ESCAPE '!'"
+    args: list[Any] = []
+    if q.isdecimal():  # not isdigit(): "²" is a digit but no number
+        name_match = f"({person}.unique_id = ? OR {name_match})"
+        # Bind decimal text so an ID outside SQLite's integer range can still match a name.
+        args.append("".join(str(int(digit)) for digit in q))
+    args.append(_substring_pattern(q))
+    return name_match, args
+
+
 def _where(f: PlayerFilter) -> tuple[str, list[Any]]:
     clauses = ["p.career_id = ?", "p.present = 1"]
     args: list[Any] = []
     if f.q:
-        name_match = "p.name LIKE ? ESCAPE '!'"
-        if f.q.isdecimal():
-            name_match = f"(p.unique_id = ? OR {name_match})"
-            # Bind decimal text so an ID outside SQLite's integer range can still match a name.
-            args.append("".join(str(int(digit)) for digit in f.q))
+        name_match, name_args = name_or_id_match(f.q)
         clauses.append(name_match)
-        args.append(_substring_pattern(f.q))
+        args += name_args
     if f.club_id is not None:
         clauses.append("p.club_id = ?")
         args.append(f.club_id)

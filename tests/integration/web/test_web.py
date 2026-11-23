@@ -320,6 +320,45 @@ def test_bulk_pin(env: Env) -> None:
     assert env.one("SELECT COUNT(*) FROM jobs WHERE status = 'queued' AND manual = 1") == 0
 
 
+def test_player_actions_read_the_settings_again_under_the_write_lock(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from facegen.pipeline import manual
+
+    read: list[bool] = []
+    real = manual._action_transaction
+
+    def seen(conn, career_id, active_only, settings, read_settings):  # type: ignore[no-untyped-def]
+        # The request's own connection, open until it returns.
+        read.append(read_settings is not None and isinstance(read_settings(), Settings))
+        return real(conn, career_id, active_only, settings, read_settings)
+
+    monkeypatch.setattr(manual, "_action_transaction", seen)
+    for action, data in (
+        ("generate", {"group": "c"}),
+        ("new-picture", {}),
+        ("retry", {}),
+        ("new-face", {}),
+        ("pin", {"pin": "never"}),
+    ):
+        post_player_action(
+            env.client, "/players/action", data={"uid": [str(STAR)], "action": action, **data}
+        )
+    for action, data in (
+        ("pin", {"pin": ""}),
+        ("generate", {"group": "c"}),
+        ("cancel", {}),
+        ("new-face", {}),
+        ("new-picture", {}),
+        ("retry", {}),
+        ("restore", {"image_id": "999"}),
+        ("pick", {"attempt": "1", "index": "1", "version": "1"}),
+        ("remove", {}),
+    ):
+        post_player_action(env.client, f"/players/{STAR}/{action}", data=data)
+    assert read == [True] * 14  # every action the two pages post
+
+
 def test_player_page_actions(env: Env) -> None:
     env.drain()
     assert env.client.get(f"/players/{MINE}").status_code == 200

@@ -16,6 +16,7 @@ from facegen.datasource.kits import load_kits
 from facegen.persistence.settings import Paths, Settings, set_overrides
 from facegen.pipeline import manual
 from facegen.pipeline.manual import ManualError
+from facegen.pipeline.reclassification import reclassify
 from facegen.pipeline.sync import run_sync
 from facegen.pipeline.worker import JobFilter, Worker, load_career
 from facegen.web import queries
@@ -324,7 +325,10 @@ def test_bulk_retry_ranks_only_queued_players_and_uses_their_newest_failure(env:
     selection = [STAR, B_NEWGEN, WOMAN, A_NEWGEN, B_NEWGEN, WOMAN]
     with patch.object(manual, "classify_and_plan", wraps=manual.classify_and_plan) as replan:
         result = manual.retry_many(env.conn, env.cid, selection, env.settings, now=1.0)
-    replan.assert_called_once_with(env.conn, env.cid, env.settings)
+    # Once for the request, for its own players only (each once, in the order given).
+    replan.assert_called_once_with(
+        env.conn, env.cid, env.settings, only=[STAR, B_NEWGEN, WOMAN, A_NEWGEN]
+    )
     assert result.queued == [B_NEWGEN, A_NEWGEN]
     assert result.skipped == [
         (STAR, "no failed picture to retry"),
@@ -355,6 +359,31 @@ def test_cancelling_a_new_face_keeps_the_pin(env: Env) -> None:
     assert env.player(OTHER)["pin"] == "c"
     # The rules queue the pinned player's own picture again.
     assert [(j["kind"], j["manual"]) for j in env.active(OTHER)] == [("initial", 0)]
+
+
+def test_a_request_uses_the_settings_saved_while_it_waited_for_the_write_lock(env: Env) -> None:
+    assert env.player(B_NEWGEN)["group_name"] == "b"  # PA 152, over the B bar of 151
+    stale = env.settings  # what the page read
+    cutoffs = replace(stale.cutoffs, manual={**stale.cutoffs.manual, "b_pa": 160})
+    saved = replace(stale, cutoffs=cutoffs)  # saved (and applied) before the request writes
+    reclassify(env.conn, env.cid, saved)
+    assert env.player(B_NEWGEN)["group_name"] == "c"
+
+    manual.set_pin(env.conn, env.cid, [B_NEWGEN], None, stale, read_settings=lambda: saved)
+    assert env.player(B_NEWGEN)["group_name"] == "c"  # not B again, by the stale bar
+    assert [(j["group_name"], j["manual"]) for j in env.active(B_NEWGEN)] == [("c", 0)]
+
+
+def test_a_request_re_plans_only_its_own_players(env: Env) -> None:
+    # Another player's stored group, as an earlier settings change left it, is not touched.
+    env.conn.execute("UPDATE players SET group_name = 'a' WHERE unique_id = ?", (OTHER,))
+    manual.set_pin(env.conn, env.cid, [STAR], "never", env.settings)
+    manual.cancel(env.conn, env.cid, B_NEWGEN, env.settings)
+    assert env.player(OTHER)["group_name"] == "a" and env.active(OTHER) == []
+    assert (env.player(STAR)["pin"], env.player(STAR)["group_name"]) == ("never", None)
+    # A full re-plan, as a settings change or a sync does, would set it right.
+    reclassify(env.conn, env.cid, env.settings)
+    assert env.player(OTHER)["group_name"] is None
 
 
 def test_a_group_pin_is_a_hand_pick(env: Env) -> None:

@@ -403,19 +403,33 @@ class FmsaveDataSource:
 
         if len(managed) > 1:
             notes.append(f"{len(managed)} managed clubs; using the first")
-        # League and fixture data only decide "my league" and continental membership; a
-        # reader failure there should not stop a sync.
+        # League and fixture data only decide "my league", the leagues around it, continental
+        # membership and the managers read; a reader failure there should not stop a sync.
+        # Each reader is tried on its own. A competition's clubs come from its fixtures (a
+        # table counts only for a competition with none), so without the fixtures nothing is
+        # known: the sync then keeps the leagues and managers stored before.
         tables: tuple[LeagueTableRecord, ...] = ()
         fixture_counts: dict[int, dict[int, int]] = {}
         fixture_seasons: dict[int, int] = {}
+        competitions_read = False
+        kept = "so my league and its managers stay as the last sync read them"
         try:
             comp_keys = {c.id: competition_key(c.database_id, c.id) for c in save.competitions()}
-            tables = convert_league_tables(save.league_tables(), uid_map, comp_keys)
-            fixture_counts, fixture_seasons = convert_fixtures(
-                save.fixtures(), uid_map, comp_keys, info.game_date
-            )
         except fmsave.FmsaveError as exc:
-            notes.append(f"competition data unavailable: {exc}")
+            notes.append(f"competition data unavailable, {kept}: {exc}")
+        else:
+            try:
+                fixture_counts, fixture_seasons = convert_fixtures(
+                    save.fixtures(), uid_map, comp_keys, info.game_date
+                )
+                competitions_read = True
+            except fmsave.FmsaveError as exc:
+                notes.append(f"fixtures unavailable, {kept}: {exc}")
+            if competitions_read:
+                try:
+                    tables = convert_league_tables(save.league_tables(), uid_map, comp_keys)
+                except fmsave.FmsaveError as exc:
+                    notes.append(f"league tables unavailable, so leagues come from fixtures: {exc}")
         with ExitStack() as section:
             # Both byte readers below read the game database: borrow it once, not twice.
             with suppress(Exception):  # each reader reports its own failure below
@@ -498,4 +512,5 @@ class FmsaveDataSource:
             staff_read=staff_read,
             media=media,
             media_read=media_read,
+            competitions_read=competitions_read,
         )

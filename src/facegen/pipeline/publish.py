@@ -295,16 +295,30 @@ def remove_packs(fm_user_dir: Path, data_dir: Path) -> bool:
     """Delete graphics/facegen/ and everything in it, which the uninstaller offers: FM27
     shows its own photos again from its next start or Reload Skin. Nothing else in graphics/
     is touched (AGENTS.md rule 2). False when there was nothing to remove. A later publish
-    writes every picture again, as their files are gone."""
+    writes every picture again, as their files are gone.
+
+    Refuses (PublishError) when FM27's graphics folder leads elsewhere (a junction or a
+    symbolic link): publishing refuses to write there too, so a facegen folder found there is
+    not ours. A link or junction named facegen is removed, not what it leads to."""
     root = packs_root(fm_user_dir)
     with publish_lock(data_dir):
-        if root.is_symlink():
+        if not root.exists() and not _is_link(root):
+            return False
+        graphics, expected = root.parent, fm_user_dir.resolve() / "graphics"
+        if graphics.resolve() != expected:
+            raise PublishError(
+                f"refusing to delete outside {expected}: {graphics} leads to {graphics.resolve()}"
+            )
+        if _is_link(root):
             root.unlink()
             return True
-        if not root.exists():
-            return False
         shutil.rmtree(root)
     return True
+
+
+def _is_link(path: Path) -> bool:
+    """A symbolic link or (on Windows) a junction: removing it leaves what it leads to."""
+    return path.is_symlink() or path.is_junction()
 
 
 @contextmanager

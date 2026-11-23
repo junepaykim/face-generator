@@ -1,7 +1,9 @@
 """Manual requests from the UI (docs/spec.md section 7). No GPU, no web.
 
-Each action runs in one transaction: it writes pins and manual jobs, then re-plans the
-queue from the stored snapshot, as a settings change does. The worker picks the jobs up.
+Each action runs in one transaction: it writes pins and manual jobs, then re-plans its own
+players from the stored snapshot, as a settings change does for everyone. It uses the settings
+saved by the time it holds the write lock (`read_settings`), as a sync does, so a settings
+change saved meanwhile is not undone. The worker picks the jobs up.
 
 - **Generate** pins the ticked players to the chosen group (group B unless another is
   chosen) and queues a manual job: a first picture, or an upgrade when the chosen group is
@@ -35,7 +37,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -75,15 +77,24 @@ class CareerChanged(ManualError):
         )
 
 
+SettingsReader = Callable[[], Settings]
+"""Reads the settings saved now, from the action's own connection."""
+
+
 @contextmanager
 def _action_transaction(
-    conn: sqlite3.Connection, career_id: int, active_only: bool
-) -> Iterator[None]:
-    """A form's target must still be active when the writer acquires the database."""
+    conn: sqlite3.Connection,
+    career_id: int,
+    active_only: bool,
+    settings: Settings,
+    read_settings: SettingsReader | None,
+) -> Iterator[Settings]:
+    """A form's target must still be active when the writer acquires the database. Yields the
+    settings to act with: those saved by then (`read_settings`), else `settings`."""
     with transaction(conn):
         if active_only and active_career_id(conn) != career_id:
             raise CareerChanged()
-        yield
+        yield settings if read_settings is None else read_settings()
 
 
 REFUSALS: dict[str, str] = {
@@ -186,6 +197,7 @@ def generate(
     *,
     now: float | None = None,
     active_only: bool = False,
+    read_settings: SettingsReader | None = None,
 ) -> ActionResult:
     """Pin the players to `group` and queue a picture for those who need one."""
     if group not in ("a", "b", "c"):
@@ -193,8 +205,9 @@ def generate(
     result = ActionResult()
     if now is None:
         now = time.time()
-    with _action_transaction(conn, career_id, active_only):
-        for uid in dict.fromkeys(uids):
+    selected = list(dict.fromkeys(uids))
+    with _action_transaction(conn, career_id, active_only, settings, read_settings) as current:
+        for uid in selected:
             p = _player(conn, career_id, uid)
             if why := _refusal(p):
                 result.skipped.append((uid, why))
@@ -209,9 +222,9 @@ def generate(
                 result.pinned.append(uid)
                 continue
             rank = request_rank(now, len(result.queued))
-            _queue(conn, career_id, p, kind, group, rank, _generate_reason(group), settings)
+            _queue(conn, career_id, p, kind, group, rank, _generate_reason(group), current)
             result.queued.append(uid)
-        classify_and_plan(conn, career_id, settings)
+        classify_and_plan(conn, career_id, current, only=selected)
     return result
 
 
@@ -247,15 +260,16 @@ def _redraw(
     kind: str,
     now: float | None,
     active_only: bool,
+    read_settings: SettingsReader | None,
 ) -> ActionResult:
-    with _action_transaction(conn, career_id, active_only):
+    with _action_transaction(conn, career_id, active_only, settings, read_settings) as current:
         p = _player(conn, career_id, uid)
         try:
             group = _redraw_group(conn, career_id, p, kind)
         except ManualError as exc:
             raise _refused(str(exc), name=p["name"]) from None
-        _queue(conn, career_id, p, kind, group, request_rank(now), _redraw_reason(kind), settings)
-        classify_and_plan(conn, career_id, settings)
+        _queue(conn, career_id, p, kind, group, request_rank(now), _redraw_reason(kind), current)
+        classify_and_plan(conn, career_id, current, only=(uid,))
     return ActionResult(queued=[uid])
 
 
@@ -267,9 +281,10 @@ def new_face(
     *,
     now: float | None = None,
     active_only: bool = False,
+    read_settings: SettingsReader | None = None,
 ) -> ActionResult:
     """Re-roll the character sheet and draw a picture from the new one."""
-    return _redraw(conn, career_id, uid, settings, "reroll", now, active_only)
+    return _redraw(conn, career_id, uid, settings, "reroll", now, active_only, read_settings)
 
 
 def new_picture(
@@ -280,9 +295,10 @@ def new_picture(
     *,
     now: float | None = None,
     active_only: bool = False,
+    read_settings: SettingsReader | None = None,
 ) -> ActionResult:
     """Keep the character sheet and draw a new picture."""
-    return _redraw(conn, career_id, uid, settings, "redraw", now, active_only)
+    return _redraw(conn, career_id, uid, settings, "redraw", now, active_only, read_settings)
 
 
 def _redraw_many(
@@ -293,14 +309,16 @@ def _redraw_many(
     kind: str,
     now: float | None,
     active_only: bool,
+    read_settings: SettingsReader | None,
 ) -> ActionResult:
     """A re-draw for many players at once; those who cannot have one are skipped with the
     reason. Players run in the order given."""
     result = ActionResult()
     if now is None:
         now = time.time()
-    with _action_transaction(conn, career_id, active_only):
-        for uid in dict.fromkeys(uids):
+    selected = list(dict.fromkeys(uids))
+    with _action_transaction(conn, career_id, active_only, settings, read_settings) as current:
+        for uid in selected:
             p = _player(conn, career_id, uid)
             try:
                 group = _redraw_group(conn, career_id, p, kind)
@@ -308,9 +326,9 @@ def _redraw_many(
                 result.skipped.append((uid, str(exc)))
                 continue
             rank = request_rank(now, len(result.queued))
-            _queue(conn, career_id, p, kind, group, rank, _redraw_reason(kind), settings)
+            _queue(conn, career_id, p, kind, group, rank, _redraw_reason(kind), current)
             result.queued.append(uid)
-        classify_and_plan(conn, career_id, settings)
+        classify_and_plan(conn, career_id, current, only=selected)
     return result
 
 
@@ -322,9 +340,10 @@ def new_pictures(
     *,
     now: float | None = None,
     active_only: bool = False,
+    read_settings: SettingsReader | None = None,
 ) -> ActionResult:
     """New picture for many players at once (the players page)."""
-    return _redraw_many(conn, career_id, uids, settings, "redraw", now, active_only)
+    return _redraw_many(conn, career_id, uids, settings, "redraw", now, active_only, read_settings)
 
 
 def new_faces(
@@ -335,9 +354,10 @@ def new_faces(
     *,
     now: float | None = None,
     active_only: bool = False,
+    read_settings: SettingsReader | None = None,
 ) -> ActionResult:
     """New face for many players at once (the review page, Phase 12i)."""
-    return _redraw_many(conn, career_id, uids, settings, "reroll", now, active_only)
+    return _redraw_many(conn, career_id, uids, settings, "reroll", now, active_only, read_settings)
 
 
 def set_pin(
@@ -349,15 +369,26 @@ def set_pin(
     *,
     now: float | None = None,
     active_only: bool = False,
+    read_settings: SettingsReader | None = None,
 ) -> ActionResult:
     """Pin players to a group (a hand-pick: Generate), to "never", or clear the pin (None)."""
     if pin in ("a", "b", "c"):
-        return generate(conn, career_id, uids, settings, pin, now=now, active_only=active_only)
+        return generate(
+            conn,
+            career_id,
+            uids,
+            settings,
+            pin,
+            now=now,
+            active_only=active_only,
+            read_settings=read_settings,
+        )
     if pin is not None and pin not in PINS:
         raise ManualError(f"unknown pin {pin!r}")
     result = ActionResult()
-    with _action_transaction(conn, career_id, active_only):
-        for uid in dict.fromkeys(uids):
+    selected = list(dict.fromkeys(uids))
+    with _action_transaction(conn, career_id, active_only, settings, read_settings) as current:
+        for uid in selected:
             _player(conn, career_id, uid)
             _set_pin(conn, career_id, uid, pin)
             if pin == "never":
@@ -374,7 +405,7 @@ def set_pin(
                     (_now(), career_id, uid, _generate_reason("%")),
                 )
             result.pinned.append(uid)
-        classify_and_plan(conn, career_id, settings)
+        classify_and_plan(conn, career_id, current, only=selected)
     return result
 
 
@@ -386,15 +417,18 @@ def remove_picture(
     settings: Settings,
     *,
     active_only: bool = False,
+    read_settings: SettingsReader | None = None,
 ) -> bool:
     """Take the player's picture out of FM27 and keep them from being drawn again.
 
     The master pictures and their history stay in data/. Returns whether a published
     picture or mapping was removed.
     """
-    fm_user_dir = settings.paths.fm_user_dir
     # The publish lock before the transaction, as publish_pack takes them.
-    with publish_lock(settings.paths.data_dir), _action_transaction(conn, career_id, active_only):
+    with (
+        publish_lock(settings.paths.data_dir),
+        _action_transaction(conn, career_id, active_only, settings, read_settings) as current,
+    ):
         p = _player(conn, career_id, uid)
         if p["job_status"] == "running":
             raise ManualError(
@@ -409,8 +443,9 @@ def remove_picture(
         )
         _set_pin(conn, career_id, uid, "never")
         active = active_career_id(conn) == career_id
+        fm_user_dir = current.paths.fm_user_dir
         removed = unpublish(conn, career_id, career_key, uid, fm_user_dir, active=active)
-        classify_and_plan(conn, career_id, settings)
+        classify_and_plan(conn, career_id, current, only=(uid,))
     return removed
 
 
@@ -453,18 +488,19 @@ def retry(
     *,
     now: float | None = None,
     active_only: bool = False,
+    read_settings: SettingsReader | None = None,
 ) -> ActionResult:
     """Queue the player's job from the review list again; it draws with new seeds."""
-    with _action_transaction(conn, career_id, active_only):
+    with _action_transaction(conn, career_id, active_only, settings, read_settings) as current:
         p = _player(conn, career_id, uid)
-        why = _queue_retry(conn, career_id, p, settings, now)
+        why = _queue_retry(conn, career_id, p, current, now)
         if why == REFUSALS["no_failed"]:
             raise ManualError(
                 f"{p['name']} has nothing to retry", "nothing_to_retry", name=p["name"]
             )
         if why:
             raise _refused(why, name=p["name"])
-        classify_and_plan(conn, career_id, settings)
+        classify_and_plan(conn, career_id, current, only=(uid,))
     return ActionResult(queued=[uid])
 
 
@@ -476,20 +512,22 @@ def retry_many(
     *,
     now: float | None = None,
     active_only: bool = False,
+    read_settings: SettingsReader | None = None,
 ) -> ActionResult:
     """`retry` for many players at once (the review page, Phase 12i): each one's failed job
     queued again with new seeds; those who cannot be retried are skipped with the reason."""
     result = ActionResult()
     if now is None:
         now = time.time()
-    with _action_transaction(conn, career_id, active_only):
-        for uid in dict.fromkeys(uids):
+    selected = list(dict.fromkeys(uids))
+    with _action_transaction(conn, career_id, active_only, settings, read_settings) as current:
+        for uid in selected:
             p = _player(conn, career_id, uid)
-            if why := _queue_retry(conn, career_id, p, settings, now, len(result.queued)):
+            if why := _queue_retry(conn, career_id, p, current, now, len(result.queued)):
                 result.skipped.append((uid, why))
             else:
                 result.queued.append(uid)
-        classify_and_plan(conn, career_id, settings)
+        classify_and_plan(conn, career_id, current, only=selected)
     return result
 
 
@@ -500,13 +538,14 @@ def cancel(
     settings: Settings,
     *,
     active_only: bool = False,
+    read_settings: SettingsReader | None = None,
 ) -> bool:
     """Cancel the player's queued manual request, then let the rules decide again.
 
     Cancelling a Generate request also clears the pin it set, so the hand-pick is undone;
     any other pin stays.
     """
-    with _action_transaction(conn, career_id, active_only):
+    with _action_transaction(conn, career_id, active_only, settings, read_settings) as current:
         job = conn.execute(
             "SELECT id, group_name, reason FROM jobs WHERE career_id = ? AND unique_id = ?"
             " AND status = 'queued' AND manual = 1",
@@ -524,7 +563,7 @@ def cancel(
                 "UPDATE players SET pin = NULL WHERE career_id = ? AND unique_id = ? AND pin = ?",
                 (career_id, uid, job["group_name"]),
             )
-        classify_and_plan(conn, career_id, settings)
+        classify_and_plan(conn, career_id, current, only=(uid,))
     return True
 
 
@@ -545,6 +584,7 @@ def restore_picture(
     settings: Settings,
     *,
     active_only: bool = False,
+    read_settings: SettingsReader | None = None,
 ) -> Restored:
     """Make an earlier picture from the player's history current again, and publish it.
 
@@ -555,7 +595,7 @@ def restore_picture(
     requests are left alone.
     """
     data_dir: Path = settings.paths.data_dir
-    with _action_transaction(conn, career_id, active_only):
+    with _action_transaction(conn, career_id, active_only, settings, read_settings) as current:
         p = _player(conn, career_id, uid)
         if p["job_status"] == "running":
             raise ManualError(
@@ -587,7 +627,7 @@ def restore_picture(
                 f"v{version}'s picture file is missing from data/", "file_missing", version=version
             )
         group = p["group_name"] or img["group_name"]
-        band = age_wording(p["age"], group, bool(p["at_my_club"]), settings.age, **audience(p))
+        band = age_wording(p["age"], group, bool(p["at_my_club"]), current.age, **audience(p))
         conn.execute(
             "UPDATE images SET is_current = 0, published_path = NULL"
             " WHERE career_id = ? AND unique_id = ? AND is_current = 1",
@@ -607,8 +647,8 @@ def restore_picture(
             " WHERE career_id = ? AND unique_id = ? AND status = 'queued' AND kind != 'reroll'",
             (career_id, uid),
         )
-        classify_and_plan(conn, career_id, settings)
-    report = publish_pack(conn, settings, career_id, career_key)
+        classify_and_plan(conn, career_id, current, only=(uid,))
+    report = publish_pack(conn, current, career_id, career_key)
     return Restored(img["version"], p["pin"] == "never", report)
 
 
@@ -629,6 +669,7 @@ def pick_candidate(
     *,
     active_only: bool = False,
     version: int | None = None,
+    read_settings: SettingsReader | None = None,
 ) -> Picked:
     """Show another candidate of the current picture in FM27, and publish it.
 
@@ -643,7 +684,7 @@ def pick_candidate(
     while it is not published yet (that write failed) publishes it.
     """
     data_dir: Path = settings.paths.data_dir
-    with _action_transaction(conn, career_id, active_only):
+    with _action_transaction(conn, career_id, active_only, settings, read_settings) as current:
         p = _player(conn, career_id, uid)
         if p["job_status"] == "running":
             raise ManualError(
@@ -691,7 +732,7 @@ def pick_candidate(
                 "already_picked",
                 version=version,
             )
-    report = publish_pack(conn, settings, career_id, career_key)
+    report = publish_pack(conn, current, career_id, career_key)
     return Picked(version, report)
 
 

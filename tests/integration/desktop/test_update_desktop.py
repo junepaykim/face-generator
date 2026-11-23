@@ -209,6 +209,26 @@ def test_remove_pack_deletes_only_facegens_graphics(config_file: Path) -> None:
     assert "no picture pack to remove" in out.getvalue()
 
 
+def test_remove_pack_refuses_a_redirected_graphics_folder(config_file: Path) -> None:
+    settings = load_settings(defaults_path=config_file)
+    fm = settings.paths.fm_user_dir
+    assert fm is not None
+    elsewhere = config_file.parent / "other-disk" / "graphics"
+    (elsewhere / "facegen").mkdir(parents=True)
+    (elsewhere / "facegen" / "1.png").write_bytes(b"png")
+    fm.mkdir(parents=True, exist_ok=True)
+    try:
+        (fm / "graphics").symlink_to(elsewhere, target_is_directory=True)
+    except OSError as exc:
+        if getattr(exc, "winerror", None) == 1314:
+            pytest.skip("Windows does not grant this process symlink creation privileges")
+        raise
+    out = io.StringIO()
+    assert main(["--config", str(config_file), "remove-pack", "--yes"], out=out) == 1
+    assert "Not removed: refusing to delete outside" in out.getvalue()
+    assert (elsewhere / "facegen" / "1.png").is_file()
+
+
 def test_remove_pack_asks_first(config_file: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     settings = load_settings(defaults_path=config_file)
     assert settings.paths.fm_user_dir is not None

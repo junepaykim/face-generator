@@ -208,6 +208,11 @@ class Snapshot:
     media_read: bool = True
     """False when the media reader failed: the media people stored before are left as they
     were."""
+    competitions_read: bool = True
+    """False when the competitions or their fixtures could not be read: then there are no
+    league tables or fixtures here, and the sync keeps my league, the leagues around it, the
+    continental clubs and the other clubs' managers as the last sync stored them, rather than
+    counting them as gone."""
     read_domestic: InitVar[DomesticMembership | None] = None
     domestic: DomesticMembership = field(init=False, compare=False, repr=False)
     """The managed club's resolved division and pyramid for these competition records."""

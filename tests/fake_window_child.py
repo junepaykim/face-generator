@@ -4,11 +4,13 @@
     python fake_window_child.py NOTES MODE --url URL [--hidden]
 
 MODE: "ok"; "hide" (the user closes the window once it is up); "nowebview" (no WebView2);
-"crash" (ends at once with exit code 1). What the window is asked is appended to NOTES.
+"crash" (ends at once with exit code 1); "ready-crash" (says ready, then the window fails to
+start: exit code 1). What the window is asked is appended to NOTES.
 """
 
 from __future__ import annotations
 
+import os
 import sys
 import threading
 from pathlib import Path
@@ -34,6 +36,9 @@ class FakeWindow:
         note(f"window {url} hidden={hidden}")
 
     def run(self) -> None:
+        if mode == "ready-crash":  # pywebview's start fails after "ready" was sent
+            sys.stdout.flush()
+            os._exit(1)
         if mode == "hide":
             self.on_hide()
         self.closed.wait(30)

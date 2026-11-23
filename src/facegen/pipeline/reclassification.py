@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections import Counter
+from collections.abc import Collection
 from dataclasses import asdict, dataclass
 from datetime import date
 from typing import Any
@@ -77,34 +78,46 @@ def cutoffs_for(conn: sqlite3.Connection, career_id: int | None, settings: Setti
     return effective_cutoffs(settings.cutoffs, stats, no_photo=settings.no_photo.enabled)
 
 
+def _selection(only: Collection[int] | None, column: str) -> tuple[str, tuple[Any, ...]]:
+    """A WHERE clause narrowing `column` to `only` (none: every player), and its argument."""
+    if only is None:
+        return "", ()
+    return f" AND {column} IN (SELECT value FROM json_each(?))", (json.dumps(sorted(only)),)
+
+
 def _classify(
-    conn: sqlite3.Connection, career_id: int, settings: Settings
+    conn: sqlite3.Connection,
+    career_id: int,
+    settings: Settings,
+    only: Collection[int] | None = None,
 ) -> tuple[PlanResult, list[tuple[Any, ...]]]:
-    """Classify every stored player and plan the queue, reading only.
+    """Classify the stored players (`only` these, if given) and plan their jobs, reading only.
 
     Returns the plan and the player rows whose group, tracking or reasons would change.
     """
+    where, args = _selection(only, "unique_id")
     images = {
         r["unique_id"]: image_state(r)
         for r in conn.execute(
             "SELECT unique_id, group_name, club_id, age_band, restored_at, restored_group,"
-            " restored_club_id, restored_band FROM images WHERE career_id = ? AND is_current = 1",
-            (career_id,),
+            " restored_club_id, restored_band FROM images WHERE career_id = ? AND is_current = 1"
+            + where,
+            (career_id, *args),
         )
     }
     active_in = ", ".join("?" * len(ACTIVE_JOB_STATUSES))
     active = {
         r["unique_id"]: _job_state(r)
         for r in conn.execute(
-            f"SELECT * FROM jobs WHERE career_id = ? AND status IN ({active_in})",
-            (career_id, *ACTIVE_JOB_STATUSES),
+            f"SELECT * FROM jobs WHERE career_id = ? AND status IN ({active_in})" + where,
+            (career_id, *ACTIVE_JOB_STATUSES, *args),
         )
     }
     failed = {
         r["unique_id"]: _job_state(r)
         for r in conn.execute(
-            "SELECT * FROM jobs WHERE career_id = ? AND status = 'failed' ORDER BY id",
-            (career_id,),
+            "SELECT * FROM jobs WHERE career_id = ? AND status = 'failed'" + where + " ORDER BY id",
+            (career_id, *args),
         )
     }
 
@@ -122,12 +135,13 @@ def _classify(
     changed: list[tuple[Any, ...]] = []
     moved: list[Move] = []
     states: list[PlayerPlanState] = []
+    player_where, player_args = _selection(only, "p.unique_id")
     for r in conn.execute(
         "SELECT p.*, ph.unique_id IS NOT NULL AS has_photo, c.league_offset FROM players p"
         " LEFT JOIN photos ph ON ph.unique_id = p.unique_id"
         " LEFT JOIN clubs c ON c.career_id = p.career_id AND c.club_id = p.club_id"
-        " WHERE p.career_id = ?",
-        (career_id,),
+        " WHERE p.career_id = ?" + player_where,
+        (career_id, *player_args),
     ):
         uid = r["unique_id"]
         staff = bool(r["is_staff"])
@@ -196,12 +210,20 @@ def _classify(
     return PlanResult(plan(states, settings.style.gender), classifications, tuple(moved)), changed
 
 
-def classify_and_plan(conn: sqlite3.Connection, career_id: int, settings: Settings) -> PlanResult:
-    """Classify every stored player of a career and bring the queue in line.
+def classify_and_plan(
+    conn: sqlite3.Connection,
+    career_id: int,
+    settings: Settings,
+    *,
+    only: Collection[int] | None = None,
+) -> PlanResult:
+    """Classify every stored player of a career, or `only` these, and bring the queue in line.
 
-    Uses stored facts and applies the plan inside the caller's transaction.
+    Uses stored facts and applies the plan inside the caller's transaction. One player's group
+    and jobs never depend on another's (the cutoffs come from the last sync's stored
+    candidates), so a manual request, which changes only its own players, re-plans just them.
     """
-    result, changed = _classify(conn, career_id, settings)
+    result, changed = _classify(conn, career_id, settings, only)
     conn.executemany(
         "UPDATE players SET group_name = ?, tracked = ?, reasons = ?"
         " WHERE career_id = ? AND unique_id = ?",

@@ -21,6 +21,7 @@ from facegen.pipeline.publish import (
     publish_pack,
     published_bytes,
     published_pictures,
+    remove_packs,
     unpublish,
     write_config,
 )
@@ -360,6 +361,40 @@ def test_deactivate_packs_does_not_follow_symlinks(tmp_path: Path) -> None:
     _link_directory(folder / "link", outside)
     deactivate_packs(fm, keep=None)
     assert 'from="5"' in (outside / "config.xml").read_text()
+
+
+def test_remove_packs_refuses_a_graphics_folder_that_leads_elsewhere(tmp_path: Path) -> None:
+    # FM27's graphics folder moved to another disk and linked back: publishing refuses to
+    # write there, so the facegen folder found there is someone else's.
+    fm, elsewhere = tmp_path / "fm", tmp_path / "other-disk" / "graphics"
+    fm.mkdir()
+    (elsewhere / "facegen" / "theirs").mkdir(parents=True)
+    (elsewhere / "facegen" / "theirs" / "1.png").write_bytes(b"png")
+    _link_directory(fm / "graphics", elsewhere)
+    with pytest.raises(PublishError, match="refusing to delete outside"):
+        remove_packs(fm, tmp_path / "data")
+    assert (elsewhere / "facegen" / "theirs" / "1.png").is_file()
+    with pytest.raises(PublishError, match="refusing to write outside"):
+        pack_dir(fm, "k")  # as publishing does
+
+
+def test_remove_packs_removes_a_linked_facegen_folder_but_not_its_target(tmp_path: Path) -> None:
+    fm, outside = tmp_path / "fm", tmp_path / "other-pack"
+    (fm / "graphics").mkdir(parents=True)
+    outside.mkdir()
+    (outside / "1.png").write_bytes(b"png")
+    _link_directory(fm / "graphics" / "facegen", outside)
+    assert remove_packs(fm, tmp_path / "data")
+    assert not (fm / "graphics" / "facegen").exists() and (outside / "1.png").is_file()
+    assert not remove_packs(fm, tmp_path / "data")  # nothing left to remove
+
+
+def test_remove_packs_deletes_our_own_folder(tmp_path: Path) -> None:
+    fm = tmp_path / "fm"
+    write_config(pack_dir(fm, "k"), [1], fm)
+    (fm / "graphics" / "theirs").mkdir()
+    assert remove_packs(fm, tmp_path / "data")
+    assert not (fm / "graphics" / "facegen").exists() and (fm / "graphics" / "theirs").is_dir()
 
 
 def test_publish_pack_follows_the_newest_save(

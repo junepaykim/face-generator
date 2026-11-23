@@ -647,7 +647,7 @@ def cmd_shortcuts(args: argparse.Namespace, data_dir: Path, out: TextIO) -> int:
 def cmd_remove_pack(args: argparse.Namespace, paths: Paths, out: TextIO) -> int:
     """Delete facegen's pictures from FM27's graphics folder (graphics/facegen/), as the
     uninstaller offers. Asks first unless --yes. Exit 1 when not done."""
-    from facegen.pipeline.publish import packs_root, remove_packs
+    from facegen.pipeline.publish import PublishError, packs_root, remove_packs
 
     if paths.fm_user_dir is None:
         print("FM27's folder is not set, so there is no picture pack to remove.", file=out)
@@ -663,7 +663,7 @@ def cmd_remove_pack(args: argparse.Namespace, paths: Paths, out: TextIO) -> int:
             return 1
     try:
         remove_packs(paths.fm_user_dir, paths.data_dir)
-    except OSError as exc:
+    except (OSError, PublishError) as exc:
         print(f"Not removed: {exc}", file=out)
         return 1
     print(f"Removed {root}. FM27 shows its own photos after a restart or Reload Skin.", file=out)
