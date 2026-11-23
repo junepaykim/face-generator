@@ -1,22 +1,23 @@
 # FM27 Face Generator
 
 FM27 Face Generator is a Windows desktop app that gives Football Manager 27 players,
-staff and journalists anime-style portraits. It reads a copy of the save, draws on a
-local GPU and publishes a graphics pack the game can load.
+staff and journalists portraits, as anime illustrations or as photos. It reads a copy of
+the save, draws on a local GPU and publishes a graphics pack the game can load.
 
 ## Engineering Highlights
 
 | Engineering challenge | Implementation | Measured result |
 |---|---|---|
 | [Fit SDXL inference in 8 GiB](src/facegen/render/quantise.py) | Store the UNet’s linear-layer weights in INT8. Keep text encoders and the quality tagger in system RAM between uses. | On an RTX 4080, peak VRAM reserved by PyTorch fell from **10.95 to 6.88 GiB** for a full-quality portrait and from **11.82 to 7.70 GiB** for a reference-guided redraw. |
+| [Load a 6B photo model on a 16 GB PC](src/facegen/render/zimage.py) | Build Z-Image-Turbo’s transformer tensor by tensor from its fp32 files straight onto the GPU, storing block layers in 4-bit NF4. Convert the text encoder to INT8 before the transformer loads. | Peak system RAM while loading fell from **12.2 to 4.3 GiB**, and load time from **20.3 to about 13.5 s**, with byte-identical pictures. |
 | [Keep the UI responsive during save reads](src/facegen/runtime/sync_process.py) | Move save parsing and database sync from a thread in the desktop app to a child process with its own Python interpreter. | During a 320 MB save sync under WSL2, 90th-percentile latency fell on both the Players page (**1,272 → 77 ms**) and the status endpoint (**2,021 → 153 ms**). |
 | [Speed up portrait publishing with Rust](native/src/portrait.rs) | A PyO3 extension releases Python’s GIL and uses Rayon to resize and encode multiple PNGs in parallel. | Republishing a 58-portrait pack took **6.4 s**, down from **57.0 s** (**8.9× faster**), with identical FM portrait mappings. |
 | [Query a SQLite catalogue of 181,315 people](src/facegen/persistence/player_queries.py) | Select the 100 IDs for the requested page before joining their details. For the Review filter, find matching jobs once. | Median time for the first page including its count fell from **136 to 52 ms**. With the Review filter, it fell from **155 to 23 ms**. |
 
 <p align="center">
-  <img src="docs/images/hero.jpg" alt="Four generated anime portraits of made-up players in football kits" width="760">
+  <img src="docs/images/hero.jpg" alt="Four generated portraits of made-up players in football kits: two photos of men, then two anime women" width="760">
   <br>
-  <sub>Four made-up test players, drawn with the same setup the tool uses today.</sub>
+  <sub>Four made-up test players: photos by Z-Image-Turbo and RealVisXL, then anime by Animagine XL 4.0.</sub>
 </p>
 
 ## The problem
@@ -34,24 +35,31 @@ So this tool does the chore:
 1. **It reads the save.** It copies your newest save and reads every player, club, CA
    and PA from the copy.
 2. **It picks who matters.** You don't look at 20,000 players. You look at your squad,
-   your league rivals and the stars. The tool sorts those players into groups A, B and C
-   and skips everyone else.
-3. **It draws on your GPU.** Each player gets a portrait in their club's kit, made on
-   your own graphics card.
+   your league rivals and the stars. The tool finds your league in the save, picks the
+   best players in it and in the leagues around it, and skips everyone else. The picks
+   follow your club up and down the divisions, so there are no numbers to retune.
+3. **It draws on your GPU.** Each player gets a portrait in their club's kit, anime or
+   photo, made on your own graphics card.
 4. **It publishes.** It writes the pictures and a `config.xml` into FM27's graphics
    folder. Press *Reload Skin* in FM27 and the faces appear.
 
 ## Portrait features
 
+- **Anime or photo, women or men.** One setting picks the model: Animagine XL 4.0 for
+  anime, or RealVisXL V5.0 or Z-Image-Turbo for photos. Another draws everyone, players,
+  staff and press alike, as women or as men.
 - **A queue instead of brute force.** The GPU is shared with the game, so the tool spends
-  it where you'll look. Group A (your club and the superstars) gets the best of 3 tries
-  plus a detail pass. Group C (decent players in your league) gets one try. Everyone else
-  gets nothing.
+  it where you'll look. Detailed pictures (your club and the very best) get the best of 3
+  tries plus a detail pass. Light pictures (the rest of your league) get one try.
+  Everyone else gets nothing.
+- **Picks that measure your league.** Instead of fixed CA and PA numbers, the tool takes
+  the top few percent of your league, the league above and the continental cups your club
+  plays in. The same settings work in the Premier League and the sixth tier.
 - **Faces that grow up.** Each player gets a saved *character sheet* (hair, eyes, skin,
   accessory and so on). When a tracked player changes club or gets older, the tool
   re-draws them from the same sheet. It also shows the model a crop of the old face
   through **IP-Adapter**, a small add-on that lets the model look at a reference picture.
-  The result is the same girl in a new kit, a bit older.
+  The result is the same person in a new kit, a bit older.
 - **Nothing leaves your PC.** Models load offline, the web UI answers only on
   `127.0.0.1`, and saves are only ever copied.
 
@@ -61,16 +69,18 @@ So this tool does the chore:
 flowchart LR
     save[("FM27 save")] -->|"copy"| snap["Snapshot copy"]
     snap -->|"sync process reads the copy"| players["Players<br/>(~22k at men's clubs)"]
+    snap -->|"the save's league rules"| leagues["My league, the league<br/>above and below,<br/>continental cups"]
     players --> who{"Who will you<br/>actually look at?"}
-    who -->|"my club, superstars"| A["Group A<br/>best of 3 + detail pass"]
-    who -->|"academy grads, league stars,<br/>top prospects"| B["Group B<br/>1 try"]
-    who -->|"good players in my league"| C["Group C<br/>1 try"]
+    leagues -->|"top N% of each"| who
+    who -->|"my club, league's top 2.5%,<br/>superstars"| A["Detailed (A)<br/>best of 3 + detail pass"]
+    who -->|"youth, academy grads,<br/>league's top 12%, league above"| B["Standard (B)<br/>1 try"]
+    who -->|"the rest of my league"| C["Light (C)<br/>1 try"]
     who -.->|"everyone else"| skip["No picture"]
     A --> queue[["Job queue"]]
     B --> queue
     C --> queue
     ui["Web UI<br/>hand picks"] --> queue
-    queue --> gpu["GPU worker<br/>Animagine XL 4.0, INT8"]
+    queue --> gpu["GPU worker<br/>Animagine XL or RealVisXL (INT8)<br/>Z-Image-Turbo (NF4)"]
     gpu --> check{"Checks: content,<br/>hair, eyes, one person"}
     check -->|"pass"| pub["graphics/facegen/<br/>+ config.xml"]
     check -.->|"fails 3 rounds"| review["Review page"]
@@ -95,16 +105,18 @@ game. Its log is in `data/logs/facegen.log`.
 
 **One RTX 4080 (16 GB), shared with other programs.** Sixteen gigabytes sounds like
 plenty, but Windows keeps about 3 GB of it, and FM27 and a browser need room too. The goal
-is that a full group A job peaks **under 8 GiB**. An opt-in GPU test fails if the peak
-reaches 8.0 GiB.
+is that a full Detailed (group A) job peaks **under 8 GiB** on every model. An opt-in GPU
+test fails if the peak reaches 8.0 GiB.
 
 ## Design choices
 
 ### 1. Fitting in 8 GB: INT8, offloading and fp16 accumulation
 
-First, a quick map. The image model (from the Stable Diffusion XL family) starts from
-noise and cleans it up in 28 steps. The part that does the cleaning is the **UNet**, and it
-runs at every step. Around it sit some **helpers**: two text encoders that read the prompt,
+First, a quick map. The anime model and the first photo model, Animagine XL 4.0 and
+RealVisXL V5.0, are both from the Stable Diffusion XL family and share one code path, so
+everything in this section applies to both and they peak at the same memory. The model
+starts from noise and cleans it up in 28 steps (30 for RealVisXL). The part that does the cleaning is the
+**UNet**, and it runs at every step. Around it sit some **helpers**: two text encoders that read the prompt,
 a tagger that checks the finished picture, and an image encoder for reference faces. Each
 helper works for about a second per job and sits idle the rest of the time.
 
@@ -164,10 +176,21 @@ To be honest about it, **the big win is memory (−37%)**. Speed is a bonus. Ren
 player is about 11% faster. INT8 here is about memory, not speed: unpacking costs a little
 time, and fp16 accumulation pays for it.
 
+**The second photo model, Z-Image-Turbo, needs a different trick.** It is a 6-billion-parameter
+transformer that draws in 9 steps, and even in INT8 its render alone peaked at 8.8 GiB. So the
+layers in its transformer blocks are stored in 4-bit NF4 (one scale per 64 numbers) and
+unpacked one layer at a time, as above. Its weights are published in fp32 (24.6 GB), so the
+loader reads them tensor by tensor from the files straight onto the card instead of building the
+whole model in system RAM first: RAM use while loading peaks at **4.3 GiB instead of
+12.2 GiB**, which a 16 GB PC can spare. Its 4-billion-parameter text encoder waits in system
+RAM in INT8, and the transformer steps off the card while prompts are encoded. A Detailed job
+peaks at **6.2 GiB** and takes about 40 s. The render alone needs about 5.9 GiB in any preset,
+so this model needs a card with 10 GB or more.
+
 ### 2. Why INT8, and not FP8, torch.compile or SageAttention
 
-I tried every reasonable option on the same 10 made-up players, with the same seeds and
-the same prompts, changing only the UNet's arithmetic. "Closeness" measures how near each
+I tried every reasonable option on Animagine with the same 10 made-up players, the same
+seeds and the same prompts, changing only the UNet's arithmetic. "Closeness" measures how near each
 picture is to the plain fp16 picture (PSNR; higher means closer). bf16 serves as the
 yardstick, because it's a precision change nobody would call harmful.
 
@@ -206,48 +229,61 @@ than 60 group A players in one sitting before the wait paid off.
 **4. There are no extra dependencies.** SageAttention is a little faster, but it adds a
 package and moves the pictures further from fp16 than bf16 does.
 
-### 3. Picking the model
-
-<table>
-  <tr>
-    <td align="center"><img src="docs/images/models/animagine.jpg" width="120" alt="Animagine sample"><br><strong>Animagine XL 4.0 Opt</strong></td>
-    <td align="center"><img src="docs/images/models/illustrious.jpg" width="120" alt="Illustrious sample"><br>Illustrious XL 2.0</td>
-    <td align="center"><img src="docs/images/models/noobai.jpg" width="120" alt="NoobAI sample"><br>NoobAI-XL 1.1</td>
-    <td align="center"><img src="docs/images/models/anima.jpg" width="120" alt="Anima sample"><br>Anima Aesthetic v1.1</td>
-  </tr>
-  <tr>
-    <td align="center"><img src="docs/images/models/zimage.jpg" width="120" alt="Z-Image sample"><br>Z-Image (6B, FP8)</td>
-    <td align="center"><img src="docs/images/models/zimage-turbo.jpg" width="120" alt="Z-Image-Turbo sample"><br>Z-Image-Turbo (FP8)</td>
-    <td align="center"><img src="docs/images/models/wai.jpg" width="120" alt="WAI-illustrious sample"><br>WAI-illustrious v17</td>
-    <td align="center"><img src="docs/images/models/anima-2.9b.jpg" width="120" alt="Anima-2.9B sample"><br>Anima-2.9B (preview)</td>
-  </tr>
-</table>
-
-### 4. Spend the GPU where you look: groups A, B and C
+### 3. Spend the GPU where you look: shares of your league
 
 A save holds tens of thousands of players (21,834 at men's clubs in my test career), but
 you mostly look at three kinds: **your own squad**, **the teams you play every week**, and
 **the stars** who keep turning up in the news and in scouting. Those players get pictures,
 the ones you see most often get the best pictures, and everyone else is skipped.
 
-| Group | Who (default thresholds) | Tries | Detail pass | Published size |
+The catch is deciding who counts as good. A fixed cut such as "CA 120 or more" means a
+squad player in the Premier League and a star in the sixth tier. With fixed numbers you
+would retune them for every new career and again after every promotion, and they would
+still be wrong in a league you never looked at. So the tool does not ask for numbers. It
+reads the league structure from the save and takes **shares**: the top N% of each league's
+candidates, the newgens and the players without a photo, ranked by CA or PA.
+
+In one test career, Detailed's top 2.5% of National League North worked out to CA 80 or
+PA 123. After promotion to the National League the same setting meant CA 93 or PA 128,
+and nobody touched a number. In a League Two career it meant CA 102 or PA 135. Shares are
+measured again at every sync, so they follow promotion and relegation by themselves.
+
+| Group | Who (defaults) | Tries | Detail pass | Published size |
 |---|---|---|---|---|
-| **A** | Your first team and your staff; any newgen with CA > 155 or PA > 170 | best of 3 | yes | 768×1024 |
-| **B** | Your other teams (reserves, under-23s, under-18s); your academy graduates after they leave; newgens with CA > 130 or PA > 150 who are in your league or a continental cup; any newgen with CA > 140 or PA > 155; journalists from your club's country and your press officers | 1 | no | 576×768 |
-| **C** | Newgens in your league with CA > 115 or PA > 140; the other clubs' managers in your league who have no photo | 1 | no | 384×512 |
+| **Detailed (A)** | Your first team and your staff; the top 2.5% of your league by CA or by PA; anyone with CA 165+ or PA 180+ | best of 3 | yes | 1024 px |
+| **Standard (B)** | Your youth teams and the players you loaned out; your academy graduates after they leave; the top 12% of your league by CA or by PA; the top 15% of the league above by CA; the top 30% of a continental competition your club plays in; anyone with CA 145+ or PA 160+; journalists from your club's country and your press officers | 1 | no | 768 px |
+| **Light (C)** | The top 80% of your league by CA, so most of the players you meet on match day have a face; the top 50% of the league above (the league below can be switched on too); the other clubs' managers in your league who have no photo | 1 | no | 512 px |
 | none | Everyone else | no picture, unless you pick them by hand in the web UI | | |
 
+A player takes the highest group any rule gives. Pictures are square by default, or 3:4
+portraits; the published size is the height. With these defaults my test saves hold about
+100–180 Detailed, 600–850 Standard and 650–800 Light people at any one time.
+
+- **Where the leagues come from.** The save carries FM27's own competition rules, which
+  list each nation's divisions from the top. The tool finds the division your first team
+  plays in this season, the next level up and the next level down (parallel regional
+  divisions such as National League North and South count as one level), and the
+  Champions League, Europa League or Conference League when your club plays in the current
+  edition. When the rules do not place your league, the league above and below switch
+  themselves off and show as off in Settings instead of a guess; they come back once a
+  later save places it.
+- **One control for most people.** Settings → Basic asks only how far pictures reach at
+  other clubs: fewer, default or more (half or one and a half times every share). Settings
+  → Advanced → Cutoffs shows each share with the CA or PA it works out to in your latest
+  save ("≈ CA 84+") and a live count for each group. Manual mode turns your league's
+  shares into fixed numbers, converted from the latest save so the same players stay
+  picked.
 - **Real players without a photo count as newgens.** FM27 ships photos for some leagues
   only; everyone else shows a silhouette. At each sync facegen reads the game's list of the
   photos it ships and the `config.xml` of any facepack you installed, and a real player with
-  neither is picked by the same thresholds as a newgen (the academy rule aside). Settings
-  turns this off.
-- **Queue order:** your hand-picked requests come first, then group A (newest arrivals at
-  your club first, so youth intake day goes to the front), then B, then C, each sorted by
-  PA.
-- **Cost:** a group A player takes about 18 s. A B or C player takes a single render
-  (~4.4 s) plus the check.
-- **Why B and C still render at full size:** image models draw *worse*, not just smaller,
+  neither is a candidate like a newgen (the academy rule aside). Settings turns this off.
+- **Queue order:** your hand-picked requests come first, then Detailed (newest arrivals at
+  your club first, so youth intake day goes to the front), then Standard, then Light, each
+  sorted by PA.
+- **Cost:** a Detailed player takes about 18 s on Animagine or RealVisXL and about 40 s on
+  Z-Image-Turbo. A Standard or Light player takes a single render (~4.4 s on Animagine)
+  plus the check.
+- **Why Standard and Light still render at full size:** image models draw *worse*, not just smaller,
   below their native size. So every group renders at full size. The groups differ in how
   many tries they get, whether they get the detail pass, and how big the published file
   is.
@@ -255,10 +291,11 @@ the ones you see most often get the best pictures, and everyone else is skipped.
   proposes picture settings for it: below 10 GB, best of 2 with no detail pass and the
   picture decoded in tiles; 10 and 11 GB, a smaller detail pass (1152×1472 instead of
   1344×1728). It lists each change first, saves them as one change that one Undo reverts,
-  and never touches who gets a picture. On the RTX 4080 a group A job peaks at about
-  6.9 GiB of PyTorch memory with the defaults, 5.8 GiB with the 10–11 GB preset and 4.5 GiB
-  with the under-10 GB one (7.7, 6.7 and 5.0 GiB for a re-draw with a reference picture);
-  they are not yet tried on smaller cards.
+  and never touches who gets a picture. On the RTX 4080 a Detailed job on Animagine or
+  RealVisXL peaks at about 6.9 GiB of PyTorch memory with the defaults, 5.8 GiB with the
+  10–11 GB preset and 4.5 GiB with the under-10 GB one (7.7, 6.7 and 5.0 GiB for a re-draw
+  with a reference picture); Z-Image-Turbo stays near 6 GiB in every preset, so it is for
+  10 GB cards and up. The presets are not yet tried on smaller cards.
 - **Club colours.** A hand-tuned kit table takes priority. For 832 clubs, the app also
   ships colour estimates from FM27’s home shirt images. Clubs missing from both sources
   get a neutral kit. [Kit catalogue](src/facegen/data/kit_catalog.json)
@@ -269,20 +306,21 @@ the ones you see most often get the best pictures, and everyone else is skipped.
   jackets. Each player has a favourite style, and seniors now and then wear an armband.
   Poses combine arms and an angle (front, a turn, a head tilt, contrapposto), and the
   backdrop is a plain colour, a gradient or two tones, never the kit's or hair's colour.
-- **Your staff too.** Coaches, physios, scouts, the board and your own manager get group A
+- **Your staff too.** Coaches, physios, scouts, the board and your own manager get Detailed
   pictures, dressed for the job: suits and overcoats for the board, a suit or a bench coat
   for the manager, training wear and a whistle for coaches, lab coats for doctors, with the
-  club's colours on a tie, scarf or jacket. Their age wording has its own table of
-  very wide, seven-year bands, so most staff fall in the middle of the range.
+  club's colours on a tie, scarf or jacket. Their ages are spread over the age looks from
+  28 to 64, five years to a look, and Settings can move that span.
 - **The people around the club.** Journalists and press officers get one picture each, in
   work clothes with a press pass or a lanyard. The other clubs' managers in your league
-  get one too if FM27 has no photo of them. Pin someone you see often to group A and they
+  get one too if FM27 has no photo of them. Pin someone you see often to Detailed and they
   are kept up to date like your own staff.
-- **Thresholds are live.** Each setting is saved as you change it in the web UI, the page
+- **Settings are live.** Each setting is saved as you change it in the web UI, the page
   says who moved and what was queued, and Undo puts it back, several steps at once if you
-  like. Newly eligible players join the queue, and existing pictures are never deleted.
+  like. Shares are measured again at every sync. Newly eligible players join the queue,
+  and existing pictures are never deleted.
 
-### 5. Faces that grow up
+### 4. Faces that grow up
 
 A player who changes club or gets older should still look like themselves. Three things
 make that work:
@@ -291,7 +329,9 @@ make that work:
    shape, skin, accessory, mark and default expression. All randomness is seeded from the
    career, the player's ID and a version number, so the same inputs always give the same
    sheet and the same prompt. A fun extra: personality nudges the expression. High
-   *Pressure* leans confident, and high *Professionalism* leans serious.
+   *Pressure* leans confident, and high *Professionalism* leans serious. Drawn as a man,
+   a player also gets a look from his nation's region (228 nations mapped), facial hair
+   that suits his age, and the age at which his hair starts to grey.
 2. **Age wording:** the player's real age picks one of ten age descriptions for the
    prompt. When a tracked player's age moves into the next band, they're re-drawn.
 3. **The old face as a reference:** when a player at your club is re-drawn, the tool crops
@@ -300,7 +340,8 @@ make that work:
    dropped by 5–10 points, and an adapter that looked at the whole picture carried the old
    club's shirt into 30% of the new pictures. 0.1–0.2 gave the closest faces with no loss
    in kit accuracy. The reference stays gentle because any reference holds back the aging
-   a little.
+   a little. It is taken only from a picture of the same model and gender, and
+   Z-Image-Turbo, which has no IP-Adapter, re-draws from the sheet alone.
 
 | Age 22 | Age 27 | Age 31 |
 |---|---|---|
@@ -317,15 +358,16 @@ baseline and variant runs and used the median.
 
 | What | Result |
 |---|---|
-| Loading the model from disk (incl. INT8 conversion) | ~6 s |
-| One render, 896×1152, 28 steps | 4.4 s |
-| Detail pass, 1344×1728 | 4.0 s |
+| Loading the model from disk | 6–10 s for Animagine or RealVisXL (incl. INT8 conversion); 13–20 s for Z-Image-Turbo (incl. NF4) |
+| One render, 896×1152 | 4.4 s (Animagine, 28 steps); ~9.5 s (Z-Image-Turbo, 9 steps) |
+| Detail pass, 1344×1728 | 4.0 s (Animagine); 10 s (Z-Image-Turbo) |
 | Content and quality check | 0.03 s per picture |
-| One group A player (3 renders + detail pass + checks) | ~18 s |
-| Peak VRAM for a group A job | 6.9 GiB (7.7 GiB with a reference face) |
+| One Detailed player (3 renders + detail pass + checks) | ~18 s on Animagine, ~21 s on RealVisXL, ~40 s on Z-Image-Turbo |
+| Peak VRAM for a Detailed job | 6.9 GiB on Animagine or RealVisXL (7.7 GiB with a reference face); 6.2 GiB on Z-Image-Turbo |
 | GPU memory held between jobs | ~3.8 GiB; all freed after 5 idle minutes or when FM27 starts |
 | First real squad run (Colchester, 52 players) | 154 of 156 candidates passed; all 52 players passed in the first round (19 min, before the speed-ups) |
 | Reading and sorting a save | ~10 s for a 59 MB save, 55 s for a 320 MB save |
+| Reading the league structure from the save's rules | 0.3 s on a 120 MB section, 0.7 s on 462 MB |
 | Web UI players list, 33,000-player database | 5–40 ms per page |
 
 The SQLite benchmark used a copy of a career with 181,315 people and added 40,000 synthetic
@@ -381,25 +423,29 @@ publishes the executable with a SHA-256 checksum. [Release workflow](.github/wor
 - **Save compatibility.** Game patches can change the save format. The dashboard identifies
   unreadable builds and keeps existing portraits. The reader is pinned to
   [fmsave 0.12.6](https://github.com/rhiever/fmsave).
-- **Portrait fidelity.** Animagine XL 4.0 is the supported model. Kits approximate club
-  colours and patterns. A reference face helps preserve a player’s identity across redraws,
-  but the save reader exposes no newgen hair or skin data to match the in-game 3D face.
-- **Coverage and validation.** Group B’s continental-cup rule still needs competition IDs.
+- **Portrait fidelity.** Kits approximate club colours and patterns. A reference face helps
+  preserve a player’s identity across redraws, but the save reader exposes no newgen hair
+  or skin data to match the in-game 3D face. In the photo styles, women are drawn from the
+  anime prompt for now; a photo prompt and check of their own are not done yet.
+- **Coverage and validation.** League levels were checked on English, Spanish, Italian and
+  German pyramids, and careers only in England's fourth to sixth tiers. No test career has
+  played in Europe yet, so the continental rule is tested on made-up fixtures only.
   Automatic save watching and age or transfer redraws still await final in-game verification.
 
 ## Install on Windows
 
 Download and run `facegen-setup-<version>.exe` from the [latest Windows release](https://github.com/junepaykim/face-generator/releases/latest).
 
-You’ll need 64-bit Windows 10 or 11, FM27, an NVIDIA GPU with about 8 GB of VRAM and about
-20 GB of free disk space. First launch sets up Python and PyTorch (~3 GB), then asks before
-downloading the models (11.6 GB). After the first portraits are published, choose **Reload
+You’ll need 64-bit Windows 10 or 11, FM27, an NVIDIA GPU with about 8 GB of VRAM (10 GB for
+Z-Image-Turbo) and about 20 GB of free disk space (40 GB for Z-Image-Turbo). First launch
+sets up Python and PyTorch (~3 GB), then asks before downloading the chosen model's files:
+11.6 GB for Animagine or RealVisXL, 34.1 GB for Z-Image-Turbo. After the first portraits are published, choose **Reload
 Skin** in FM27 to see them.
 
 ### Updates
 
 The dashboard checks daily. **Update now** installs a new version and keeps your portraits,
-database and settings. You can turn off daily checks in **Settings → Advanced → Updates**.
+database and settings. You can turn off daily checks in **Settings → Advanced → System**.
 
 ### Uninstall
 

@@ -91,9 +91,9 @@ Type: filesandordirs; Name: "{app}\src"
 Source: "{#Stage}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
-Name: "{userprograms}\facegen"; Filename: "{app}\Start.bat"; WorkingDir: "{app}"; IconFilename: "{app}\facegen.ico"; Comment: "facegen: anime portraits for FM27's players"
+Name: "{userprograms}\facegen"; Filename: "{app}\Start.bat"; WorkingDir: "{app}"; IconFilename: "{app}\facegen.ico"; Comment: "facegen: anime or photo portraits for FM27's players"
 Name: "{userprograms}\{cm:UpdateShortcut}"; Filename: "{app}\Start.bat"; Parameters: "--update"; WorkingDir: "{app}"; IconFilename: "{app}\facegen.ico"
-Name: "{userdesktop}\facegen"; Filename: "{app}\Start.bat"; WorkingDir: "{app}"; IconFilename: "{app}\facegen.ico"; Comment: "facegen: anime portraits for FM27's players"; Tasks: desktopicon
+Name: "{userdesktop}\facegen"; Filename: "{app}\Start.bat"; WorkingDir: "{app}"; IconFilename: "{app}\facegen.ico"; Comment: "facegen: anime or photo portraits for FM27's players"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\Start.bat"; Description: "{cm:StartNow}"; WorkingDir: "{app}"; Flags: postinstall nowait shellexec skipifsilent

@@ -197,7 +197,7 @@ class Snapshot:
     """Competition ID to the season (its start year) `fixture_counts` counts, where known."""
     competition_rules: CompetitionRules | None = None
     """The save's own division lists and competition levels; None where they could not be read
-    (the league ladder then comes from club reputations)."""
+    (there is then no league above or below mine)."""
     staff: tuple[StaffRecord, ...] = ()
     """My club's staff and first-team managers at clubs in my current league."""
     staff_read: bool = True

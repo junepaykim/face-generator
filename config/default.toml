@@ -108,8 +108,9 @@ b_pa = 12.0
 c_ca = 80.0
 c_pa = "-"
 # The league above mine, the league below (each a level of my pyramid as the save's own rules
-# list it, else as club reputations order my nation's leagues; parallel divisions share a level)
-# and the continental competitions my club plays in.
+# list it; parallel divisions share a level; where the rules do not place my league there is no
+# league above or below, and their cells show as off) and the continental competitions my club
+# plays in.
 above_b_ca = 15.0
 above_c_ca = 50.0                   # only while light_above is on
 below_c_ca = 50.0                   # only while light_below is on
@@ -138,17 +139,17 @@ c_pa = "-"
 [staff]
 # My club's staff (coaches, physios, scouts, analysts, the board, and the manager: you) get
 # pictures like the players at my club: group A quality, tracked while at my club, re-drawn
-# when their age wording changes. They wear club wear for their job (src/facegen/wardrobe.py:
+# when their age wording changes. They wear club wear for their job (src/facegen/core/wardrobe.py:
 # suits, coats, training wear, lab coats) with the club's colours on one piece, not the
 # playing kit, and their age wording comes from [age.staff]. Staff at other clubs are not
 # read. Pin a person to "never" on their page to leave them out. Requested by the user,
-# 2026-11-12 (docs/spec.md section 2). Everyone is drawn as a woman (user, 2026-11-14).
+# 2026-11-12 (docs/spec.md section 2). They are drawn as [style] gender says, like everyone.
 enabled = true
 
 [media]
 # Journalists and press officers (user, 2026-11-13), read from the save by
-# src/facegen/datasource/people.py. They are drawn once at group B quality, as women (user,
-# 2026-11-14), in clothes for their work, and not tracked. Journalists from my club's country
+# src/facegen/datasource/people.py. They are drawn once at group B quality, as [style] gender
+# says, in clothes for their work, and not tracked. Journalists from my club's country
 # and my club's press officers are drawn without a request; any other journalist can be
 # picked on the Players page. Pin a regular at my club to A on their page: group A quality,
 # and tracked like any group A person, so re-drawn when their age wording changes.

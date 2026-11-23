@@ -2,8 +2,8 @@
 
 ## Project
 
-Local FM27 portrait generator: snapshot a save, select players/staff/media, draw anime
-portraits on the GPU, check them, then publish an FM graphics pack. FastAPI serves the
+Local FM27 portrait generator: snapshot a save, select players/staff/media, draw anime or
+photo portraits on the GPU, check them, then publish an FM graphics pack. FastAPI serves the
 settings/manual-request UI; Windows adds a tray and pywebview window.
 
 ## Project references and workflow

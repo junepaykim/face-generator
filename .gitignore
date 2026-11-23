@@ -21,8 +21,6 @@ native/target/
 *.ckpt
 *.gguf
 models/
-# ... but not the README's sample pictures of each model (AGENTS.md rule 7)
-!docs/images/models/
 
 # This PC's own paths (holds the Windows user name)
 config/local.toml

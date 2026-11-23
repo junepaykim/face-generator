@@ -1,10 +1,11 @@
-"""Animagine XL prompts with fixed content safeguards (spec section 3).
+"""Women's prompts, in Animagine XL tags, with fixed content safeguards (spec section 3).
 
 Every prompt includes the safe rating; negatives include CONTENT_NEGATIVE and, for under-18
 wordings, YOUNG_NEGATIVE. Players receive sportswear terms. Staff and media receive long
 sleeves and negatives excluding playing kit; sportswear outfits add sportswear to the
 positive prompt, smart outfits to the negative. Settings cannot weaken these terms.
-Everyone is drawn as a woman or girl.
+Every model draws women from these prompts for now; men's prompts are in man_prompt.py, and
+core/style.py picks one by `style.gender`.
 
 My-club adjustments omit banned traits and negate them, soften tan/dark skin, and draw a
 seeded share of sharp eyes round without changing the stored sheet. Players use shoots;

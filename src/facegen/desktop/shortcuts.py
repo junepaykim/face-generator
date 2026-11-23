@@ -25,7 +25,7 @@ from pathlib import Path, PureWindowsPath
 from facegen.platform import procs
 
 LINK_NAME = "facegen.lnk"
-DESCRIPTION = "facegen: anime portraits for FM27's players"
+DESCRIPTION = "facegen: anime or photo portraits for FM27's players"
 FOLDER_IDS = {
     "desktop": "B4BFCC3A-DB2C-424C-B029-7FE99A87C641",
     "programs": "A77F5D77-2E2B-44C3-A6A2-ABA601054A51",

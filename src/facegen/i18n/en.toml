@@ -628,7 +628,7 @@ body = "Applies to new characters."
 style = "Z-Image-Turbo needs a graphics card with 10 GB or more."
 
 [settings.tip]
-cutoffs = "Players at other clubs are picked by their share of a league: top 6% means the best 6% of its newgens and players without a photo, by CA or PA. Shares are measured again at every sync, so they follow promotion and relegation. Manual sets my league's cuts as numbers instead. - switches a cell off."
+cutoffs = "Players at other clubs are picked by their share of a league: top 12% means the best 12% of its newgens and players without a photo, by CA or PA. Shares are measured again at every sync, so they follow promotion and relegation. Manual sets my league's cuts as numbers instead. - switches a cell off."
 cutoffs_my_club = "Everyone at my club gets a picture. Youth teams and players I loaned out reach {a} by my league's or the global {a} cut."
 age = "The age each look starts at; it lasts until the next one used. - leaves a look out of this table."
 personality = "How much a new character's expression follows their personality. 0: not at all. 1: a fitting expression is twice as likely. 2: three times as likely."
