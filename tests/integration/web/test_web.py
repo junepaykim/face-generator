@@ -1032,7 +1032,7 @@ def test_csrf_is_required_even_with_no_origin_or_same_origin(env: Env) -> None:
 
 
 def test_every_post_form_carries_the_token(env: Env) -> None:
-    for url in ("/", "/status", "/players", f"/players/{MINE}", "/settings", "/review"):
+    for url in ("/", "/status", "/gallery", "/players", f"/players/{MINE}", "/settings", "/review"):
         for form in re.findall(
             r'<form\b[^>]*method="post"[^>]*>.*?</form>', env.client.get(url).text, re.DOTALL
         ):

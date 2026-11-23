@@ -1,4 +1,4 @@
-{% from "_problem.html" import problem %}<span hidden data-career="{{ career.id if career else '' }}"></span>
+{% from "_problem.html" import problem %}{% from "_cards.html" import quick with context %}<span hidden data-career="{{ career.id if career else '' }}"></span>
 {% include "_guide.html" %}
 {% set first_run = guide and not career %}
 {% if last_sync and last_sync.unsupported %}
@@ -98,7 +98,7 @@
     {% for r in recent %}
     {% set version = r.master_path|picture_filename %}
     <div class="thumb-card" data-id="{{ r.id }}:{{ version }}">
-      <a class="thumb-pic" href="/pictures/{{ r.id }}" data-lightbox="recent" data-caption="{{ r.name }} · v{{ r.version }}" data-player="/players/{{ r.unique_id }}"><img src="/pictures/{{ r.id }}?size=192&amp;v={{ version }}" loading="lazy" alt="{{ r.name }}"></a>
+      <div class="thumb-frame"><a class="thumb-pic" href="/pictures/{{ r.id }}" data-lightbox="recent" data-caption="{{ r.name }} · v{{ r.version }}" data-player="/players/{{ r.unique_id }}" data-made="{{ r.created_at }}"><img src="/pictures/{{ r.id }}?size=192&amp;v={{ version }}" loading="lazy" alt="{{ r.name }}"></a>{{ quick(r.unique_id, r.name, "/") }}</div>
       <a class="thumb-name" href="/players/{{ r.unique_id }}">{{ r.name }}</a>
       <span class="thumb-meta">{{ grp(r.group_name) }} <time class="muted small" datetime="{{ r.created_at }}" data-short>{{ r.created_at[11:16] }}</time></span>
     </div>

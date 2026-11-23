@@ -410,6 +410,27 @@ a.button:hover { border-color: var(--accent); text-decoration: none; }
               color: var(--fg); }
 .thumb-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 6px; min-width: 0; }
 .thumb-meta time { white-space: nowrap; }
+/* Quick actions on a card (Phase 17f): New picture and New face on a veil over the picture's
+   foot, shown on hover or keyboard focus (always on a touch screen). The note at the top says
+   what happened: Queued, or why not. */
+.thumb-frame { position: relative; }
+.thumb-acts { position: absolute; left: 0; right: 0; bottom: 0; z-index: 1; display: flex; flex-wrap: wrap;
+              gap: 4px; margin: 0; padding: 6px; border-radius: 0 0 6px 6px; background: var(--veil-button);
+              opacity: 0; transition: opacity .15s; }
+.thumb-frame:hover .thumb-acts, .thumb-acts:focus-within { opacity: 1; }
+@media (hover: none) { .thumb-acts { opacity: 1; } }
+.thumb-acts button { flex: 1 1 auto; min-width: 0; padding: 2px 6px; font-size: 12px; background: transparent;
+                     color: var(--veil-fg); border-color: color-mix(in srgb, var(--veil-fg) 45%, transparent); }
+.thumb-acts button:hover:not(:disabled) { background: var(--veil-button-hover); border-color: var(--veil-fg); }
+.thumb-acts button:focus-visible { outline: 2px solid var(--veil-fg); outline-offset: 1px; }
+.thumb-acts[aria-busy] button { cursor: progress; opacity: .7; }
+.thumb-note { position: absolute; top: 6px; left: 6px; z-index: 1; max-width: calc(100% - 12px); }
+.thumb-note:empty { display: none; }
+.thumb-note.tone-bad { white-space: normal; border-radius: 6px; padding: 3px 7px; line-height: 1.3; }
+@media (prefers-reduced-motion: reduce) { .thumb-acts { transition: none; } }
+/* Who the picture shows (Gallery): Player, the staff job, Journalist or Press officer. */
+.thumb-role { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+              font-weight: 400; }
 h2 .small { font-weight: 400; margin-left: 6px; }
 /* A card's title with a link at its right end ("View all in Gallery →", Phase 17e). */
 h2.card-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
@@ -542,6 +563,13 @@ form.contents { display: contents; }
 /* The picture wall (Phase 12h): bigger cards than the dashboard's, the club under the name. */
 .thumbs.wall { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 14px 12px; }
 .thumb-club { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Its filters stay at the top while the wall scrolls (Phase 17f), where the window is tall
+   enough; Clear is a button the height of the lists, shown while a filter is on. */
+.filters .filter-clear { line-height: normal; }
+@media (min-width: 601px) and (min-height: 600px) {
+  .filters-sticky { position: sticky; top: 0; z-index: 3; margin: -8px -20px 2px; padding: 8px 20px;
+                    background: var(--bg); }
+}
 
 /* Review (Phase 12i): tick boxes for the bar's buttons, and a player's candidates side by side
    in a dialog with the picture FM27 shows now. */
@@ -653,5 +681,5 @@ dialog.lightbox[open] { animation: lb-in .15s ease-out; }
               border-radius: 999px; background: var(--veil-button); font-size: 13px;
               transform: translateX(-50%); white-space: nowrap; }
 .lb-caption a { color: inherit; overflow: hidden; text-overflow: ellipsis; }
-.lb-count { opacity: .75; font-variant-numeric: tabular-nums; }
+.lb-count, .lb-when { opacity: .75; font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) { dialog.lightbox[open] { animation: none; } }

@@ -375,6 +375,10 @@ class GalleryFilter:
         """Whether any filter other than the page and sort is set."""
         return replace(self, page=1, sort="new") != GalleryFilter()
 
+    def cleared(self) -> str:
+        """The query string without the filters, keeping the sort (the Clear button)."""
+        return GalleryFilter(sort=self.sort).query()
+
 
 def one_page[PageFilter: (PlayerPageFilter, GalleryFilter)](
     fetch: Callable[[PageFilter], tuple[list[dict[str, Any]], int]],
@@ -431,7 +435,7 @@ def gallery_page(
     total = conn.execute(f"SELECT COUNT(*){joins} WHERE {where}", args).fetchone()[0]
     rows = conn.execute(
         "SELECT i.id, i.unique_id, i.version, i.group_name, i.created_at, i.master_path, p.name,"
-        " p.at_my_club, p.is_staff, p.media_role, c.name AS club"
+        " p.at_my_club, p.is_staff, p.staff_job, p.media_role, p.local_media, c.name AS club"
         f"{joins} LEFT JOIN clubs c ON c.career_id = p.career_id AND c.club_id = p.club_id"
         f" WHERE {where} ORDER BY {GALLERY_SORTS[f.sort]} LIMIT ? OFFSET ?",
         (*args, per_page, (f.page - 1) * per_page),

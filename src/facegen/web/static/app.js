@@ -150,7 +150,12 @@ const LANG = document.documentElement.lang || undefined;
     return {
       fresh,
       done() {
+        // A card's buttons keep the keyboard's focus while the cards move (Phase 17f).
+        const focused = grid.contains(document.activeElement) ? document.activeElement : null;
         place(grid, cards);
+        if (focused && focused.isConnected && document.activeElement !== focused) {
+          focused.focus({ preventScroll: true });
+        }
         if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
         cards.forEach((card) => {
           const from = was.get(card.dataset.id);
@@ -425,6 +430,15 @@ document.addEventListener("click", (e) => {
       }
       caption.append(name);
     }
+    // When it was made, in this PC's time (Phase 17f).
+    const made = link.dataset.made ? new Date(link.dataset.made) : null;
+    if (made && !isNaN(made)) {
+      const when = document.createElement("time");
+      when.className = "lb-when";
+      when.dateTime = link.dataset.made;
+      when.textContent = madeText(made);
+      caption.append(when);
+    }
     if (items.length > 1) {
       const count = document.createElement("span");
       count.className = "lb-count";
@@ -548,8 +562,57 @@ document.addEventListener("submit", (e) => {
   if (msg && !window.confirm(msg)) e.preventDefault();
 });
 
+// Quick actions on picture cards (Phase 17f): New picture and New face from the Gallery and the
+// dashboard's latest pictures, sent without leaving the page; the card says what happened, and
+// keeps saying it through live updates (the card is kept until its picture changes). Without
+// the script they are ordinary forms.
+document.addEventListener("submit", async (e) => {
+  const form = e.target;
+  if (e.defaultPrevented || !form.matches || !form.matches("form[data-quick]")) return;
+  e.preventDefault();
+  if (form.hasAttribute("aria-busy")) return;  // one at a time; the button keeps its focus
+  const url = (e.submitter && e.submitter.getAttribute("formaction")) || form.getAttribute("action");
+  const note = form.parentElement.querySelector(".thumb-note");
+  const say = (words, tone, full) => {
+    if (!note) return;
+    note.textContent = words;
+    note.className = "thumb-note badge tone-" + tone;
+    note.title = full || words;
+  };
+  form.setAttribute("aria-busy", "true");
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      body: new FormData(form),
+      headers: {
+        "X-CSRF-Token": form.querySelector('input[name="csrf_token"]').value,
+        "Accept": "application/json",
+      },
+    });
+    let data = null;
+    try { data = await res.json(); } catch (err) { /* not an answer from the route */ }
+    if (data && data.ok) say(text("js.queued"), "ok", data.message);
+    else if (data && data.error) say(data.error, "bad");
+    else say(text(res.status === 403 ? "js.quick_reload" : "js.quick_no_answer"), "bad");
+  } catch (err) {
+    say(text("js.quick_no_answer"), "bad");
+  } finally {
+    form.removeAttribute("aria-busy");
+  }
+});
+
+// A time with its date, in this PC's time and the page's language: "Nov 23, 14:05".
+function madeText(d) {
+  return d.toLocaleString(LANG, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
 // Times in the settings history, shown in this PC's local time.
 function localTimes(root) {
+  // A picture's tooltip: when it was made (Phase 17f).
+  root.querySelectorAll("[data-made][title]").forEach((el) => {
+    const d = new Date(el.dataset.made);
+    if (!isNaN(d)) el.title = text("gallery.made", { time: madeText(d) });
+  });
   root.querySelectorAll("time[datetime]").forEach((t) => {
     const d = new Date(t.getAttribute("datetime"));
     if (isNaN(d)) return;
@@ -562,7 +625,7 @@ function localTimes(root) {
       t.title = d.toLocaleString(LANG);
       return;
     }
-    t.textContent = d.toLocaleString(LANG, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    t.textContent = madeText(d);
   });
 }
 

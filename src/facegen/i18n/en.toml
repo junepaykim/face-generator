@@ -289,6 +289,7 @@ to_dashboard = "See the progress on the Dashboard"
 none_match = "No pictures match."
 where = "Where"
 role_any = "Everyone"
+made = "Made {time}"
 
 [gallery.where_option]
 any = "Every club"
@@ -300,6 +301,12 @@ other = "Other leagues"
 new = "Newest"
 name = "By name"
 ca = "By CA"
+
+[gallery.role]
+player = "Player"
+staff = "Staff"
+journalist = "Journalist"
+"press officer" = "Press officer"
 
 [pager]
 label = "Pages"
@@ -1065,6 +1072,9 @@ no_answer = "Not saved: Kitshot did not answer. Is it still running?"
 unsaved_confirm = "Some changes could not be saved (see the fields marked in red). Leave them unsaved?"
 ticked = "{count:,} ticked"
 done_at = "done ≈ {time}"
+queued = "Queued"
+quick_no_answer = "Not done: Kitshot did not answer. Is it still running?"
+quick_reload = "Not done: reload the page and try again."
 
 [problem]
 details = "Technical details"

@@ -76,7 +76,7 @@ def test_the_pictures_just_drawn_show_newest_first(drawn: TestClient) -> None:
     # The picture opens in the lightbox (Phase 17b); the name opens the player's page.
     card = re.search(
         r'<a class="thumb-pic" href="/pictures/(\d+)" data-lightbox="recent"'
-        r' data-caption="Kid 2 · v1" data-player="/players/(\d+)">',
+        r' data-caption="Kid 2 · v1" data-player="/players/(\d+)" data-made="[^"]+">',
         wall,
     )
     assert card is not None and f'<a class="thumb-name" href="/players/{card[2]}">Kid 2' in wall

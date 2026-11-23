@@ -1,0 +1,17 @@
+{# Picture cards (Phase 17f), on the Gallery and the dashboard's latest pictures. Import with
+   context: the form needs the page's career. #}
+
+{# New picture and New face over the picture, shown on hover or keyboard focus. The script posts
+   them and the card says what happened (.thumb-note); without it they are ordinary forms that
+   come back to `back`. #}
+{% macro quick(uid, name, back) -%}
+<form class="thumb-acts" method="post" action="/players/{{ uid }}/new-picture" data-quick role="group" aria-label="{{ name }}">{% include "_player_action_fields.html" %}<input type="hidden" name="next" value="{{ back }}"><button title="{{ tr('player.new_picture_title') }}">{{ t("players.new_picture") }}</button><button formaction="/players/{{ uid }}/new-face" title="{{ tr('player.new_face_title') }}">{{ t("player.new_face") }}</button></form><span class="thumb-note" role="status"></span>
+{%- endmacro %}
+
+{# Who the picture shows: Player, the staff job (or Staff), Journalist or Press officer. #}
+{% macro role(r) -%}
+{%- if r.media_role %}{% set words = tr("gallery.role." ~ r.media_role) if tr.has("gallery.role." ~ r.media_role) else r.media_role %}
+{%- elif r.is_staff %}{% set words = r.staff_job|capitalize if r.staff_job else tr("gallery.role.staff") %}
+{%- else %}{% set words = tr("gallery.role.player") %}{% endif -%}
+<span class="badge thumb-role" title="{{ words }}">{{ words }}</span>
+{%- endmacro %}

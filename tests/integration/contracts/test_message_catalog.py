@@ -161,6 +161,7 @@ def vocabulary_keys() -> list[str]:
     for preset in (hardware.HIGH, hardware.MEDIUM, hardware.LOW, hardware.NONE):
         keys += [f"hardware.preset.{preset.name}.title", f"hardware.preset.{preset.name}.note"]
     keys += [f"tag.media.{role}" for role in ("journalist", "press officer")]
+    keys += [f"gallery.role.{role}" for role in ("journalist", "press officer")]
     keys += [f"dash.sync.trigger.{k}" for k in ("poller", "sync now", "command")]
     keys += [f"dash.sync.chip.{k}" for k in SYNC_NUMBERS]
     keys += [f"dash.worker.generate_now_why.{k}" for k in ("fm", "held", "both")]

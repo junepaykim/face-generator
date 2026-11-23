@@ -289,6 +289,7 @@ to_dashboard = "대시보드에서 진행 상황 보기"
 none_match = "조건에 맞는 그림이 없습니다."
 where = "구단"
 role_any = "모든 사람"
+made = "{time} 생성"
 
 [gallery.where_option]
 any = "모든 구단"
@@ -300,6 +301,12 @@ other = "다른 리그"
 new = "최신순"
 name = "이름순"
 ca = "CA순"
+
+[gallery.role]
+player = "선수"
+staff = "스태프"
+journalist = "기자"
+"press officer" = "홍보 담당자"
 
 [pager]
 label = "쪽 이동"
@@ -1064,6 +1071,9 @@ no_answer = "저장하지 못했습니다. Kitshot이 응답하지 않습니다.
 unsaved_confirm = "저장하지 못한 변경이 있습니다(빨간 칸). 저장하지 않고 넘어갈까요?"
 ticked = "{count:,}명 선택"
 done_at = "{time}쯤 완료"
+queued = "대기 중"
+quick_no_answer = "하지 못했습니다. Kitshot이 응답하지 않습니다. 실행 중인지 확인하세요."
+quick_reload = "하지 못했습니다. 페이지를 새로 고친 뒤 다시 시도하세요."
 
 [problem]
 details = "자세히"

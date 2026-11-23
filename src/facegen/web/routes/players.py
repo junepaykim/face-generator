@@ -6,7 +6,7 @@ import sqlite3
 from functools import partial
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
 from facegen.core.age import audience, table_name
@@ -205,6 +205,16 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
         form = await form_of(request)
         back = f"/players/{uid}"
         t = await run_in_threadpool(deps.translator, request)
+        # The picture cards' quick actions (Phase 17f) post by script and show the answer in
+        # place: JSON instead of a redirect with a message.
+        wants_json = "application/json" in request.headers.get("accept", "")
+
+        def answer(to: str, msg: str | None = None, err: str | None = None) -> Response:
+            if not wants_json:
+                return _redirect(to, msg=msg, err=err)
+            if err is not None:
+                return JSONResponse({"ok": False, "error": err})
+            return JSONResponse({"ok": True, "message": msg})
 
         def run() -> str:
             conn = deps.connect()
@@ -334,25 +344,35 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             finally:
                 conn.close()
 
+        def failed(exc: Exception) -> Response:
+            """An unexpected error, for the script: logged, and worded like a page's problem."""
+            logger.error("%s failed for player %s", action, uid, exc_info=exc)
+            said = problem_line(f"{type(exc).__name__}: {exc}", t)
+            return JSONResponse({"ok": False, "error": said}, status_code=500)
+
         try:
             message = await run_in_threadpool(run)
         except CareerChanged as exc:
             target = _safe_next(str(form.get("next") or ""), "/players")
-            return _redirect(target, err=manual_error_text(exc, t))
+            return answer(target, err=manual_error_text(exc, t))
         except ManualError as exc:
             target = _safe_next(str(form.get("next") or ""), back)
-            return _redirect(target, err=manual_error_text(exc, t))
+            return answer(target, err=manual_error_text(exc, t))
         except HTTPException as exc:
             target = _safe_next(str(form.get("next") or ""), back)
-            return _redirect(target, err=str(exc.detail))
+            return answer(target, err=str(exc.detail))
         except (PublishError, OSError) as exc:
             if action not in {"pick", "restore", "remove"}:
+                if wants_json:
+                    return failed(exc)
                 raise
             logger.error("publishing failed for player %s", uid, exc_info=exc)
-            return _redirect(
-                back, err=t("msg.player.publish_failed", error=problem_line(str(exc), t))
-            )
+            return answer(back, err=t("msg.player.publish_failed", error=problem_line(str(exc), t)))
+        except Exception as exc:
+            if wants_json:
+                return failed(exc)
+            raise
         wake()
-        return _redirect(_safe_next(str(form.get("next") or ""), back), msg=message)
+        return answer(_safe_next(str(form.get("next") or ""), back), msg=message)
 
     return router
