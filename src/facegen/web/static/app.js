@@ -311,7 +311,9 @@ clocks();
   setInterval(() => { if (current && !current.isConnected) hide(); }, 500);
 })();
 
-// Players: tick all on the page, count the ticks, and enable the bulk buttons.
+// Players and Review: tick all on the page, count the ticks, and enable the bulk buttons.
+// Players' bar (Phase 17g, data-bulk) is tinted while a player is ticked and shows its actions
+// and Clear selection only then; its height is --bulk-h, where the column titles stick.
 (function ticks() {
   const form = document.getElementById("bulk");
   if (!form) return;
@@ -319,16 +321,81 @@ clocks();
   const all = form.querySelector("[data-tick-all]");
   const label = form.querySelector("[data-ticked]");
   const buttons = form.querySelectorAll("[data-needs-tick]");
+  const bar = form.querySelector("[data-bulk]");
+  const clear = form.querySelector("[data-clear-ticks]");
   const update = () => {
     const n = boxes().filter((b) => b.checked).length;
     if (label) label.textContent = text("js.ticked", { count: n });
     buttons.forEach((b) => { b.disabled = n === 0; });
     if (all) all.checked = n > 0 && n === boxes().length;
+    if (bar) bar.classList.toggle("ticking", n > 0);
+    form.querySelectorAll("[data-when-ticked]").forEach((el) => { el.hidden = n === 0; });
+    if (clear) clear.hidden = n === 0;
   };
   if (all) all.addEventListener("change", () => { boxes().forEach((b) => { b.checked = all.checked; }); update(); });
+  if (clear) {
+    clear.addEventListener("click", () => {
+      boxes().forEach((b) => { b.checked = false; });
+      update();
+      const first = boxes()[0] || all;
+      if (first) first.focus({ preventScroll: true });  // the button has just gone
+    });
+  }
   form.addEventListener("change", update);
+  // A page the browser kept (Back) comes back with its ticks.
+  window.addEventListener("pageshow", update);
   update();
+  if (bar && window.ResizeObserver) {
+    new ResizeObserver(() => {
+      form.style.setProperty("--bulk-h", bar.getBoundingClientRect().height + "px");
+    }).observe(bar);
+  }
 })();
+
+// A table whose box scrolls sideways only when it does not fit (Phase 17g, data-fit): while it
+// fits, the box lets the page scroll it, so its column titles can stay at the top (style.css).
+document.querySelectorAll(".table-wrap[data-fit]").forEach((wrap) => {
+  const table = wrap.querySelector("table");
+  if (!table || !window.ResizeObserver) return;
+  const check = () => {
+    wrap.classList.toggle("fits", table.getBoundingClientRect().width <= wrap.clientWidth + 0.5);
+  };
+  const watch = new ResizeObserver(check);
+  watch.observe(wrap);
+  watch.observe(table);
+});
+
+// The unique ID under a player's name (Phase 17g): a click copies it and says so for a moment.
+// The address is this PC's own, a secure context, so the clipboard is there; a copy through a
+// hidden text box is the fallback.
+document.addEventListener("click", async (e) => {
+  const button = e.target.closest ? e.target.closest("button[data-copy]") : null;
+  if (!button) return;
+  const value = button.dataset.copy;
+  let done = false;
+  try {
+    await navigator.clipboard.writeText(value);
+    done = true;
+  } catch (err) {
+    const box = document.createElement("textarea");
+    box.value = value;
+    box.setAttribute("readonly", "");
+    box.style.cssText = "position: fixed; top: 0; left: 0; opacity: 0;";
+    document.body.appendChild(box);
+    box.select();
+    try { done = document.execCommand("copy"); } catch (err2) { done = false; }
+    box.remove();
+    button.focus({ preventScroll: true });
+  }
+  if (!done) return;
+  clearTimeout(button._copied);
+  button.textContent = text("js.copied");
+  button.classList.add("copied");
+  button._copied = setTimeout(() => {
+    button.textContent = value;
+    button.classList.remove("copied");
+  }, 1200);
+});
 
 // Review: a player's candidates side by side, with the picture FM27 shows now (Phase 12i), opened
 // by its Compare button. The pictures load when the dialog opens; each opens in the lightbox.

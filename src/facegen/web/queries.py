@@ -56,6 +56,8 @@ PHOTO_FILTERS = {
     "none": "no photo or facepack",
 }
 SCOPES = {"mens": "men's football", "all": "all players"}
+FOLDED_FILTERS = ("league", "origin", "role", "scope")
+"""The Players filters kept under "More filters" besides the CA and PA ranges (Phase 17g)."""
 
 
 def _int(value: str | None, low: int = 0, high: int = 10**12) -> int | None:
@@ -139,6 +141,19 @@ class PlayerPageFilter(player_queries.PlayerFilter):
             for f in fields(self)
             if f.name not in ("page", "sort")
         )
+
+    @property
+    def folded(self) -> int:
+        """How many of the filters folded under "More filters" are set (Phase 17g): the
+        badge on its button; any at all opens it. A min–max range counts once."""
+        default = PlayerPageFilter()
+        lists = sum(getattr(self, name) != getattr(default, name) for name in FOLDED_FILTERS)
+        ranges = (self.ca_min, self.ca_max), (self.pa_min, self.pa_max)
+        return lists + sum(low is not None or high is not None for low, high in ranges)
+
+    def cleared(self) -> str:
+        """The query string without the filters, keeping the sort (the Clear button)."""
+        return PlayerPageFilter(sort=self.sort).query()
 
 
 def player_detail(

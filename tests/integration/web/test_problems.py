@@ -141,9 +141,9 @@ def test_a_refused_request_is_worded_in_the_pages_language(env: Env) -> None:
         client, f"/players/{KID}/new-picture", headers=KOREAN_WINDOWS
     )  # no picture yet
     page = client.get(r.headers["location"], headers=KOREAN_WINDOWS).text
-    assert "Kid: 다시 그릴 그림이 없습니다. ‘생성’을 쓰세요" in page
+    assert "Kid: 다시 그릴 그림이 없습니다. ‘그리기’를 쓰세요" in page
     r = post_player_action(client, f"/players/{KID}/new-picture")
-    assert "Kid: no picture to draw again; use Generate" in client.get(r.headers["location"]).text
+    assert "Kid: no picture to draw again; use Draw" in client.get(r.headers["location"]).text
     bad = client.post(
         "/settings/save",
         data={"cutoffs.everywhere.a_ca": "300"},

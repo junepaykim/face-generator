@@ -356,7 +356,7 @@ def test_find_tick_and_generate_a_pre_existing_player(env: Env) -> None:
         data={"uid": [str(STAR)], "action": "generate", "group": "b", "next": "/players?q=famous"},
     )
     assert r.headers["location"].startswith("/players?q=famous&msg=")
-    assert "Generate in the Standard group: 1 queued" in follow(env, r)
+    assert "Draw in the Standard group: 1 queued" in follow(env, r)
     env.worker.step()  # manual requests first
     image_id = env.one(
         "SELECT id FROM images WHERE unique_id = ? AND is_current = 1 AND published_path NOTNULL",
@@ -649,7 +649,7 @@ def test_new_picture_for_ticked_players(env: Env) -> None:
         data={"action": "new-picture", "uid": [str(MINE), str(STAR)], "next": "/players"},
     )
     text = follow(env, r)
-    assert "1 queued, 1 skipped (no picture to draw again; use Generate)" in text
+    assert "1 queued, 1 skipped (no picture to draw again; use Draw)" in text
     dashboard = env.client.get("/").text
     assert "reference picture" in dashboard  # MINE's re-draw uses the current picture
 
@@ -1200,4 +1200,7 @@ def test_option_labels_start_with_a_capital(env: Env) -> None:
         options = re.findall(r"<option[^>]*>([^<]+)</option>", unescape(env.client.get(url).text))
         assert options, url
         assert [o for o in options if o[0].islower()] == [], url
-    assert '<a href="/players">Clear</a>' in env.client.get("/players?group=a").text
+    assert (
+        '<a class="button filter-clear" href="/players">Clear</a>'
+        in env.client.get("/players?group=a").text
+    )

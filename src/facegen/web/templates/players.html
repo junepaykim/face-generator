@@ -5,7 +5,9 @@
 {% block head %}{{ page_head(t("nav.players")) }}{% endblock %}
 {% block content %}
 {% set photos_known = photo_status and photo_status.game_known %}
-<form class="filters" method="get" action="/players">
+{# The filters used most in one row; the rest folded under "More filters", which opens by
+   itself while one of them is set and counts them on its button (Phase 17g). #}
+<form class="filters players-filters" method="get" action="/players">
   <input type="search" name="q" value="{{ f.q }}" placeholder="{{ t('players.filter.name') }}" aria-label="{{ t('players.filter.name') }}">
   {% if f.club_id is not none %}
     <input type="hidden" name="club_id" value="{{ f.club_id }}">
@@ -13,18 +15,23 @@
   {% else %}
     <input type="search" name="club" value="{{ f.club }}" placeholder="{{ t('col.club') }}" aria-label="{{ t('col.club') }}">
   {% endif %}
-  <select name="league" aria-label="{{ t('players.filter.league') }}">{% for k in leagues %}<option value="{{ k }}" {{ "selected" if f.league == k }}>{{ t("players.league." ~ k) }}</option>{% endfor %}</select>
-  <span class="range">CA <input type="number" name="ca_min" min="0" max="200" value="{{ f.ca_min if f.ca_min is not none }}" placeholder="{{ t('players.filter.min') }}" aria-label="{{ t('players.filter.ca_min') }}">–<input type="number" name="ca_max" min="0" max="200" value="{{ f.ca_max if f.ca_max is not none }}" placeholder="{{ t('players.filter.max') }}" aria-label="{{ t('players.filter.ca_max') }}"></span>
-  <span class="range">PA <input type="number" name="pa_min" min="0" max="200" value="{{ f.pa_min if f.pa_min is not none }}" placeholder="{{ t('players.filter.min') }}" aria-label="{{ t('players.filter.pa_min') }}">–<input type="number" name="pa_max" min="0" max="200" value="{{ f.pa_max if f.pa_max is not none }}" placeholder="{{ t('players.filter.max') }}" aria-label="{{ t('players.filter.pa_max') }}"></span>
-  <select name="origin" aria-label="{{ t('players.filter.origin') }}">{% for k in origins %}<option value="{{ k }}" {{ "selected" if f.origin == k }}>{{ t("players.origin." ~ k) }}</option>{% endfor %}</select>
-  <select name="role" aria-label="{{ t('players.filter.role') }}">{% for k in roles %}<option value="{{ k }}" {{ "selected" if f.role == k }}>{{ t("players.role." ~ k) }}</option>{% endfor %}</select>
   <select name="group" aria-label="{{ t('col.group') }}">{% for k in group_filters %}<option value="{{ k }}" {{ "selected" if f.group == k }}>{{ tr("players.group." ~ k) }}</option>{% endfor %}</select>
   <select name="picture" aria-label="{{ t('col.picture') }}">{% for k in picture_filters %}<option value="{{ k }}" {{ "selected" if f.picture == k }}>{{ t("players.picture." ~ k) }}</option>{% endfor %}</select>
   <select name="photo" aria-label="{{ t('players.filter.photo') }}" title="{{ t('players.filter.photo_title') }}">{% for k in photo_filters %}<option value="{{ k }}" {{ "selected" if f.photo == k }}>{{ t("players.photo." ~ k) }}</option>{% endfor %}</select>
-  <select name="scope" aria-label="{{ t('players.filter.scope') }}">{% for k in scopes %}<option value="{{ k }}" {{ "selected" if f.scope == k }}>{{ t("players.scope." ~ k) }}</option>{% endfor %}</select>
   <select name="sort" aria-label="{{ t('players.filter.sort') }}">{% for k in sorts %}<option value="{{ k }}" {{ "selected" if f.sort == k }}>{{ t("players.sort." ~ k) }}</option>{% endfor %}</select>
-  <button class="primary">{{ t("players.filter.apply") }}</button>
-  {% if f.active %}<a href="/players">{{ t("players.filter.clear") }}</a>{% endif %}
+  <details class="filters-more"{{ " open" if f.folded }}>
+    <summary class="button">{{ t("players.filter.more") }}{% if f.folded %} <span class="badge badge-count">{{ f.folded }}</span>{% endif %}</summary>
+    <div class="filters-fold">
+      <select name="league" aria-label="{{ t('players.filter.league') }}">{% for k in leagues %}<option value="{{ k }}" {{ "selected" if f.league == k }}>{{ t("players.league." ~ k) }}</option>{% endfor %}</select>
+      <span class="range">CA <input type="number" name="ca_min" min="0" max="200" value="{{ f.ca_min if f.ca_min is not none }}" placeholder="{{ t('players.filter.min') }}" aria-label="{{ t('players.filter.ca_min') }}">–<input type="number" name="ca_max" min="0" max="200" value="{{ f.ca_max if f.ca_max is not none }}" placeholder="{{ t('players.filter.max') }}" aria-label="{{ t('players.filter.ca_max') }}"></span>
+      <span class="range">PA <input type="number" name="pa_min" min="0" max="200" value="{{ f.pa_min if f.pa_min is not none }}" placeholder="{{ t('players.filter.min') }}" aria-label="{{ t('players.filter.pa_min') }}">–<input type="number" name="pa_max" min="0" max="200" value="{{ f.pa_max if f.pa_max is not none }}" placeholder="{{ t('players.filter.max') }}" aria-label="{{ t('players.filter.pa_max') }}"></span>
+      <select name="origin" aria-label="{{ t('players.filter.origin') }}">{% for k in origins %}<option value="{{ k }}" {{ "selected" if f.origin == k }}>{{ t("players.origin." ~ k) }}</option>{% endfor %}</select>
+      <select name="role" aria-label="{{ t('players.filter.role') }}">{% for k in roles %}<option value="{{ k }}" {{ "selected" if f.role == k }}>{{ t("players.role." ~ k) }}</option>{% endfor %}</select>
+      <select name="scope" aria-label="{{ t('players.filter.scope') }}">{% for k in scopes %}<option value="{{ k }}" {{ "selected" if f.scope == k }}>{{ t("players.scope." ~ k) }}</option>{% endfor %}</select>
+    </div>
+  </details>
+  <span class="filters-go"><button class="primary">{{ t("players.filter.apply") }}</button>
+  {%- if f.active %}<a class="button filter-clear" href="/players{{ '?' ~ f.cleared() if f.cleared() }}">{{ t("players.filter.clear") }}</a>{% endif %}</span>
 </form>
 {% if f.photo != "any" and not photos_known %}
 <p class="muted small">{{ t("players.photos_unknown_sync" if photo_status else "players.photos_unknown_next") }}</p>
@@ -33,47 +40,58 @@
 {% if pages > 1 %}{{ pager_form(f, "/players", "jump-top") }}{% endif %}
 <form method="post" action="/players/action" id="bulk">{% include "_player_action_fields.html" %}
   <input type="hidden" name="next" value="{{ here }}">
-  <div class="bulk">
+  {# The bar stays at the top with the column titles under it (Phase 17g). With a player
+     ticked it is tinted and shows its two groups of actions; with none, only the count. #}
+  <div class="bulk sticky bulk-players" data-bulk>
     <span class="ticked" data-ticked>{{ t("js.ticked", count=0) }}</span>
-    <label>{{ t("players.bulk.as_group") }}
-      <select name="group">{% for g in ("a", "b", "c") %}<option value="{{ g }}" {{ "selected" if g == "b" }}>{{ tr("group." ~ g) }}</option>{% endfor %}</select>
-    </label>
-    <button class="primary" name="action" value="generate" data-needs-tick title="{{ t('players.bulk.generate_title') }}">{{ t("players.generate") }}</button>
-    <button name="action" value="new-picture" data-needs-tick title="{{ t('players.bulk.new_picture_title') }}">{{ t("players.new_picture") }}</button>
-    <span class="sep"></span>
-    <select name="pin" aria-label="{{ t('players.pin') }}">
-      <option value="never">{{ t("players.bulk.pin_never") }}</option><option value="">{{ t("players.bulk.pin_clear") }}</option>
-    </select>
-    <button name="action" value="pin" data-needs-tick>{{ t("players.pin") }}</button>
+    <button type="button" class="link" data-clear-ticks hidden>{{ t("players.bulk.clear_selection") }}</button>
+    <div class="bulk-acts" data-when-ticked hidden>
+      <span class="bulk-group">
+        <label>{{ t("players.bulk.draw_in") }}
+          <select name="group">{% for g in ("a", "b", "c") %}<option value="{{ g }}" {{ "selected" if g == "b" }}>{{ tr("group." ~ g) }}</option>{% endfor %}</select>
+        </label>
+        <button class="primary" name="action" value="generate" data-needs-tick title="{{ t('players.bulk.draw_title') }}">{{ t("players.bulk.draw") }}</button>
+        <button name="action" value="new-picture" data-needs-tick title="{{ t('players.bulk.redraw_title') }}">{{ t("players.bulk.redraw") }}</button>
+      </span>
+      <span class="sep" aria-hidden="true"></span>
+      <span class="bulk-group">
+        <label>{{ t("players.bulk.pin_as") }}
+          <select name="pin"><option value="never">{{ t("players.bulk.pin_never") }}</option><option value="">{{ t("players.bulk.pin_clear") }}</option></select>
+        </label>
+        <button name="action" value="pin" data-needs-tick>{{ t("players.bulk.pin") }}</button>
+      </span>
+    </div>
+    <noscript><style>.bulk-acts[data-when-ticked][hidden] { display: flex !important; }</style></noscript>
     <span class="muted grow">{{ t("players.total", count=total) }}</span>
     {% if pages > 1 %}{{ pager(f, pages, "/players", "jump-top", form=False) }}{% endif %}
   </div>
 
-  <div class="table-wrap">
+  <div class="table-wrap" data-fit>
   <table class="list players">
     <thead><tr>
-      <th><input type="checkbox" data-tick-all aria-label="{{ t('players.tick_all') }}"></th>
-      <th></th><th>{{ t("col.name") }}</th><th>{{ t("col.age") }}</th><th>{{ t("col.club") }}</th><th class="num">CA</th><th class="num">PA</th>
-      <th>{{ t("col.origin") }}</th><th>{{ t("col.group") }}</th><th>{{ t("col.why") }}</th><th>{{ t("col.picture") }}</th>
+      <th class="col-tick"><input type="checkbox" data-tick-all aria-label="{{ t('players.tick_all') }}"></th>
+      <th class="col-face"></th><th class="col-name">{{ t("col.name") }}</th><th class="num">{{ t("col.age") }}</th><th class="col-club">{{ t("col.club") }}</th><th class="num">CA</th><th class="num">PA</th>
+      <th class="col-origin">{{ t("col.origin") }}</th><th class="col-group">{{ t("col.group") }}</th><th class="col-why">{{ t("col.why") }}</th><th>{{ t("col.picture") }}</th>
     </tr></thead>
     <tbody>
     {% for r in rows %}
       <tr>
         <td><input type="checkbox" name="uid" value="{{ r.unique_id }}" aria-label="{{ t('players.tick', name=r.name) }}"></td>
-        <td>{% if r.image_id %}<a class="face-link" href="/pictures/{{ r.image_id }}" data-lightbox="players" data-caption="{{ r.name }}" data-player="/players/{{ r.unique_id }}"><img class="face" src="/pictures/{{ r.image_id }}?size=96" loading="lazy" alt="{{ tr('player.current_alt', name=r.name) }}"></a>{% else %}<span class="face none"></span>{% endif %}</td>
-        <td><a href="/players/{{ r.unique_id }}">{{ r.name }}</a>{% if r.is_goalkeeper %} <span class="tag">GK</span>{% endif %}{% if r.is_staff %} <span class="tag">{{ r.staff_job or t("tag.staff") }}</span>{% endif %}{% if r.media_role %} <span class="tag">{{ t("tag.media." ~ r.media_role) if tr.has("tag.media." ~ r.media_role) else r.media_role }}</span>{% endif %}{% if r.youth_team %} <span class="tag">{{ t("tag.youth_team") }}</span>{% endif %}</td>
-        <td>{{ r.age if r.age is not none else "?" }}</td>
-        <td>{% if r.club_id is not none %}<a href="/players?{{ f.query(club_id=r.club_id, club='', page=1) }}">{{ r.club or r.club_id }}</a>{% elif r.media_role %}<span class="muted">{{ t("players.media_local" if r.local_media else "players.media_elsewhere") }}</span>{% else %}<span class="muted">{{ t("common.free_agent") }}</span>{% endif %}
+        <td>{% if r.image_id %}<a class="face-link" href="/pictures/{{ r.image_id }}" data-lightbox="players" data-caption="{{ r.name }}" data-player="/players/{{ r.unique_id }}"><img class="face" src="/pictures/{{ r.image_id }}?size=96" loading="lazy" alt="{{ tr('player.current_alt', name=r.name) }}"></a>{% else %}<span class="face none" role="img" title="{{ tr('players.no_picture_yet') }}" aria-label="{{ tr('players.no_picture_yet') }}"><svg viewBox="0 0 40 40" aria-hidden="true" focusable="false"><circle cx="20" cy="15.5" r="7"/><path d="M5 40c1-9 7.2-14.5 15-14.5S34 31 35 40Z"/></svg></span>{% endif %}</td>
+        <td class="col-name"><a href="/players/{{ r.unique_id }}">{{ r.name }}</a>{% if r.is_goalkeeper %} <span class="tag">GK</span>{% endif %}{% if r.is_staff %} <span class="tag">{{ r.staff_job or t("tag.staff") }}</span>{% endif %}{% if r.media_role %} <span class="tag">{{ t("tag.media." ~ r.media_role) if tr.has("tag.media." ~ r.media_role) else r.media_role }}</span>{% endif %}{% if r.youth_team %} <span class="tag">{{ t("tag.youth_team") }}</span>{% endif %}
+          <button type="button" class="uid-copy" data-copy="{{ r.unique_id }}" title="{{ tr('players.copy_id') }}">{{ r.unique_id }}</button></td>
+        <td class="num">{{ r.age if r.age is not none else "?" }}</td>
+        <td class="col-club">{% if r.club_id is not none %}<a href="/players?{{ f.query(club_id=r.club_id, club='', page=1) }}">{{ r.club or r.club_id }}</a>{% elif r.media_role %}<span class="muted">{{ t("players.media_local" if r.local_media else "players.media_elsewhere") }}</span>{% else %}<span class="muted">{{ t("common.free_agent") }}</span>{% endif %}
           {% if r.at_my_club %}<span class="tag mine">{{ t("tag.my_club") }}</span>{% elif r.in_my_league %}<span class="tag">{{ t("tag.my_league") }}</span>{% endif %}{% if r.in_continental %}<span class="tag">{{ t("tag.continental") }}</span>{% endif %}
           {% if not r.in_scope %}<span class="tag">{{ t("tag.not_mens") }}</span>{% endif %}</td>
         <td class="num">{{ r.ca if r.ca or not (r.is_staff or r.media_role) else "?" }}</td>
         <td class="num">{{ r.pa if r.pa is not none else "?" }}</td>
-        <td>{% if r.is_staff %}{{ t("players.origin_staff") }}{% elif r.media_role %}{{ t("players.origin_media") }}{% else %}{{ t("players.origin_newgen" if r.is_newgen else "players.origin_existing") }}{% endif %}{% if r.academy %} <span class="tag">{{ t("tag.academy") }}</span>{% endif %}
+        <td class="col-origin"><span class="cell-main">{% if r.is_staff %}{{ t("players.origin_staff") }}{% elif r.media_role %}{{ t("players.origin_media") }}{% else %}{{ t("players.origin_newgen" if r.is_newgen else "players.origin_existing") }}{% endif %}</span>{% if r.academy %} <span class="tag">{{ t("tag.academy") }}</span>{% endif %}
           {% if r.photo_game %}<span class="tag" title="{{ t('tag.fm_photo_title') }}">{{ t("tag.fm_photo") }}</span>{% endif %}{% if r.photo_facepack %}<span class="tag" title="{{ t('tag.facepack_title') }}">{{ t("tag.facepack") }}</span>{% endif %}
           {% if photos_known and not r.is_newgen and not r.is_staff and not r.media_role and not r.photo_game and not r.photo_facepack %}<span class="tag" title="{{ t('tag.no_photo_title') }}">{{ t("tag.no_photo") }}</span>{% endif %}</td>
-        <td>{% if r.group_name %}{{ grp(r.group_name) }}{% endif %}{% if r.pin %} <span class="tag">{{ t("tag.pin", pin=tr("group." ~ r.pin) if r.pin in ("a", "b", "c") else tr("player.pin_never")) }}</span>{% endif %}{% if r.tracked %} <span class="tag">{{ t("tag.tracked") }}</span>{% endif %}</td>
+        <td class="col-group">{% if r.group_name %}{{ grp(r.group_name) }}{% endif %}{% if r.pin %} <span class="tag">{{ t("tag.pin", pin=tr("group." ~ r.pin) if r.pin in ("a", "b", "c") else tr("player.pin_never")) }}</span>{% endif %}{% if r.tracked %} <span class="tag">{{ t("tag.tracked") }}</span>{% endif %}</td>
         <td class="why">{{ r.reasons|join("; ") }}</td>
-        <td>{% if r.job_status == "running" %}<span class="st run">{{ t("status.drawing") }}</span>
+        <td class="col-state">{% if r.job_status == "running" %}<span class="st run">{{ t("status.drawing") }}</span>
           {% elif r.job_status == "queued" %}<span class="st q">{{ t("status.queued", kind=t("kind." ~ r.job_kind)) }}</span>
           {% elif r.latest_job == "failed" %}<a class="st bad" href="/review">{{ t("status.in_review") }}</a>
           {% elif r.image_id %}<span class="st ok">{{ t("status.published" if r.published_path else "status.drawn") }}</span>{% endif %}</td>

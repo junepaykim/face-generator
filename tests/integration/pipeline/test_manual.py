@@ -231,7 +231,7 @@ def test_new_picture_for_many_skips_who_cannot_have_one(env: Env) -> None:
     r = manual.new_pictures(env.conn, env.cid, [MINE, OTHER, A_NEWGEN, WOMAN], env.settings)
     assert r.queued == [MINE, A_NEWGEN]
     assert dict(r.skipped) == {
-        OTHER: "no picture to draw again; use Generate",
+        OTHER: "no picture to draw again; use Draw",
         WOMAN: "not in men's football",
     }
     # Ticked together, they run in the order given, before every automatic job.

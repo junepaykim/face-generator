@@ -35,6 +35,7 @@ JS_TEXTS = (
     "js.queued",
     "js.quick_no_answer",
     "js.quick_reload",
+    "js.copied",
     "gallery.made",
     "dur.seconds",
     "dur.minutes_seconds",

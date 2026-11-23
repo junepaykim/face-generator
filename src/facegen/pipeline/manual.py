@@ -102,7 +102,7 @@ REFUSALS: dict[str, str] = {
     "not_mens": "not in men's football",
     "drawing": "being drawn right now",
     "never": "pinned to never; unpin first",
-    "no_picture": "no picture to draw again; use Generate",
+    "no_picture": "no picture to draw again; use Draw",
     "no_group": "in no group; use Generate and choose one",
     "no_failed": "no failed picture to retry",
 }
