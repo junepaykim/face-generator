@@ -1,19 +1,19 @@
 @echo off
-rem facegen's one-click start on Windows (Phase 11). Double-click it.
+rem Kitshot's one-click start on Windows (Phase 11). Double-click it.
 rem
-rem   1. If facegen is running already, show its window and stop here.
+rem   1. If Kitshot is running already, show its window and stop here.
 rem   2. Find uv (on PATH or in .bin\); else install it into .bin\ with Astral's installer.
 rem   3. uv sync: Python 3.12 and the libraries (about 3 GB the first time, PyTorch most of it);
 rem      packages a setup cut short left half-installed are installed again (venv_check.py).
 rem   4. facegen launch: the prebuilt Rust extension (a failure is only a warning), then the
 rem      model files: their size is shown and they are downloaded only after one "y".
-rem   5. Start facegen's window with no console, and close this one: facegen-app.exe (the
-rem      venv's pythonw.exe under facegen's name and icon, made by step 4), else pythonw.exe.
+rem   5. Start Kitshot's window with no console, and close this one: facegen-app.exe (the
+rem      venv's pythonw.exe under Kitshot's name and icon, made by step 4), else pythonw.exe.
 rem
-rem   Start.bat --shortcut   also puts a facegen shortcut on the desktop and in the Start Menu.
-rem   Start.bat --update     first waits for facegen to quit and puts the newest release over
+rem   Start.bat --shortcut   also puts a Kitshot shortcut on the desktop and in the Start Menu.
+rem   Start.bat --update     first waits for Kitshot to quit and puts the newest release over
 rem                          this folder (src/facegen/setup/update.py; data\ is kept), then
-rem                          goes on as above with the new files. facegen's Update now runs it.
+rem                          goes on as above with the new files. Kitshot's Update now runs it.
 rem
 rem The decisions live in Python (src/facegen/setup/launch.py and update.py), where they are
 rem tested; this file only runs the steps. A log is kept in data\logs\start.log. Errors stay
@@ -30,11 +30,11 @@ set "SHORTCUT="
 set "UPDATE="
 if /i "%~1"=="--shortcut" set "SHORTCUT=1"
 if /i "%~1"=="--update" set "UPDATE=1"
-title facegen
+title Kitshot
 if not exist "%ROOT%data\logs" mkdir "%ROOT%data\logs"
 call :log "Start.bat %*"
 
-rem --- 1. facegen running already? ---------------------------------------------------------
+rem --- 1. Kitshot running already? ---------------------------------------------------------
 rem Recover interrupted file replacement before importing the installed Python package.
 if exist "%ROOT%data\update-recovery\pending.json" (
   "%PY%" -B "%ROOT%data\update-recovery\repair.py" "%ROOT%."
@@ -48,7 +48,7 @@ if not exist "%ROOT%data\install.lock" type nul >>"%ROOT%data\install.lock"
 set "ENTERED="
 call :launch_locked 9<"%ROOT%data\install.lock"
 if not defined ENTERED (
-  echo Cannot start facegen while its installation is in use. Try again after the update.
+  echo Cannot start Kitshot while its installation is in use. Try again after the update.
   exit /b 1
 )
 exit /b %ERRORLEVEL%
@@ -58,7 +58,7 @@ set "ENTERED=1"
 setlocal
 :launch_ready
 if exist "%ROOT%data\update-recovery\pending.json" (
-  echo An update was interrupted. Start facegen again to complete the repair.
+  echo An update was interrupted. Start Kitshot again to complete the repair.
   goto pause_and_fail
 )
 if not exist "%PY%" goto find_uv
@@ -72,8 +72,8 @@ rem --- 1b. Start.bat --update -------------------------------------------------
 :update
 rem Not set up yet: set up the files here first; the update can come later.
 if not exist "%PY%" goto ordinary_start
-echo Updating facegen. This window waits for facegen to quit, downloads the newest release
-echo and replaces facegen's files; your pictures, settings and data folder are kept.
+echo Updating Kitshot. This window waits for Kitshot to quit, downloads the newest release
+echo and replaces Kitshot's files; your pictures, settings and data folder are kept.
 call :log "update"
 rem cmd reads a batch file line by line as it runs it, and the update replaces this file. So
 rem the rest runs from this block, which cmd has read in full: the update, then the new
@@ -93,7 +93,7 @@ for /f "delims=" %%i in ('where uv 2^>nul') do if not defined UV set "UV=%%i"
 if not defined UV if exist "%ROOT%.bin\uv.exe" set "UV=%ROOT%.bin\uv.exe"
 if not defined UV if exist "%ROOT%.bin\bin\uv.exe" set "UV=%ROOT%.bin\bin\uv.exe"
 if defined UV goto have_uv
-echo Installing uv, the tool that sets up Python for facegen, into %ROOT%.bin ...
+echo Installing uv, the tool that sets up Python for Kitshot, into %ROOT%.bin ...
 call :log "installing uv into .bin"
 set "UV_INSTALL_DIR=%ROOT%.bin"
 set "UV_NO_MODIFY_PATH=1"
@@ -105,7 +105,7 @@ if not defined UV goto fail_uv
 call :log "uv: %UV%"
 
 rem --- 3. Python and the libraries ----------------------------------------------------------
-echo Getting Python and facegen's libraries ready. The first time this downloads about 3 GB
+echo Getting Python and Kitshot's libraries ready. The first time this downloads about 3 GB
 echo (PyTorch with CUDA is most of it) and takes a while; later starts take seconds.
 "%UV%" sync --locked --inexact --no-group native --no-group dev
 set "CODE=%ERRORLEVEL%"
@@ -140,34 +140,34 @@ call :log "facegen shortcuts: exit %ERRORLEVEL%"
 
 rem --- 5. the window ---------------------------------------------------------------------------
 :start_app
-call :log "starting facegen app"
+call :log "starting Kitshot app"
 if not exist "%APP%" set "APP=%PYW%"
 start "" "%APP%" -m facegen.desktop app
 goto done
 
 :fail_running
-call :log "facegen is running but did not answer"
+call :log "Kitshot is running but did not answer"
 echo.
-echo facegen is running already but did not answer. If it is still starting, wait a moment
+echo Kitshot is running already but did not answer. If it is still starting, wait a moment
 echo and start it again; if it seems stuck, end it in Task Manager.
 goto pause_and_fail
 
 :fail_uv
 call :log "uv could not be installed"
 echo.
-echo uv could not be installed. Check the internet connection and start facegen again, or
+echo uv could not be installed. Check the internet connection and start Kitshot again, or
 echo install uv yourself: https://docs.astral.sh/uv/getting-started/installation/
 goto pause_and_fail
 
 :fail_sync
 echo.
-echo Python and facegen's libraries could not be set up (the messages above say why).
-echo Check the internet connection and the free disk space, then start facegen again.
+echo Python and Kitshot's libraries could not be set up (the messages above say why).
+echo Check the internet connection and the free disk space, then start Kitshot again.
 goto pause_and_fail
 
 :fail_launch
 echo.
-echo facegen could not get ready (the messages above say why).
+echo Kitshot could not get ready (the messages above say why).
 goto pause_and_fail
 
 :pause_and_fail

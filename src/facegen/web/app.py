@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import mimetypes
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
@@ -28,12 +30,14 @@ __all__ = ["HERE", "AppContext", "SetupState", "close_streams", "create_app", "s
 def create_app(ctx: AppContext) -> FastAPI:
     # FastAPI's own telemetry is off; nothing leaves this PC (AGENTS.md hard rule 6).
     app = FastAPI(
-        title="facegen",
+        title="Kitshot",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
         telemetry={"tracing": False, "metrics": False, "logs": False, "auto_configure": False},
     )
+    # Windows's registry can map .svg to another type, which "nosniff" then refuses.
+    mimetypes.add_type("image/svg+xml", ".svg")
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     templates = create_templates()
     deps = AppDependencies(ctx)

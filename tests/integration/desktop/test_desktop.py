@@ -233,8 +233,8 @@ def test_the_app_from_start_to_quit(config_file: Path, tmp_path: Path) -> None:
     (tray,) = record.trays
     url = f"http://127.0.0.1:{port}/"
     assert window.url == url and not window.hidden
-    (icon,) = record.icons  # facegen's .ico for the taskbar, on Windows
-    assert (icon or "").endswith("facegen.ico") if os.name == "nt" else icon is None
+    (icon,) = record.icons  # Kitshot's .ico for the taskbar, on Windows
+    assert (icon or "").endswith(".ico") if os.name == "nt" else icon is None
     wait_for(lambda: tray.mode == "run")  # the tray has the main thread; the window its process
     assert app.started.url == url and record.browser == []
     wait_for(lambda: len(tray.views) > 2)  # the heartbeat runs
@@ -443,7 +443,7 @@ def test_a_crash_is_logged_and_shown_with_the_logs_path(
         path = desktop.report_crash(exc, lambda title, text: shown.append((title, text)))
     assert path == fallback and "ValueError: config/local.toml" in fallback.read_text()
     ((title, text),) = shown
-    assert title == "facegen could not start"
+    assert title == "Kitshot could not start"
     assert text.startswith("ValueError: config/local.toml: not valid TOML")
     assert str(fallback) in text
 
@@ -460,8 +460,8 @@ def test_a_crash_goes_to_the_log_file_once_there_is_one(tmp_path: Path) -> None:
 
 
 def test_known_failures_are_said_in_plain_words() -> None:
-    assert desktop.explain(CannotStart("Close it and start facegen again.")) == (
-        "Close it and start facegen again."
+    assert desktop.explain(CannotStart("Close it and start Kitshot again.")) == (
+        "Close it and start Kitshot again."
     )
     missing = ModuleNotFoundError("No module named 'pystray'", name="pystray")
     text = desktop.explain(missing)
@@ -470,7 +470,7 @@ def test_known_failures_are_said_in_plain_words() -> None:
     else:
         assert "need Windows" in text and "facegen serve" in text
     other = ModuleNotFoundError("No module named 'fastapi'", name="fastapi")
-    assert "A part of facegen is missing (fastapi)" in desktop.explain(other)
+    assert "A part of Kitshot is missing (fastapi)" in desktop.explain(other)
     assert desktop.explain(OSError("disk full")) == "OSError: disk full"
 
 
@@ -479,7 +479,7 @@ def test_wrong_arguments_without_a_console_are_shown(monkeypatch: pytest.MonkeyP
     record = Record()
     monkeypatch.setattr(sys, "stderr", io.StringIO())  # argparse's usage goes nowhere
     assert desktop.main(["window"], shell=record.shell()) == 2
-    assert record.errors == [("facegen", "Not a facegen command: window")]
+    assert record.errors == [("Kitshot", "Not a Kitshot command: window")]
 
 
 def test_pythonw_counts_as_no_console_whatever_handles_it_has(
@@ -560,7 +560,7 @@ def test_facegen_tray_on_a_pc_without_pystray_says_why(
     )
     assert code == 1
     err = capsys.readouterr().err
-    assert "facegen could not start" in err and "pystray" in err
+    assert "Kitshot could not start" in err and "pystray" in err
     assert not port_answers("127.0.0.1", port)
     log = (config_file.parent / "data" / "logs" / "facegen.log").read_text(encoding="utf-8")
     assert "ModuleNotFoundError" in log

@@ -15,7 +15,7 @@ import pytest
 
 import facegen
 from facegen.cli import main
-from facegen.desktop import app_exe, shortcuts
+from facegen.desktop import app_exe, app_icon, shortcuts
 from facegen.platform import procs
 
 FOLDERS = {
@@ -25,7 +25,7 @@ FOLDERS = {
 }
 PYW = r"C:\facegen\.venv\Scripts\pythonw.exe"
 ROOT = r"C:\facegen"
-ICON = r"C:\facegen\data\app\facegen.ico"
+ICON = r"C:\facegen\data\app\kitshot-0123456789.ico"
 
 
 def test_the_app_command_line() -> None:
@@ -40,11 +40,12 @@ def test_the_app_command_line() -> None:
 def test_desktop_and_start_menu_shortcuts() -> None:
     links = shortcuts.app_shortcuts(FOLDERS, program=PYW, root=ROOT, icon=ICON)
     assert [link.path for link in links] == [
-        r"C:\Users\me\OneDrive\바탕 화면\facegen.lnk",
-        r"C:\Users\me\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\facegen.lnk",
+        r"C:\Users\me\OneDrive\바탕 화면\Kitshot.lnk",
+        r"C:\Users\me\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Kitshot.lnk",
     ]
     assert all(link.target == PYW and link.working_dir == ROOT for link in links)
     assert all(link.arguments == "-m facegen.desktop app" and not link.minimized for link in links)
+    assert all(link.description.startswith("Kitshot: ") for link in links)
     only = shortcuts.app_shortcuts(
         {"programs": FOLDERS["programs"]}, program=PYW, root=ROOT, icon=ICON
     )
@@ -53,7 +54,7 @@ def test_desktop_and_start_menu_shortcuts() -> None:
 
 def test_the_startup_shortcut_starts_in_the_tray() -> None:
     link = shortcuts.startup_shortcut(FOLDERS["startup"], program=PYW, root=ROOT, icon=ICON)
-    assert link.path.endswith(r"Startup\facegen.lnk")
+    assert link.path.endswith(r"Startup\Kitshot.lnk")
     assert link.arguments == "-m facegen.desktop app --minimized" and link.minimized
 
 
@@ -130,12 +131,40 @@ def test_start_with_windows_adds_and_removes_only_our_shortcut(tmp_path: Path) -
 
     app = shortcuts.AppPaths(ROOT, PYW, ICON)
     switch = shortcuts.StartupShortcut(str(tmp_path), app, writer=writer)
-    assert switch.path == tmp_path / "facegen.lnk" and not switch.is_on()
+    assert switch.path == tmp_path / "Kitshot.lnk" and not switch.is_on()
     switch.set(True)
     assert switch.is_on() and written[0].minimized
     switch.set(False)
     assert not switch.is_on() and other.is_file()
     switch.set(False)  # off already: nothing to do
+
+
+def test_start_with_windows_knows_the_name_before_kitshot(tmp_path: Path) -> None:
+    """An earlier version's facegen.lnk counts as on; turning it on again writes Kitshot.lnk
+    in its place, and turning it off removes either."""
+    old = tmp_path / "facegen.lnk"
+    old.write_text("lnk", encoding="utf-8")
+
+    def writer(links: Sequence[shortcuts.Shortcut]) -> None:
+        for link in links:
+            Path(link.path).write_text("lnk", encoding="utf-8")
+
+    switch = shortcuts.StartupShortcut(
+        str(tmp_path), shortcuts.AppPaths(ROOT, PYW, ICON), writer=writer
+    )
+    assert switch.legacy == [old] and switch.is_on()
+    switch.set(True)
+    assert switch.path.is_file() and not old.exists()
+    old.write_text("lnk", encoding="utf-8")
+    switch.set(False)
+    assert not switch.path.exists() and not old.exists() and not switch.is_on()
+
+
+def test_the_earlier_name_is_beside_the_shortcut() -> None:
+    link = shortcuts.startup_shortcut(FOLDERS["startup"], program=PYW, root=ROOT, icon=ICON)
+    assert shortcuts.legacy_paths(link.path) == [FOLDERS["startup"] + r"\facegen.lnk"]
+    assert shortcuts.legacy_paths(r"C:\x\FACEGEN.lnk") == []  # it is the earlier name itself
+    assert shortcuts.legacy_paths("/tmp/links/Kitshot.lnk") == ["/tmp/links/facegen.lnk"]
 
 
 def test_the_shortcuts_command_is_for_windows(config_file: Path) -> None:
@@ -156,7 +185,8 @@ def test_this_app_writes_the_icon_once(tmp_path: Path, monkeypatch: pytest.Monke
     monkeypatch.setattr(app_exe, "ensure", no_copy)  # not this venv's Scripts folder
     app = shortcuts.this_app(tmp_path)
     icon = Path(app.icon)
-    assert icon == tmp_path / "app" / "facegen.ico" and icon.is_file()
+    assert icon == tmp_path / "app" / app_icon.ico_name() and icon.is_file()
+    assert icon.name.startswith("kitshot-")
     assert app.program.endswith("pythonw.exe") and app.config is None
     assert asked == [(Path(sys.executable).parent, icon, facegen.__version__)]
     stamp = icon.stat().st_mtime_ns
@@ -175,3 +205,34 @@ def test_the_shortcuts_run_the_copy_once_it_is_made(
         {"programs": FOLDERS["programs"]}, program=app.program, root=ROOT, icon=app.icon
     )
     assert link.target == str(copy) and link.arguments == "-m facegen.desktop app"
+
+
+def test_a_changed_icon_reaches_the_shortcuts_and_the_app_copy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A new icon is a new .ico file: the shortcuts and the window are given its path, and
+    facegen-app.exe is made again from it (its stamp holds the .ico's bytes)."""
+    from PIL import Image
+
+    asked: list[Path] = []
+    monkeypatch.setattr(app_exe, "ensure", lambda scripts, icon, version: asked.append(icon))
+    before = Path(shortcuts.this_app(tmp_path).icon)
+    original = app_icon.bundled_png
+
+    def recoloured(size: int) -> bytes:
+        with Image.open(io.BytesIO(original(size))) as img:
+            out = io.BytesIO()
+            img.convert("RGBA").rotate(90).save(out, format="PNG")
+            return out.getvalue()
+
+    monkeypatch.setattr(app_icon, "bundled_png", recoloured)
+    app_icon._decoded.cache_clear()
+    app_icon.icon_key.cache_clear()
+    try:
+        after = Path(shortcuts.this_app(tmp_path).icon)
+    finally:
+        app_icon._decoded.cache_clear()
+        app_icon.icon_key.cache_clear()
+    assert after != before and after.is_file() and asked == [before, after]
+    key = app_exe.stamp_key(b"launcher", before.read_bytes(), "0.1.7")
+    assert key != app_exe.stamp_key(b"launcher", after.read_bytes(), "0.1.7")

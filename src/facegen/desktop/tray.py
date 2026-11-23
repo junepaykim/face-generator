@@ -22,7 +22,7 @@ from facegen.desktop.app_controller import (
     View,
     clip,
 )
-from facegen.desktop.app_icon import draw_icon
+from facegen.desktop.app_icon import icon_image
 
 logger = logging.getLogger("facegen")
 
@@ -45,7 +45,7 @@ class TrayIcon:
         """Notifications that came before the icon was shown; given once it is."""
         self.icon = pystray.Icon(
             "facegen",
-            draw_icon(self._view.dot, ICON_PIXELS),
+            icon_image(self._view.dot, ICON_PIXELS),
             self._view.tooltip,
             menu=pystray.Menu(self._items),
         )
@@ -97,7 +97,7 @@ class TrayIcon:
             return
         try:
             if view.dot != old.dot:
-                self.icon.icon = draw_icon(view.dot, ICON_PIXELS)
+                self.icon.icon = icon_image(view.dot, ICON_PIXELS)
             if view.tooltip != old.tooltip:
                 self.icon.title = view.tooltip
             if view.menu != old.menu:
@@ -126,7 +126,7 @@ class TrayIcon:
         with self._lock:
             self._ready.set()
             view, waiting, self._waiting = self._view, self._waiting, []
-        icon.icon = draw_icon(view.dot, ICON_PIXELS)
+        icon.icon = icon_image(view.dot, ICON_PIXELS)
         icon.title = view.tooltip
         icon.update_menu()
         for notice in waiting:

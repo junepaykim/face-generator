@@ -619,12 +619,12 @@ def cmd_desktop(
 
 
 def cmd_shortcuts(args: argparse.Namespace, data_dir: Path, out: TextIO) -> int:
-    """Write facegen's shortcuts on the desktop and in the Start Menu (`Start.bat
+    """Write Kitshot's shortcuts on the desktop and in the Start Menu (`Start.bat
     --shortcut`). Exit 2 off Windows, 3 when they could not be written."""
     from facegen.desktop import shortcuts
 
     if os.name != "nt":
-        print("Shortcuts are for Windows. Here, start facegen with `facegen serve`.", file=out)
+        print("Shortcuts are for Windows. Here, start Kitshot with `facegen serve`.", file=out)
         return 2
     folders = shortcuts.windows_folders()
     app = shortcuts.this_app(data_dir, args.config)

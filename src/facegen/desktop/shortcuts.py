@@ -1,16 +1,18 @@
 """Windows desktop, Start Menu and Startup shortcuts for the desktop app.
 
-Shortcuts run `.venv`'s `facegen-app.exe -m facegen.desktop app` without a console. That
-program is pythonw.exe's launcher under facegen's name and icon (app_exe.py); where it
-cannot be made, they run pythonw.exe itself. Start with Windows adds `--minimized`; it is
-off until enabled in the tray, which creates or deletes only our facegen.lnk.
+Shortcuts, named Kitshot.lnk, run `.venv`'s `facegen-app.exe -m facegen.desktop app` without
+a console. That program is pythonw.exe's launcher under Kitshot's name and icon (app_exe.py);
+where it cannot be made, they run pythonw.exe itself. Start with Windows adds `--minimized`;
+it is off until enabled in the tray, which creates or deletes only our shortcut there.
 Known Folders follow relocated directories, including OneDrive. WScript.Shell writes the
 shortcuts through PowerShell's -EncodedCommand so paths need no command-line quoting.
 
 The installer's shortcuts start Start.bat, as there is no .venv until the first setup.
 `refresh` (run by `facegen launch` once that setup is done) points those, and the ones an
 earlier version pointed at pythonw.exe, at the app, so later starts show no console and
-carry facegen's name; a shortcut that targets anything else is left alone.
+carry Kitshot's name. Versions before Phase 17c named their shortcuts facegen.lnk: `refresh`
+renames ours, and gives those that start the app the current icon (named after the icon, so
+a new icon is a new file). A shortcut that targets anything else is left alone.
 """
 
 from __future__ import annotations
@@ -24,8 +26,10 @@ from pathlib import Path, PureWindowsPath
 
 from facegen.platform import procs
 
-LINK_NAME = "facegen.lnk"
-DESCRIPTION = "facegen: anime or photo portraits for FM27's players"
+LINK_NAME = "Kitshot.lnk"
+LEGACY_LINK_NAMES = ("facegen.lnk",)
+"""Our shortcut's name before Phase 17c: recognised beside LINK_NAME, then replaced by it."""
+DESCRIPTION = "Kitshot: anime or photo portraits for FM27's players"
 FOLDER_IDS = {
     "desktop": "B4BFCC3A-DB2C-424C-B029-7FE99A87C641",
     "programs": "A77F5D77-2E2B-44C3-A6A2-ABA601054A51",
@@ -82,14 +86,24 @@ def pythonw_beside(python: str) -> str:
     return str(path.with_name("pythonw.exe"))
 
 
-def link_path(folder: str) -> str:
+def link_path(folder: str, name: str = LINK_NAME) -> str:
     """Our shortcut's path in `folder`: a Windows folder (C:\\...) in Windows's form, else this
     system's (the tests' folders)."""
     from facegen.platform.fm_paths import is_windows_drive_path
 
     if is_windows_drive_path(folder):
-        return str(PureWindowsPath(folder, LINK_NAME))
-    return str(Path(folder) / LINK_NAME)
+        return str(PureWindowsPath(folder, name))
+    return str(Path(folder) / name)
+
+
+def legacy_paths(path: str) -> list[str]:
+    """Where an earlier version kept the shortcut at `path`: the same folder, an old name."""
+    from facegen.platform.fm_paths import is_windows_drive_path
+
+    here = PureWindowsPath(path) if is_windows_drive_path(path) else Path(path)
+    return [
+        str(here.with_name(name)) for name in LEGACY_LINK_NAMES if name.lower() != here.name.lower()
+    ]
 
 
 def app_shortcuts(
@@ -123,27 +137,36 @@ def ps_string(text: str) -> str:
     return "'" + text.replace("'", "''") + "'"
 
 
+_PREAMBLE = [
+    "$ErrorActionPreference = 'Stop'",
+    # Its messages in UTF-8 whatever the console's code page, and no progress records.
+    "[Console]::OutputEncoding = [Text.Encoding]::UTF8",
+    "$ProgressPreference = 'SilentlyContinue'",
+    "$shell = New-Object -ComObject WScript.Shell",
+]
+
+
+def _fields(s: Shortcut, indent: str = "") -> list[str]:
+    """The lines that set every field of `$s` to the shortcut `s`, then save it."""
+    lines = [
+        f"$s.TargetPath = {ps_string(s.target)}",
+        f"$s.Arguments = {ps_string(s.arguments)}",
+        f"$s.WorkingDirectory = {ps_string(s.working_dir)}",
+        f"$s.IconLocation = {ps_string(s.icon + ',0')}",
+        f"$s.Description = {ps_string(s.description)}",
+    ]
+    if s.minimized:
+        lines.append(f"$s.WindowStyle = {WINDOW_MINIMIZED}")
+    lines.append("$s.Save()")
+    return [indent + line for line in lines]
+
+
 def powershell_script(shortcuts: Sequence[Shortcut]) -> str:
     """The PowerShell that writes `shortcuts` with WScript.Shell."""
-    lines = [
-        "$ErrorActionPreference = 'Stop'",
-        # Its messages in UTF-8 whatever the console's code page, and no progress records.
-        "[Console]::OutputEncoding = [Text.Encoding]::UTF8",
-        "$ProgressPreference = 'SilentlyContinue'",
-        "$shell = New-Object -ComObject WScript.Shell",
-    ]
+    lines = list(_PREAMBLE)
     for s in shortcuts:
-        lines += [
-            f"$s = $shell.CreateShortcut({ps_string(s.path)})",
-            f"$s.TargetPath = {ps_string(s.target)}",
-            f"$s.Arguments = {ps_string(s.arguments)}",
-            f"$s.WorkingDirectory = {ps_string(s.working_dir)}",
-            f"$s.IconLocation = {ps_string(s.icon + ',0')}",
-            f"$s.Description = {ps_string(s.description)}",
-        ]
-        if s.minimized:
-            lines.append(f"$s.WindowStyle = {WINDOW_MINIMIZED}")
-        lines.append("$s.Save()")
+        lines.append(f"$s = $shell.CreateShortcut({ps_string(s.path)})")
+        lines += _fields(s)
     return "\n".join(lines) + "\n"
 
 
@@ -216,32 +239,51 @@ def write(shortcuts: Sequence[Shortcut], *, run: Callable[..., object] | None = 
         raise ShortcutError(f"the shortcut could not be written: {last}")
 
 
+def _targets(paths: Sequence[str]) -> str:
+    return "@(" + ", ".join(ps_string(t) for t in paths) + ")"
+
+
 def refresh_script(links: Sequence[Shortcut], replacing: Sequence[str]) -> str:
-    """PowerShell that rewrites each of `links` that exists and starts one of `replacing`
-    (compared without case), and prints the paths it rewrote."""
-    targets = "@(" + ", ".join(ps_string(t) for t in replacing) + ")"
-    lines = [
-        "$ErrorActionPreference = 'Stop'",
-        "[Console]::OutputEncoding = [Text.Encoding]::UTF8",
-        "$ProgressPreference = 'SilentlyContinue'",
-        "$shell = New-Object -ComObject WScript.Shell",
-    ]
+    """PowerShell that brings each of `links` up to date and prints the paths it wrote.
+    Targets are compared without case.
+
+    - An earlier name beside it (legacy_paths) that starts one of `replacing` or the app
+      becomes the link, unless the link is there already, and is deleted.
+    - The link, if it starts one of `replacing`, is pointed at the app.
+    - The link, if it starts the app, gets the current icon and description.
+    """
+    earlier = _targets(replacing)
+    lines = list(_PREAMBLE)
     for s in links:
+        path = ps_string(s.path)
+        for old in map(ps_string, legacy_paths(s.path)):
+            lines += [
+                f"if (Test-Path -LiteralPath {old}) {{",
+                f"  $o = $shell.CreateShortcut({old})",
+                f"  if ({_targets([*replacing, s.target])} -icontains $o.TargetPath) {{",
+                f"    if (-not (Test-Path -LiteralPath {path})) {{",
+                f"      $s = $shell.CreateShortcut({path})",
+                *_fields(s, "      "),
+                f"      Write-Output {path}",
+                "    }",
+                f"    Remove-Item -LiteralPath {old} -Force",
+                "  }",
+                "}",
+            ]
+        icon = ps_string(s.icon + ",0")
+        description = ps_string(s.description)
+        stale = f"($s.IconLocation -ine {icon}) -or ($s.Description -cne {description})"
         lines += [
-            f"if (Test-Path -LiteralPath {ps_string(s.path)}) {{",
-            f"  $s = $shell.CreateShortcut({ps_string(s.path)})",
-            f"  if ({targets} -icontains $s.TargetPath) {{",
-            f"    $s.TargetPath = {ps_string(s.target)}",
-            f"    $s.Arguments = {ps_string(s.arguments)}",
-            f"    $s.WorkingDirectory = {ps_string(s.working_dir)}",
-            f"    $s.IconLocation = {ps_string(s.icon + ',0')}",
-            f"    $s.Description = {ps_string(s.description)}",
-        ]
-        if s.minimized:
-            lines.append(f"    $s.WindowStyle = {WINDOW_MINIMIZED}")
-        lines += [
+            f"if (Test-Path -LiteralPath {path}) {{",
+            f"  $s = $shell.CreateShortcut({path})",
+            f"  if ({earlier} -icontains $s.TargetPath) {{",
+            *_fields(s, "    "),
+            f"    Write-Output {path}",
+            f"  }} elseif (($s.TargetPath -ieq {ps_string(s.target)}) -and ({stale})) {{",
+            f"    $s.IconLocation = {icon}",
+            f"    $s.Description = {description}",
             "    $s.Save()",
-            f"    Write-Output {ps_string(s.path)}",
+            f"    Write-Output {path}",
             "  }",
             "}",
         ]
@@ -256,10 +298,11 @@ def refresh(
     exists: Callable[[str], bool] = os.path.isfile,
 ) -> list[str]:
     """Point those of `links` that start one of `replacing` (Start.bat, an earlier
-    pythonw.exe) at the app (module docstring). Returns the shortcuts rewritten; raises
-    ShortcutError. Without any of `links` on disk, or nothing to replace, nothing runs."""
-    present = [s for s in links if exists(s.path)]
-    if not present or not replacing:
+    pythonw.exe) at the app, rename ours from an earlier name, and give those that start the
+    app the current icon (refresh_script). Returns the shortcuts written; raises
+    ShortcutError. Without any of `links` on disk under either name, nothing runs."""
+    present = [s for s in links if any(map(exists, [s.path, *legacy_paths(s.path)]))]
+    if not present:
         return []
     powershell = procs.windows_tool(POWERSHELL, "windows", os.environ)
     if powershell is None:
@@ -282,12 +325,12 @@ def refresh(
         text = (getattr(done, "stderr", "") or out).strip()
         last = text.splitlines()[-1] if text else f"exit code {code}"
         raise ShortcutError(f"the shortcut could not be updated: {last}")
-    return [line.strip() for line in out.splitlines() if line.strip()]
+    return list(dict.fromkeys(line.strip() for line in out.splitlines() if line.strip()))
 
 
 @dataclass(frozen=True, slots=True)
 class AppPaths:
-    """What a shortcut to this checkout of facegen needs."""
+    """What a shortcut to this checkout of the app needs."""
 
     root: str
     program: str
@@ -308,7 +351,7 @@ def _version() -> str:
 def this_app(data_dir: Path, config: Path | None = None) -> AppPaths:
     """This checkout: the repository folder, the program the shortcuts run (facegen-app.exe,
     made or updated here on Windows, else the venv's pythonw.exe) and the icon (written into
-    the data folder if it is not there yet)."""
+    the data folder if this icon is not there yet)."""
     from facegen.desktop import app_exe
     from facegen.desktop.app_icon import write_ico
     from facegen.locations import PROJECT_ROOT
@@ -324,7 +367,9 @@ def this_app(data_dir: Path, config: Path | None = None) -> AppPaths:
 
 
 class StartupShortcut:
-    """Start with Windows (app_controller.StartupSwitch): our shortcut in the Startup folder."""
+    """Start with Windows (app_controller.StartupSwitch): our shortcut in the Startup folder.
+    The one an earlier version wrote under its old name (facegen.lnk) counts as on; turning
+    it on writes Kitshot.lnk in its place, and turning it off removes both."""
 
     def __init__(
         self,
@@ -342,16 +387,26 @@ class StartupShortcut:
     def path(self) -> Path:
         return Path(self.shortcut.path)
 
+    @property
+    def legacy(self) -> list[Path]:
+        return [Path(p) for p in legacy_paths(self.shortcut.path)]
+
     def is_on(self) -> bool:
-        return self.path.is_file()
+        return any(p.is_file() for p in (self.path, *self.legacy))
 
     def set(self, on: bool) -> None:
         if on:
             self._writer([self.shortcut])
+            self._remove(self.legacy)
             return
-        try:
-            self.path.unlink()
-        except FileNotFoundError:
-            pass
-        except OSError as exc:
-            raise ShortcutError(f"could not remove {self.path}: {exc}") from exc
+        self._remove([self.path, *self.legacy])
+
+    @staticmethod
+    def _remove(paths: Sequence[Path]) -> None:
+        for path in paths:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                raise ShortcutError(f"could not remove {path}: {exc}") from exc

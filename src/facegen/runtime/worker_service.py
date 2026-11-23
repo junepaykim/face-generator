@@ -39,8 +39,8 @@ MODELS_MISSING = (
     " with `facegen models --download`; {n} job(s) wait"
 )
 GPU_FAULT_ADVICE = (
-    "The graphics driver reported an error, and this run of facegen cannot draw any more. "
-    "Close facegen and start it again to continue; the queue is kept."
+    "The graphics driver reported an error, and this run of Kitshot cannot draw any more. "
+    "Close Kitshot and start it again to continue; the queue is kept."
 )
 CHILD_FAULT_DETAIL = "the graphics driver reported an error; this worker process ends"
 
@@ -253,7 +253,7 @@ class WorkerService:
                 except WorkerBusy:
                     self._set(
                         "waiting",
-                        "another facegen worker is running (facegen run?)",
+                        "another Kitshot worker is running (facegen run?)",
                         reason="other_worker",
                     )
                     if not self._leave_if_paused():

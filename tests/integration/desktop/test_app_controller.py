@@ -101,7 +101,7 @@ def test_every_worker_state_has_a_dot_a_status_line_and_a_usable_menu(state: str
     assert pause.label == ("Resume" if w.s.paused else "Pause")
     assert view.entry("open").default  # type: ignore[union-attr]
     assert view.entry("sync").label == "Sync Latest Save Now"  # type: ignore[union-attr]
-    assert view.tooltip.startswith("facegen: ") and len(view.tooltip) <= TOOLTIP_CHARS
+    assert view.tooltip.startswith("Kitshot: ") and len(view.tooltip) <= TOOLTIP_CHARS
 
 
 def test_the_status_line_says_who_is_drawn_and_why_it_waits() -> None:

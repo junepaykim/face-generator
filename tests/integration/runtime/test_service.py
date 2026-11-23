@@ -451,7 +451,7 @@ def test_the_thread_waits_for_another_worker(env: Env) -> None:
     with worker_lock(env.settings.paths.data_dir):
         svc.start()
         try:
-            _wait_for(lambda: "another facegen worker" in svc.status().detail)
+            _wait_for(lambda: "another Kitshot worker" in svc.status().detail)
         finally:
             svc.stop(timeout=10)
     assert env.drawn() == []

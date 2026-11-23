@@ -101,7 +101,7 @@ def _make_window(
 
 
 def _window_icon(data_dir: Path) -> str | None:
-    """facegen's .ico for the window's title bar and taskbar button, on Windows."""
+    """Kitshot's .ico for the window's title bar and taskbar button, on Windows."""
     if os.name != "nt":
         return None
     from facegen.desktop.app_icon import write_ico
@@ -357,7 +357,7 @@ def run(
             stack.enter_context(installation_lock(PROJECT_ROOT, app=True))
         except LockBusy as exc:
             raise RuntimeError(
-                "facegen is updating. Start the app after the update finishes."
+                "Kitshot is updating. Start the app after the update finishes."
             ) from exc
         if (PROJECT_ROOT / "data" / "update-recovery" / "pending.json").exists():
             raise RuntimeError(
@@ -399,12 +399,12 @@ def _run(
         # Another facegen app runs: it opens its window. Nothing is written to its log file.
         instance.request_open(paths.data_dir)
         if instance.wait_taken(paths.data_dir):
-            print("facegen is running already: its window was asked to open.", flush=True)
+            print("Kitshot is running already: its window was asked to open.", flush=True)
             return 0
         raise CannotStart(
-            "facegen is running already, but it did not answer within"
+            "Kitshot is running already, but it did not answer within"
             f" {instance.ANSWER_SECONDS:.0f} s. If it is still starting, wait a moment and"
-            " try again; if it seems stuck, end it in Task Manager and start facegen again."
+            " try again; if it seems stuck, end it in Task Manager and start Kitshot again."
         )
     log_path = log_to_file(paths.data_dir)
     release_mutex = hold_app_mutex()
@@ -450,13 +450,13 @@ def _run(
         if port_answers(rt.host, rt.port):
             raise CannotStart(
                 f"Another program already answers at {rt.url} (facegen serve, perhaps). Close"
-                " it and start facegen again."
+                " it and start Kitshot again."
             )
         server = ServerThread(rt.app, rt.host, rt.port)
         server.start()
         rt.start()
         print(f"Log: {log_path}", flush=True)
-        print(f"facegen UI at {rt.url}  (Quit is in the tray icon's menu)", flush=True)
+        print(f"Kitshot UI at {rt.url}  (Quit is in the tray icon's menu)", flush=True)
         logger.info("facegen %s: UI at %s", mode, rt.url)
 
         def open_dashboard() -> None:
@@ -502,7 +502,7 @@ def _run(
                 refresher.announce(
                     Notice(
                         "hidden",
-                        "facegen is still running",
+                        "Kitshot is still running",
                         "It goes on drawing in the background. Open the dashboard or Quit from"
                         " the tray icon.",
                     )
@@ -513,7 +513,7 @@ def _run(
             if window_gone.is_set():
                 return
             window_gone.set()
-            text = f"{reason}, so facegen has no window of its own: the dashboard opens in your"
+            text = f"{reason}, so Kitshot has no window of its own: the dashboard opens in your"
             text += " browser."
             if reason == NO_WEBVIEW2:
                 text += f" Install WebView2 from {WEBVIEW2_URL}."
@@ -608,7 +608,7 @@ def report_crash(exc: BaseException, show: Callable[[str, str], None] = show_err
             path = Path(tempfile.gettempdir()) / "facegen-error.log"
             with path.open("a", encoding="utf-8") as f:
                 f.write(text)
-    show("facegen could not start", f"{explain(exc)}\n\nThe details are in:\n{path}")
+    show("Kitshot could not start", f"{explain(exc)}\n\nThe details are in:\n{path}")
     return path
 
 
@@ -620,16 +620,16 @@ def explain(exc: BaseException) -> str:
     if isinstance(exc, ModuleNotFoundError) and exc.name in ("pystray", "webview", "clr"):
         if os.name != "nt":
             return (
-                f"facegen's window and tray icon need Windows ({exc.name} is installed there"
+                f"Kitshot's window and tray icon need Windows ({exc.name} is installed there"
                 " only). Here, run `facegen serve` and open the dashboard in a browser."
             )
         return (
-            f"{exc.name} is not installed. Start facegen with Start.bat, which installs what is"
-            " missing (or run `uv sync --inexact` in facegen's folder)."
+            f"{exc.name} is not installed. Start Kitshot with Start.bat, which installs what is"
+            " missing (or run `uv sync --inexact` in Kitshot's folder)."
         )
     if isinstance(exc, ModuleNotFoundError):
         return (
-            f"A part of facegen is missing ({exc.name}). Start facegen with Start.bat, which"
+            f"A part of Kitshot is missing ({exc.name}). Start Kitshot with Start.bat, which"
             " installs what is missing."
         )
     return f"{type(exc).__name__}: {exc}"
@@ -637,7 +637,7 @@ def explain(exc: BaseException) -> str:
 
 def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        prog="python -m facegen.desktop", description="facegen's window and tray icon"
+        prog="python -m facegen.desktop", description="Kitshot's window and tray icon"
     )
     parser.add_argument("--config", type=Path, help="defaults file (default: config/default.toml)")
     sub = parser.add_subparsers(dest="mode", required=True)
@@ -654,7 +654,7 @@ def main(argv: Sequence[str] | None = None, *, shell: Shell | None = None) -> in
         args = parse_args(argv)
     except SystemExit as exc:
         if exc.code and not has_console():
-            shell.show_error("facegen", f"Not a facegen command: {' '.join(argv or sys.argv[1:])}")
+            shell.show_error("Kitshot", f"Not a Kitshot command: {' '.join(argv or sys.argv[1:])}")
         return int(exc.code or 0)
     try:
         if has_console():

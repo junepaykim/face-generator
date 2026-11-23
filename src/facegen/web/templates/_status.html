@@ -15,7 +15,7 @@
 <section class="card now" id="now">
   <div class="now-pic">
     {% if drawing and drawing.picture %}<a href="/players/{{ drawing.job.unique_id }}"><img src="/pictures/{{ drawing.picture }}?size=192" alt="{{ tr('dash.now.current_alt', name=drawing.job.name) }}"></a>
-    {% else %}<div class="now-pic-none{{ ' busy' if drawing }}" aria-hidden="true"><span>fg</span></div>{% endif %}
+    {% else %}<div class="now-pic-none{{ ' busy' if drawing }}" aria-hidden="true"><img class="now-pic-mark" src="/static/kitshot.svg?v={{ static_version }}" alt="" width="48" height="48"></div>{% endif %}
   </div>
   <div class="now-main">
     <h2>{{ t("dash.worker.title") }} <span class="state state-{{ worker.state }}">{{ t("worker.state." ~ worker.state) }}</span></h2>

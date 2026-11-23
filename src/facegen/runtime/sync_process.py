@@ -64,10 +64,10 @@ STDERR_LINES = 20
 CHILD_ENV = {"PYTHONIOENCODING": "utf-8"}
 
 STOPPED_ERROR = (
-    "the sync was stopped because facegen quit; the save is read again at the next start"
+    "the sync was stopped because Kitshot quit; the save is read again at the next start"
 )
 STOPPED_PUBLISHING_ERROR = (
-    "facegen quit while the sync was publishing: the sync is stored, and FM27's pack is"
+    "Kitshot quit while the sync was publishing: the sync is stored, and FM27's pack is"
     " published again at the next start"
 )
 

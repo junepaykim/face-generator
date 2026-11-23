@@ -8,8 +8,8 @@
 The payload is exactly what an update in place writes (facegen.setup.update.unpack_payload),
 so an installed folder and an updated one hold the same files. uv.exe comes from uv's release
 zip after its SHA-256 matches installer/uv.sha256, and goes to .bin\\uv.exe, where Start.bat
-looks for it. The icon is drawn by facegen (desktop/app_icon.py) rather than kept in git
-(AGENTS.md rule 7). With --tag, the tag must be v<the payload's version>. Prints
+looks for it. The icon, kitshot.ico, is made from the bundled pictures
+(desktop/app_icon.py, Phase 17c). With --tag, the tag must be v<the payload's version>. Prints
 `version=<version>` last, for the workflow.
 """
 
@@ -26,6 +26,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 UV_SUMS = HERE / "uv.sha256"
 UV_ZIP = "uv-x86_64-pc-windows-msvc.zip"
+ICO = "kitshot.ico"
+"""The installer's icon in the stage (SetupIconFile and the shortcuts, installer/facegen.iss)."""
 
 
 def expected_sum(name: str, sums: Path | None = None) -> str:
@@ -86,8 +88,8 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(f"the tag {args.tag} must be v{version}, pyproject.toml's version")
     if args.uv_zip is not None:
         stage_uv(args.uv_zip, args.out)
-    write_ico(args.out)
-    print(f"staged {len(files)} files of facegen {version} in {args.out}", file=sys.stderr)
+    write_ico(args.out, ICO)
+    print(f"staged {len(files)} files of Kitshot {version} in {args.out}", file=sys.stderr)
     print(f"version={version}")
     return 0
 

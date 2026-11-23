@@ -20,9 +20,9 @@ reports unavailability so the app uses a browser; pywebview's IE fallback cannot
 does not mean the window started. A process that fails within QUICK_FAILURE_SECONDS of its
 start counts as a window that could not start, whatever it said first.
 
-The child takes an AppUserModelID of its own (APP_ID) and `--icon`, facegen's .ico. The
-taskbar then shows facegen's icon on the window's button instead of Python's, and does
-not group the window with other Python programs.
+The child takes an AppUserModelID of its own (APP_ID) and `--icon`, Kitshot's .ico. The
+taskbar then shows Kitshot's icon on the window's button instead of Python's, and does
+not group the window with other Python programs. APP_ID keeps its name until Phase 17o.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ from facegen.platform.pipes import JsonWriter, decode, drain_lines
 
 logger = logging.getLogger("facegen")
 
-TITLE = "facegen"
+TITLE = "Kitshot"
 APP_ID = "facegen.app"
 """The window process's AppUserModelID (module docstring)."""
 SIZE = (1280, 860)

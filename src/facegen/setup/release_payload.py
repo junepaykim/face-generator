@@ -68,10 +68,10 @@ def unpack_payload(archive: Path, dest: Path) -> list[PurePosixPath]:
         if not members or len(members) > MAX_ENTRIES:
             raise UpdateError("the archive is empty or has too many files")
         if sum(m.file_size for m in members) > MAX_UNPACKED_BYTES:
-            raise UpdateError("the archive unpacks to more than facegen's source can be")
+            raise UpdateError("the archive unpacks to more than Kitshot's source can be")
         tops = {safe_relative(m.filename).parts[0] for m in members}
         if len(tops) != 1:
-            raise UpdateError("the archive is not one folder of facegen's source")
+            raise UpdateError("the archive is not one folder of Kitshot's source")
         files: list[PurePosixPath] = []
         for m in members:
             rel = PurePosixPath(*safe_relative(m.filename).parts[1:])
@@ -89,7 +89,7 @@ def unpack_payload(archive: Path, dest: Path) -> list[PurePosixPath]:
                 shutil.copyfileobj(src, out)
             files.append(rel)
     if PurePosixPath("pyproject.toml") not in files or PurePosixPath("Start.bat") not in files:
-        raise UpdateError("the archive is not facegen's source (no pyproject.toml or Start.bat)")
+        raise UpdateError("the archive is not Kitshot's source (no pyproject.toml or Start.bat)")
     return sorted(files)
 
 

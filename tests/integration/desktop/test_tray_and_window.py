@@ -101,7 +101,7 @@ def test_the_menu_is_the_controllers_view() -> None:
     status_item = items(tray)[0]
     assert status_item.action is None and not status_item.enabled
     assert [i.default for i in items(tray)] == [False, True, False, False, False]
-    assert tray.icon.title == "facegen: idle: the queue is empty"
+    assert tray.icon.title == "Kitshot: idle: the queue is empty"
 
 
 def test_menu_clicks_call_the_controller_without_holding_the_icon() -> None:
@@ -145,7 +145,7 @@ def test_show_changes_only_what_changed() -> None:
     worker.s = status("gpu-fault")
     tray.show(controller.view())
     assert tray.icon.icon is not first_icon  # the dot turned red
-    assert tray.icon.title == "facegen: drawing stopped: the graphics driver failed"
+    assert tray.icon.title == "Kitshot: drawing stopped: the graphics driver failed"
     assert tray.icon.menu_updates == updates + 1
 
 
@@ -244,19 +244,19 @@ def test_the_window_shows_the_dashboard() -> None:
     AppWindow("http://127.0.0.1:8765/", webview=webview)
     assert webview.window is not None
     kw = webview.window.kw
-    assert (kw["title"], kw["url"]) == ("facegen", "http://127.0.0.1:8765/")
+    assert (kw["title"], kw["url"]) == ("Kitshot", "http://127.0.0.1:8765/")
     assert kw["text_select"] is True and kw["hidden"] is False
     assert kw["min_size"][0] <= kw["width"]
 
 
-def test_the_window_has_facegens_icon_and_app_id() -> None:
+def test_the_window_has_kitshots_icon_and_app_id() -> None:
     webview = FakeWebview()
-    win = AppWindow("http://127.0.0.1:8765/", icon=r"C:\facegen\facegen.ico", webview=webview)
+    win = AppWindow("http://127.0.0.1:8765/", icon=r"C:\facegen\kitshot.ico", webview=webview)
     assert webview.window is not None
     webview.window.closed.set()
     win.run()
-    assert webview.started == {"icon": r"C:\facegen\facegen.ico"}
-    assert app_window.APP_ID == "facegen.app"
+    assert webview.started == {"icon": r"C:\facegen\kitshot.ico"}
+    assert app_window.APP_ID == "facegen.app"  # kept until Phase 17o
     app_window.use_app_id(os_name="posix")  # nothing to do off Windows
 
 

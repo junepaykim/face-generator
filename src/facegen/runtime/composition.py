@@ -128,7 +128,7 @@ def build_runtime(
 
     host = settings.ui.host
     if host not in LOOPBACK:
-        raise CannotStart(f"ui.host is {host!r}: facegen serves on this PC only (127.0.0.1).")
+        raise CannotStart(f"ui.host is {host!r}: Kitshot serves on this PC only (127.0.0.1).")
     try:  # the worker process loads them again; a broken table is reported here, at once
         load_kits(data_dir=settings.paths.data_dir)
     except KitError as exc:

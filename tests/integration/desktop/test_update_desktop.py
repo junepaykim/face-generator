@@ -60,14 +60,14 @@ def test_the_tray_says_once_per_version_that_a_newer_one_is_out() -> None:
     assert [n for n in c.notices() if n.kind == "update"] == []  # looked a moment ago
     clock.now += UPDATE_LOOK_SECONDS
     (notice,) = [n for n in c.notices() if n.kind == "update"]
-    assert notice.title == "facegen 1.0.0 is available"
+    assert notice.title == "Kitshot 1.0.0 is available"
     assert notice.message == "You have 0.9.0. Open the dashboard to update."
     assert len(notice.title) <= NOTICE_TITLE_CHARS
     clock.now += UPDATE_LOOK_SECONDS
     assert [n for n in c.notices() if n.kind == "update"] == []  # said once
     updates.s = offer("1.1.0")
     clock.now += UPDATE_LOOK_SECONDS
-    assert [n.title for n in c.notices() if n.kind == "update"] == ["facegen 1.1.0 is available"]
+    assert [n.title for n in c.notices() if n.kind == "update"] == ["Kitshot 1.1.0 is available"]
     # Put off with Later: not offered, not said.
     updates.s = UpdateStatus(enabled=True, current="0.9.0", latest="1.2.0", available=True)
     clock.now += UPDATE_LOOK_SECONDS
@@ -124,7 +124,8 @@ PYW = r"C:\Users\me\AppData\Local\facegen\.venv\Scripts\pythonw.exe"
 APP = r"C:\Users\me\AppData\Local\facegen\.venv\Scripts\facegen-app.exe"
 STARTUP = r"C:\Users\me\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup"
 ROOT = r"C:\Users\me\AppData\Local\facegen"
-ICON = ROOT + r"\data\app\facegen.ico"
+ICON = ROOT + r"\data\app\kitshot-0123456789.ico"
+OLD_ICON = ROOT + r"\data\app\facegen.ico"
 START_BAT = ROOT + r"\Start.bat"
 
 
@@ -153,9 +154,8 @@ def test_refresh_points_only_our_earlier_shortcuts_at_the_app(
     assert f"$s.TargetPath = '{APP}'" in script
     assert "$s.Arguments = '-m facegen.desktop app'" in script
     assert "WindowStyle" not in script
-    # None there, or nothing to replace: PowerShell is not even started.
+    # None there under either name: PowerShell is not even started.
     assert shortcuts.refresh(links, replacing, run=run, exists=lambda p: False) == []
-    assert shortcuts.refresh(links, [], run=run, exists=lambda p: True) == []
     assert len(calls) == 1
 
     def fails(args: Sequence[str], **kw: object) -> subprocess.CompletedProcess[str]:
@@ -163,6 +163,50 @@ def test_refresh_points_only_our_earlier_shortcuts_at_the_app(
 
     with pytest.raises(shortcuts.ShortcutError, match="Access is denied"):
         shortcuts.refresh(links, replacing, run=fails, exists=lambda p: True)
+
+
+def test_refresh_renames_our_shortcuts_from_before_kitshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """facegen.lnk (before Phase 17c) beside a link: looked at when only it is there, made
+    into Kitshot.lnk when it starts Start.bat, pythonw.exe or the app, then deleted."""
+    links = shortcuts.app_shortcuts(FOLDERS, program=APP, root=ROOT, icon=ICON)
+    old = FOLDERS["programs"] + r"\facegen.lnk"
+    assert links[1].path == FOLDERS["programs"] + r"\Kitshot.lnk"
+    monkeypatch.setattr(procs, "windows_tool", lambda *a, **k: "powershell.exe")
+    calls: list[Sequence[str]] = []
+
+    def run(args: Sequence[str], **kw: object) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        out = f"{links[1].path}\r\n{links[1].path}\r\n"  # said twice: reported once
+        return subprocess.CompletedProcess(args, 0, out, "")
+
+    done = shortcuts.refresh(links, [START_BAT, PYW], run=run, exists=lambda p: p == old)
+    assert done == [links[1].path]
+    script = decoded(calls[0])
+    assert f"if (Test-Path -LiteralPath '{old}') {{" in script
+    assert f"$o = $shell.CreateShortcut('{old}')" in script
+    assert f"if (@('{START_BAT}', '{PYW}', '{APP}') -icontains $o.TargetPath) {{" in script
+    assert f"if (-not (Test-Path -LiteralPath '{links[1].path}')) {{" in script
+    assert f"Remove-Item -LiteralPath '{old}' -Force" in script
+    # The new one is written in full, before the old one goes.
+    made = script.index(f"$s = $shell.CreateShortcut('{links[1].path}')")
+    assert made < script.index("$s.Save()", made) < script.index("Remove-Item")
+
+
+def test_refresh_gives_the_apps_shortcuts_the_new_icon() -> None:
+    """A shortcut that starts the app already gets the current icon and description only:
+    its arguments stay as they are."""
+    link = shortcuts.startup_shortcut(STARTUP, program=APP, root=ROOT, icon=ICON)
+    script = shortcuts.refresh_script([link], [START_BAT, PYW])
+    branch = script[script.index("} elseif") :]
+    assert branch.startswith(
+        f"}} elseif (($s.TargetPath -ieq '{APP}') -and (($s.IconLocation -ine '{ICON},0')"
+        f" -or ($s.Description -cne {shortcuts.ps_string(shortcuts.DESCRIPTION)}))) {{"
+    )
+    branch = branch[: branch.index("\n  }")]
+    assert f"$s.IconLocation = '{ICON},0'" in branch and "$s.Save()" in branch
+    assert "Arguments" not in branch and "TargetPath =" not in branch
 
 
 def test_the_refreshed_startup_shortcut_stays_minimised() -> None:

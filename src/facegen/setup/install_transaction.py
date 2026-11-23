@@ -186,4 +186,4 @@ if __name__ == "__main__":
         with locking.installation_lock(install_root):
             recover_update(install_root)
     except (OSError, locking.LockBusy, payload.UpdateError) as error:
-        sys.exit(f"Cannot repair facegen while the installation is in use or unavailable: {error}")
+        sys.exit(f"Cannot repair Kitshot while the installation is in use or unavailable: {error}")

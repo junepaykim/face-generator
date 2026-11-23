@@ -231,7 +231,7 @@ def test_an_archive_unpacks_to_its_payload(tmp_path: Path) -> None:
         ({"C:/x.py": "x"}, "", "unsafe path"),
         ({**SOURCE, "data/facegen.db": "x"}, "f", "this PC's own"),
         ({**SOURCE, "config/local.toml": "x"}, "f", "this PC's own"),
-        ({"src/x.py": "x"}, "f", "not facegen's source"),
+        ({"src/x.py": "x"}, "f", "not Kitshot's source"),
     ],
 )
 def test_an_archive_that_is_not_facegens_source_is_refused(
@@ -385,7 +385,7 @@ def test_an_update_puts_the_newest_release_over_the_folder(tmp_path: Path) -> No
     archive = Archive(tmp_path)
     code, said = run(tmp_path, root, archive=archive)
     assert code == update.UPDATED, said
-    assert "Updated facegen 0.9.0 to 1.0.0" in said
+    assert "Updated Kitshot 0.9.0 to 1.0.0" in said
     assert archive.urls == [
         "https://github.com/junepaykim/face-generator/archive/refs/tags/v1.0.0.zip"
     ]
@@ -420,7 +420,7 @@ def test_interrupted_replacement_is_recovered_before_version_comparison(
     assert update.installed_version(root) == "1.0.0"
     code, message = run(tmp_path, root)
     assert code == update.UPDATED and "Restored the previous installation" in message
-    assert "Updated facegen 0.9.0 to 1.0.0" in message
+    assert "Updated Kitshot 0.9.0 to 1.0.0" in message
     assert (root / "data/facegen.db").read_bytes() == b"the database"
 
 
@@ -604,7 +604,7 @@ def test_the_update_waits_for_facegen_to_quit(tmp_path: Path) -> None:
     root = installed(tmp_path / "app")
     answers = iter([True, True, True, False])
     code, said = run(tmp_path, root, running=lambda data: next(answers))
-    assert code == update.UPDATED and "Waiting for facegen to quit" in said
+    assert code == update.UPDATED and "Waiting for Kitshot to quit" in said
 
     clock = iter(range(0, 1000, 60))
     code, said = run(
@@ -672,10 +672,10 @@ def test_the_installer_is_staged_from_the_same_payload(
                        "--tag", "v1.0.0"]) == 0  # fmt: skip
     assert capsys.readouterr().out.strip().endswith("version=1.0.0")
     assert (out / ".bin" / "uv.exe").read_bytes() == b"MZ fake uv"
-    assert (out / "facegen.ico").is_file()
+    assert (out / stage.ICO).is_file() and stage.ICO == "kitshot.ico"
     assert sorted(p.relative_to(out).as_posix() for p in out.rglob("*") if p.is_file()) == sorted(
         [*(str(f) for f in update.unpack_payload(archive, tmp_path / "again")),
-         ".bin/uv.exe", "facegen.ico"]
+         ".bin/uv.exe", "kitshot.ico"]
     )  # fmt: skip
     with pytest.raises(SystemExit, match="must be v1.0.0"):
         stage.main(["--archive", str(archive), "--out", str(out), "--tag", "v1.0.1"])
@@ -705,7 +705,30 @@ def test_the_installer_script_agrees_with_the_app() -> None:
     # The uninstaller's command exists, and the shortcut name is the one the app refreshes.
     assert "-m facegen.cli remove-pack --yes" in text
     build_parser().parse_args(["remove-pack", "--yes"])
-    assert shortcuts.LINK_NAME == "facegen.lnk" and r'Name: "{userprograms}\facegen";' in text
+    assert shortcuts.LINK_NAME == "Kitshot.lnk" and r'Name: "{userprograms}\Kitshot";' in text
+    # The Kitshot name and icon (Phase 17c); the folder and AppId stay for upgrades.
+    assert "AppName=Kitshot" in text and "UninstallDisplayName=Kitshot" in text
+    assert "OutputBaseFilename=Kitshot-setup-{#Version}" in text
+    workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    assert "Kitshot-setup-${RELEASE_TAG#v}.exe" in workflow
+    assert "AppId={{328123DD-8BAD-4773-B1A0-9BC0E40350F2}" in text
+    stage = load_stage()
+    assert f"SetupIconFile={{#Stage}}\\{stage.ICO}" in text
+    assert f"UninstallDisplayIcon={{app}}\\{stage.ICO}" in text
+    # An upgrade removes the shortcuts and icon named facegen; uninstalling removes ours
+    # under either name.
+    installs = text.split("[InstallDelete]")[1].split("[Files]")[0]
+    for old in (
+        r"{app}\facegen.ico",
+        r"{userprograms}\facegen.lnk",
+        r"{userprograms}\Update facegen.lnk",
+        r"{userdesktop}\facegen.lnk",
+    ):
+        assert f'Name: "{old}"' in installs
+    removes = text.split("[UninstallDelete]")[1].split("[Code]")[0]
+    for folder in ("{userstartup}", "{userdesktop}", "{userprograms}"):
+        for name in (shortcuts.LINK_NAME, *shortcuts.LEGACY_LINK_NAMES):
+            assert f'Name: "{folder}\\{name}"' in removes
     # Uninstalling keeps data unless asked, and never deletes the data folder by itself.
     assert r'Name: "{app}\data"' not in text.split("[UninstallDelete]")[1].split("[Code]")[0]
 

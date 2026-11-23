@@ -159,7 +159,7 @@ def worker_lock(data_dir: Path) -> Iterator[None]:
         with file_lock(data_dir / "worker.lock", blocking=False):
             yield
     except LockBusy as exc:
-        raise WorkerBusy("another facegen worker is running") from exc
+        raise WorkerBusy("another Kitshot worker is running") from exc
 
 
 @dataclass

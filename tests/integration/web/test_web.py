@@ -1124,6 +1124,40 @@ def test_pages_link_the_script_and_styles_by_version(env: Env) -> None:
     assert env.client.get(f"/static/app.js?v={version}").status_code == 200
 
 
+def test_pages_carry_the_kitshot_name_and_mark(
+    config_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Phase 17c: the name Kitshot in titles and the sidebar, and the user's SVG as the
+    favicon, the sidebar's mark and the dashboard's empty picture. It is served as an SVG
+    even where Windows's registry maps .svg to another type ("nosniff" would refuse it)."""
+    import mimetypes
+
+    from facegen.web.app import HERE, static_version
+
+    mimetypes.init()
+    monkeypatch.setitem(mimetypes.types_map, ".svg", "text/xml")
+    e = make_env(config_file, synced=True)
+    try:
+        mark = f"/static/kitshot.svg?v={static_version(HERE / 'static')}"
+        page = e.client.get("/gallery").text
+        assert "<title>Gallery · Kitshot</title>" in page
+        assert f'<link rel="icon" type="image/svg+xml" href="{mark}">' in page
+        brand = re.search(r'<a class="brand"[^>]*>.*?</a>', page, re.DOTALL)
+        assert brand is not None and 'title="Kitshot"' in brand[0]
+        assert f'<img class="logo" src="{mark}" alt=""' in brand[0]
+        assert '<span class="label">Kitshot</span>' in brand[0] and ">fg<" not in page
+        dashboard = e.client.get("/").text
+        assert f'<img class="now-pic-mark" src="{mark}"' in dashboard and ">fg<" not in dashboard
+        svg = e.client.get(mark)
+        assert svg.status_code == 200 and svg.headers["content-type"] == "image/svg+xml"
+        assert svg.text.startswith('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"')
+        missing = e.client.get("/nowhere", headers={"accept": "text/html"})
+        assert missing.status_code == 404 and " · Kitshot</title>" in missing.text
+        assert f'<link rel="icon" type="image/svg+xml" href="{mark}">' in missing.text
+    finally:
+        e.client.close()
+
+
 def test_every_page_starts_with_the_same_header(env: Env) -> None:
     """Phase 17a: one header first on every page, above any message, so switching pages keeps
     the title and what is below it in place. Settings keeps its two levels in it."""

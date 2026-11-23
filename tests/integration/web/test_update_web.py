@@ -99,7 +99,7 @@ def test_the_dashboard_offers_a_newer_release(env: Env) -> None:
     with env.client(can_install=True) as client:
         shown = card(client)
         assert shown is not None
-        assert "facegen 1.0.0 is out" in shown and "You have 0.9.0." in shown
+        assert "Kitshot 1.0.0 is out" in shown and "You have 0.9.0." in shown
         assert 'href="https://github.com/junepaykim/face-generator/releases/tag/v1.0.0"' in shown
         assert 'action="/update/install"' in shown and "Update now" in shown
         korean = card(client, headers=KOREAN_WINDOWS)
@@ -139,7 +139,7 @@ def test_update_now_starts_the_update_and_says_so(env: Env) -> None:
     with env.client(can_install=True) as client:
         response = client.post("/update/install")
         assert response.status_code == 200
-        assert "Updating facegen" in response.text and "1.0.0" in response.text
+        assert "Updating Kitshot" in response.text and "1.0.0" in response.text
         assert env.installs == ["Start.bat --update"]
 
 
@@ -163,7 +163,7 @@ def test_check_now_asks_and_says_what_it_found(env: Env) -> None:
         assert response.status_code == 303
         parts = urlsplit(response.headers["location"])
         assert parts.path == "/settings/advanced" and parts.fragment == "about"
-        assert parse_qs(parts.query) == {"lang": ["en"], "msg": ["facegen 1.0.0 is available."]}
+        assert parse_qs(parts.query) == {"lang": ["en"], "msg": ["Kitshot 1.0.0 is available."]}
         env.releases.error = "could not reach GitHub: timed out"
         parts = urlsplit(client.post("/update/check").headers["location"])
         assert parts.fragment == "about"
@@ -191,10 +191,10 @@ def test_settings_show_the_version_and_the_switch(env: Env) -> None:
         page = unescape(client.get("/settings/advanced").text)
         assert re.search(r"<th>Version</th><td>0\.9\.0</td>", page)
         assert "not checked yet" in page and "Check for updates now" in page
-        assert 'name="updates.check"' in page and "Look for a newer facegen once a day" in page
+        assert 'name="updates.check"' in page and "Look for a newer Kitshot once a day" in page
         env.updates.check_now()
         page = unescape(client.get("/settings/advanced").text)
-        assert "facegen 1.0.0 is available" in page and "checked " in page
+        assert "Kitshot 1.0.0 is available" in page and "checked " in page
 
 
 def test_the_switch_turns_the_check_off(env: Env) -> None:
@@ -209,7 +209,7 @@ def test_the_switch_turns_the_check_off(env: Env) -> None:
         assert "not looked for (switched off below)" in page
         # Check now still asks: the user asked.
         location = unquote(client.post("/update/check").headers["location"])
-        assert "facegen 1.0.0 is available" in location
+        assert "Kitshot 1.0.0 is available" in location
 
 
 def test_posts_need_the_form_token(env: Env) -> None:

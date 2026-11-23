@@ -26,6 +26,9 @@ logger = logging.getLogger("facegen")
 
 Dot = Literal["running", "paused", "fault"]
 
+PRODUCT = "Kitshot"
+"""The name in the tooltip and the update notification."""
+
 TOOLTIP_CHARS = 127
 """Windows keeps 128 characters of a tray icon's tooltip, the last one the terminating zero."""
 NOTICE_CHARS = 255
@@ -317,7 +320,7 @@ class AppController:
             )
         entries.append(MenuEntry("quit", "Quitting…" if quitting else "Quit", not quitting))
         dot: Dot = "paused" if quitting else dot_for(worker)
-        return View(dot, clip(f"facegen: {status}", TOOLTIP_CHARS), tuple(entries))
+        return View(dot, clip(f"{PRODUCT}: {status}", TOOLTIP_CHARS), tuple(entries))
 
     def _startup_on(self) -> bool:
         assert self.startup is not None
@@ -339,7 +342,7 @@ class AppController:
         return out
 
     def _update_notices(self) -> list[Notice]:
-        """A newer facegen, said once per version (and not again after Later)."""
+        """A newer Kitshot, said once per version (and not again after Later)."""
         now = self._clock()
         if self.updates is None or (
             self._update_looked is not None and now - self._update_looked < UPDATE_LOOK_SECONDS
@@ -358,7 +361,7 @@ class AppController:
             self._clipped(
                 Notice(
                     "update",
-                    f"facegen {status.latest} is available",
+                    f"{PRODUCT} {status.latest} is available",
                     f"You have {status.current}. Open the dashboard to update.",
                 )
             )
@@ -391,7 +394,7 @@ class AppController:
                     Notice(
                         "fault",
                         "Graphics driver error",
-                        "The graphics driver reported an error while drawing. facegen starts"
+                        "The graphics driver reported an error while drawing. Kitshot starts"
                         " its worker again by itself; the queue is kept.",
                     )
                 )

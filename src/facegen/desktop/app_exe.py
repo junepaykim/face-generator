@@ -1,17 +1,18 @@
-"""facegen-app.exe: the venv's pythonw.exe launcher with facegen's name and icon.
+"""facegen-app.exe: the venv's pythonw.exe launcher with Kitshot's name and icon.
 
 A Windows venv's pythonw.exe is a small launcher that starts the base interpreter.
 Task Manager names the app's process group after that launcher's version information
 and shows its icon, so a plain venv shows "Python". The launcher finds the interpreter
 through `pyvenv.cfg`, not through its own file name, and passes its own path on as
-`sys.executable`. A copy named facegen-app.exe therefore starts facegen and its child
-processes under facegen's name and icon.
+`sys.executable`. A copy named facegen-app.exe therefore starts the app and its child
+processes under Kitshot's name and icon (the file keeps its name until Phase 17o).
 
 `ensure` makes the copy in the venv's Scripts folder on Windows. The Win32 resource
 functions replace its icons and version information and keep its other resources, such
 as the manifest. The copy loses the launcher's Authenticode signature, which would no
 longer match its contents. A copy that cannot start Python is deleted, and callers keep
-using pythonw.exe. A stamp beside the copy records its launcher, icon and version.
+using pythonw.exe. A stamp beside the copy records its launcher, icon and version
+information (the name and version), so a change to any of them makes it again.
 """
 
 from __future__ import annotations
@@ -30,9 +31,9 @@ logger = logging.getLogger("facegen")
 APP_EXE = "facegen-app.exe"
 LAUNCHER = "pythonw.exe"
 STAMP = "facegen-app.stamp"
-FORMAT = "1"
+FORMAT = "2"
 """Part of the stamp: changing it remakes every copy."""
-NAME = "facegen"
+NAME = "Kitshot"
 """The product name, and the FileDescription that Task Manager shows."""
 COPYRIGHT = "Python launcher: Copyright (c) Python Software Foundation"
 LANGUAGE = 0x0409
@@ -76,7 +77,7 @@ def _block(
 
 
 def version_info(version: str) -> bytes:
-    """The RT_VERSION resource: facegen's name, description and version."""
+    """The RT_VERSION resource: Kitshot's name, description and version."""
     a, b, c, d = numeric_version(version)
     fixed = struct.pack(
         "<13I",
@@ -189,8 +190,10 @@ def split_signature(data: bytes) -> tuple[bytes, bytes]:
 
 
 def stamp_key(launcher: bytes, ico: bytes, version: str) -> str:
+    """What the copy is made from: the launcher, the icon and the version information
+    (which holds the name, so renaming the product makes the copy again)."""
     digest = hashlib.sha256()
-    for part in (FORMAT.encode(), launcher, ico, version.encode()):
+    for part in (FORMAT.encode(), launcher, ico, version_info(version)):
         digest.update(hashlib.sha256(part).digest())
     return digest.hexdigest()
 
@@ -376,9 +379,9 @@ def ensure(
     maker: Callable[[Path, bytes, bytes, str], None] = make,
 ) -> Path | None:
     """facegen-app.exe in the venv's Scripts folder, made again when its launcher, icon or
-    version changed. None off Windows, outside a venv, or when it could not be made (the
-    reason is logged): the caller then uses pythonw.exe. A copy facegen runs from cannot
-    be replaced; it is kept until a later start."""
+    version information changed. None off Windows, outside a venv, or when it could not be
+    made (the reason is logged): the caller then uses pythonw.exe. A copy the app runs from
+    cannot be replaced; it is kept until a later start."""
     if os_name != "nt":
         return None
     launcher, target, stamp = scripts / LAUNCHER, scripts / APP_EXE, scripts / STAMP
@@ -405,7 +408,7 @@ def ensure(
             logger.info("%s is in use, so it is made again later: %s", APP_EXE, exc)
             return existing
         stamp.write_text(key + "\n", encoding="ascii")
-        logger.info("%s made: Task Manager shows facegen's name and icon", APP_EXE)
+        logger.info("%s made: Task Manager shows %s's name and icon", APP_EXE, NAME)
     except (AppExeError, OSError) as exc:
         logger.warning("%s could not be made, so pythonw.exe is used: %s", APP_EXE, exc)
     finally:

@@ -96,7 +96,7 @@ def folder_not_set_message(kind: platform_info.Kind | None = None) -> str:
     return (
         "FM27's folder is not set and was not found on this PC (it is the folder that holds"
         " FM27's games and graphics folders). Put it in config/local.toml as"
-        f" [paths] fm_user_dir = '{example}', in single quotes, then start facegen again."
+        f" [paths] fm_user_dir = '{example}', in single quotes, then start Kitshot again."
     )
 
 

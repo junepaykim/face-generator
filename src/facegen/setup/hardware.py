@@ -181,7 +181,7 @@ NONE = Preset(
     "none",
     "no CUDA graphics card",
     {},
-    "Nothing is changed: facegen draws on an NVIDIA card with CUDA, and none was found, so"
+    "Nothing is changed: Kitshot draws on an NVIDIA card with CUDA, and none was found, so"
     " pictures cannot be drawn on this PC.",
 )
 

@@ -101,7 +101,7 @@ def test_the_server_thread_answers_and_stops(config_file: Path) -> None:
     try:
         assert server.running and port_answers("127.0.0.1", port)
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=10) as response:
-            assert response.status == 200 and b"facegen" in response.read()
+            assert response.status == 200 and b"Kitshot" in response.read()
     finally:
         server.stop()
     assert not server.running and not port_answers("127.0.0.1", port)

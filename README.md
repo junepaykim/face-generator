@@ -1,6 +1,8 @@
-# FM27 Face Generator
+<img src="src/facegen/web/static/kitshot.svg" alt="" width="88" align="right">
 
-FM27 Face Generator is a Windows desktop app that gives Football Manager 27 players,
+# Kitshot
+
+Kitshot is a Windows desktop app that gives Football Manager 27 players,
 staff and journalists portraits, as anime illustrations or as photos. It reads a copy of
 the save, draws on a local GPU and publishes a graphics pack the game can load.
 
@@ -274,7 +276,7 @@ portraits; the published size is the height. With these defaults my test saves h
   shares into fixed numbers, converted from the latest save so the same players stay
   picked.
 - **Real players without a photo count as newgens.** FM27 ships photos for some leagues
-  only; everyone else shows a silhouette. At each sync facegen reads the game's list of the
+  only; everyone else shows a silhouette. At each sync Kitshot reads the game's list of the
   photos it ships and the `config.xml` of any facepack you installed, and a real player with
   neither is a candidate like a newgen (the academy rule aside). Settings turns this off.
 - **Queue order:** your hand-picked requests come first, then Detailed (newest arrivals at
@@ -434,7 +436,7 @@ publishes the executable with a SHA-256 checksum. [Release workflow](.github/wor
 
 ## Install on Windows
 
-Download and run `facegen-setup-<version>.exe` from the [latest Windows release](https://github.com/junepaykim/face-generator/releases/latest).
+Download and run `Kitshot-setup-<version>.exe` from the [latest Windows release](https://github.com/junepaykim/face-generator/releases/latest).
 
 You’ll need 64-bit Windows 10 or 11, FM27, an NVIDIA GPU with about 8 GB of VRAM (10 GB for
 Z-Image-Turbo) and about 20 GB of free disk space (40 GB for Z-Image-Turbo). First launch
@@ -449,7 +451,8 @@ database and settings. You can turn off daily checks in **Settings → Advanced 
 
 ### Uninstall
 
-Remove **facegen** from **Windows Settings → Apps**. The uninstaller lets you keep or remove
+Remove **Kitshot** from **Windows Settings → Apps** (still listed as **facegen** if it was
+installed before the rename and only updated in the app). The uninstaller lets you keep or remove
 the FM graphics pack and local app data separately. Downloaded models stay in the shared
 Hugging Face cache.
 

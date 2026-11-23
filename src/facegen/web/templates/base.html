@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>{% block title %}facegen{% endblock %} · facegen</title>
+<title>{% block title %}{{ t("app.name") }}{% endblock %} · {{ t("app.name") }}</title>
+<link rel="icon" type="image/svg+xml" href="/static/kitshot.svg?v={{ static_version }}">
 <link rel="stylesheet" href="/static/style.css?v={{ static_version }}">
 <script src="/static/app.js?v={{ static_version }}" defer></script>
 <script type="application/json" id="texts">{{ js_texts|tojson }}</script>
@@ -12,7 +13,7 @@
 <body>
 <div class="shell">
 <aside class="side">
-  <a class="brand" href="/" title="facegen"><span class="logo" aria-hidden="true">fg</span><span class="label">facegen</span></a>
+  <a class="brand" href="/" title="{{ tr('app.name') }}"><img class="logo" src="/static/kitshot.svg?v={{ static_version }}" alt="" width="28" height="28"><span class="label">{{ t("app.name") }}</span></a>
   <nav aria-label="{{ t('nav.label') }}">
     <a href="/" class="{{ 'on' if path == '/' }}" title="{{ t('nav.dashboard') }}">{{ icon("dashboard") }}<span class="label">{{ t("nav.dashboard") }}</span>{% if worker_state %}<span class="dot-state state-{{ worker_state }}" title="{{ t('worker.state.' ~ worker_state) }}"></span>{% endif %}</a>
     <a href="/gallery" class="{{ 'on' if path == '/gallery' }}" title="{{ t('nav.gallery') }}">{{ icon("pictures") }}<span class="label">{{ t("nav.gallery") }}</span></a>

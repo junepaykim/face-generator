@@ -166,7 +166,7 @@ def unchanged_save_notice(conn: sqlite3.Connection, games_dir: Path | None) -> s
         return None
     return (
         f"FM27 has not saved since {newest.name} was last synced (saved {version.saved_at()}), "
-        "so this sync found nothing new. facegen reads the save file, not the running game: "
+        "so this sync found nothing new. Kitshot reads the save file, not the running game: "
         "a signing or a new member of staff reaches it when FM27 saves. Save the game (or wait "
         "for its autosave), then press Sync now again."
     )

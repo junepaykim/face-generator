@@ -196,7 +196,7 @@ def download(url: str, dest: Path, *, timeout: float = DOWNLOAD_TIMEOUT) -> None
             while block := response.read(1 << 16):
                 total += len(block)
                 if total > MAX_ARCHIVE_BYTES:
-                    raise UpdateError("the archive is larger than facegen's source can be")
+                    raise UpdateError("the archive is larger than Kitshot's source can be")
                 f.write(block)
     except OSError as exc:
         raise UpdateError(f"could not download {url}: {exc}") from exc
@@ -267,10 +267,10 @@ def run_update(
             say(f"Cannot update: {exc}")
             return FAILED
         if not waiting:
-            say("Waiting for facegen to quit (or for another update to finish)...")
+            say("Waiting for Kitshot to quit (or for another update to finish)...")
             waiting = True
         if clock() >= end:
-            say("facegen is still in use. Quit it from the tray icon and try the update again.")
+            say("Kitshot is still in use. Quit it from the tray icon and try the update again.")
             return STILL_RUNNING
         sleep(1.0)
 
@@ -283,14 +283,14 @@ def _update_locked(steps: Updater, data_dir: Path, say: Callable[[str], None]) -
     if recover_update(root):
         say("Restored the previous installation after an interrupted update.")
     current = installed_version(root)
-    say(f"facegen {current}: looking for a newer version on GitHub...")
+    say(f"Kitshot {current}: looking for a newer version on GitHub...")
     try:
         latest = latest_release(steps.fetch)
     except UpdateError as exc:
         say(f"Could not look for a newer version: {exc}")
         return FAILED
     if not is_newer(latest, current):
-        say(f"facegen {current} is the newest version.")
+        say(f"Kitshot {current} is the newest version.")
         old = load_record(data_dir)
         save_record(data_dir, CheckRecord(now(), latest, None, old.dismissed if old else None))
         return UPDATED
@@ -307,7 +307,7 @@ def _update_locked(steps: Updater, data_dir: Path, say: Callable[[str], None]) -
                 shutil.rmtree(old)
             elif old.exists():
                 old.unlink()
-        say(f"Downloading facegen {latest.version} ({archive_url(latest.tag)})...")
+        say(f"Downloading Kitshot {latest.version} ({archive_url(latest.tag)})...")
         (steps.fetch_archive or download)(archive_url(latest.tag), archive)
         files = unpack_payload(archive, staged)
         found = project_version((staged / "pyproject.toml").read_text(encoding="utf-8"))
@@ -325,7 +325,7 @@ def _update_locked(steps: Updater, data_dir: Path, say: Callable[[str], None]) -
             shutil.rmtree(other, ignore_errors=True)
     save_record(data_dir, CheckRecord(now(), latest))
     say(
-        f"Updated facegen {current} to {latest.version}: {applied.written} files written,"
+        f"Updated Kitshot {current} to {latest.version}: {applied.written} files written,"
         f" {applied.removed} removed. The replaced files are kept in {backup}."
     )
     return UPDATED
@@ -342,7 +342,7 @@ def cmd_update(args: Any, out: Any) -> int:
         try:
             data_dir = load_settings(defaults_path=args.config).paths.data_dir
         except SettingsError as exc:
-            print(f"facegen's settings cannot be read ({exc}); using its own data folder.",
+            print(f"Kitshot's settings cannot be read ({exc}); using its own data folder.",
                   file=tee)  # fmt: skip
             data_dir = PROJECT_ROOT / "data"
         return run_update(tee, data_dir, wait=args.wait)

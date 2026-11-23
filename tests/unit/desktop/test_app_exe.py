@@ -63,7 +63,7 @@ def parse(data: bytes, at: int = 0) -> Node:
     return node
 
 
-def test_the_version_information_names_facegen() -> None:
+def test_the_version_information_names_kitshot() -> None:
     data = app_exe.version_info("0.1.2")
     root = parse(data)
     assert (root.key, root.length, root.wtype) == ("VS_VERSION_INFO", len(data), 0)
@@ -72,7 +72,8 @@ def test_the_version_information_names_facegen() -> None:
     assert fixed[2:6] == (1, 2 << 16, 1, 2 << 16)  # 0.1 / 2.0, file and product
     table = root.child("StringFileInfo").child("040904B0")
     strings = {s.key: s.value.decode("utf-16-le").rstrip("\0") for s in table.children}
-    assert strings["FileDescription"] == strings["ProductName"] == "facegen"
+    assert strings["FileDescription"] == strings["ProductName"] == "Kitshot"
+    assert strings["CompanyName"] == "Kitshot"
     assert strings["FileVersion"] == strings["ProductVersion"] == "0.1.2"
     assert strings["OriginalFilename"] == "facegen-app.exe"
     assert "Python Software Foundation" in strings["LegalCopyright"]
@@ -81,10 +82,10 @@ def test_the_version_information_names_facegen() -> None:
 
 
 def test_an_icon_file_becomes_pictures_and_their_directory() -> None:
-    from facegen.desktop.app_icon import draw_icon
+    from facegen.desktop.app_icon import icon_image
 
     buffer = io.BytesIO()
-    draw_icon(None, 256).save(buffer, format="ICO", sizes=[(16, 16), (32, 32), (256, 256)])
+    icon_image(None, 256).save(buffer, format="ICO", sizes=[(16, 16), (32, 32), (256, 256)])
     pictures, group = app_exe.icon_resources(buffer.getvalue())
     assert struct.unpack_from("<HHH", group) == (0, 1, 3) and len(group) == 6 + 14 * 3
     entries = [struct.unpack_from("<BBBBHHIH", group, 6 + 14 * i) for i in range(3)]
@@ -128,3 +129,11 @@ def test_the_stamp_changes_with_each_input() -> None:
     assert key != app_exe.stamp_key(b"launcher2", b"icon", "0.1.2")
     assert key != app_exe.stamp_key(b"launcher", b"icon2", "0.1.2")
     assert key != app_exe.stamp_key(b"launcher", b"icon", "0.1.3")
+
+
+def test_a_new_product_name_makes_the_copy_again(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The stamp holds the version information, so the rename to Kitshot (Phase 17c) remade
+    copies that said facegen."""
+    key = app_exe.stamp_key(b"launcher", b"icon", "0.1.2")
+    monkeypatch.setattr(app_exe, "NAME", "facegen")
+    assert app_exe.stamp_key(b"launcher", b"icon", "0.1.2") != key

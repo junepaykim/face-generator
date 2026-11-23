@@ -79,15 +79,15 @@ def open_log(path: Path | None) -> TextIO | None:
 
 
 def open_running(data_dir: Path, out: TextIO, *, timeout: float | None = None) -> int:
-    """If a facegen app runs, ask it to open its window (exit codes in the module docstring)."""
+    """If the app runs, ask it to open its window (exit codes in the module docstring)."""
     if not instance.held_elsewhere(data_dir):
         return NOT_RUNNING
     instance.request_open(data_dir)
     if instance.wait_taken(data_dir, timeout):
-        print("facegen is running already: its window opens.", file=out, flush=True)
+        print("Kitshot is running already: its window opens.", file=out, flush=True)
         return OPENED
     print(
-        "facegen is running already, but it did not answer. If it is still starting, wait a"
+        "Kitshot is running already, but it did not answer. If it is still starting, wait a"
         " moment and start it again; if it seems stuck, end it in Task Manager.",
         file=out,
         flush=True,
@@ -102,10 +102,10 @@ def prepare(
     models_step: Callable[[TextIO], int],
 ) -> int:
     """The steps after `uv sync`; 0, as the app can start without either (docstring)."""
-    print("facegen: checking the Rust extension and the model files.", file=out, flush=True)
+    print("Kitshot: checking the Rust extension and the model files.", file=out, flush=True)
     if _step(native_step, out) != 0:
         print(
-            "Warning: the prebuilt Rust extension is not installed; facegen runs the same"
+            "Warning: the prebuilt Rust extension is not installed; Kitshot runs the same"
             " without it, a little slower to publish.",
             file=out,
             flush=True,
@@ -194,7 +194,7 @@ def data_dir_of(
             else:
                 print(f"Written in {local_label(config)}.", file=out, flush=True)
                 return data_dir
-    print(f"facegen's settings cannot be read: {error}", file=out, flush=True)
+    print(f"Kitshot's settings cannot be read: {error}", file=out, flush=True)
     return None
 
 
@@ -231,7 +231,7 @@ def refresh_shortcuts(data_dir: Path, config: Path | None, out: TextIO) -> None:
         print(f"Warning: the shortcuts were not updated: {exc}", file=out, flush=True)
         return
     for path in done:
-        print(f"Shortcut    {path} now starts facegen directly", file=out, flush=True)
+        print(f"Shortcut    {path} now starts Kitshot directly", file=out, flush=True)
 
 
 def cmd_launch(args: argparse.Namespace, out: TextIO) -> int:

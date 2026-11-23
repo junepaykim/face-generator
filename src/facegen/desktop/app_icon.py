@@ -1,12 +1,20 @@
-"""Draw the portrait-outline icon for the tray and Windows shortcuts.
+"""Kitshot's icon for the tray, the window and Windows shortcuts (Phase 17c).
 
-Icons are generated locally; the .ico goes in the data folder. The tray dot is green while
-ready or drawing, amber while paused and red after a fault (app_controller.dot_for).
+The pictures are the user's SVG (web/static/kitshot.svg) drawn once at every size Windows asks
+for and bundled in facegen/data/icon/ (scripts/build_icon.py); nothing is drawn here. The tray
+icon adds a state dot over the bottom-right bracket: green while ready or drawing, amber while
+paused and red after a fault (app_controller.dot_for). The .ico goes in the data folder, named
+after the pictures, so a changed icon is a new file that shortcuts, the window and
+facegen-app.exe pick up (app_exe.py remakes the copy when the .ico's bytes change).
 """
 
 from __future__ import annotations
 
+import hashlib
+import io
 import os
+from functools import cache
+from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -15,8 +23,6 @@ if TYPE_CHECKING:
 
     from facegen.desktop.app_controller import Dot
 
-BACKGROUND = (31, 58, 95, 255)
-FIGURE = (244, 239, 230, 255)
 DOT_COLOURS: dict[str, tuple[int, int, int, int]] = {
     "running": (46, 160, 67, 255),
     "paused": (210, 153, 34, 255),
@@ -24,60 +30,79 @@ DOT_COLOURS: dict[str, tuple[int, int, int, int]] = {
 }
 RING = (255, 255, 255, 255)
 ICO_SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256)
-ICO_NAME = "facegen.ico"
+"""The bundled sizes, every one Windows asks an .ico for."""
+ICO_PREFIX = "kitshot-"
 _SCALE = 4
-"""Drawn this many times larger, then reduced: smooth edges without anti-aliased drawing."""
+"""The dot is drawn this many times larger, then reduced: smooth edges."""
 
 
-def draw_icon(dot: Dot | None = None, size: int = 64) -> Image.Image:
-    """The icon as an RGBA picture `size` pixels square, with the state dot if given."""
+def bundled_png(size: int) -> bytes:
+    """The bundled picture `size` pixels square (one of ICO_SIZES)."""
+    if size not in ICO_SIZES:
+        raise ValueError(f"no bundled icon of {size} pixels")
+    return resources.files("facegen").joinpath("data", "icon", f"kitshot-{size}.png").read_bytes()
+
+
+@cache
+def _decoded(size: int) -> Image.Image:
+    from PIL import Image
+
+    with Image.open(io.BytesIO(bundled_png(size))) as img:
+        return img.convert("RGBA")
+
+
+def icon_image(dot: Dot | None = None, size: int = 64) -> Image.Image:
+    """The icon as an RGBA picture `size` pixels square, with the state dot if given. A size
+    that is not bundled is reduced from the next larger one."""
     from PIL import Image, ImageDraw
 
+    if size in ICO_SIZES:
+        img = _decoded(size).copy()
+    else:
+        larger = min((s for s in ICO_SIZES if s >= size), default=max(ICO_SIZES))
+        img = _decoded(larger).resize((size, size), Image.Resampling.LANCZOS)
+    if dot is None:
+        return img
     big = size * _SCALE
-    img = Image.new("RGBA", (big, big), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    u = big / 64  # the shapes below are laid out on a 64-unit square
+    layer = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    d = ImageDraw.Draw(layer)
+    u = big / 64  # laid out on a 64-unit square: a ringed dot over the bottom-right bracket
 
     def box(x0: float, y0: float, x1: float, y1: float) -> tuple[int, int, int, int]:
         return (round(x0 * u), round(y0 * u), round(x1 * u), round(y1 * u))
 
-    d.rounded_rectangle(box(2, 2, 62, 62), radius=round(13 * u), fill=BACKGROUND)
-    # Shoulders: the top of a wide ellipse; what reaches below the square is cut off.
-    d.ellipse(box(12, 40, 52, 76), fill=FIGURE)
-    # The head, with a gap above the shoulders so the outline reads at 16 pixels.
-    d.ellipse(box(21, 11, 43, 35), fill=BACKGROUND)
-    d.ellipse(box(23, 13, 41, 33), fill=FIGURE)
-    img = _clip_to_square(img, u)
-    if dot is not None:
-        colour = DOT_COLOURS[dot]
-        d = ImageDraw.Draw(img)
-        d.ellipse(box(37, 37, 63, 63), fill=RING)
-        d.ellipse(box(40, 40, 60, 60), fill=colour)
-    return img.resize((size, size), Image.Resampling.LANCZOS)
+    d.ellipse(box(37, 37, 63, 63), fill=RING)
+    d.ellipse(box(40, 40, 60, 60), fill=DOT_COLOURS[dot])
+    img.alpha_composite(layer.resize((size, size), Image.Resampling.LANCZOS))
+    return img
 
 
-def _clip_to_square(img: Image.Image, u: float) -> Image.Image:
-    """Keep only what is inside the rounded square (the shoulders reach below it)."""
-    from PIL import Image, ImageDraw
-
-    mask = Image.new("L", img.size, 0)
-    ImageDraw.Draw(mask).rounded_rectangle(
-        (round(2 * u), round(2 * u), round(62 * u), round(62 * u)), radius=round(13 * u), fill=255
-    )
-    out = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    out.paste(img, (0, 0), mask)
-    return out
+@cache
+def icon_key() -> str:
+    """A short hash of the bundled pictures: part of the .ico's name."""
+    digest = hashlib.sha256()
+    for size in ICO_SIZES:
+        digest.update(hashlib.sha256(bundled_png(size)).digest())
+    return digest.hexdigest()[:10]
 
 
-def write_ico(folder: Path) -> Path:
-    """facegen.ico in `folder`, every size Windows asks for (no dot); written only when it is
-    missing, atomically. Returns its path."""
-    path = folder / ICO_NAME
+def ico_name() -> str:
+    return f"{ICO_PREFIX}{icon_key()}.ico"
+
+
+def write_ico(folder: Path, name: str | None = None) -> Path:
+    """The icon as an .ico in `folder` with every size Windows asks for (no dot), named
+    `name` or after the pictures (ico_name); written only when it is missing, atomically.
+    Returns its path."""
+    path = folder / (name or ico_name())
     if path.is_file():
         return path
     folder.mkdir(parents=True, exist_ok=True)
-    big = draw_icon(None, max(ICO_SIZES))
+    largest, *rest = [icon_image(None, s) for s in sorted(ICO_SIZES, reverse=True)]
     tmp = path.with_name(f".{path.name}.{os.getpid()}.part")
-    big.save(tmp, format="ICO", sizes=[(s, s) for s in ICO_SIZES])
-    os.replace(tmp, path)
+    try:
+        largest.save(tmp, format="ICO", sizes=[(s, s) for s in ICO_SIZES], append_images=rest)
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
     return path

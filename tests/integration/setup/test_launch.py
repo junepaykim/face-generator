@@ -244,7 +244,7 @@ def test_a_no_leaves_the_file_and_says_why_without_a_traceback(
     out = io.StringIO()
     assert main(["--config", str(config_file), "launch"], out=out) == 2
     assert local.read_text(encoding="utf-8") == WSL_LOCAL
-    assert "facegen's settings cannot be read" in out.getvalue()
+    assert "Kitshot's settings cannot be read" in out.getvalue()
     assert f"on Windows write it as '{WINDOWS_FORM}'" in out.getvalue()
 
 

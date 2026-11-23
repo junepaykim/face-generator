@@ -1,7 +1,7 @@
 name: Release
 
-# facegen's Windows installer (Phase 13). A `v<version>` tag, <version> being pyproject.toml's,
-# builds facegen-setup-<version>.exe with Inno Setup and attaches it and SHA256SUMS.txt to a
+# Kitshot's Windows installer (Phase 13). A `v<version>` tag, <version> being pyproject.toml's,
+# builds Kitshot-setup-<version>.exe with Inno Setup and attaches it and SHA256SUMS.txt to a
 # GitHub Release, marked latest. The installer holds the release payload (installer/stage.py:
 # the same files an update in place writes), uv.exe checked against installer/uv.sha256, and
 # the icon; Python, PyTorch and the models are fetched by Start.bat at the first start.
@@ -123,5 +123,5 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --latest \
-            --title "facegen ${RELEASE_TAG#v}" \
-            --notes "Download facegen-setup-${RELEASE_TAG#v}.exe and run it. Windows SmartScreen warns about it because it is not signed: choose More info, then Run anyway. Already installed? facegen offers the update on its dashboard."
+            --title "Kitshot ${RELEASE_TAG#v}" \
+            --notes "Download Kitshot-setup-${RELEASE_TAG#v}.exe and run it. Windows SmartScreen warns about it because it is not signed: choose More info, then Run anyway. Already installed? Kitshot offers the update on its dashboard."

@@ -1,5 +1,5 @@
 """facegen-app.exe made from this venv's real pythonw.exe launcher with the Win32 resource
-functions: Windows reads facegen's name and icon from it, and it starts Python in the venv."""
+functions: Windows reads Kitshot's name and icon from it, and it starts Python in the venv."""
 
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ def file_description(path: Path) -> str:
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Win32 resources of a real venv launcher")
-def test_the_launcher_copy_says_facegen_and_starts_python(tmp_path: Path) -> None:
+def test_the_launcher_copy_says_kitshot_and_starts_python(tmp_path: Path) -> None:
     scripts = Path(sys.executable).parent
     if not (scripts.parent / "pyvenv.cfg").is_file() or not (scripts / "pythonw.exe").is_file():
         pytest.skip("not run from a venv with a pythonw.exe launcher")
@@ -58,7 +58,7 @@ def test_the_launcher_copy_says_facegen_and_starts_python(tmp_path: Path) -> Non
 
     exe = app_exe.ensure(venv / "Scripts", icon, "1.2.3")
     assert exe == venv / "Scripts" / app_exe.APP_EXE
-    assert file_description(exe) == "facegen"
+    assert file_description(exe) == "Kitshot"
     kernel32 = app_exe._kernel32()
     found = app_exe._resources(kernel32, exe, (app_exe.RT_ICON, app_exe.RT_GROUP_ICON))
     assert sorted(name for kind, name, _ in found if kind == app_exe.RT_ICON) == list(

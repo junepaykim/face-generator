@@ -59,8 +59,8 @@ code { font-size: 12px; }
 .brand { display: flex; align-items: center; gap: 10px; padding: 2px 8px; font-weight: 700;
          font-size: 16px; color: var(--fg); }
 .brand:hover { text-decoration: none; }
-.logo { flex: none; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center;
-        background: var(--accent); color: var(--accent-fg); font-size: 13px; letter-spacing: -.5px; }
+/* Kitshot's mark (static/kitshot.svg, Phase 17c): the sidebar's brand and the favicon. */
+.logo { flex: none; width: 28px; height: 28px; display: block; }
 .side nav { display: flex; flex-direction: column; gap: 2px; }
 .side nav a { position: relative; display: flex; align-items: center; gap: 10px; padding: 7px 10px;
               border-radius: 8px; color: var(--fg); }
@@ -335,11 +335,12 @@ a.button:hover { border-color: var(--accent); text-decoration: none; }
 .card.now:not(:has(.now-pic)) { grid-template-columns: 1fr; }
 .now-pic img, .now-pic-none { width: 120px; aspect-ratio: auto 3 / 4; border-radius: 8px; display: block;
                               object-fit: cover; }
-.now-pic-none { display: grid; place-items: center; background: var(--row); border: 1px dashed var(--line);
-                color: var(--muted); font-weight: 700; font-size: 22px; letter-spacing: -1px; }
-.now-pic-none.busy span { animation: pulse 1.6s ease-in-out infinite; }
+.now-pic-none { display: grid; place-items: center; background: var(--row); border: 1px dashed var(--line); }
+.now-pic-none .now-pic-mark { width: 40%; height: auto; aspect-ratio: 1; object-fit: contain; border-radius: 0;
+                              opacity: .7; }
+.now-pic-none.busy .now-pic-mark { animation: pulse 1.6s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .35; } }
-@media (prefers-reduced-motion: reduce) { .now-pic-none.busy span { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .now-pic-none.busy .now-pic-mark { animation: none; } }
 .now-main h2 { display: flex; align-items: center; gap: 8px; }
 .now-text { font-size: 15px; margin: 4px 0 8px; }
 .now-progress { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 8px; }
