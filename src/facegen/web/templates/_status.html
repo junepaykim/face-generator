@@ -42,6 +42,9 @@
       {% else %}
         <form method="post" action="/worker/pause"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button>{{ t("dash.worker.pause") }}</button></form>
       {% endif %}
+      {% if skip %}{# the job the page shows: one finished meanwhile is not skipped instead (Phase 17m) #}
+        <form method="post" action="/worker/skip"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="job" value="{{ drawing.job.id }}"><button title="{{ tr('dash.worker.skip_title', name=drawing.job.name) }}">{{ t("dash.worker.skip") }}</button></form>
+      {% endif %}
       {% if generate_now %}
         <form method="post" action="/worker/generate-now"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button title="{{ tr('dash.worker.generate_now_why.' ~ generate_now, count=estimate.held if estimate else 0) }}">{{ t("dash.worker.generate_now") }}</button></form>
       {% endif %}
@@ -74,7 +77,7 @@
           <tr class="{{ 'running' if j.status == 'running' }}">
             <td><a href="/players/{{ j.unique_id }}">{{ j.name }}</a></td>
             <td>{{ j.club or t("common.free_agent") }}</td>
-            <td>{{ t("kind." ~ j.kind) }}{% if j.status == "running" %} <span class="st run">{{ t("status.drawing") }}</span>{% endif %}{% if uses_reference(j.kind, j.at_my_club, settings, j) %} <span class="tag">{{ t("dash.queue.reference") }}</span>{% endif %}</td>
+            <td>{{ t("kind." ~ j.kind) }}{% if j.status == "running" %} <span class="st run">{{ t("status.drawing") }}</span>{% elif j.skipped %} <span class="tag">{{ t("dash.queue.skipped") }}</span>{% endif %}{% if uses_reference(j.kind, j.at_my_club, settings, j) %} <span class="tag">{{ t("dash.queue.reference") }}</span>{% endif %}</td>
             <td>{{ grp(j.group_name) }}</td>
             <td>{% if j.manual and j.status == "queued" %}<form method="post" action="/players/{{ j.unique_id }}/cancel">{% include "_player_action_fields.html" %}<input type="hidden" name="next" value="/"><button class="link">{{ t("dash.queue.cancel") }}</button></form>{% endif %}</td>
           </tr>

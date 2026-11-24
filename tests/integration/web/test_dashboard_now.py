@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
+from html import unescape
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -440,3 +441,81 @@ def test_groups_and_terms_say_what_they_mean_on_hover(drawn: TestClient) -> None
     script = drawn.get(re.search(r'src="(/static/app.js[^"]*)"', drawn.get("/").text)[1]).text
     # ⓘ tips share the floating box, kept inside the window (user, 2026-11-22).
     assert 'closest("[data-tip], .info")' in script and 'tip.className = "hover-tip"' in script
+
+
+# -- Skip current (Phase 17m, D8) --------------------------------------------------------------
+
+
+class SkippingWorker(StubWorker):
+    """A worker caught in the middle of a picture, noting the jobs it is asked to skip."""
+
+    def __init__(self, status: WorkerStatus) -> None:
+        super().__init__(status)
+        self.skipped: list[int] = []
+
+    def skip(self, job_id: int) -> bool:
+        self.skipped.append(job_id)
+        return True
+
+
+def skip_button(page: str) -> tuple[str, str] | None:
+    """Skip's job and tip, or None when the page has no such button."""
+    found = re.search(
+        r'<form method="post" action="/worker/skip"><input type="hidden" name="csrf_token"'
+        r' value="[^"]+"><input type="hidden" name="job" value="(\d+)"><button title="([^"]*)">'
+        r"(?:Skip|건너뛰기)</button>",
+        page,
+    )
+    return (found[1], found[2]) if found else None
+
+
+def test_skip_shows_while_drawing_with_another_picture_to_draw(env: Env, drawn: TestClient) -> None:
+    worker = SkippingWorker(drawing(KIDS[3], "Kid 3", 3, "initial", "b"))
+    client = client_for(env.config, env.db_path, worker)
+    assert skip_button(client.get("/status").text) == (
+        "99",
+        "Stop generating Kid 3 now; it is generated again after the rest of the queue",
+    )
+    korean = client.get("/status", headers=KOREAN_WINDOWS).text
+    assert skip_button(korean) == (
+        "99",
+        "Kid 3 생성을 지금 멈추고, 대기열의 나머지를 먼저 생성한 뒤 다시 생성합니다",
+    )
+    # The rest wait for Generate now: the skipped picture would come straight back.
+    assert client.post("/settings/save", data={"schedule.auto_groups": "a"}).json()["ok"]
+    assert skip_button(client.get("/status").text) is None
+    worker.s = replace(worker.s, generate_now=True)
+    assert skip_button(client.get("/status").text) is not None
+    # Not drawing: nothing to skip.
+    worker.s = replace(worker.s, state="idle", current=None, reason="held")
+    assert skip_button(client.get("/status").text) is None
+    client.close()
+
+
+def test_skip_asks_for_the_job_the_page_showed(env: Env, drawn: TestClient) -> None:
+    worker = SkippingWorker(drawing(KIDS[3], "Kid 3", 3, "initial", "b"))
+    client = client_for(env.config, env.db_path, worker)
+    r = client.post("/worker/skip", data={"job": "99"})
+    assert r.status_code == 303 and r.headers["location"].startswith("/?msg=Skipped%20Kid%203")
+    assert worker.skipped == [99]
+    # Another picture is drawn by now, or none: the page's job is not skipped.
+    for job in ("98", "", "x"):
+        r = client.post("/worker/skip", data={"job": job})
+        assert "err=Not%20skipped" in r.headers["location"], job
+    assert worker.skipped == [99]
+    page = client.get(r.headers["location"]).text
+    assert "Not skipped: that picture is already finished." in page
+    r = client.post("/worker/skip", data={"job": "99"}, headers={"X-CSRF-Token": "wrong"})
+    assert r.status_code == 403 and worker.skipped == [99]
+    client.close()
+
+
+def test_a_skipped_job_is_tagged_in_the_queue_list(env: Env, drawn: TestClient) -> None:
+    conn = db.connect(env.db_path)
+    conn.execute("UPDATE jobs SET skipped = 1 WHERE unique_id = ?", (KIDS[3],))
+    conn.close()
+    status = unescape(drawn.get("/status").text)
+    rows = re.findall(r"<tr class=\"\">.*?</tr>", status, re.DOTALL)
+    assert "Kid 3" in rows[-1] and '<span class="tag">skipped</span>' in rows[-1]
+    assert all("skipped" not in row for row in rows[:-1])
+    assert '<span class="tag">건너뜀</span>' in drawn.get("/status", headers=KOREAN_WINDOWS).text

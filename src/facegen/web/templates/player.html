@@ -42,6 +42,7 @@
         {% elif p.job_status == "queued" %}<span class="st q">{{ t("status.queued", kind=t("kind." ~ p.job_kind)) }}{{ t("player.requested") if p.job_manual }}</span>
           {% if redraw_reference and p.job_kind in reference_kinds %}<span class="tag">{{ t("player.with_reference") }}</span>{% endif %}
         {% elif p.latest_job == "failed" %}<a class="st bad" href="/review">{{ t("status.in_review") }}</a>
+        {% elif cur and cur.flagged_at %}<a class="st bad" href="/review">{{ t("status.sent_to_review") }}</a>
         {% else %}<span class="muted">{{ t("player.nothing_queued") }}</span>{% endif %}</td></tr>
     </table>
 
@@ -66,7 +67,9 @@
       {% if p.job_status == "queued" and p.job_manual %}
         <form method="post" action="/players/{{ p.unique_id }}/cancel">{% include "_player_action_fields.html" %}<button>{{ t("player.cancel_request") }}</button></form>
       {% endif %}
-      {% if cur %}
+      {% if cur %}{# Send to Review, or keep a picture sent there (Phase 17m) #}
+        {% if cur.flagged_at %}<form method="post" action="/players/{{ p.unique_id }}/keep">{% include "_player_action_fields.html" %}<button title="{{ t('review.keep_title') }}">{{ t("review.keep") }}</button></form>
+        {% else %}<form method="post" action="/players/{{ p.unique_id }}/flag">{% include "_player_action_fields.html" %}<button title="{{ t('player.flag_title') }}">{{ t("player.flag") }}</button></form>{% endif %}
         <form method="post" action="/players/{{ p.unique_id }}/remove" data-confirm="{{ tr('player.remove_confirm', name=p.name) }}">{% include "_player_action_fields.html" %}<button class="danger">{{ t("player.remove") }}</button></form>
       {% endif %}
     </div>

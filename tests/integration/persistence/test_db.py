@@ -11,7 +11,7 @@ import pytest
 
 from facegen.core.classify import Why
 from facegen.core.settings_values import Settings
-from facegen.persistence import db, player_queries
+from facegen.persistence import db, jobs, player_queries
 from facegen.persistence.settings import load_settings
 from facegen.pipeline.reclassification import reclassify
 from facegen.platform.locking import file_lock
@@ -75,10 +75,13 @@ def test_state_migration_preserves_history_constraints_and_restored_sheet() -> N
     jobs_before = [tuple(r) for r in conn.execute("SELECT * FROM jobs")]
     db.migrate(conn)
     images_after = [tuple(r) for r in conn.execute("SELECT * FROM images ORDER BY id")]
-    assert [r[:-2] for r in images_after] == images_before
-    assert [r[-2] for r in images_after] == ["woman", "woman"]  # gender (migration 13)
-    assert [r[-1] for r in images_after] == ["3:4", "3:4"]  # aspect (migration 14)
-    assert [tuple(r)[:-2] for r in conn.execute("SELECT * FROM jobs")] == jobs_before
+    assert [r[:-3] for r in images_after] == images_before
+    assert [r[-3] for r in images_after] == ["woman", "woman"]  # gender (migration 13)
+    assert [r[-2] for r in images_after] == ["3:4", "3:4"]  # aspect (migration 14)
+    assert [r[-1] for r in images_after] == [None, None]  # flagged_at (migration 17)
+    jobs_after = [tuple(r) for r in conn.execute("SELECT * FROM jobs")]
+    assert [r[:-3] for r in jobs_after] == jobs_before
+    assert [r[-1] for r in jobs_after] == [0]  # skipped (migration 17)
     assert conn.execute("SELECT active_traits_version FROM players").fetchone()[0] == 1
     for table, column in (("images", "age_band"), ("jobs", "target_band")):
         assert {r[1]: r[2] for r in conn.execute(f"PRAGMA table_info({table})")}[column] == "TEXT"
@@ -416,6 +419,46 @@ def test_migration_16_keeps_the_reasons_text_until_the_next_classification(
     assert mine["why"] == (Why("part", part="first_team"),)
     pinned = player_queries.player_row(conn, 1, 8)
     assert pinned is not None and pinned["why"] == (Why("pin_never"),)
+
+
+def test_migration_17_adds_the_review_flag_and_the_skip_order() -> None:
+    """Phase 17m: no picture is sent to Review and no job skipped by the update; the worker's
+    queue read still walks the queue index in order (no sort of the whole queue)."""
+    conn = _at_version(16)
+    conn.execute(
+        "INSERT INTO images (career_id, unique_id, version, reason, group_name, model, prompt,"
+        " negative_prompt, seed, is_current, created_at)"
+        " VALUES (1, 7, 1, 'initial', 'a', 'm', 'p', 'n', 1, 1, 'now')"
+    )
+    conn.execute(
+        "INSERT INTO jobs (career_id, unique_id, kind, group_name, tier, rank, status, reason,"
+        " created_at, updated_at) VALUES (1, 8, 'initial', 'b', 3, -150, 'queued', 'r', 'n', 'n')"
+    )
+    assert db.migrate(conn) == len(db.MIGRATIONS)
+    assert conn.execute("SELECT flagged_at FROM images").fetchone()[0] is None
+    assert conn.execute("SELECT skipped FROM jobs").fetchone()[0] == 0
+    indexes = {
+        r["name"]: r["sql"]
+        for r in conn.execute("SELECT name, sql FROM sqlite_master WHERE type = 'index'")
+    }
+    assert "WHERE flagged_at IS NOT NULL" in indexes["images_flagged"]
+    assert "(status, skipped, tier, rank, id)" in indexes["jobs_queue"]
+    plan = " ".join(
+        r["detail"]
+        for r in conn.execute(
+            "EXPLAIN QUERY PLAN SELECT j.id FROM jobs j WHERE j.career_id = 1"
+            f" AND j.status = 'queued' ORDER BY {jobs.QUEUE_ORDER} LIMIT 3"
+        )
+    )
+    assert "jobs_queue" in plan and "TEMP B-TREE" not in plan
+    flagged = " ".join(
+        r["detail"]
+        for r in conn.execute(
+            "EXPLAIN QUERY PLAN SELECT unique_id FROM images WHERE career_id = 1"
+            " AND flagged_at IS NOT NULL AND is_current = 1"
+        )
+    )
+    assert "images_flagged" in flagged
 
 
 def _history(conn: sqlite3.Connection, before: dict, after: dict) -> None:

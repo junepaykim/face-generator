@@ -412,8 +412,23 @@ CREATE INDEX players_pinned ON players (career_id, unique_id) WHERE pin IS NOT N
 """
 
 
+# Phase 17m. images.flagged_at: when the user sent the picture to Review ("Send to Review", D7),
+# NULL otherwise. Only a current picture counts: it stays in FM27, and its player is listed in
+# Review until another picture becomes current or the user keeps it (images_flagged finds the
+# few). jobs.skipped: 0, or the order in which skipped jobs wait behind the rest of the queue
+# ("Skip current", D8); the queue index leads with it, so the worker's queue read stays an
+# index scan.
+_V17 = """
+ALTER TABLE images ADD COLUMN flagged_at TEXT;
+CREATE INDEX images_flagged ON images (career_id, unique_id) WHERE flagged_at IS NOT NULL;
+ALTER TABLE jobs ADD COLUMN skipped INTEGER NOT NULL DEFAULT 0;
+DROP INDEX jobs_queue;
+CREATE INDEX jobs_queue ON jobs (status, skipped, tier, rank, id);
+"""
+
+
 MIGRATIONS: tuple[str, ...] = (
-    _V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10, _V11, _V12, _V13, _V14, _V15, _V16
+    _V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10, _V11, _V12, _V13, _V14, _V15, _V16, _V17
 )  # fmt: skip
 
 # The active career: the one whose save was written last (spec section 8). A career synced

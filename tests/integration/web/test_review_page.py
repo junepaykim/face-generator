@@ -39,8 +39,9 @@ class Env:
     config: Path
     db_path: Path
 
-    def draw(self, verdicts: list[str]) -> None:
-        """Run the group B jobs with the tagger answering these verdicts, then "pass"."""
+    def draw(self, verdicts: list[str], groups: frozenset[str] = frozenset({"b"})) -> None:
+        """Run the jobs of these groups (B) with the tagger answering these verdicts, then
+        "pass"."""
         conn = db.connect(self.db_path)
         try:
             career = load_career(conn)
@@ -50,7 +51,7 @@ class Env:
                 conn, load_settings(conn, self.config), load_kits(), career,
                 renderer_factory=FakeRenderer, tagger_factory=lambda: tagger,
                 fm_check=lambda: False, log=lambda *_: None,
-            ).run(JobFilter(groups=frozenset({"b"})))  # fmt: skip
+            ).run(JobFilter(groups=groups))  # fmt: skip
         finally:
             conn.close()
 
@@ -187,3 +188,67 @@ def test_the_candidates_side_by_side_with_the_picture_fm27_shows(env: Env) -> No
     assert f'<a href="/pictures/{current}" data-lightbox="compare-{ONE}"' in dialog[0]
     script = env.client.get(re.search(r'src="(/static/app.js[^"]*)"', page)[1]).text
     assert "dialog.showModal()" in script and "img.dataset.src" in script
+
+
+# -- Pictures sent to Review (Phase 17m, D7) ---------------------------------------------------
+
+
+def section(page: str, uid: int) -> str:
+    found = re.search(
+        rf'<section class="card review" id="review-{uid}">.*?</section>', page, re.DOTALL
+    )
+    assert found is not None, uid
+    return found[0]
+
+
+def test_a_picture_sent_here_is_listed_with_its_own_actions(env: Env) -> None:
+    env.draw([], frozenset({"a"}))  # Mine Player's picture passes
+    r = post_player_action(env.client, f"/players/{MINE}/flag", data={"next": "/review"})
+    page = unescape(env.client.get(r.headers["location"]).text)
+    assert "Sent to Review; the picture stays in FM27 until a new one passes." in page
+    assert sorted(listed(page)) == sorted([ONE, TWO, THREE, MINE])
+    mine = section(page, MINE)
+    assert (
+        f'<a href="/players/{MINE}">Mine Player</a> <span class="badge tone-accent review-flag"'
+        ' title="You sent this picture here; it stays in FM27 until a new one passes">'
+        "Sent by you</span>"
+    ) in mine
+    assert f'formaction="/players/{MINE}/new-picture"' in mine  # Redraw, not Retry
+    assert f'formaction="/players/{MINE}/keep"' in mine and ">Keep picture</button>" in mine
+    assert f"/players/{MINE}/retry" not in mine and f"/players/{MINE}/pin" in mine
+    assert re.search(r'<img src="/pictures/\d+\?size=192"[^>]*alt="Now in FM27">', mine)
+    assert '<span class="b ok">Now in FM27</span>' in mine and "data-compare" not in mine
+    one = section(page, ONE)  # a failed picture keeps its own
+    assert f"/players/{ONE}/retry" in one and "/keep" not in one and "Sent by you" not in one
+    # The bar can redraw while such a picture is listed.
+    assert re.search(r'name="action" value="new-picture" data-needs-tick', page)
+    korean = env.client.get("/review", headers=KOREAN_WINDOWS).text
+    assert ">직접 보냄</span>" in korean and ">그림 유지</button>" in korean
+    # The Players list's "in review" filter and the player's page say so too.
+    players = unescape(env.client.get("/players?picture=review&shown=everyone").text)
+    assert f'href="/players/{MINE}"' in players and ">sent to Review</a>" in players
+    own = unescape(env.client.get(f"/players/{MINE}").text)
+    assert ">sent to Review</a>" in own and f'action="/players/{MINE}/keep"' in own
+
+    # With only such pictures listed, the bar has nothing to retry.
+    post(env, "new-face", ONE, TWO, THREE)
+    page = unescape(env.client.get("/review").text)
+    assert listed(page) == [MINE] and 'value="retry"' not in page
+    assert '<button class="primary" name="action" value="new-picture" data-needs-tick' in page
+
+    r = post_player_action(env.client, f"/players/{MINE}/keep", data={"next": "/review"})
+    page = unescape(env.client.get(r.headers["location"]).text)
+    assert "Picture kept and taken off Review." in page and listed(page) == []
+    own = unescape(env.client.get(f"/players/{MINE}").text)
+    assert f'action="/players/{MINE}/flag"' in own and ">Send to Review</button>" in own
+
+
+def test_a_redraw_takes_a_picture_off_the_list_while_it_is_queued(env: Env) -> None:
+    env.draw([], frozenset({"a"}))
+    post_player_action(env.client, f"/players/{MINE}/flag", data={"next": "/review"})
+    page = post(env, "new-picture", MINE, ONE)  # the bar's Redraw
+    assert "Redraw: 1 queued, 1 skipped (no picture to draw again; use Draw)." in page
+    assert MINE not in listed(page) and env.jobs(MINE)[-1] == ("redraw", "queued")
+    # Nothing to send: no picture yet.
+    r = post_player_action(env.client, f"/players/{ONE}/flag", data={"next": "/review"})
+    assert "Kid One has no picture." in unescape(env.client.get(r.headers["location"]).text)

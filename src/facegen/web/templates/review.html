@@ -7,13 +7,16 @@
 {% block content %}
 {% if items %}
 {# One form for the list: the ticked players go to the bar's buttons; each player's own buttons
-   post to their page's action (formaction). Phase 12i. #}
+   post to their page's action (formaction). Phase 12i. Players whose picture was sent here
+   (Phase 17m) have no failed job: Redraw instead of Retry, and Keep picture. #}
+{% set sent = items|selectattr("job_id", "none")|list %}{% set failed = items|length > sent|length %}
 <form method="post" action="/players/action" id="bulk">{% include "_player_action_fields.html" %}
   <input type="hidden" name="next" value="/review"><input type="hidden" name="pin" value="never">
   <div class="bulk sticky">
     <label class="tick-all"><input type="checkbox" data-tick-all> {{ t("review.tick_all") }}</label>
     <span class="ticked muted" data-ticked>{{ t("js.ticked", count=0) }}</span>
-    <button class="primary" name="action" value="retry" data-needs-tick>{{ t("player.retry") }}</button>
+    {% if failed %}<button class="primary" name="action" value="retry" data-needs-tick>{{ t("player.retry") }}</button>{% endif %}
+    {% if sent %}<button{% if not failed %} class="primary"{% endif %} name="action" value="new-picture" data-needs-tick title="{{ t('player.new_picture_title') }}">{{ t("players.redraw") }}</button>{% endif %}
     <button name="action" value="new-face" data-needs-tick>{{ t("player.new_face") }}</button>
     <button name="action" value="pin" data-needs-tick title="{{ t('review.give_up') }}">{{ t("review.pin_never") }}</button>
   </div>
@@ -21,17 +24,27 @@
   {% set cands = it.image.check.candidates if it.image else [] %}
   <section class="card review" id="review-{{ it.unique_id }}">
     <div class="head">
-      <h2><input type="checkbox" name="uid" value="{{ it.unique_id }}" aria-label="{{ t('players.tick', name=it.name) }}"> <a href="/players/{{ it.unique_id }}">{{ it.name }}</a> <span class="muted small">{{ it.club or t("common.free_agent") }} · {{ t("review.age", age=it.age) }} · {{ t("kind." ~ it.kind) }} · {{ grp(it.group_name) }} · <time datetime="{{ it.updated_at }}">{{ it.updated_at[:16]|replace("T", " ") }}</time></span></h2>
+      <h2><input type="checkbox" name="uid" value="{{ it.unique_id }}" aria-label="{{ t('players.tick', name=it.name) }}"> <a href="/players/{{ it.unique_id }}">{{ it.name }}</a>{% if it.flagged %} <span class="badge tone-accent review-flag" title="{{ t('review.flagged_title') }}">{{ t("review.flagged") }}</span>{% endif %} <span class="muted small">{{ it.club or t("common.free_agent") }} · {{ t("review.age", age=it.age) }}{% if it.kind %} · {{ t("kind." ~ it.kind) }}{% endif %} · {{ grp(it.group_name) }} · <time datetime="{{ it.updated_at }}">{{ it.updated_at[:16]|replace("T", " ") }}</time></span></h2>
       <div class="buttons">
         {% if it.present and it.in_scope %}
-        <button class="primary" formaction="/players/{{ it.unique_id }}/retry">{{ t("player.retry") }}</button>
+        {% if it.job_id %}<button class="primary" formaction="/players/{{ it.unique_id }}/retry">{{ t("player.retry") }}</button>
+        {% elif it.pin != "never" %}<button class="primary" formaction="/players/{{ it.unique_id }}/new-picture" title="{{ t('player.new_picture_title') }}">{{ t("players.redraw") }}</button>{% endif %}
         <button formaction="/players/{{ it.unique_id }}/new-face">{{ t("player.new_face") }}</button>
         {% endif %}
+        {% if it.flagged %}<button formaction="/players/{{ it.unique_id }}/keep" title="{{ t('review.keep_title') }}">{{ t("review.keep") }}</button>{% endif %}
         <button formaction="/players/{{ it.unique_id }}/pin" title="{{ t('review.give_up') }}">{{ t("review.pin_never") }}</button>
         {% if cands %}<button type="button" data-compare="compare-{{ it.unique_id }}">{{ t("review.compare") }}</button>{% endif %}
       </div>
     </div>
     {% if it.problem %}{{ problem(it.problem) }}{% endif %}
+    {% if not it.job_id and it.current_id %}{# sent here: the picture FM27 shows now #}
+    <div class="cands">
+      <figure class="cand">
+        <a href="/pictures/{{ it.current_id }}" data-lightbox="review-{{ it.unique_id }}" data-caption="{{ it.name }} · {{ tr('review.now') }}" data-player="/players/{{ it.unique_id }}"><img src="/pictures/{{ it.current_id }}?size=192" loading="lazy" alt="{{ t('review.now') }}"></a>
+        <figcaption><span class="b ok">{{ t("review.now") }}</span></figcaption>
+      </figure>
+    </div>
+    {% endif %}
     {% if cands %}
     <div class="cands">
       {% for c in cands %}

@@ -48,6 +48,11 @@ def _date(text: str | None) -> date | None:
         return None
 
 
+QUEUE_ORDER = "j.skipped, j.tier, j.rank, j.id"
+"""The order the worker draws queued jobs in (`jobs` as `j`): skipped jobs last, in the order
+they were skipped (Phase 17m), then by tier and rank. The `jobs_queue` index has these columns."""
+
+
 def _queue_query(career_id: int, f: JobFilter) -> tuple[str, list[str | int]]:
     """The queue and its selection predicates, shared by the job and count queries."""
     query = (
@@ -91,7 +96,7 @@ def queued_jobs(
     if job_id is not None:
         query += " AND j.id = ?"
         params.append(job_id)
-    query += " ORDER BY j.tier, j.rank, j.id"
+    query += f" ORDER BY {QUEUE_ORDER}"
     if limit is not None:
         query += " LIMIT ?"
         params.append(limit)
@@ -172,6 +177,24 @@ def requeue_stale(conn: sqlite3.Connection) -> int:
             "UPDATE jobs SET status = 'queued', updated_at = ? WHERE status = 'running'",
             (now(),),
         ).rowcount
+
+
+def skip(conn: sqlite3.Connection, job_id: int) -> bool:
+    """Skip current (Phase 17m, D8): the running job goes back to the queue behind every other
+    queued job, and behind the jobs skipped before it. It keeps its kind, group and sheet
+    (`traits_version`), so it is drawn later with the same seeds; a new request for the player
+    (`queue_manual`) brings it forward again. False if the job is no longer running."""
+    with transaction(conn):
+        return (
+            conn.execute(
+                "UPDATE jobs SET status = 'queued', updated_at = ?, skipped ="
+                " (SELECT COALESCE(MAX(s.skipped), 0) + 1 FROM jobs s"
+                " WHERE s.career_id = jobs.career_id)"
+                " WHERE id = ? AND status = 'running'",
+                (now(), job_id),
+            ).rowcount
+            == 1
+        )
 
 
 def send_to_review(conn: sqlite3.Connection, job_id: int, error: str) -> bool:
@@ -327,14 +350,15 @@ def queue_manual(
     reason: str,
     settings: Settings,
 ) -> None:
-    """Queue a manual job for the player, taking over their queued automatic job if any."""
+    """Queue a manual job for the player, taking over their queued automatic job if any (and
+    its place: a skipped job comes forward with the new request)."""
     band = age_wording(p["age"], group, bool(p["at_my_club"]), settings.age, **audience(p))
     timestamp = now()
     values = (kind, group, TIER_MANUAL, rank, p["club_id"], band, reason)
     cur = conn.execute(
         "UPDATE jobs SET kind = ?, group_name = ?, manual = 1, tier = ?, rank = ?,"
         " target_club_id = ?, target_band = ?, reason = ?, error = NULL, updated_at = ?,"
-        " traits_version = NULL, revision = revision + 1"
+        " traits_version = NULL, revision = revision + 1, skipped = 0"
         " WHERE career_id = ? AND unique_id = ? AND status = 'queued'",
         (*values, timestamp, career_id, p["unique_id"]),
     )

@@ -24,6 +24,11 @@ change saved meanwhile is not undone. The worker picks the jobs up.
 - **Pick** shows another candidate of the current picture in FM27 instead of the one the
   check chose. Only a candidate that passed the check can be picked; picking the check's
   own choice again puts its master back.
+- **Send to Review** flags the current picture (Phase 17m, D7): it stays in FM27 and the
+  player is listed in Review, with the usual actions, until another picture becomes current
+  (a replacement that passed, a restore, a pick) or the user keeps it (**Keep picture**).
+  Never draw keeps the picture as it is, so it clears the flag too; Remove picture leaves no
+  current picture to flag.
 
 Manual jobs run before everything else (spec section 2). Among them the newest request runs
 first, so one "new face" click is drawn next even behind a large selection; within one
@@ -397,6 +402,7 @@ def set_pin(
                     " updated_at = ? WHERE career_id = ? AND unique_id = ? AND status = 'queued'",
                     (_now(), career_id, uid),
                 )
+                _clear_flag(conn, career_id, uid)  # no replacement is coming: keep it as it is
             else:
                 conn.execute(
                     "UPDATE jobs SET status = 'cancelled', error = 'pin cleared', updated_at = ?"
@@ -567,6 +573,60 @@ def cancel(
     return True
 
 
+def _clear_flag(conn: sqlite3.Connection, career_id: int, uid: int) -> bool:
+    """Take the player's current picture off Review's flagged list; whether it was on it."""
+    return (
+        conn.execute(
+            "UPDATE images SET flagged_at = NULL WHERE career_id = ? AND unique_id = ?"
+            " AND is_current = 1 AND flagged_at IS NOT NULL",
+            (career_id, uid),
+        ).rowcount
+        == 1
+    )
+
+
+def flag(
+    conn: sqlite3.Connection,
+    career_id: int,
+    uid: int,
+    settings: Settings,
+    *,
+    active_only: bool = False,
+    read_settings: SettingsReader | None = None,
+) -> bool:
+    """Send the player's current picture to Review (Phase 17m, D7). Nothing is queued and
+    nothing leaves FM27: Review lists the player until another picture becomes current or the
+    picture is kept. Returns False if it was already there."""
+    with _action_transaction(conn, career_id, active_only, settings, read_settings):
+        p = _player(conn, career_id, uid)
+        if p["image_group"] is None:
+            raise ManualError(f"{p['name']} has no picture", "no_current", name=p["name"])
+        return (
+            conn.execute(
+                "UPDATE images SET flagged_at = ? WHERE career_id = ? AND unique_id = ?"
+                " AND is_current = 1 AND flagged_at IS NULL",
+                (_now(), career_id, uid),
+            ).rowcount
+            == 1
+        )
+
+
+def keep_picture(
+    conn: sqlite3.Connection,
+    career_id: int,
+    uid: int,
+    settings: Settings,
+    *,
+    active_only: bool = False,
+    read_settings: SettingsReader | None = None,
+) -> bool:
+    """Keep the picture sent to Review: the player leaves Review's flagged list (a failed job
+    still keeps them there). Returns False if the picture was not flagged."""
+    with _action_transaction(conn, career_id, active_only, settings, read_settings):
+        _player(conn, career_id, uid)
+        return _clear_flag(conn, career_id, uid)
+
+
 @dataclass(frozen=True, slots=True)
 class Restored:
     version: int
@@ -635,7 +695,8 @@ def restore_picture(
         )
         conn.execute(
             "UPDATE images SET is_current = 1, published_path = NULL, restored_at = ?,"
-            " restored_group = ?, restored_club_id = ?, restored_band = ? WHERE id = ?",
+            " restored_group = ?, restored_club_id = ?, restored_band = ?, flagged_at = NULL"
+            " WHERE id = ?",
             (_now(), group, p["club_id"], band, image_id),
         )
         if img["traits_version"] is not None:
@@ -787,7 +848,7 @@ def _choose(
     check["chosen"] = {"attempt": attempt, "index": index, "seed": seed}
     conn.execute(
         "UPDATE images SET master_path = ?, seed = ?, published_path = NULL,"
-        " check_result = ? WHERE id = ?",
+        " check_result = ?, flagged_at = NULL WHERE id = ?",
         (master, seed, json.dumps(check), img["id"]),
     )
     mark_pictures_changed(conn, img["career_id"])

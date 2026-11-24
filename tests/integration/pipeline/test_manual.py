@@ -652,3 +652,131 @@ def test_pick_refuses_what_must_not_be_shown(env: Env) -> None:
     assert e.value.code == "busy"
     row = _image(env, MINE, 2)
     assert (row["master_path"], row["seed"]) == (v2["master_path"], v2["seed"])
+
+
+# -- Send to Review and Skip (Phase 17m) -------------------------------------------------------
+
+
+def _flagged(env: Env, uid: int) -> str | None:
+    row = env.conn.execute(
+        "SELECT flagged_at FROM images WHERE unique_id = ? AND is_current = 1", (uid,)
+    ).fetchone()
+    return row[0] if row else None
+
+
+def _in_review(env: Env) -> list[int]:
+    items = queries.review_items(env.conn, env.cid)
+    assert queries.review_count(env.conn, env.cid) == len(items)
+    return [it["unique_id"] for it in items]
+
+
+B_ONLY = JobFilter(groups=frozenset({"b"}))
+
+
+def test_send_to_review_lists_the_picture_until_a_new_one_passes(env: Env) -> None:
+    """D7: nothing is queued and the picture stays in FM27; a replacement under way takes the
+    player off the list, a failed one brings them back as failed, a passed one clears it."""
+    with pytest.raises(ManualError, match="B Newgen has no picture") as refused:
+        manual.flag(env.conn, env.cid, B_NEWGEN, env.settings)
+    assert refused.value.code == "no_current"
+    env.draw(B_ONLY)
+    v1 = _image(env, B_NEWGEN, 1)
+    assert manual.flag(env.conn, env.cid, B_NEWGEN, env.settings)
+    assert not manual.flag(env.conn, env.cid, B_NEWGEN, env.settings)  # already there
+    assert _flagged(env, B_NEWGEN) and env.active(B_NEWGEN) == []
+    assert _image(env, B_NEWGEN, 1)["published_path"] == v1["published_path"] is not None
+    [item] = queries.review_items(env.conn, env.cid)
+    assert (item["unique_id"], item["job_id"], item["kind"], item["image"]) == (
+        B_NEWGEN, None, None, None,
+    )  # fmt: skip
+    assert item["flagged"] and item["current_id"] == v1["id"] and item["group_name"] == "b"
+
+    manual.new_picture(env.conn, env.cid, B_NEWGEN, env.settings)
+    assert _in_review(env) == []  # the replacement is queued
+    env.draw(ONLY_MANUAL, FakeTagger(["sensitive"] * 3))  # it fails the check
+    [item] = queries.review_items(env.conn, env.cid)
+    assert item["unique_id"] == B_NEWGEN and item["job_id"] and item["flagged"]
+    assert _image(env, B_NEWGEN, 1)["is_current"]  # still the picture in FM27
+
+    manual.retry(env.conn, env.cid, B_NEWGEN, env.settings)
+    env.draw(ONLY_MANUAL)
+    assert _in_review(env) == [] and _flagged(env, B_NEWGEN) is None
+    assert _image(env, B_NEWGEN, 1)["flagged_at"] and not _image(env, B_NEWGEN, 1)["is_current"]
+
+
+def test_keep_never_draw_restore_and_remove_take_a_picture_off_review(env: Env) -> None:
+    env.draw(JobFilter(groups=frozenset({"a"})))
+    manual.flag(env.conn, env.cid, MINE, env.settings)
+    assert manual.keep_picture(env.conn, env.cid, MINE, env.settings)
+    assert not manual.keep_picture(env.conn, env.cid, MINE, env.settings)
+    assert _in_review(env) == []
+
+    manual.flag(env.conn, env.cid, MINE, env.settings)
+    manual.set_pin(env.conn, env.cid, [MINE], "never", env.settings)  # no replacement coming
+    assert _in_review(env) == [] and _image(env, MINE, 1)["is_current"]
+    manual.set_pin(env.conn, env.cid, [MINE], None, env.settings)
+
+    manual.new_picture(env.conn, env.cid, A_NEWGEN, env.settings)
+    env.draw(ONLY_MANUAL)
+    manual.flag(env.conn, env.cid, A_NEWGEN, env.settings)
+    v1 = _image(env, A_NEWGEN, 1)
+    manual.restore_picture(env.conn, env.cid, env.key, A_NEWGEN, v1["id"], env.settings)
+    assert _in_review(env) == [] and _flagged(env, A_NEWGEN) is None
+    manual.flag(env.conn, env.cid, A_NEWGEN, env.settings)
+    v2 = _image(env, A_NEWGEN, 2)
+    manual.restore_picture(env.conn, env.cid, env.key, A_NEWGEN, v2["id"], env.settings)
+    assert _flagged(env, A_NEWGEN) is None  # the one restored is not on the list either
+
+    manual.flag(env.conn, env.cid, A_NEWGEN, env.settings)
+    manual.remove_picture(env.conn, env.cid, env.key, A_NEWGEN, env.settings)
+    assert _in_review(env) == []
+
+
+def test_picking_another_candidate_takes_the_picture_off_review(env: Env) -> None:
+    v2 = _picked_draw(env)
+    manual.flag(env.conn, env.cid, MINE, env.settings)
+    check = _check(v2)
+    other = next(
+        c for c in check["candidates"] if c["passed"] and c["index"] != check["chosen"]["index"]
+    )
+    manual.pick_candidate(
+        env.conn, env.cid, env.key, MINE, other["attempt"], other["index"], env.settings
+    )
+    assert _flagged(env, MINE) is None and _in_review(env) == []
+
+
+def test_a_skipped_job_waits_behind_the_rest_until_a_new_request(env: Env) -> None:
+    """D8: the job being drawn goes behind every other queued job, keeping its sheet; a sync
+    keeps that order, a new request for the player brings it forward."""
+    from facegen.persistence import jobs
+
+    def order() -> list[int]:
+        return [j.unique_id for j in jobs.queued_jobs(env.conn, env.cid, JobFilter())]
+
+    first = order()
+    assert first == [MINE, A_NEWGEN, B_NEWGEN]
+    career = load_career(env.conn)
+    assert career is not None
+
+    def draw_and_skip() -> int:
+        job = jobs.claim(env.conn, env.cid, jobs.queued_jobs(env.conn, env.cid, JobFilter())[0])
+        jobs.allocate_sheet(
+            env.conn, career, job, env.settings.body, env.settings.personality.weight
+        )
+        assert jobs.skip(env.conn, job.id)
+        assert not jobs.skip(env.conn, job.id)  # no longer running
+        return job.id
+
+    mine = draw_and_skip()
+    assert order() == [A_NEWGEN, B_NEWGEN, MINE]
+    draw_and_skip()
+    assert order() == [B_NEWGEN, MINE, A_NEWGEN]  # the latest skip goes last
+    row = env.conn.execute("SELECT * FROM jobs WHERE id = ?", (mine,)).fetchone()
+    assert (row["status"], row["skipped"], row["traits_version"]) == ("queued", 1, 1)
+    assert [q["unique_id"] for q in queries.queue(env.conn, env.cid)] == order()  # dashboard
+
+    run_sync(env.conn, snapshot(world()), env.settings, save_file="career.fm")
+    assert order() == [B_NEWGEN, MINE, A_NEWGEN]
+    manual.new_face(env.conn, env.cid, A_NEWGEN, env.settings)
+    assert order() == [A_NEWGEN, B_NEWGEN, MINE]
+    assert env.active(A_NEWGEN)[0]["skipped"] == 0

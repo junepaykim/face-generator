@@ -720,10 +720,11 @@ document.addEventListener("submit", (e) => {
   if (msg && !window.confirm(msg)) e.preventDefault();
 });
 
-// Quick actions on picture cards (Phase 17f): New picture and New face from the Gallery and the
-// dashboard's latest pictures, sent without leaving the page; the card says what happened, and
-// keeps saying it through live updates (the card is kept until its picture changes). Without
-// the script they are ordinary forms.
+// Quick actions on picture cards (Phase 17f): Redraw, New face and Send to Review (Phase 17m)
+// from the Gallery and the dashboard's latest pictures, sent without leaving the page; the card
+// says what happened (the answer's own short note, else Queued), and keeps saying it through
+// live updates (the card is kept until its picture changes). Without the script they are
+// ordinary forms.
 document.addEventListener("submit", async (e) => {
   const form = e.target;
   if (e.defaultPrevented || !form.matches || !form.matches("form[data-quick]")) return;
@@ -749,7 +750,7 @@ document.addEventListener("submit", async (e) => {
     });
     let data = null;
     try { data = await res.json(); } catch (err) { /* not an answer from the route */ }
-    if (data && data.ok) say(text("js.queued"), "ok", data.message);
+    if (data && data.ok) say(data.note || text("js.queued"), "ok", data.message);
     else if (data && data.error) say(data.error, "bad");
     else say(text(res.status === 403 ? "js.quick_reload" : "js.quick_no_answer"), "bad");
   } catch (err) {

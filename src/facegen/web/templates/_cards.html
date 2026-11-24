@@ -1,11 +1,11 @@
 {# Picture cards (Phase 17f), on the Gallery and the dashboard's latest pictures. Import with
    context: the form needs the page's career. #}
 
-{# New picture and New face over the picture, shown on hover or keyboard focus. The script posts
-   them and the card says what happened (.thumb-note); without it they are ordinary forms that
-   come back to `back`. #}
+{# Redraw, New face and Send to Review (Phase 17m) over the picture, shown on hover or keyboard
+   focus. The script posts them and the card says what happened (.thumb-note); without it they
+   are ordinary forms that come back to `back`. #}
 {% macro quick(uid, name, back) -%}
-<form class="thumb-acts" method="post" action="/players/{{ uid }}/new-picture" data-quick role="group" aria-label="{{ name }}">{% include "_player_action_fields.html" %}<input type="hidden" name="next" value="{{ back }}"><button title="{{ tr('player.new_picture_title') }}">{{ t("players.redraw") }}</button><button formaction="/players/{{ uid }}/new-face" title="{{ tr('player.new_face_title') }}">{{ t("player.new_face") }}</button></form><span class="thumb-note" role="status"></span>
+<form class="thumb-acts" method="post" action="/players/{{ uid }}/new-picture" data-quick role="group" aria-label="{{ name }}">{% include "_player_action_fields.html" %}<input type="hidden" name="next" value="{{ back }}"><button title="{{ tr('player.new_picture_title') }}">{{ t("players.redraw") }}</button><button formaction="/players/{{ uid }}/new-face" title="{{ tr('player.new_face_title') }}">{{ t("player.new_face") }}</button><button formaction="/players/{{ uid }}/flag" title="{{ tr('player.flag_title') }}">{{ t("player.flag") }}</button></form><span class="thumb-note" role="status"></span>
 {%- endmacro %}
 
 {# Who the picture shows: Player, the staff job (or Staff), Journalist or Press officer. #}

@@ -16,7 +16,7 @@ from typing import Any
 from facegen.core.job_records import Job, JobFilter
 from facegen.core.kit_values import KitTable
 from facegen.datasource.kits import load_kits
-from facegen.persistence import db
+from facegen.persistence import db, jobs
 from facegen.persistence.jobs import JobGone, load_career, queued_counts
 from facegen.persistence.settings import load_settings
 from facegen.pipeline.publish import RELOAD_HINT, PublishError
@@ -30,6 +30,8 @@ from facegen.runtime.policy import BUSY_TIMEOUT_MS, FM_POLL_SECONDS
 
 STOPPED_EXIT = 4
 """A worker process's exit code when Quit ended it while it was drawing (`stop_now`)."""
+SKIPPED_EXIT = 5
+"""A worker process's exit code when Skip ended it while it was drawing (`skip`)."""
 
 IDLE_POLL_SECONDS = 15.0
 """How often an idle worker looks at the queue when nothing wakes it."""
@@ -135,6 +137,31 @@ class WorkerService:
             self._paused = False
         self.log("Generate now: drawing the whole queue, every group, even if FM27 is running.")
         self.wake()
+        return True
+
+    def skip(self, job_id: int, exit_now: Callable[[int], Any] | None = None) -> bool:
+        """Skip current (Phase 17m, D8): the job being drawn goes back to the queue behind the
+        rest (`jobs.skip`), keeping its sheet and seeds. In a worker process, `exit_now`
+        (`os._exit`) then ends the process at once, as Quit does, after telling the parent why;
+        the parent starts another. In a thread the picture under way cannot be stopped: it is
+        dropped when it ends, as its job is no longer running. False, with nothing changed, if
+        that job is not being drawn (it finished, or another one is)."""
+        with self._lock:
+            job = self._current if self._drawing else None
+        if job is None or job.id != job_id:
+            return False
+        conn = db.connect(self.db_path, busy_timeout_ms=BUSY_TIMEOUT_MS)
+        try:
+            moved = jobs.skip(conn, job_id)
+        finally:
+            conn.close()
+        if not moved:
+            return False
+        self.log(f"Skipped {job.name}: drawn again after the rest of the queue.")
+        if exit_now is not None and self._leave("skipped", None, job):
+            assert self._link is not None and self.exit is not None
+            self._link.exit(self.exit)  # what serve_child would say, had it the chance
+            exit_now(SKIPPED_EXIT)
         return True
 
     def wake(self) -> None:

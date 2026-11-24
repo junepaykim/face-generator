@@ -9,8 +9,9 @@ from typing import Any, Literal, Protocol
 
 from facegen.core.job_records import Job
 
-ExitReason = Literal["stopped", "paused", "error", "freed", "fault", "crashed"]
-"""A requested stop, pause, job error, model unload, GPU fault or loop crash."""
+ExitReason = Literal["stopped", "paused", "error", "freed", "fault", "crashed", "skipped"]
+"""A requested stop, pause, job error, model unload, GPU fault, loop crash, or Skip of the job
+being drawn (Phase 17m)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,6 +110,9 @@ class Link(Protocol):
         """The status changed: `read` gives it. The link reads and sends in one step, so
         two threads cannot send theirs in the wrong order."""
 
+    def exit(self, ex: Exit) -> None:
+        """Why the loop ends, said last (Skip says it before the process ends at once)."""
+
 
 class WorkerControl(Protocol):
     """What the web app and "sync now" use: WorkerService in a thread, or
@@ -117,6 +121,11 @@ class WorkerControl(Protocol):
     def pause(self) -> None: ...
     def resume(self) -> bool: ...
     def generate_now(self) -> bool: ...
+    def skip(self, job_id: int) -> bool:
+        """Stop drawing this job and queue it behind the rest (Phase 17m); False if it is not
+        the one being drawn."""
+        ...
+
     def wake(self) -> None: ...
     def status(self) -> WorkerStatus: ...
     def log(self, line: str, level: LogLevel = "info") -> None: ...

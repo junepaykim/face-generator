@@ -41,6 +41,14 @@ def generate_now_offer(worker: WorkerStatus | None, estimate: QueueEstimate | No
     return "fm" if fm else "held" if held else None
 
 
+def skip_offer(worker: WorkerStatus | None, estimate: QueueEstimate | None) -> bool:
+    """Whether Skip is shown (Phase 17m, D8): while a picture is being drawn and the worker
+    would draw another one after it; otherwise the skipped picture would come straight back."""
+    if worker is None or worker.current is None or worker.state != "running" or not estimate:
+        return False
+    return (estimate.queued if worker.generate_now else estimate.will_draw) > 0
+
+
 def create_router(deps: AppDependencies, presentation: Presentation) -> APIRouter:
     router = APIRouter()
     ctx = deps.ctx
@@ -86,6 +94,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             "drawing": drawing,
             "estimate": estimate,
             "generate_now": generate_now_offer(worker, estimate),
+            "skip": bool(drawing) and skip_offer(worker, estimate),
             "recent": queries.recent_pictures(conn, career.id) if career else [],
         }
 
@@ -189,8 +198,9 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
     @router.post("/worker/{action}")
     async def worker_action(action: str, request: Request) -> Response:
         """Pause, Resume and Generate now, from the dashboard or the sidebar's card (Phase
-        17d): back to the page the button was on ("next")."""
-        if action not in ("pause", "resume", "generate-now"):
+        17d), and Skip from the dashboard (Phase 17m): back to the page the button was on
+        ("next")."""
+        if action not in ("pause", "resume", "generate-now", "skip"):
             raise HTTPException(404)
         form = await request.form()
         back = _safe_next(str(form.get("next") or ""), "/")
@@ -198,6 +208,18 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
         worker = ctx.worker
         if worker is None:
             return _redirect(back, err=t("msg.worker_absent"))
+        if action == "skip":
+            # The job the page showed: a picture finished meanwhile is not skipped instead.
+            try:
+                job_id = int(str(form.get("job") or ""))
+            except ValueError:
+                return _redirect(back, err=t("msg.skip_gone"))
+            current = worker.status().current
+            if current is None or current.id != job_id:
+                return _redirect(back, err=t("msg.skip_gone"))
+            if not await run_in_threadpool(worker.skip, job_id):
+                return _redirect(back, err=t("msg.skip_gone"))
+            return _redirect(back, msg=t("msg.skipped", name=current.name))
 
         def act() -> bool:
             match action:

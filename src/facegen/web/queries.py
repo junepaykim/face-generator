@@ -14,6 +14,7 @@ from facegen.core.estimate import Drawn
 from facegen.core.man_traits import ManSheet
 from facegen.core.traits import CharacterSheet, personality_from_json, personality_leans
 from facegen.persistence import photo_index, player_queries
+from facegen.persistence.jobs import QUEUE_ORDER
 from facegen.persistence.player_queries import SORTS
 from facegen.pipeline.manual import restorable
 
@@ -272,13 +273,14 @@ def queue(conn: sqlite3.Connection, career_id: int, limit: int = 15) -> list[dic
         dict(r)
         for r in conn.execute(
             "SELECT j.id, j.unique_id, j.kind, j.group_name, j.manual, j.tier, j.status, j.reason,"
+            " j.skipped,"
             " p.name, p.at_my_club, c.name AS club, i.master_path, i.model, i.gender FROM jobs j"
             " JOIN players p ON p.career_id = j.career_id AND p.unique_id = j.unique_id"
             " LEFT JOIN clubs c ON c.career_id = p.career_id AND c.club_id = p.club_id"
             " LEFT JOIN images i ON i.career_id = j.career_id AND i.unique_id = j.unique_id"
             "  AND i.is_current = 1"
             " WHERE j.career_id = ? AND j.status IN ('queued', 'running')"
-            " ORDER BY j.status = 'queued', j.tier, j.rank, j.id LIMIT ?",
+            f" ORDER BY j.status = 'queued', {QUEUE_ORDER} LIMIT ?",
             (career_id, limit),
         )
     ]
@@ -513,32 +515,68 @@ def _review_where() -> str:
     )
 
 
+def _flagged_where() -> str:
+    """Current pictures sent to Review (Phase 17m, `images` as `i`) whose player has no queued
+    or running job: a replacement under way takes them off the list until it is done."""
+    return (
+        "i.career_id = ? AND i.flagged_at IS NOT NULL AND i.is_current = 1 AND NOT EXISTS"
+        " (SELECT 1 FROM jobs a WHERE a.career_id = i.career_id AND a.unique_id = i.unique_id"
+        " AND a.status IN ('queued', 'running'))"
+    )
+
+
 def review_count(conn: sqlite3.Connection, career_id: int) -> int:
+    """Players in Review: their latest job failed its checks, or they were sent there."""
     return conn.execute(
-        f"SELECT COUNT(*) FROM jobs j WHERE {_review_where()}", (career_id,)
+        f"SELECT COUNT(*) FROM (SELECT j.unique_id FROM jobs j WHERE {_review_where()}"
+        f" UNION SELECT i.unique_id FROM images i WHERE {_flagged_where()})",
+        (career_id, career_id),
     ).fetchone()[0]
 
 
 def review_items(conn: sqlite3.Connection, career_id: int) -> list[dict[str, Any]]:
-    """Players whose latest job failed its checks, with the best rejected try if kept."""
+    """Players whose latest job failed its checks, with the best rejected try if kept, and
+    players whose current picture was sent to Review (`flagged`, when; Phase 17m). Newest
+    first: by the job's last change or the time it was sent."""
+    flagged = dict(
+        conn.execute(
+            "SELECT unique_id, flagged_at FROM images WHERE career_id = ?"
+            " AND flagged_at IS NOT NULL AND is_current = 1",
+            (career_id,),
+        ).fetchall()
+    )
     rows = conn.execute(
         "SELECT j.id AS job_id, j.unique_id, j.kind, j.group_name, j.error, j.updated_at,"
-        " p.name, p.age, p.in_scope, p.present, c.name AS club FROM jobs j"
+        " p.name, p.age, p.in_scope, p.present, p.pin, c.name AS club FROM jobs j"
         " JOIN players p ON p.career_id = j.career_id AND p.unique_id = j.unique_id"
         " LEFT JOIN clubs c ON c.career_id = p.career_id AND c.club_id = p.club_id"
-        f" WHERE {_review_where()} ORDER BY j.updated_at DESC, j.id DESC",
+        f" WHERE {_review_where()}",
         (career_id,),
     ).fetchall()
+    sent = conn.execute(
+        "SELECT NULL AS job_id, i.unique_id, NULL AS kind, i.group_name, NULL AS error,"
+        " i.flagged_at AS updated_at, p.name, p.age, p.in_scope, p.present, p.pin,"
+        " c.name AS club FROM images i"
+        " JOIN players p ON p.career_id = i.career_id AND p.unique_id = i.unique_id"
+        " LEFT JOIN clubs c ON c.career_id = p.career_id AND c.club_id = p.club_id"
+        f" WHERE {_flagged_where()}",
+        (career_id,),
+    ).fetchall()
+    failed = {r["unique_id"] for r in rows}
     items = []
-    for r in rows:
+    for r in [*rows, *(r for r in sent if r["unique_id"] not in failed)]:
         item = dict(r)
-        image = conn.execute(
-            "SELECT * FROM images WHERE career_id = ? AND unique_id = ? AND is_current = 0"
-            " AND master_path LIKE '%-rejected.png' ORDER BY version DESC LIMIT 1",
-            (career_id, r["unique_id"]),
-        ).fetchone()
+        item["flagged"] = flagged.get(r["unique_id"])
+        image = None
+        if r["job_id"] is not None:
+            image = conn.execute(
+                "SELECT * FROM images WHERE career_id = ? AND unique_id = ? AND is_current = 0"
+                " AND master_path LIKE '%-rejected.png' ORDER BY version DESC LIMIT 1",
+                (career_id, r["unique_id"]),
+            ).fetchone()
         item["image"] = _image(image) if image is not None else None
         # What FM27 shows now, to compare the candidates with (Phase 12i).
         item["current_id"] = current_picture_id(conn, career_id, r["unique_id"])
         items.append(item)
+    items.sort(key=lambda it: (it["updated_at"] or "", it["job_id"] or 0), reverse=True)
     return items

@@ -252,6 +252,37 @@ def test_new_picture_and_new_face_from_a_card(env: Env) -> None:
     assert env.jobs(NEWGEN + 2) == [(int(career), "redraw")]
 
 
+def test_send_to_review_from_a_card(env: Env) -> None:
+    """Phase 17m (D7): the card's third action sends its picture to Review. The note says so
+    (not "Queued"), nothing is queued, the picture stays, and Review lists the player."""
+    env.draw(4)
+    for url in ("/gallery", "/"):
+        form = card_form(unescape(env.client.get(url).text), 1001)
+        assert (
+            '<button formaction="/players/1001/flag" title="List it in Review; the picture stays'
+            ' in FM27 until a new one passes">Send to Review</button></form>'
+        ) in form, url
+    assert ">검토로 보내기</button>" in env.client.get("/gallery", headers=KOREAN_WINDOWS).text
+    career = re.search(r'name="career_id" value="(\d+)"', env.client.get("/gallery").text)[1]
+    r = env.client.post("/players/1001/flag", data={"career_id": career}, headers=BY_SCRIPT)
+    assert r.json() == {
+        "ok": True,
+        "message": "Sent to Review; the picture stays in FM27 until a new one passes.",
+        "note": "Sent to Review",
+    }
+    r = env.client.post(
+        "/players/1001/flag", data={"career_id": career}, headers=BY_SCRIPT | KOREAN_WINDOWS
+    )
+    assert r.json()["ok"] and r.json()["note"] == "검토로 보냄"  # again: still there
+    assert env.jobs(1001) == []
+    review = unescape(env.client.get("/review").text)
+    assert '<a href="/players/1001">Mine Alpha</a> <span class="badge tone-accent' in review
+    assert '<span class="count badge badge-count">1</span>' in review  # the sidebar's count
+    page = env.client.get("/gallery").text  # the card shows the answer's own note
+    script = env.client.get(re.search(r'src="(/static/app.js[^"]*)"', page)[1]).text
+    assert 'say(data.note || text("js.queued"), "ok", data.message)' in script
+
+
 def test_a_quick_action_says_why_it_was_not_done(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
     env.draw(4)
     career = re.search(r'name="career_id" value="(\d+)"', env.client.get("/gallery").text)[1]

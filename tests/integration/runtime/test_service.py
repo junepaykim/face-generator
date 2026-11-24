@@ -26,7 +26,7 @@ from facegen.pipeline.publish import RELOAD_HINT
 from facegen.pipeline.reclassification import classify_and_plan
 from facegen.pipeline.sync import run_sync
 from facegen.pipeline.worker import load_career, worker_lock
-from facegen.runtime.contracts import WORKER_REASONS, LogLine
+from facegen.runtime.contracts import WORKER_REASONS, Exit, LogLine
 from facegen.service import (
     FM_POLL_SECONDS,
     IDLE_UNLOAD_SECONDS,
@@ -574,12 +574,16 @@ class RecordingLink:
 
     lines: list[LogLine] = field(default_factory=list)
     statuses: list[WorkerStatus] = field(default_factory=list)
+    exits: list[Exit] = field(default_factory=list)
 
     def line(self, line: LogLine) -> None:
         self.lines.append(line)
 
     def status(self, read) -> None:  # type: ignore[no-untyped-def]
         self.statuses.append(read())
+
+    def exit(self, ex: Exit) -> None:
+        self.exits.append(ex)
 
 
 def test_in_a_worker_process_a_gpu_fault_ends_the_loop(env: Env) -> None:
@@ -1148,3 +1152,82 @@ def test_every_reason_the_worker_gives_is_known() -> None:
         used |= set(re.findall(r'"fm_running" if running else "([a-z_]+)"', source))
     assert used and used <= set(WORKER_REASONS), sorted(used - set(WORKER_REASONS))
     assert {"fm_running", "fm_unknown", "starting", "restarting", "gave_up"} <= used
+
+
+# -- Skip current (Phase 17m, D8) --------------------------------------------------------------
+
+
+class SkipWhileDrawing(FakeRenderer):
+    """Calls `act` once, while its first picture is being drawn."""
+
+    def __init__(self, act) -> None:  # type: ignore[no-untyped-def]
+        super().__init__()
+        self.act = act
+
+    def render(self, *args, **kw):  # type: ignore[no-untyped-def]
+        act, self.act = self.act, None
+        if act is not None:
+            act()
+        return super().render(*args, **kw)
+
+
+class Ended(BaseException):
+    """What `os._exit` does to the test's thread: nothing after it runs."""
+
+
+def queue_order(env: Env) -> list[int]:
+    return [
+        r[0]
+        for r in env.conn.execute(
+            "SELECT unique_id FROM jobs WHERE status = 'queued' ORDER BY skipped, tier, rank, id"
+        )
+    ]
+
+
+def test_skip_in_a_thread_drops_the_picture_and_draws_it_after_the_rest(env: Env) -> None:
+    asked: list[bool] = []
+    env.gpu.renderer = lambda _model="animagine": SkipWhileDrawing(  # type: ignore[method-assign]
+        lambda: asked.append(svc.skip(svc.status().current.id))  # type: ignore[union-attr]
+    )
+    svc = env.service()
+    assert queue_order(env)[0] == MINE_2
+    assert not svc.skip(12345)  # nothing is drawn yet
+    assert svc.step() == 0.0 and asked == [True]
+    assert env.drawn() == []  # the picture under way was dropped, not stored
+    assert queue_order(env)[-1] == MINE_2
+    assert "Skipped Mine Two: drawn again after the rest of the queue." in [
+        line.text for line in svc.status().log
+    ]
+    run_until_idle(svc)
+    assert [uid for uid, _ in env.drawn()][-1] == MINE_2
+
+
+def test_skip_in_a_worker_process_says_why_and_ends_it_at_once(env: Env) -> None:
+    link = RecordingLink()
+    codes: list[int] = []
+
+    def exit_now(code: int) -> None:
+        codes.append(code)
+        raise Ended
+
+    def skip() -> None:
+        job = svc.status().current
+        assert job is not None and not svc.skip(job.id + 1000, exit_now)  # another job
+        svc.skip(job.id, exit_now)
+
+    env.gpu.renderer = lambda _model="animagine": SkipWhileDrawing(skip)  # type: ignore[method-assign]
+    svc = env.service(link=link)
+    with pytest.raises(Ended):
+        svc.step()
+    assert codes == [5] and [(e.reason, e.job.unique_id) for e in link.exits] == [  # type: ignore[union-attr]
+        ("skipped", MINE_2)
+    ]
+    assert svc.exit is not None and svc.exit.reason == "skipped"
+    row = env.conn.execute(
+        "SELECT status, skipped, traits_version FROM jobs WHERE unique_id = ?"
+        " AND status IN ('queued', 'running')",
+        (MINE_2,),
+    ).fetchone()
+    assert tuple(row) == ("queued", 1, 1)  # behind the rest, with its sheet
+    assert env.drawn() == []
+    assert "Skipped Mine Two" in link.lines[-1].text

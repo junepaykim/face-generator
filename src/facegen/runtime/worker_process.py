@@ -17,11 +17,14 @@ Child stdout messages:
 Commands from parent to child stdin:
 
     {"cmd": "pause" | "resume" | "generate-now" | "wake" | "stop"}
+    {"cmd": "skip", "job": ID}
 
 `stop` and stdin EOF end the child at once while it draws a job (Quit does not wait for the
 picture: the job is drawn again at the next start), otherwise once its loop ends. Pause exits
-after the current job and its publication. The queue remains in SQLite, shared with the parent
-and web app.
+after the current job and its publication. `skip` (Phase 17m) queues job ID behind the rest of
+the queue if it is the one being drawn, says `exit` with reason "skipped" and ends the child at
+once; the parent starts another, which draws the next job. The queue remains in SQLite, shared
+with the parent and web app.
 
 `WorkerProxy` implements runtime.contracts.WorkerControl, starts children unless paused and
 retains log/counters across them. supervision.FailureHistory governs backoff and job review.
@@ -221,6 +224,10 @@ def _read_commands(
                     svc.generate_now()
                 case "wake":
                     svc.wake()
+                case "skip":
+                    job_id = message.get("job")
+                    if isinstance(job_id, int) and not svc.skip(job_id, exit_now):
+                        logger.info("worker process: job %d is not being drawn: no skip", job_id)
                 case "stop":
                     break
                 case _:
@@ -385,6 +392,16 @@ class WorkerProxy:
         """Look at the queue now rather than at the next poll."""
         self._send("wake")
 
+    def skip(self, job_id: int) -> bool:
+        """Skip current (Phase 17m, D8): the child queues the job behind the rest and ends at
+        once, and another starts (`_after`). False if that job is not the one drawn now; the
+        child checks again, so a job that finished meanwhile is left alone."""
+        with self._lock:
+            status = self._child_status if self._child is not None else None
+        if status is None or status.current is None or status.current.id != job_id:
+            return False
+        return self._send("skip", job=job_id)
+
     def _starting_again(self) -> None:
         """Caller holds the lock: the user asked to draw. After the restarts were given up,
         the count of failures starts afresh."""
@@ -441,14 +458,14 @@ class WorkerProxy:
             return f"{self._detail}; a new worker process starts in {left:.0f} s"
         return self._detail
 
-    def _send(self, cmd: str) -> bool:
+    def _send(self, cmd: str, **fields: Any) -> bool:
         """Send a command to the child; False if there is none to send it to."""
         with self._lock:
             child = self._child
         if child is None or child.stdin is None:
             return False
         try:
-            self._writer.send(child.stdin, {"cmd": cmd})
+            self._writer.send(child.stdin, {"cmd": cmd, **fields})
         except (OSError, ValueError):
             return False
         return True
@@ -638,7 +655,7 @@ class WorkerProxy:
                         self._mark("paused", "", "paused")
                     else:  # resumed while the child was ending: start a new one
                         self._respawn_soon()
-            case "freed" | "stopped":
+            case "freed" | "stopped" | "skipped":
                 with self._lock:
                     self._respawn_soon()
             case _:  # ended without saying why: a crash outside Python, or killed

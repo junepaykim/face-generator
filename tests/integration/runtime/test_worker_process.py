@@ -420,6 +420,21 @@ def test_wake_and_resume_reach_a_running_child(fake: Fake) -> None:
 # -- the exit test ----------------------------------------------------------------------------
 
 
+def test_skip_ends_the_child_drawing_that_job_and_starts_another(fake: Fake) -> None:
+    """Phase 17m (D8): Skip is sent only for the job the child reports drawing; the child ends
+    at once, saying why, and the next one starts without counting a failure."""
+    p = fake.proxy("drawing:7,idle")
+    p.start()
+    wait_for(lambda: (p.status().current or job(id=0)).id == 7)
+    assert not p.skip(8) and fake.commands() == []  # not the job drawn now
+    assert p.skip(7)
+    wait_for(lambda: p.starts == 2 and p.status().state == "idle")
+    assert fake.commands() == ["skip 7"]
+    assert "Skipped Player 7." in log_text(p)
+    assert "Starting a new worker process" not in log_text(p) and p.status().last_error is None
+    assert not p.skip(7)  # nothing is drawn now
+
+
 def test_quit_while_a_picture_is_drawn_ends_the_worker_at_once(
     tmp_path: Path, config_file: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -468,6 +483,64 @@ def test_quit_while_a_picture_is_drawn_ends_the_worker_at_once(
         assert jobs.requeue_stale(conn) == 1  # what the next worker does first
     finally:
         conn.close()
+
+
+def test_skip_while_a_picture_is_drawn_draws_the_next_one_and_keeps_the_job(
+    tmp_path: Path, config_file: Path
+) -> None:
+    """Phase 17m (D8), with a real worker process and a slow fake renderer: Skip ends the
+    process at once, nothing is stored for the job, which waits behind the rest of the queue
+    with its sheet, and a new process draws the next job."""
+    from facegen.runtime.composition import build_runtime
+    from facegen.runtime.dependencies import Gpu
+
+    settings = load_settings(defaults_path=config_file)
+    conn = db.connect(settings.paths.db_path)
+    run_sync(conn, snapshot(world()), settings, save_file="career.fm")
+    conn.close()
+    marker = tmp_path / "drawing"
+    program = (sys.executable, str(TESTS / "gpu_child.py"), str(marker), "--slow")
+    rt = build_runtime(
+        settings, Gpu(program=program), config=config_file, watch=False, echo_stderr=False
+    )
+    p = rt.worker
+    assert p is not None
+    p.start()
+    try:
+        wait_for(marker.exists, timeout=60)  # a minute's picture has started
+        wait_for(lambda: p.status().state == "running" and p.status().current is not None)
+        first = p.status().current
+        assert first is not None
+        pid = p.child_pid
+        t0 = time.monotonic()
+        assert p.skip(first.id)
+        wait_for(lambda: p.child_pid not in (None, pid), timeout=30)
+        took = time.monotonic() - t0
+        wait_for(lambda: (p.status().current or first).id != first.id, timeout=60)
+        assert took < 30  # not the minute the picture takes
+        assert p.starts == 2
+        assert f"Skipped {first.name}: drawn again after the rest of the queue." in log_text(p)
+        assert "Starting a new worker process" not in log_text(p)
+        conn = db.connect(settings.paths.db_path)
+        try:
+            assert conn.execute("SELECT COUNT(*) FROM images").fetchone()[0] == 0
+            row = conn.execute(
+                "SELECT status, skipped, traits_version FROM jobs WHERE id = ?", (first.id,)
+            ).fetchone()
+            assert (row[0], row[1]) == ("queued", 1) and row[2] is not None
+            order = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT id FROM jobs WHERE status = 'queued' ORDER BY skipped, tier, rank, id"
+                )
+            ]
+            assert order[-1] == first.id
+        finally:
+            conn.close()
+    finally:
+        for _, step in rt.stop_steps():
+            step()
+        p.stop(timeout=10)
 
 
 def test_exit_test_a_fault_on_the_third_job_is_shown_once_and_drawn_after_a_restart(

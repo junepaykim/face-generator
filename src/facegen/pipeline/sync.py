@@ -33,6 +33,7 @@ from facegen.core.traits import personality_to_json
 from facegen.datasource.photos import PhotoScan
 from facegen.persistence import league_stats, photo_index
 from facegen.persistence.db import transaction
+from facegen.persistence.jobs import QUEUE_ORDER
 from facegen.pipeline import reclassification
 
 
@@ -633,7 +634,7 @@ def queue_preview(conn: sqlite3.Connection, career_id: int, limit: int) -> list[
         " p.reasons, c.name AS club FROM jobs j"
         " JOIN players p ON p.career_id = j.career_id AND p.unique_id = j.unique_id"
         " LEFT JOIN clubs c ON c.career_id = p.career_id AND c.club_id = p.club_id"
-        " WHERE j.career_id = ? AND j.status = 'queued' ORDER BY j.tier, j.rank, j.id LIMIT ?",
+        f" WHERE j.career_id = ? AND j.status = 'queued' ORDER BY {QUEUE_ORDER} LIMIT ?",
         (career_id, limit),
     )
     return [

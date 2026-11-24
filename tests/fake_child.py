@@ -12,6 +12,8 @@ PLAN has one step per process start, comma-separated; the last step repeats:
     freed        reports a loaded model, then ends having freed the GPU
     hang         reports "idle", reads commands and never ends (until killed, or after 30 s)
     junk         prints a line that is not a message, then behaves as idle
+    drawing:ID   reports drawing job ID and obeys commands; `skip` of that job ends it as the
+                 worker does (a line, exit "skipped", exit code 5), other skips are noted
 
 Each start appends its arguments to STATE_DIR/starts, and each command received to
 STATE_DIR/commands.
@@ -78,13 +80,19 @@ def exit_(reason: str, message: str | None = None, job_id: int | None = None) ->
     send({"type": "exit", "reason": reason, "message": message, "job": job})
 
 
-def obey(state: Path, *, hang: bool = False) -> None:
+def obey(state: Path, *, hang: bool = False, drawing: int | None = None) -> None:
     for raw in sys.stdin:
-        cmd = json.loads(raw)["cmd"]
+        message = json.loads(raw)
+        cmd = message["cmd"]
         with (state / "commands").open("a") as f:
-            f.write(cmd + "\n")
+            f.write((f"{cmd} {message['job']}" if "job" in message else cmd) + "\n")
         if hang:
             continue
+        if cmd == "skip" and message["job"] == drawing:
+            send({"type": "line", "time": "00:00:00", "text": f"Skipped Player {drawing}."})
+            exit_("skipped", None, drawing)
+            sys.stdout.flush()
+            os._exit(5)
         if cmd == "pause":
             send({"type": "line", "time": "00:00:00", "text": "Paused."})
             exit_("paused")
@@ -125,6 +133,9 @@ def main() -> None:
             status("running", "drawing", job_id)
             print("Fatal Python error: Segmentation fault", file=sys.stderr, flush=True)
             os._exit(3)
+        case "drawing":
+            status("running", "drawing", job_id)
+            obey(state, drawing=job_id)
         case "error":
             status("running", "drawing", 5)
             exit_("error", "Player 5: RuntimeError: CUDA out of memory", 5)

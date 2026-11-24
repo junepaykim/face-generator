@@ -223,7 +223,10 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                 return _redirect(to, msg=msg, err=err)
             if err is not None:
                 return JSONResponse({"ok": False, "error": err})
-            return JSONResponse({"ok": True, "message": msg})
+            reply = {"ok": True, "message": msg}
+            if action == "flag":  # the card's note: not "Queued" (Phase 17m)
+                reply["note"] = t("gallery.sent")
+            return JSONResponse(reply)
 
         def run() -> str:
             conn = deps.connect()
@@ -349,6 +352,16 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                             conn, career.id, uid, settings, active_only=True, read_settings=fresh
                         )
                         return t("msg.player.cancelled" if done else "msg.player.nothing_to_cancel")
+                    case "flag":  # Send to Review (Phase 17m, D7)
+                        manual.flag(
+                            conn, career.id, uid, settings, active_only=True, read_settings=fresh
+                        )
+                        return t("msg.player.flagged")
+                    case "keep":
+                        kept = manual.keep_picture(
+                            conn, career.id, uid, settings, active_only=True, read_settings=fresh
+                        )
+                        return t("msg.player.kept" if kept else "msg.player.not_flagged")
                 raise ManualError(f"unknown action {action!r}")
             finally:
                 conn.close()

@@ -24,12 +24,17 @@ _LATEST_JOB = (
     " AND jj.unique_id = p.unique_id AND jj.status != 'cancelled' ORDER BY jj.id DESC LIMIT 1)"
 )
 # The same test for the Review filter, as a list of players found once in the jobs table (not
-# correlated with the player row, which asked the jobs for every player).
+# correlated with the player row, which asked the jobs for every player); and the players whose
+# current picture was sent to Review (Phase 17m) while no replacement is queued or drawn.
 _IN_REVIEW = (
-    "(p.career_id, p.unique_id) IN (SELECT rj.career_id, rj.unique_id FROM jobs rj"
+    "((p.career_id, p.unique_id) IN (SELECT rj.career_id, rj.unique_id FROM jobs rj"
     " WHERE rj.status = 'failed' AND rj.id = (SELECT MAX(rjj.id) FROM jobs rjj"
     " WHERE rjj.career_id = rj.career_id AND rjj.unique_id = rj.unique_id"
     " AND rjj.status != 'cancelled'))"
+    " OR (p.career_id, p.unique_id) IN (SELECT fi.career_id, fi.unique_id FROM images fi"
+    " WHERE fi.flagged_at IS NOT NULL AND fi.is_current = 1 AND NOT EXISTS (SELECT 1 FROM jobs fj"
+    " WHERE fj.career_id = fi.career_id AND fj.unique_id = fi.unique_id"
+    " AND fj.status IN ('queued', 'running'))))"
 )
 """Its aliases are not the page's own (`j`), so `_count_from` joins nothing for it."""
 # Picture targets (Phase 17h, spec section 7): in a group, pinned (to "never" too), with a
@@ -196,7 +201,8 @@ _COLUMNS = (
     " p.pin, p.club_id, p.is_goalkeeper, p.is_staff, p.staff_job, p.media_role,"
     " p.youth_team, p.local_media, c.name AS club,"
     " i.id AS image_id, ph.game AS photo_game, ph.facepack AS photo_facepack,"
-    " i.published_path, i.group_name AS image_group, j.status AS job_status,"
+    " i.published_path, i.group_name AS image_group, i.flagged_at AS flagged,"
+    " j.status AS job_status,"
     f" j.kind AS job_kind, j.manual AS job_manual, {_LATEST_JOB} AS latest_job"
 )
 
