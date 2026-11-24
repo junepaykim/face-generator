@@ -80,6 +80,15 @@ def listed(page: str) -> list[int]:
     return [int(u) for u in re.findall(r'<input type="checkbox" name="uid" value="(\d+)"', page)]
 
 
+def review_badge(page: str) -> str | None:
+    """The count on the sidebar's Review link, or None without one."""
+    nav = r'<a href="/review" class="[^"]*" title="Review">(.*?)</a>'
+    link = re.search(nav, page, re.DOTALL)
+    assert link is not None
+    count = re.search(r'class="count badge badge-count">([^<]+)<', link[1])
+    return count[1] if count else None
+
+
 def post(env: Env, action: str, *uids: int) -> str:
     r = post_player_action(
         env.client,
@@ -116,7 +125,18 @@ def test_retry_new_face_and_never_for_many_at_once(env: Env) -> None:
     # A player with nothing to retry is skipped with the reason.
     page = post(env, "retry", MINE)
     assert "Retry: 1 skipped (no failed picture to retry)." in page
-    assert "1 player(s) pinned to never." in post(env, "pin", ONE)
+    # Never draw takes failed players off Review, its badge and the Players page's filter: no
+    # retry is coming (user, 2026-11-24).
+    env.draw(["sensitive"] * 9)  # the retries and the new face fail too
+    page = unescape(env.client.get("/review").text)
+    assert sorted(listed(page)) == [ONE, TWO, THREE] and review_badge(page) == "3"
+    page = post(env, "pin", ONE, TWO)
+    assert "2 player(s) pinned to never." in page
+    assert listed(page) == [THREE] and review_badge(page) == "1"
+    players = unescape(env.client.get("/players?picture=review&shown=everyone").text)
+    assert f'href="/players/{THREE}"' in players and f'href="/players/{ONE}"' not in players
+    own = unescape(env.client.get(f"/players/{ONE}").text)
+    assert ">in review</a>" not in own and "pinned: Never draw" in own
     conn = db.connect(env.db_path)
     try:
         assert conn.execute("SELECT pin FROM players WHERE unique_id = ?", (ONE,)).fetchone()[
@@ -124,6 +144,10 @@ def test_retry_new_face_and_never_for_many_at_once(env: Env) -> None:
         ] == ("never")
     finally:
         conn.close()
+    # Clearing the pin lists the player again: the failed job is still their latest.
+    r = post_player_action(env.client, f"/players/{ONE}/pin", data={"pin": "", "next": "/review"})
+    page = unescape(env.client.get(r.headers["location"]).text)
+    assert sorted(listed(page)) == [ONE, THREE] and review_badge(page) == "2"
 
 
 def test_the_reasons_are_in_plain_words(env: Env) -> None:

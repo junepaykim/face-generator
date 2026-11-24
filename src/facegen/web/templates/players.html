@@ -99,7 +99,7 @@
         <td class="why">{% set chips = why_chips(r) %}{% if chips is none %}{{ r.reasons|join("; ") }}{% else %}{% for chip, full in chips %}<span class="why-chip" title="{{ full }}">{{ chip }}</span>{% endfor %}{% endif %}</td>
         <td class="col-state">{% if r.job_status == "running" %}<span class="st run">{{ t("status.drawing") }}</span>
           {% elif r.job_status == "queued" %}<span class="st q">{{ t("status.queued", kind=t("kind." ~ r.job_kind)) }}</span>
-          {% elif r.latest_job == "failed" %}<a class="st bad" href="/review">{{ t("status.in_review") }}</a>
+          {% elif r.latest_job == "failed" and r.pin != "never" %}<a class="st bad" href="/review">{{ t("status.in_review") }}</a>
           {% elif r.flagged %}<a class="st bad" href="/review">{{ t("status.sent_to_review") }}</a>
           {% elif r.image_id %}<span class="st ok">{{ t("status.published" if r.published_path else "status.drawn") }}</span>{% endif %}</td>
       </tr>

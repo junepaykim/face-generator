@@ -508,10 +508,14 @@ def last_sync(conn: sqlite3.Connection) -> dict[str, Any] | None:
 
 
 def _review_where() -> str:
+    """Failed pictures (`jobs` as `j`): the player's latest job that was not cancelled failed
+    its checks, and the player is not pinned to never (no retry is coming; the player's key
+    finds the pin)."""
     return (
         "j.career_id = ? AND j.status = 'failed' AND j.id = (SELECT MAX(jj.id) FROM jobs jj"
         " WHERE jj.career_id = j.career_id AND jj.unique_id = j.unique_id"
-        " AND jj.status != 'cancelled')"
+        " AND jj.status != 'cancelled') AND NOT EXISTS (SELECT 1 FROM players np"
+        " WHERE np.career_id = j.career_id AND np.unique_id = j.unique_id AND np.pin = 'never')"
     )
 
 
@@ -526,7 +530,8 @@ def _flagged_where() -> str:
 
 
 def review_count(conn: sqlite3.Connection, career_id: int) -> int:
-    """Players in Review: their latest job failed its checks, or they were sent there."""
+    """Players in Review: their latest job failed its checks (unless they are pinned to never),
+    or they were sent there."""
     return conn.execute(
         f"SELECT COUNT(*) FROM (SELECT j.unique_id FROM jobs j WHERE {_review_where()}"
         f" UNION SELECT i.unique_id FROM images i WHERE {_flagged_where()})",
@@ -535,9 +540,9 @@ def review_count(conn: sqlite3.Connection, career_id: int) -> int:
 
 
 def review_items(conn: sqlite3.Connection, career_id: int) -> list[dict[str, Any]]:
-    """Players whose latest job failed its checks, with the best rejected try if kept, and
-    players whose current picture was sent to Review (`flagged`, when; Phase 17m). Newest
-    first: by the job's last change or the time it was sent."""
+    """Players whose latest job failed its checks and who are not pinned to never, with the best
+    rejected try if kept, and players whose current picture was sent to Review (`flagged`,
+    when; Phase 17m). Newest first: by the job's last change or the time it was sent."""
     flagged = dict(
         conn.execute(
             "SELECT unique_id, flagged_at FROM images WHERE career_id = ?"

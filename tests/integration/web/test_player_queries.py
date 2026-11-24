@@ -156,6 +156,9 @@ def test_the_review_filter_is_the_players_whose_latest_job_failed(
     failed_then_cancelled = add(conn, 100, 100, 10)  # a cancelled job does not count
     job(conn, failed_then_cancelled, "failed")
     job(conn, failed_then_cancelled, "cancelled")
+    never = add(conn, 100, 100, 10)  # Never draw takes a failed player off (user, 2026-11-24)
+    job(conn, never, "failed")
+    conn.execute("UPDATE players SET pin = 'never' WHERE unique_id = ?", (never,))
     retried = add(conn, 100, 100, 10)
     job(conn, retried, "failed")
     job(conn, retried, "done")

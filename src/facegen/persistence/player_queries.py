@@ -18,19 +18,20 @@ from facegen.core.classify import whys_from_json
 PER_PAGE = 100
 
 # The player's latest job that was not cancelled: queued, running, done or failed. "failed"
-# here means the player is on the review list.
+# here means the player is on the review list, unless they are pinned to never.
 _LATEST_JOB = (
     "(SELECT jj.status FROM jobs jj WHERE jj.career_id = p.career_id"
     " AND jj.unique_id = p.unique_id AND jj.status != 'cancelled' ORDER BY jj.id DESC LIMIT 1)"
 )
 # The same test for the Review filter, as a list of players found once in the jobs table (not
-# correlated with the player row, which asked the jobs for every player); and the players whose
-# current picture was sent to Review (Phase 17m) while no replacement is queued or drawn.
+# correlated with the player row, which asked the jobs for every player) and not pinned to never;
+# and the players whose current picture was sent to Review (Phase 17m) while no replacement is
+# queued or drawn.
 _IN_REVIEW = (
-    "((p.career_id, p.unique_id) IN (SELECT rj.career_id, rj.unique_id FROM jobs rj"
-    " WHERE rj.status = 'failed' AND rj.id = (SELECT MAX(rjj.id) FROM jobs rjj"
+    "((p.pin IS NOT 'never' AND (p.career_id, p.unique_id) IN (SELECT rj.career_id, rj.unique_id"
+    " FROM jobs rj WHERE rj.status = 'failed' AND rj.id = (SELECT MAX(rjj.id) FROM jobs rjj"
     " WHERE rjj.career_id = rj.career_id AND rjj.unique_id = rj.unique_id"
-    " AND rjj.status != 'cancelled'))"
+    " AND rjj.status != 'cancelled')))"
     " OR (p.career_id, p.unique_id) IN (SELECT fi.career_id, fi.unique_id FROM images fi"
     " WHERE fi.flagged_at IS NOT NULL AND fi.is_current = 1 AND NOT EXISTS (SELECT 1 FROM jobs fj"
     " WHERE fj.career_id = fi.career_id AND fj.unique_id = fi.unique_id"
