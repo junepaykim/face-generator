@@ -19,14 +19,17 @@ from facegen.core.age import TABLES, WORDINGS, spread_table
 from facegen.core.cutoffs import LEAGUE_CELLS, OFF, OTHER_CELLS
 from facegen.core.settings_values import (
     ASPECT_CHOICES,
+    CANDIDATE_RANGE,
     CUTOFF_MODES,
     DETAIL_SIZES,
+    EDGE_RANGE,
     FOUND,
     GENDER_CHOICES,
     GROUP_NAMES,
     LANGUAGE_CHOICES,
     MODEL_CHOICES,
     NOT_SET,
+    SOFTEN_SKIN_STEPS,
     STAFF_AGE_MODES,
     THEME_CHOICES,
     TIER_CHOICES,
@@ -251,10 +254,10 @@ def build_settings(
     v = values
 
     def edge(key: str) -> int:
-        return _range(key, v[key], 64, 4096)
+        return _range(key, v[key], *EDGE_RANGE)
 
     def candidates(key: str) -> int:
-        return _range(key, v[key], 1, 8)
+        return _range(key, v[key], *CANDIDATE_RANGE)
 
     def detail(key: str) -> str:
         return one_of(key, tuple(DETAIL_SIZES))
@@ -417,7 +420,12 @@ def build_settings(
         ),
         my_club=MyClubSettings(
             banned_traits=frozenset(banned),
-            soften_skin=_range("my_club.soften_skin", v["my_club.soften_skin"], 0, 2),
+            soften_skin=_range(
+                "my_club.soften_skin",
+                v["my_club.soften_skin"],
+                SOFTEN_SKIN_STEPS[0],
+                SOFTEN_SKIN_STEPS[-1],
+            ),
             round_eyes=float(round_eyes),
         ),
         body=body,

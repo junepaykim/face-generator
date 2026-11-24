@@ -47,6 +47,7 @@ JS_TEXTS = (
     "js.copied",
     "js.copy_failed",
     "js.copying",
+    "settings.history",
     "gallery.made",
     "dur.seconds",
     "dur.minutes_seconds",

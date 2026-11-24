@@ -223,6 +223,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
         t = deps.translator(request, conn)
         shown = dict(current.values) | (values or {})
         sections = settings_sections(shown, defaults, t)
+        fields = {f.key: f for _, _, _, fs in sections for f in fs}
         career = load_career(conn)
         return page(
             request,
@@ -230,7 +231,9 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             conn,
             tabs=settings_tabs(sections),
             tab_anchors=tab_anchors(),
-            fields={f.key: f for _, _, _, fs in sections for f in fs},
+            fields=fields,
+            # The bar's legend for the dot shows only while a setting differs (Phase 17j).
+            changed_any=any(f.changed for f in fields.values()),
             values=shown,
             card=deps.card.known(),
             **live_parts(conn, current, career.id if career else None, t),
@@ -492,6 +495,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                         "parts": parts,
                         "presets": chosen_now,
                         "history_html": history_html,
+                        "history_count": len(history["history"]),
                         "can_undo": history["can_undo"],
                         "can_redo": history["can_redo"],
                     }

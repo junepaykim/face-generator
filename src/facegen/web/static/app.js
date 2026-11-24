@@ -820,10 +820,28 @@ function localTimes(root) {
   const history = document.getElementById("history");
   const undoButton = document.querySelector("[data-undo]");
   const redoButton = document.querySelector("[data-redo]");
+  const historyOpener = document.querySelector("[data-history-open]");
+  const legend = document.querySelector("[data-changed-legend]");
   const inputs = new Map();
-  forms.forEach((form) => form.querySelectorAll("[data-key]").forEach((el) => inputs.set(el.name, el)));
+  // A segmented control (Phase 17j) is a radio group: one setting, its first button stands for it.
+  const segments = new Map();
+  forms.forEach((form) => form.querySelectorAll("[data-key]").forEach((el) => {
+    if (el.type === "radio") segments.set(el.name, (segments.get(el.name) || []).concat(el));
+    if (el.type !== "radio" || !inputs.has(el.name)) inputs.set(el.name, el);
+  }));
   const within = (selector) => forms.flatMap((form) => Array.from(form.querySelectorAll(selector)));
-  const read = (el) => (el.type === "checkbox" ? (el.checked ? "on" : "") : el.value.trim());
+  const read = (el) => {
+    if (el.type === "radio") {
+      const on = segments.get(el.name).find((r) => r.checked);
+      return on ? on.value : "";
+    }
+    return el.type === "checkbox" ? (el.checked ? "on" : "") : el.value.trim();
+  };
+  const write = (el, value) => {
+    if (el.type === "radio") segments.get(el.name).forEach((r) => { r.checked = r.value === value; });
+    else if (el.type === "checkbox") el.checked = value === "on";
+    else el.value = value;
+  };
   // What the server holds for each field, as the field would show it.
   const saved = new Map(Array.from(inputs, ([name, el]) => [name, read(el)]));
   const dirty = () => Array.from(inputs.values()).filter((el) => read(el) !== saved.get(el.name));
@@ -850,6 +868,18 @@ function localTimes(root) {
     field.classList.toggle("changed", changed);
     field.querySelectorAll("[data-dot], [data-use-default]").forEach((x) => { x.hidden = !changed; });
   };
+  // The bar says what the dot means only while a setting differs from its default.
+  const showLegend = () => {
+    if (legend) legend.hidden = !document.querySelector("[data-field].changed");
+  };
+  // A stepper's − and + (Phase 17j), each turned off at its end.
+  const steps = within("[data-step-of]");
+  const showSteps = () => steps.forEach((button) => {
+    const el = inputs.get(button.dataset.stepOf);
+    const n = Number(el.value);
+    button.disabled = Number(button.dataset.step) < 0 ? n <= Number(el.min) : n >= Number(el.max);
+  });
+  steps.forEach((button) => { button.hidden = false; });
   // A preset (Basic page) is a radio group: the choice sent, then the one the values match.
   const chosen = new Map();
   const unsaved = () => dirty().length > 0 || chosen.size > 0;
@@ -890,14 +920,13 @@ function localTimes(root) {
         if (!el) continue;
         const shown = el.type === "checkbox" ? (f.value ? "on" : "") : f.text;
         // Show the value as stored, unless it was edited again while this save was on its way.
-        if (read(el) === (posted.get(name) ?? saved.get(name))) {
-          if (el.type === "checkbox") el.checked = Boolean(f.value);
-          else el.value = f.text;
-        }
+        if (read(el) === (posted.get(name) ?? saved.get(name))) write(el, shown);
         saved.set(name, shown);
         showChanged(el, f.changed);
       }
       syncTicks();
+      showSteps();
+      showLegend();
       picked.forEach((value, name) => {
         if (chosen.get(name) === value) chosen.delete(name);
       });
@@ -916,6 +945,9 @@ function localTimes(root) {
       if (history) {
         history.innerHTML = data.history_html;
         localTimes(history);
+      }
+      if (historyOpener && typeof data.history_count === "number") {
+        historyOpener.textContent = text("settings.history", { count: data.history_count });
       }
       undoButton.disabled = !data.can_undo;
       redoButton.disabled = !data.can_redo;
@@ -966,16 +998,29 @@ function localTimes(root) {
       if (e.key === "Enter" && e.target.matches("input")) { e.preventDefault(); save(); }
     });
     form.addEventListener("click", (e) => {
+      const step = e.target.closest("[data-step-of]");
+      if (step) {
+        // As if the number were typed: one up or down, kept within the limits, then saved.
+        const el = inputs.get(step.dataset.stepOf);
+        const now = el.value.trim() === "" ? Number(el.dataset.default) : Number(el.value);
+        const next = Math.round((Number.isFinite(now) ? now : Number(el.dataset.default)) + Number(step.dataset.step));
+        el.value = String(Math.min(Number(el.max), Math.max(Number(el.min), next)));
+        showSteps();
+        save();
+        return;
+      }
       const button = e.target.closest("[data-use-default]");
       if (!button) return;
       e.preventDefault();
       const el = fieldOf(button).querySelector("[data-key]");
-      if (el.type === "checkbox") el.checked = el.dataset.default === "on";
-      else el.value = el.dataset.default;
+      write(el, el.dataset.default);
       syncTicks();
+      showSteps();
       save();
     });
+    form.addEventListener("input", showSteps);
   });
+  showSteps();
 
   // Undo, Redo, Reset and "undo back to here" wait for a save on its way, so they act on it.
   document.addEventListener("submit", async (e) => {
@@ -991,11 +1036,47 @@ function localTimes(root) {
       next.value = location.pathname + location.hash;
     }
     leaving = true;
-    target.requestSubmit(submitter);
+    // In a task of its own: after a real click the browser is still sending this submit event
+    // when a save with nothing to wait for settles, and a form ignores requestSubmit until then.
+    setTimeout(() => target.requestSubmit(submitter), 0);
   });
   window.addEventListener("beforeunload", (e) => {
     if (!leaving && (saving || unsaved())) { e.preventDefault(); e.returnValue = ""; }
   });
+})();
+
+// Recent changes in a drawer at the right of the Advanced page (Phase 17j). History (N) in the bar
+// opens and closes it; × and Esc close it. "Undo" on an entry works from inside it (the settings
+// script above waits for a save on its way). It stays open after the page reloads, as after an
+// Undo, while the window is open. Without the script it is at the bottom of the page and
+// History (N) is a link to it.
+(function historyDrawer() {
+  const drawer = document.querySelector("[data-history-drawer]");
+  const opener = document.querySelector("[data-history-open]");
+  if (!drawer || !opener) return;
+  const closer = drawer.querySelector("[data-history-close]");
+  const KEY = "kitshot.history-open";
+  let remembered = false;
+  try { remembered = sessionStorage.getItem(KEY) === "1"; } catch (e) { /* no storage */ }
+  document.documentElement.classList.add("drawer-on");
+  closer.hidden = false;
+  const set = (open, focus) => {
+    drawer.hidden = !open;
+    opener.setAttribute("aria-expanded", String(open));
+    opener.classList.toggle("on", open);
+    try { sessionStorage.setItem(KEY, open ? "1" : "0"); } catch (e) { /* no storage */ }
+    if (focus) (open ? closer : opener).focus();
+  };
+  opener.addEventListener("click", (e) => {
+    e.preventDefault();
+    set(drawer.hidden, true);
+  });
+  closer.addEventListener("click", () => set(false, true));
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || drawer.hidden || document.querySelector("dialog[open]")) return;
+    set(false, drawer.contains(document.activeElement));
+  });
+  set(remembered || location.hash === "#history", false);
 })();
 
 // The Advanced settings page's tabs (Phase 16h): one shows at a time and the address keeps it

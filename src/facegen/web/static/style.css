@@ -6,7 +6,7 @@
   --bad: #a72b2b; --badbg: #fbe6e6; --warn: #8a5a00; --warnbg: #fdf1d8;
   --bad-fg: #ffffff; --shine: rgb(255 255 255 / .75);
   --veil: rgb(0 0 0 / .82); --veil-fg: #ffffff; --veil-button: rgb(28 28 28 / .7);
-  --veil-button-hover: rgb(64 64 64 / .85);
+  --veil-button-hover: rgb(64 64 64 / .85); --drawer-shadow: rgb(0 0 0 / .16);
   --a: #7a3fd0; --b: #2f6fd0; --c: #3a8a5a; --row: #f9fafb; --grp-fg: #ffffff;
   color-scheme: light;
 }
@@ -17,7 +17,7 @@
     --bad: #f3a0a0; --badbg: #3a1c1c; --warn: #f1c46a; --warnbg: #3a2e14;
     --bad-fg: #1b1f26; --shine: rgb(255 255 255 / .14);
     --veil: rgb(0 0 0 / .86); --veil-fg: #ffffff; --veil-button: rgb(28 28 28 / .7);
-    --veil-button-hover: rgb(64 64 64 / .85);
+    --veil-button-hover: rgb(64 64 64 / .85); --drawer-shadow: rgb(0 0 0 / .55);
     --a: #b993ff; --b: #8fb0ff; --c: #86d3a6; --row: #181c22; --grp-fg: #111111;
     color-scheme: dark;
   }
@@ -28,7 +28,7 @@
   --bad: #f3a0a0; --badbg: #3a1c1c; --warn: #f1c46a; --warnbg: #3a2e14;
   --bad-fg: #1b1f26; --shine: rgb(255 255 255 / .14);
   --veil: rgb(0 0 0 / .86); --veil-fg: #ffffff; --veil-button: rgb(28 28 28 / .7);
-  --veil-button-hover: rgb(64 64 64 / .85);
+  --veil-button-hover: rgb(64 64 64 / .85); --drawer-shadow: rgb(0 0 0 / .55);
   --a: #b993ff; --b: #8fb0ff; --c: #86d3a6; --row: #181c22; --grp-fg: #111111;
   color-scheme: dark;
 }
@@ -399,14 +399,46 @@ main.fill > .log-page { flex: 1 1 auto; display: flex; flex-direction: column; m
 form.settings fieldset { background: var(--card); border: 1px solid var(--line); border-radius: 8px;
                          margin: 0 0 12px; padding: 8px 14px 12px; }
 form.settings legend { font-weight: 600; padding: 0 6px; }
-.field { display: grid; grid-template-columns: minmax(180px, 1.6fr) 160px minmax(130px, 1fr);
-         gap: 10px; align-items: center; padding: 3px 0; }
-.field:has(select) { grid-template-columns: minmax(180px, 1.6fr) max-content minmax(130px, 1fr); }
-@media (max-width: 760px) {
-  .field, .field:has(select) { grid-template-columns: 1fr; gap: 4px; padding: 6px 0; }
+/* Every row on one grid (Phase 17j): label | control | default and ↺. The control column has
+   one width everywhere, so controls start on the same line in every card; narrow windows stack. */
+.field { display: grid; grid-template-columns: minmax(12rem, 1fr) 14rem minmax(0, 1fr);
+         gap: 4px 14px; align-items: center; padding: 3px 0; }
+.field > .name { min-width: 0; }
+.field > .control { display: flex; align-items: center; min-width: 0; }
+.field .control > select, .field .control > input[type=text]:not(.band) { width: 100%; box-sizing: border-box; }
+.field .control > input[type=number] { width: 8rem; box-sizing: border-box; }
+.field .control > input[type=checkbox] { margin: 0; }
+@media (max-width: 720px) {
+  .field { grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 6px 0; }
+  .field .control > select, .field .control > input[type=text]:not(.band) { max-width: 20rem; }
 }
-.field input[type=text] { width: 160px; }
-.field input[type=number] { width: 140px; }
+.field-note { display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; min-width: 0; }
+.field-note [data-error]:empty { display: none; }
+button.reset-one { padding: 0 6px; border-color: transparent; background: none; color: var(--muted);
+                   font-size: 15px; line-height: 1.4; }
+button.reset-one:hover:not(:disabled) { color: var(--accent); border-color: var(--line); }
+/* A short list as a row of buttons: one radio each (Phase 17j). */
+.seg-field { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 6px;
+             overflow: hidden; background: var(--card); }
+.seg-field label { position: relative; display: inline-flex; }
+.seg-field input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0;
+                   cursor: pointer; }
+.seg-field span { padding: 4px 12px; color: var(--muted); white-space: nowrap; }
+.seg-field label + label span { border-left: 1px solid var(--line); }
+.seg-field label:hover span { color: var(--fg); background: var(--row); }
+.seg-field input:checked + span { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.seg-field input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: -2px; }
+.seg-field input:disabled { cursor: default; }
+.seg-field input:disabled + span { opacity: .5; }
+/* A small number with − and + (Phase 17j); the buttons show with the script. */
+.stepper { display: inline-flex; align-items: stretch; }
+.stepper button { padding: 2px 9px; line-height: 1; }
+.stepper button:first-child { border-radius: 6px 0 0 6px; }
+.stepper button:last-child { border-radius: 0 6px 6px 0; }
+.stepper:has(button:not([hidden])) input[type=number] { width: 3.2rem; border-radius: 0; border-left: 0;
+  border-right: 0; text-align: center; -moz-appearance: textfield; appearance: textfield; }
+.stepper input::-webkit-inner-spin-button, .stepper input::-webkit-outer-spin-button {
+  -webkit-appearance: none; margin: 0; }
 .field.changed .name { font-weight: 600; }
 .field.error input { border-color: var(--bad); }
 /* Off: the latest save has no such league, so the setting has nothing to do (Cutoffs tab). */
@@ -420,12 +452,37 @@ form.settings legend { font-weight: 600; padding: 0 6px; }
 .card.update { border-color: var(--accent); background: var(--accent-soft); }
 .card.update h2 { color: var(--accent); }
 
-/* Settings: saved as you go, with undo. */
-.settings-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); gap: 14px;
-                   align-items: start; }
-@media (max-width: 1180px) { .settings-layout { grid-template-columns: 1fr; } }
-.history-card { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; }
+/* Settings: saved as you go, with undo. On Advanced (Phase 17j) the tabs and the actions share
+   one row; under it a quiet line says what the last save did and, while a setting differs from
+   its default, what the dot means. It stays at the top where the window is big enough. */
+.settings-bar { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px 6px; margin-bottom: 12px;
+                background: var(--card); border: 1px solid var(--line); border-radius: 8px; }
+.settings-bar-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.settings-bar-row .pills { margin: 0; }
+.settings-bar-row .pills a { padding: 4px 12px; }
+.settings-bar-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
+.settings-bar-acts a.button.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.settings-bar-note { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; min-height: 1.4em;
+                     padding: 0 2px; }
+.changed-legend { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-size: 12px;
+                  color: var(--muted); }
+.changed-legend .dot { width: 6px; height: 6px; opacity: .8; }
+@media (min-width: 961px) and (min-height: 600px) {
+  .settings-bar { position: sticky; top: 0; z-index: 2; }
+  .tab-panel, .tab-panel [id] { scroll-margin-top: 96px; }  /* an anchor never lands under it */
+}
 .save-status { font-size: 13px; }
+/* Recent changes: at the bottom of the page without the script; with it, a drawer at the right. */
+.drawer-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.drawer-head h2 { margin: 0; }
+button.drawer-close { width: 32px; height: 32px; padding: 0; border-color: transparent; background: none;
+                      font-size: 22px; line-height: 1; color: var(--muted); }
+button.drawer-close:hover { color: var(--fg); }
+.drawer-on .history-drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 6; width: min(380px, 92vw);
+  margin: 0; border-width: 0 0 0 1px; border-radius: 0; overflow: auto; box-sizing: border-box;
+  box-shadow: -6px 0 24px var(--drawer-shadow); animation: drawer-in .18s ease-out; }
+@keyframes drawer-in { from { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) { .drawer-on .history-drawer { animation: none; } }
 .save-status.ok { color: var(--ok); } .save-status.bad { color: var(--bad); }
 ol.history { list-style: none; margin: 0; padding: 0; }
 ol.history > li { padding: 8px 0; border-bottom: 1px solid var(--line); }
@@ -707,6 +764,7 @@ table.looks td.num, table.looks th.num { text-align: right; }
 .cell-field { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: 4px; white-space: nowrap; }
 .cell-field input.cell { width: 64px; text-align: right; }
 .cell-field input[type=number] { width: 84px; }
+.cell-field select { max-width: 11rem; }
 .cell-field.changed input, .cell-field.changed select { font-weight: 600; }
 .cell-field.error input { border-color: var(--bad); }
 .cell-field [data-error]:empty { display: none; }
@@ -731,6 +789,19 @@ details.everywhere summary { color: var(--fg); }
     color: var(--muted); font-size: 12px; }
   .cutoff-table td.others:has(> .muted:only-child) { display: none; }
   .others > div { flex-wrap: wrap; }
+}
+/* Narrow: Picture quality's rows one under the other, the groups side by side in each, named
+   above their control (Phase 17j), so the table needs no scroll bar of its own. */
+@media (max-width: 760px) {
+  .spec-table thead { display: none; }
+  .spec-table, .spec-table tbody { display: block; }
+  .spec-table tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px 10px; padding: 8px 0; }
+  .spec-table th[scope=row] { grid-column: 1 / -1; padding: 0; }
+  .spec-table td { padding: 0; min-width: 0; }
+  .spec-table td[data-label]::before { content: attr(data-label); display: block; color: var(--muted);
+    font-size: 12px; }
+  .spec-table .cell-field { display: flex; min-width: 0; }
+  .spec-table .cell-field select { flex: 0 1 auto; min-width: 0; max-width: 100%; }
 }
 @media (max-width: 600px) {
   .tab-panel fieldset { padding: 8px 10px 10px; }

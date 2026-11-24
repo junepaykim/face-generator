@@ -51,6 +51,11 @@ class Hardware:
     def vram_gib(self) -> float | None:
         return None if self.total_bytes is None else self.total_bytes / 2**30
 
+    @property
+    def memory_gb(self) -> int | None:
+        """Its memory in whole GB as pages show it ("16 GB"), rounded as `recommend` rounds."""
+        return None if self.vram_gib is None else round(self.vram_gib)
+
     def describe(self) -> str:
         if self.has_gpu:
             assert self.vram_gib is not None
@@ -191,7 +196,7 @@ def recommend(vram_gib: float | None) -> Preset:
     Pure."""
     if vram_gib is None:
         return NONE
-    whole = round(vram_gib)
+    whole = round(vram_gib)  # as Hardware.memory_gb
     if whole >= 12:
         return HIGH
     if whole >= 10:

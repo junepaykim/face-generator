@@ -88,6 +88,16 @@ is a multiple of 64, as the models need. Before Phase 16 the values were the 3:4
 ("1344x1728", "1152x1472"), migrated by `persistence.db.CONVERTED_SETTINGS`."""
 
 
+PICTURE_HEIGHTS = (512, 768, 1024)
+"""`groups.*.published_long_edge`: the heights the Advanced page offers (Phase 17j). Any height
+from `EDGE_RANGE` is accepted; a stored other one stays selectable there."""
+EDGE_RANGE = (64, 4096)
+CANDIDATE_RANGE = (1, 8)
+"""`groups.*.candidates`: pictures drawn for each job to pick the best from."""
+SOFTEN_SKIN_STEPS = (0, 1, 2)
+"""`my_club.soften_skin`: how many steps lighter tan and dark skin are drawn at my club."""
+
+
 def detail_size(name: str, aspect: str) -> tuple[int, int] | None:
     """A detail-pass choice's target size for a picture shape; None for off."""
     sizes = DETAIL_SIZES[name]

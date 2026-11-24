@@ -14,11 +14,14 @@ from facegen.core.age import WORDINGS
 from facegen.core.cutoffs import OFF
 from facegen.core.settings_values import (
     ASPECT_CHOICES,
+    CANDIDATE_RANGE,
     CUTOFF_MODES,
     DETAIL_SIZES,
     GENDER_CHOICES,
     LANGUAGE_CHOICES,
     MODEL_CHOICES,
+    PICTURE_HEIGHTS,
+    SOFTEN_SKIN_STEPS,
     THEME_CHOICES,
     TIER_CHOICES,
 )
@@ -28,11 +31,13 @@ from facegen.web.messages import band_name
 
 # Who is picked first: it is what the page is mostly for (spec section 7). Each section's title
 # is the catalog's "settings.title.<section>", its note "settings.note.<top section>" (most
-# sections have none: Phase 12 keeps the page short), its ⓘ tip "settings.tip.<top>".
+# sections have none: Phase 12 keeps the page short), its ⓘ tip "settings.tip.<top>". Quality
+# reads from what is drawn to how (Phase 17j): the style (with the picture's shape), the groups'
+# quality, rendering, the reference, then how players at my club look.
 SECTION_ORDER = (
-    "cutoffs", "groups", "picture", "staff", "media", "no_photo", "style", "age", "schedule",
-    "display", "notifications", "eligibility", "my_club", "body", "personality", "reference",
-    "render", "updates", "newgen",
+    "cutoffs", "style", "picture", "groups", "render", "reference", "my_club", "body",
+    "personality", "staff", "media", "no_photo", "age", "schedule", "display", "notifications",
+    "eligibility", "updates", "newgen",
 )  # fmt: skip
 TABS: dict[str, tuple[str, ...]] = {
     "cutoffs": ("cutoffs",),
@@ -86,6 +91,18 @@ and a look's name for a look."""
 TIER_KEYS = frozenset({"first_team", "youth", "loans"})
 LOOK_KEYS = frozenset({"from", "to"})
 
+INT_CHOICES: dict[str, tuple[int, ...]] = {
+    "published_long_edge": PICTURE_HEIGHTS,
+    "soften_skin": SOFTEN_SKIN_STEPS,
+}
+"""Whole numbers offered as a short list, by the key's last part (Phase 17j). A value's label is
+the catalog's "settings.choice.<name>.<value>" if it has one, else the number. Any value the
+settings accept still is: a stored one outside the list stays selectable, marked as custom."""
+SEGMENTED = frozenset({"soften_skin"})
+"""Short lists shown as a row of buttons (a radio group) instead of a drop-down list."""
+STEPPERS: dict[str, tuple[int, int]] = {"candidates": CANDIDATE_RANGE}
+"""Small whole numbers shown with − and + buttons, with their limits, by the key's last part."""
+
 GROUP_LIST_KEYS = frozenset({"schedule.auto_groups"})
 """Lists of picture groups, shown as one tick box per group."""
 
@@ -123,6 +140,31 @@ def choices_of(key: str, t: Translator = ENGLISH) -> tuple[tuple[str, str], ...]
     return tuple((value, choice_label(name, value, t)) for value in values)
 
 
+def number_label(name: str, value: int, t: Translator = ENGLISH) -> str:
+    """A listed whole number for people to read: "0 (Off)", or the number itself."""
+    key = f"settings.choice.{name}.{value}"
+    return t(key) if t.has(key) else str(value)
+
+
+def number_choices_of(key: str, t: Translator = ENGLISH) -> tuple[tuple[str, str], ...] | None:
+    name = key.rpartition(".")[2]
+    values = INT_CHOICES.get(name)
+    if values is None:
+        return None
+    return tuple((str(value), number_label(name, value, t)) for value in values)
+
+
+def control_of(key: str) -> str:
+    """How a setting is edited when not by its kind's usual field: "segmented", "stepper" or
+    "select" (a list of whole numbers); "" for the usual field."""
+    name = key.rpartition(".")[2]
+    if name in SEGMENTED:
+        return "segmented"
+    if name in STEPPERS:
+        return "stepper"
+    return "select" if name in INT_CHOICES else ""
+
+
 @dataclass(frozen=True, slots=True)
 class Field:
     key: str
@@ -139,6 +181,10 @@ class Field:
     label_key: str = ""
     """The label's catalog key, for a page to word it with group chips; `label` is plain."""
     label_values: dict[str, Any] = field(default_factory=dict)
+    control: str = ""
+    """`control_of`: a segmented row, a stepper or a list of numbers; "" for the usual field."""
+    limits: tuple[int, int] | None = None
+    """A stepper's lowest and highest value."""
 
     @property
     def text(self) -> str:
@@ -180,6 +226,8 @@ def value_text(value: Any, t: Translator = ENGLISH, key: str = "") -> str:
     name = key.rpartition(".")[2]
     if name in CHOICES and value in CHOICES[name]:
         return choice_label(name, value, t)
+    if name in INT_CHOICES and value in INT_CHOICES[name]:
+        return number_label(name, value, t)
     return str(value)
 
 
@@ -276,20 +324,23 @@ def settings_sections(
     """(section key, title, note, fields) in the order of the defaults file."""
     sections: dict[str, list[Field]] = {}
     for key in editable_keys(defaults):
-        section = key.rpartition(".")[0]
+        section, _, name = key.rpartition(".")
         label_key, label_values = label_parts(key, t)
+        kind = _kind(defaults[key], key)
         sections.setdefault(section, []).append(
             Field(
                 key=key,
                 label=_label(key, t),
-                kind=_kind(defaults[key], key),
+                kind=kind,
                 value=values[key],
                 default=defaults[key],
                 changed=values[key] != defaults[key],
-                choices=choices_of(key, t) or (),
+                choices=choices_of(key, t) or number_choices_of(key, t) or (),
                 default_text=value_text(defaults[key], t, key),
                 label_key=label_key,
                 label_values=label_values,
+                control=control_of(key) if kind == "int" else "",
+                limits=STEPPERS.get(name),
             )
         )
 

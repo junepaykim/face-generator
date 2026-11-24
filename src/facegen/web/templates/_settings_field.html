@@ -1,9 +1,34 @@
 {# One setting as a labelled field (Advanced page). `errors` maps keys to their error text. #}
 {% from "_icons.html" import info as tip %}
-{# `off`: shown turned off (disabled) and never sent, as the latest save gives it nothing to do. #}
+{# `off`: shown turned off (disabled) and never sent, as the latest save gives it nothing to do.
+   A short list's stored value outside it stays selectable, marked as custom (Phase 17j). #}
+{% macro custom_option(fd) -%}
+  {%- if fd.text not in fd.choices|map("first") %}{{ t("settings.choice.custom", value=fd.text) }}{% endif -%}
+{%- endmacro %}
+
 {% macro input(fd, label=None, off=False) %}
   {% if fd.kind == "bool" %}
     <input type="hidden" name="{{ fd.key }}" value="off"{{ " disabled" if off }}><input type="checkbox" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" {{ "checked" if fd.value is sameas true }}{% if label %} aria-label="{{ label }}"{% endif %}{{ " disabled" if off }}>
+  {% elif fd.control == "segmented" %}
+    {# Buttons in a row: one radio each, all with the setting's name, so a change posts as before. #}
+    {% set custom = custom_option(fd) %}
+    <span class="seg-field" role="radiogroup" aria-label="{{ label or fd.label }}">
+      {% for value, text in fd.choices %}<label><input type="radio" name="{{ fd.key }}" value="{{ value }}" data-key data-default="{{ fd.default_input }}" {{ "checked" if fd.text == value }}{{ " disabled" if off }}><span>{{ text }}</span></label>{% endfor %}
+      {% if custom %}<label><input type="radio" name="{{ fd.key }}" value="{{ fd.text }}" data-key data-default="{{ fd.default_input }}" checked{{ " disabled" if off }}><span>{{ custom }}</span></label>{% endif %}
+    </span>
+  {% elif fd.control == "stepper" %}
+    {# − and + step within the limits; the number can be typed too. They show with the script. #}
+    <span class="stepper">
+      <button type="button" data-step-of="{{ fd.key }}" data-step="-1" tabindex="-1" aria-label="{{ tr('settings.step_down') }}" title="{{ tr('settings.step_down') }}" hidden>−</button>
+      <input type="number" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}" step="1" min="{{ fd.limits[0] }}" max="{{ fd.limits[1] }}" aria-label="{{ label or fd.label }}">
+      <button type="button" data-step-of="{{ fd.key }}" data-step="1" tabindex="-1" aria-label="{{ tr('settings.step_up') }}" title="{{ tr('settings.step_up') }}" hidden>+</button>
+    </span>
+  {% elif fd.kind == "choice" or fd.control == "select" %}
+    {% set custom = custom_option(fd) %}
+    <select name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}"{% if fd.key.startswith("display.") %} data-reload{% endif %}{% if label %} aria-label="{{ label }}"{% endif %}>
+      {% for value, text in fd.choices %}<option value="{{ value }}" {{ "selected" if fd.text == value }}>{{ text }}</option>{% endfor %}
+      {% if custom %}<option value="{{ fd.text }}" selected>{{ custom }}</option>{% endif %}
+    </select>
   {% elif fd.kind == "int" %}
     <input type="number" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}" step="1"{% if label %} aria-label="{{ label }}"{% endif %}>
   {% elif fd.kind == "float" %}
@@ -17,28 +42,28 @@
       <input type="hidden" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}">
       {% for g in ("a", "b", "c") %}<label class="tick"><input type="checkbox" data-group-of="{{ fd.key }}" value="{{ g }}" {{ "checked" if g in fd.value }}> {{ grp(g) }}</label>{% endfor %}
     </span>
-  {% elif fd.kind == "choice" %}
-    <select name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}"{% if fd.key.startswith("display.") %} data-reload{% endif %}{% if label %} aria-label="{{ label }}"{% endif %}>
-      {% for value, text in fd.choices %}<option value="{{ value }}" {{ "selected" if fd.text == value }}>{{ text }}</option>{% endfor %}
-      {% if fd.text not in fd.choices|map("first") %}<option value="{{ fd.text }}" selected>{{ fd.text }}</option>{% endif %}
-    </select>
   {% else %}
     <input type="text" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}"{% if label %} aria-label="{{ label }}"{% endif %}>
   {% endif %}
 {% endmacro %}
 
+{# The grid's third column (Phase 17j): the default, quiet, and ↺ to put it back once changed. #}
 {% macro note(fd, errors, off=False) -%}
-  <span class="muted small">{{ t("settings.default", value=fd.default_text) }}
-    <button type="button" class="link small" data-use-default {{ "hidden" if not fd.changed }}{{ " disabled" if off }}>{{ t("settings.use_default") }}</button>
-    <span class="bad" data-error>{% if fd.key in errors %} · {{ errors[fd.key] }}{% endif %}</span></span>
+  <span class="field-note">
+    <span class="muted small">{{ t("settings.default", value=fd.default_text) }}</span>
+    <button type="button" class="reset-one" data-use-default title="{{ tr('settings.use_default') }}" aria-label="{{ tr('settings.use_default') }}" {{ "hidden" if not fd.changed }}{{ " disabled" if off }}>↺</button>
+    <span class="bad small" data-error>{% if fd.key in errors %} · {{ errors[fd.key] }}{% endif %}</span></span>
 {%- endmacro %}
 
+{# Label | control | default and ↺, on one grid in every card (Phase 17j). A row with several
+   controls (tick boxes, buttons, a stepper) is a div: a label would pass a click on its name
+   to the first of them. #}
 {% macro field(fd, errors, off=False) %}
-  {% set box = "div" if fd.kind == "groups" else "label" %}
+  {% set box = "div" if fd.kind == "groups" or fd.control in ("segmented", "stepper") else "label" %}
   <{{ box }} class="field {{ 'changed' if fd.changed }} {{ 'error' if fd.key in errors }} {{ 'off' if off }}" data-field>
     {% set field_tip = "settings.field_tip." ~ fd.key.rsplit(".", 1)[-1] %}
     <span class="name">{% if fd.label_key %}{{ t(fd.label_key, **fd.label_values) }}{% else %}{{ fd.label }}{% endif %}{% if tr.has(field_tip) %} {{ tip(t(field_tip)) }}{% endif %} <span class="dot" data-dot title="{{ t('settings.default', value=fd.default_text) }}" {{ "hidden" if not fd.changed }}></span></span>
-    {{ input(fd, off=off) }}
+    <span class="control">{{ input(fd, off=off) }}</span>
     {{ note(fd, errors, off) }}
   </{{ box }}>
 {% endmacro %}

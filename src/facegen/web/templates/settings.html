@@ -30,11 +30,6 @@
 {% set ev = cutoffs.effective %}
 {% set off = cutoffs.off %}
 
-<nav class="pills" aria-label="{{ t('settings.tabs') }}" data-tab-pills data-anchors="{{ tab_anchors|tojson|forceescape }}">
-  {% for tab in tabs %}<a href="#tab-{{ tab }}" data-tab="{{ tab }}">{{ t("settings.tab." ~ tab) }}</a>{% endfor %}
-</nav>
-
-<div class="settings-layout">
 <div class="tab-panels">
 
 {# --- Cutoffs: who is picked for each group (Phase 16) ------------------------------------ #}
@@ -117,27 +112,37 @@
   <h2 class="tab-title">{{ t("settings.tab.quality") }}</h2>
   <div class="card" id="graphics-card">
     <h2>{{ t("settings.gpu.title") }} {{ tip(t("settings.gpu.tip")) }}</h2>
-    {% if card and card.has_gpu %}<p class="muted small">{{ card.name }}</p>{% endif %}
+    {% if card and card.has_gpu %}<p class="muted small">{{ t("settings.gpu.card", name=card.name, gb=card.memory_gb) }}</p>{% endif %}
     <div class="buttons"><a class="button" href="/hardware">{{ t("settings.gpu.button") }}</a></div>
   </div>
+  {# Graphics card, Picture style (with the picture's shape as one more row), Picture quality,
+     Rendering, Reference, then how players at my club look (Phase 17j). #}
   <form method="post" action="/settings" class="settings" data-autosave>{{ form_head("quality") }}
-    <fieldset id="section-groups">
-      <legend>{{ t("settings.title.groups") }}</legend>
-      <div class="table-scroll">
-      <table class="spec-table">
-        <thead><tr><th></th>{% for g in ("a", "b", "c") %}<th>{{ grp(g) }}</th>{% endfor %}</tr></thead>
-        <tbody>
-        {% for name in ("published_long_edge", "candidates", "detail_size") %}
-          <tr><th scope="row">{{ t("settings.label." ~ name) }}</th>
-          {% for g in ("a", "b", "c") %}<td>{{ cell(f["groups." ~ g ~ "." ~ name], errors, tr("group." ~ g) ~ " · " ~ tr("settings.label." ~ name)) }}</td>{% endfor %}
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-      </div>
-    </fieldset>
-    {% for section, title, note, fds in tabs.quality if not section.startswith("groups") %}
-      {{ section_box(section, title, note, fds) }}
+    {% set quality = namespace(table=false) %}
+    {% for section, title, note, fds in tabs.quality %}
+      {% if section == "style" %}
+        {% call section_box(section, title, note, fds) %}{{ field(f["picture.aspect"], errors) }}{% endcall %}
+      {% elif section.startswith("groups.") %}
+        {% if not quality.table %}{% set quality.table = true %}
+        <fieldset id="section-groups">
+          <legend>{{ t("settings.title.groups") }}</legend>
+          <div class="table-scroll">
+          <table class="spec-table">
+            <thead><tr><th></th>{% for g in ("a", "b", "c") %}<th>{{ grp(g) }}</th>{% endfor %}</tr></thead>
+            <tbody>
+            {% for name in ("published_long_edge", "candidates", "detail_size") %}
+              <tr><th scope="row">{{ t("settings.label." ~ name) }}</th>
+              {% for g in ("a", "b", "c") %}<td data-label="{{ tr('group.' ~ g) }}">{{ cell(f["groups." ~ g ~ "." ~ name], errors, tr("group." ~ g) ~ " · " ~ tr("settings.label." ~ name)) }}</td>{% endfor %}
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+          </div>
+        </fieldset>
+        {% endif %}
+      {% elif section != "picture" %}
+        {{ section_box(section, title, note, fds) }}
+      {% endif %}
     {% endfor %}
     {{ save_button() }}
   </form>
@@ -187,7 +192,7 @@
       {% else %}
       <tr><th>{{ t("settings.info.model") }}</th><td class="muted">{{ t("settings.info.no_worker") }}</td></tr>
       {% endif %}
-      <tr><th>{{ t("settings.gpu.title") }}</th><td>{% if card and card.has_gpu %}{{ card.name }}{% else %}<a href="/hardware">{{ t("settings.basic.check_card") }}</a>{% endif %}</td></tr>
+      <tr><th>{{ t("settings.gpu.title") }}</th><td>{% if card and card.has_gpu %}{{ t("settings.gpu.card", name=card.name, gb=card.memory_gb) }}{% else %}<a href="/hardware">{{ t("settings.basic.check_card") }}</a>{% endif %}</td></tr>
       <tr><th>{{ t("settings.info.watcher") }}</th><td>{{ t("settings.info.watching" if info.watching else "settings.info.not_watching") }}</td></tr>
       {% if info.photos %}<tr><th>{{ t("settings.info.photos") }}</th><td>{% if info.photos.game_known %}{{ t("settings.info.photos_value", count=info.photos.game) }}{% if info.photos.facepack_files %}{{ t("settings.info.facepacks", count=info.photos.facepack_files, mapped=info.photos.facepack) }}{% endif %}{% else %}<span class="bad">{{ t("settings.info.photos_unknown") }}</span>{% endif %}</td></tr>{% endif %}
       {% if update %}{% set u = update.status %}
@@ -214,8 +219,13 @@
 </section>
 
 </div>
-  <aside class="card history-card" id="history">
-    {% include "_settings_history.html" %}
-  </aside>
-</div>
+{# Recent changes (Phase 17j): History (N) in the bar opens it as a drawer at the right; without
+   the script it stays here at the bottom, and History (N) links to it. #}
+<aside class="card history-drawer" id="history-drawer" aria-labelledby="history-title" data-history-drawer>
+  <div class="drawer-head">
+    <h2 id="history-title">{{ t("history.title") }}</h2>
+    <button type="button" class="drawer-close" data-history-close aria-label="{{ tr('common.close') }}" title="{{ tr('common.close') }}" hidden>×</button>
+  </div>
+  <div id="history">{% include "_settings_history.html" %}</div>
+</aside>
 {% endblock %}

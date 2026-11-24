@@ -1,11 +1,38 @@
-<div class="bulk sticky savebar">
+{% macro undo_redo() %}
   <form method="post" action="/settings" class="inline" data-settings-action><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="{{ path }}">
     <button name="action" value="undo" data-undo {{ "disabled" if not can_undo }} title="{{ t('settings.undo_title') }}">↶ {{ t("settings.undo") }}</button>
     <button name="action" value="redo" data-redo {{ "disabled" if not can_redo }} title="{{ t('settings.redo_title') }}">↷ {{ t("settings.redo") }}</button>
   </form>
-  <span class="save-status" data-save-status role="status" aria-live="polite">{{ t("settings.all_saved") }}</span>
-  <span class="muted small grow">{% if level == "advanced" %}{{ t("settings.changed_legend") }} <span class="dot"></span>{% endif %}</span>
+{% endmacro %}
+{% macro reset() %}
   <form method="post" action="/settings" class="inline" data-settings-action><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="{{ path }}">
     <button name="action" value="defaults" title="{{ t('settings.reset_title') }}">{{ t("settings.reset") }}</button>
   </form>
+{% endmacro %}
+{% if level == "advanced" %}
+{# Advanced (Phase 17j): the tabs and the actions in one row, then a quiet line with what the
+   last save did and, while a setting differs from its default, what its dot means. #}
+<div class="settings-bar">
+  <div class="settings-bar-row">
+    <nav class="pills" aria-label="{{ t('settings.tabs') }}" data-tab-pills data-anchors="{{ tab_anchors|tojson|forceescape }}">
+      {% for tab in tabs %}<a href="#tab-{{ tab }}" data-tab="{{ tab }}">{{ t("settings.tab." ~ tab) }}</a>{% endfor %}
+    </nav>
+    <div class="settings-bar-acts">
+      {{ undo_redo() }}
+      <a class="button" href="#history" data-history-open aria-controls="history-drawer" aria-expanded="false">{{ t("settings.history", count=history|length) }}</a>
+      {{ reset() }}
+    </div>
+  </div>
+  <div class="settings-bar-note">
+    <span class="save-status" data-save-status role="status" aria-live="polite">{{ t("settings.all_saved") }}</span>
+    <span class="changed-legend" data-changed-legend {{ "hidden" if not changed_any }}>{{ t("settings.changed_legend") }} <span class="dot"></span></span>
+  </div>
 </div>
+{% else %}
+<div class="bulk sticky savebar">
+  {{ undo_redo() }}
+  <span class="save-status" data-save-status role="status" aria-live="polite">{{ t("settings.all_saved") }}</span>
+  <span class="grow"></span>
+  {{ reset() }}
+</div>
+{% endif %}
