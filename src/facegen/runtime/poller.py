@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 from facegen.datasource.snapshots import SaveVersion, copy_snapshot, find_latest_save, list_saves
 from facegen.pipeline.sync_operation import (
@@ -41,6 +42,11 @@ class WatchDecision:
     state: str
     """'no save', 'synced', 'settling' or 'due'."""
     detail: str
+    """The English line, for the report and the log file."""
+    reason: str = ""
+    """The code the Log page words (contracts.WATCHER_REASONS, Phase 17i)."""
+    values: dict[str, Any] = field(default_factory=dict)
+    """The save's name and, once synced, when it was saved ("YYYY-MM-DD HH:MM")."""
 
 
 class SaveWatcher:
@@ -59,19 +65,22 @@ class SaveWatcher:
     ) -> WatchDecision:
         if newest is None:
             self._pending = None
-            return WatchDecision(None, interval, "no save", "no save in FM27's games folder yet")
+            return WatchDecision(
+                None, interval, "no save", "no save in FM27's games folder yet", "no_save"
+            )
         name = newest.path.name
         if already_synced:
             self._pending = None
-            detail = f"newest save {name} (saved {newest.saved_at()}) is synced"
-            return WatchDecision(None, interval, "synced", detail)
+            saved = newest.saved_at()
+            detail = f"newest save {name} (saved {saved}) is synced"
+            return WatchDecision(
+                None, interval, "synced", detail, "synced", {"name": name, "saved": saved}
+            )
+        settling = f"{name} changed; it is synced once it stops changing"
         if self._pending is None or self._pending[0] != newest:
             self._pending = (newest, now)
             return WatchDecision(
-                None,
-                self.settle_seconds,
-                "settling",
-                f"{name} changed; it is synced once it stops changing",
+                None, self.settle_seconds, "settling", settling, "settling", {"name": name}
             )
         waited = now - self._pending[1]
         if waited < self.settle_seconds:
@@ -79,9 +88,11 @@ class SaveWatcher:
                 None,
                 self.settle_seconds - waited,
                 "settling",
-                f"{name} changed; it is synced once it stops changing",
+                settling,
+                "settling",
+                {"name": name},
             )
-        return WatchDecision(newest, 0.0, "due", f"reading {name}")
+        return WatchDecision(newest, 0.0, "due", f"reading {name}", "reading", {"name": name})
 
     def done(self) -> None:
         """The due save was synced, or failed in a way the database records."""

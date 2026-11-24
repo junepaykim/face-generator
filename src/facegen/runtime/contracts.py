@@ -23,6 +23,40 @@ class Exit:
     """The job being drawn, for a job error or a GPU fault during one."""
 
 
+LogLevel = Literal["info", "warning", "error"]
+LOG_LEVELS: tuple[LogLevel, ...] = ("info", "warning", "error")
+"""How much a worker log line matters (Phase 17i): the Log page colours warnings and errors and
+can show only those."""
+
+
+@dataclass(frozen=True, slots=True)
+class LogLine:
+    """One line of the worker's log: when (local time, HH:MM:SS), what, and its level."""
+
+    time: str
+    text: str
+    level: LogLevel = "info"
+
+    def __str__(self) -> str:
+        return f"{self.time}  {self.text}"
+
+
+class LogFn(Protocol):
+    """Where a log line goes (the Log page, the log file, a terminal); warnings and errors pass
+    their level."""
+
+    def __call__(self, line: str, level: LogLevel = "info", /) -> None: ...
+
+
+def print_line(line: str, level: LogLevel = "info", /) -> None:
+    """A log line to the terminal, warnings and errors marked: `facegen run` and the defaults."""
+    print(line if level == "info" else f"{level.upper()}: {line}", flush=True)
+
+
+def no_log(line: str, level: LogLevel = "info", /) -> None:
+    """Drops the line."""
+
+
 @dataclass(frozen=True, slots=True)
 class WorkerStatus:
     """What the dashboard shows about the worker."""
@@ -40,7 +74,8 @@ class WorkerStatus:
     done: int
     failed: int
     last_error: str | None
-    log: tuple[str, ...]
+    log: tuple[LogLine, ...]
+    """The last LOG_LINES lines, oldest first."""
     reason: str = ""
     """Why the worker is in this state, as a code the pages word in their language
     ("fm_running", "drawing", "queue_empty"...; WORKER_REASONS); empty when unknown. `detail`
@@ -67,8 +102,8 @@ ERROR_REASONS = frozenset(
 class Link(Protocol):
     """A worker process's line to its parent (worker_process.ChildLink)."""
 
-    def line(self, text: str) -> None:
-        """A line for the dashboard's log, time-stamped."""
+    def line(self, line: LogLine) -> None:
+        """A line for the Log page, time-stamped, with its level."""
 
     def status(self, read: Callable[[], WorkerStatus]) -> None:
         """The status changed: `read` gives it. The link reads and sends in one step, so
@@ -84,7 +119,7 @@ class WorkerControl(Protocol):
     def generate_now(self) -> bool: ...
     def wake(self) -> None: ...
     def status(self) -> WorkerStatus: ...
-    def log(self, line: str) -> None: ...
+    def log(self, line: str, level: LogLevel = "info") -> None: ...
 
 
 @dataclass
@@ -152,5 +187,24 @@ class PollerStatus:
     """starting, not set (FM27's folder), no save, synced, settling, due, syncing, error or
     stopped."""
     detail: str
+    """The English line, for the report and the log file."""
     checked: str | None
     """When the folder was last looked at (local time)."""
+    reason: str = ""
+    """What the state is about, as a code the Log page words (WATCHER_REASONS, Phase 17i);
+    empty when unknown, and the page then shows `detail`."""
+    values: dict[str, Any] = field(default_factory=dict)
+    """The reason's values: the save's name, when it was saved, an error text."""
+
+
+WATCHER_STATES = (
+    "starting", "not set", "no save", "synced", "settling", "due", "syncing", "error", "stopped",
+)  # fmt: skip
+"""Every PollerStatus.state: the Log page shows each as a badge ("log.watcher_state.<state>",
+spaces as underscores)."""
+WATCHER_REASONS = (
+    "starting", "not_set", "no_save", "synced", "settling", "reading", "publishing", "by_hand",
+    "cannot_look", "unreadable", "unsupported", "sync_failed", "publish_failed", "failed",
+    "stopped",
+)  # fmt: skip
+"""Every PollerStatus.reason: the Log page words each one ("log.watcher.<reason>")."""

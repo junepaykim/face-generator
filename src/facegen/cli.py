@@ -392,7 +392,9 @@ def cmd_run(
         renderer_factory=gpu.renderer,
         tagger_factory=gpu.tagger,
         fm_check=gpu.fm_check,
-        log=lambda line: print(line, file=out, flush=True),
+        log=lambda line, level="info": print(
+            line if level == "info" else f"{level.upper()}: {line}", file=out, flush=True
+        ),
     )
     f = JobFilter(groups=frozenset(args.group) if args.group else None, my_club_only=args.my_club)
     check = gpu.models_check()

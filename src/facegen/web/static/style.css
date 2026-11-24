@@ -121,6 +121,8 @@ main { padding: 16px 20px 48px; min-width: 0; max-width: 1500px; }
   .side nav { flex-direction: row; align-items: center; }
   .nav-sep { width: 1px; height: 20px; margin: 0 4px; }
   main { padding: 12px 12px 40px; }
+  main.fill { height: auto; }
+  .log-card pre.log { max-height: 60vh; }
 }
 
 /* One header on every page (Phase 17a): the same height on each, so switching pages does not
@@ -366,7 +368,33 @@ figcaption { display: flex; flex-wrap: wrap; gap: 3px; padding: 4px; }
 .review .buttons { margin-top: 0; }
 details summary { cursor: pointer; color: var(--muted); }
 pre { white-space: pre-wrap; font-size: 12px; color: var(--muted); margin: 6px 0 0; }
-pre.log { max-height: 320px; overflow: auto; }
+pre.log { position: relative; max-height: 320px; overflow: auto; }
+
+/* The Log page (Phase 17i). Lines oldest first, coloured by level; "Errors and warnings" hides
+   the rest. The page fills the window: the worker's card takes the height left and its log
+   scrolls inside it, with a floor for small windows (the page scrolls then). */
+.ll-warning { color: var(--warn); }
+.ll-error { color: var(--bad); }
+.log-page[data-log-show="problems"] .ll-info { display: none; }
+main.fill { display: flex; flex-direction: column; height: 100vh; padding-bottom: 16px; }
+main.fill > .log-page { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+.log-page > .card { flex: none; }
+.log-page > .log-card { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 240px;
+                        margin-bottom: 0; }
+.log-card pre.log { flex: 1 1 auto; min-height: 120px; max-height: none; }
+.log-card .card-head { align-items: center; }
+.card-head > .seg { margin-left: auto; }
+.watcher { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 10px 0 0; }
+.watcher-label { font-weight: 500; color: var(--muted); }
+/* Two or more choices as one control: the pressed one is tinted. */
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden;
+       font-size: 12px; font-weight: 400; }
+.seg button { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border: 0;
+              border-radius: 0; background: none; color: var(--muted); }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.recent-note { margin: 10px 0 0; }
 
 form.settings fieldset { background: var(--card); border: 1px solid var(--line); border-radius: 8px;
                          margin: 0 0 12px; padding: 8px 14px 12px; }

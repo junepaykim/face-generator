@@ -213,6 +213,7 @@ timing = "{elapsed} / avg {each}"
 [dash.recent]
 title = "Latest pictures"
 all = "View all in Gallery →"
+reload = "New pictures show in FM27 after Settings → Reload Skin."
 
 [dash.sync]
 active = "Active pack: <strong>{name}</strong> (newest save)"
@@ -281,6 +282,40 @@ started_by = "Started by"
 watching = "Save watcher"
 checked = "checked {time}"
 not_watching = "not watching (<code>--no-watch</code>): press Sync now after saving"
+copy_report = "Copy report"
+open_folder = "Open log folder"
+show = "Show"
+all = "All"
+problems = "Errors and warnings"
+no_problems = "No errors or warnings."
+
+[log.watcher_state]
+starting = "Starting"
+not_set = "Not set"
+no_save = "No save"
+synced = "Synced"
+settling = "Waiting"
+due = "Reading"
+syncing = "Syncing"
+error = "Error"
+stopped = "Stopped"
+
+[log.watcher]
+starting = "Looking at FM27's saves folder…"
+not_set = "FM27's folder is not set."
+no_save = "No save in FM27's games folder yet."
+synced = "{name} ({saved})"
+settling = "{name} changed; it is read once it stops changing."
+reading = "Reading {name}…"
+publishing = "Finishing the active career's pack…"
+by_hand = "Waiting for the sync started by hand."
+cannot_look = "Cannot look at FM27's games folder; trying again shortly."
+unreadable = "{name} could not be read; waiting for the next save."
+unsupported = "{name} is from a game build the reader does not support yet; waiting for the next save."
+sync_failed = "The sync failed; trying again shortly."
+publish_failed = "The active career's pack could not be finished."
+failed = "The save watcher hit an error; trying again shortly."
+stopped = "The save watcher has stopped."
 
 [gallery]
 total = { one = "{count:,} picture", other = "{count:,} pictures" }
@@ -984,6 +1019,11 @@ sync_running = "A sync is already running."
 sync_started = "Sync started: reading the newest save."
 reload_hint = "In FM27: Settings -> Reload Skin (스킨 다시 불러오기) to see the pictures."
 
+[msg.folder_open]
+unavailable = "Folders open in Explorer on Windows only."
+missing = "That folder is not there yet."
+failed = "The folder could not be opened."
+
 [msg.folder]
 not_fm = "Not FM27's folder: {why}"
 not_saved = "Not saved: {file} {error}"
@@ -1153,6 +1193,8 @@ queued = "Queued"
 quick_no_answer = "Not done: Kitshot did not answer. Is it still running?"
 quick_reload = "Not done: reload the page and try again."
 copied = "Copied"
+copy_failed = "Could not copy."
+copying = "Copying…"
 
 [problem]
 details = "Technical details"

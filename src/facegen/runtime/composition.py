@@ -118,7 +118,9 @@ def build_runtime(
 ) -> Runtime:
     """The parts of a running facegen, none started. Raises CannotStart when it cannot run
     as configured (an address beyond this PC, a broken kit table)."""
+    from facegen.platform import explorer
     from facegen.runtime import sync_process
+    from facegen.runtime.contracts import no_log
     from facegen.runtime.poller_service import PollerService
     from facegen.runtime.sync_service import SyncService
     from facegen.runtime.update_service import UpdateService
@@ -148,7 +150,7 @@ def build_runtime(
         command=sync_process.sync_command() if inline_source is None else None,
         defaults_path=config,
         on_done=proxy.wake if proxy else (lambda: None),
-        log=proxy.log if proxy else (lambda line: None),
+        log=proxy.log if proxy else no_log,
         echo_stderr=echo_stderr,
     )
     poller = PollerService(db_path, syncer, defaults_path=config) if watch else None
@@ -169,6 +171,7 @@ def build_runtime(
         download=download,
         hardware=lambda: hardware.probe(gpu.program, config),
         browse=browse,
+        open_folder=explorer.open_folder if explorer.available() else None,
         updates=updates,
     )
     return Runtime(

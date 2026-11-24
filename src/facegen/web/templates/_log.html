@@ -1,5 +1,5 @@
 <span hidden data-career="{{ career.id if career else '' }}"></span>
-<section class="card">
+<section class="card" id="log-sync">
   <h2>{{ t("log.sync") }}</h2>
   {% if last_sync %}
     <table class="kv">
@@ -7,17 +7,28 @@
       <tr><th>{{ t("dash.sync.when") }}</th><td><time datetime="{{ last_sync.finished_at or last_sync.started_at }}">{{ (last_sync.finished_at or last_sync.started_at)[:16]|replace("T", " ") }}</time></td></tr>
       <tr><th>{{ t("log.build") }}</th><td>{{ last_sync.build or t("common.unknown") }}</td></tr>
       {% if last_sync.trigger %}<tr><th>{{ t("log.started_by") }}</th><td>{{ t("dash.sync.trigger." ~ last_sync.trigger) if tr.has("dash.sync.trigger." ~ last_sync.trigger) else last_sync.trigger }}</td></tr>{% endif %}
-      <tr><th>{{ t("log.watching") }}</th><td>{% if poller %}{{ poller.state }}{% if poller.detail %} · {{ poller.detail }}{% endif %}{% if poller.checked %} <span class="muted">· {{ t("log.checked", time=poller.checked) }}</span>{% endif %}{% else %}{{ t("log.not_watching") }}{% endif %}</td></tr>
     </table>
     {% if last_sync.error %}<p class="bad small">{{ t("dash.sync.failed", error=last_sync.error) }}</p>{% endif %}
   {% else %}
     <p class="muted">{{ t("dash.sync.never") }}</p>
   {% endif %}
+  {# The save watcher (Phase 17i): its state as a badge, then the save and when it was looked at. #}
+  <p class="watcher"><span class="watcher-label">{{ t("log.watching") }}</span>
+  {% if watcher %}<span class="badge badge-status{{ ' tone-' ~ watcher.tone if watcher.tone }}" data-watcher="{{ poller.state }}">{{ watcher.badge }}</span> <span>{{ watcher.text }}</span>{% if watcher.checked %} <span class="muted">· {{ t("log.checked", time=watcher.checked) }}</span>{% endif %}
+  {% else %}<span class="muted">{{ t("log.not_watching") }}</span>{% endif %}</p>
+  {% if watcher and watcher.error %}<details class="problem-detail" id="watcher-detail"><summary>{{ t("problem.details") }}</summary><pre>{{ watcher.error }}</pre></details>{% endif %}
 </section>
 {% if worker %}
-<section class="card">
-  <h2>{{ t("log.worker") }}</h2>
-  <pre class="log">{% for line in worker.log|reverse %}{{ line }}
-{% else %}{{ t("log.empty") }}{% endfor %}</pre>
+<section class="card log-card" id="log-worker">
+  <h2 class="card-head">{{ t("log.worker") }}
+    <span class="seg" role="group" aria-label="{{ tr('log.show') }}">
+      <button type="button" data-log-filter="all" aria-pressed="true">{{ t("log.all") }}</button>
+      <button type="button" data-log-filter="problems" aria-pressed="false">{{ t("log.problems") }}{% if problems %} <span class="badge badge-count tone-bad">{{ problems|num }}</span>{% endif %}</button>
+    </span>
+  </h2>
+  {# Oldest at the top, like a terminal (Phase 17i); app.js keeps it scrolled to the bottom. #}
+  <pre class="log" data-log data-problems="{{ problems }}" tabindex="0">{% for line in worker.log %}<span class="ll ll-{{ line.level }}">{{ line.time }}  {{ line.text }}
+</span>{% else %}{{ t("log.empty") }}{% endfor %}</pre>
+  <p class="muted small" data-log-none hidden>{{ t("log.no_problems") }}</p>
 </section>
 {% endif %}

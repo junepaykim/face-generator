@@ -85,8 +85,11 @@ const LANG = document.documentElement.lang || undefined;
           fresh.push(...el.querySelectorAll("img"));
         }
         await decoded(fresh);
+        // A page's own script keeps what the part's elements held (the Log's scroll, Phase 17i).
+        document.dispatchEvent(new CustomEvent("live:before"));
         place(box, wanted);
         after.forEach((done) => done());
+        document.dispatchEvent(new CustomEvent("live:after"));
         if (refocus) {
           const [input, start, end] = refocus;
           input.focus();
@@ -153,6 +156,9 @@ const LANG = document.documentElement.lang || undefined;
         // A card's buttons keep the keyboard's focus while the cards move (Phase 17f).
         const focused = grid.contains(document.activeElement) ? document.activeElement : null;
         place(grid, cards);
+        // A note under the cards (the Reload Skin hint, Phase 17i) is as the server sends it.
+        oldSection.querySelectorAll(":scope > [data-note]").forEach((n) => n.remove());
+        newSection.querySelectorAll(":scope > [data-note]").forEach((n) => oldSection.appendChild(n));
         if (focused && focused.isConnected && document.activeElement !== focused) {
           focused.focus({ preventScroll: true });
         }
@@ -368,14 +374,10 @@ document.querySelectorAll(".table-wrap[data-fit]").forEach((wrap) => {
 // The unique ID under a player's name (Phase 17g): a click copies it and says so for a moment.
 // The address is this PC's own, a secure context, so the clipboard is there; a copy through a
 // hidden text box is the fallback.
-document.addEventListener("click", async (e) => {
-  const button = e.target.closest ? e.target.closest("button[data-copy]") : null;
-  if (!button) return;
-  const value = button.dataset.copy;
-  let done = false;
+async function copyText(value, button) {
   try {
     await navigator.clipboard.writeText(value);
-    done = true;
+    return true;
   } catch (err) {
     const box = document.createElement("textarea");
     box.value = value;
@@ -383,11 +385,19 @@ document.addEventListener("click", async (e) => {
     box.style.cssText = "position: fixed; top: 0; left: 0; opacity: 0;";
     document.body.appendChild(box);
     box.select();
+    let done = false;
     try { done = document.execCommand("copy"); } catch (err2) { done = false; }
     box.remove();
-    button.focus({ preventScroll: true });
+    if (button) button.focus({ preventScroll: true });
+    return done;
   }
-  if (!done) return;
+}
+
+document.addEventListener("click", async (e) => {
+  const button = e.target.closest ? e.target.closest("button[data-copy]") : null;
+  if (!button) return;
+  const value = button.dataset.copy;
+  if (!(await copyText(value, button))) return;
   clearTimeout(button._copied);
   button.textContent = text("js.copied");
   button.classList.add("copied");
@@ -396,6 +406,109 @@ document.addEventListener("click", async (e) => {
     button.classList.remove("copied");
   }, 1200);
 });
+
+// The Log page (Phase 17i). Copy report fetches the report and puts it on the clipboard; Open
+// log folder asks the server to show the folder in Explorer, without leaving the page. The log
+// reads oldest first and stays at the bottom while new lines come, unless it was scrolled up:
+// then the line at the top stays where it was. "Errors and warnings" hides the other lines.
+(function logPage() {
+  const head = document.querySelector(".page-head");
+  const note = head && head.querySelector("[data-report-note]");
+  const say = (words) => {
+    if (!note) return;
+    note.textContent = words;
+    clearTimeout(note._clear);
+    note._clear = setTimeout(() => { note.textContent = ""; }, 4000);
+  };
+  document.querySelectorAll("button[data-copy-report]").forEach((button) => {
+    button.hidden = false;
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      say(text("js.copying"));
+      let done = false;
+      try {
+        const res = await fetch(button.dataset.copyReport, { cache: "no-store" });
+        if (res.ok) done = await copyText(await res.text(), button);
+      } catch (err) { done = false; }
+      button.disabled = false;
+      say(text(done ? "js.copied" : "js.copy_failed"));
+    });
+  });
+  document.querySelectorAll("form[data-open-folder]").forEach((form) => {
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        const res = await fetch(form.action, {
+          method: "POST",
+          body: new URLSearchParams(new FormData(form)),
+          headers: {
+            "X-CSRF-Token": form.querySelector('input[name="csrf_token"]').value,
+            "Accept": "application/json",
+          },
+        });
+        let data = null;
+        try { data = await res.json(); } catch (err) { /* not an answer from the route */ }
+        if (data && !data.ok) say(data.error || text("js.quick_reload"));
+        else if (!data) say(text(res.status === 403 ? "js.quick_reload" : "js.quick_no_answer"));
+      } catch (err) {
+        say(text("js.quick_no_answer"));
+      }
+    });
+  });
+
+  const box = document.querySelector(".log-page");
+  if (!box) return;
+  const log = () => box.querySelector("[data-log]");
+  let filter = "all";
+  let kept = null;  // where the log was scrolled to, while it is not at the bottom
+  const atBottom = (pre) => pre.scrollHeight - pre.scrollTop - pre.clientHeight < 4;
+  const toBottom = () => { const pre = log(); if (pre) pre.scrollTop = pre.scrollHeight; };
+  function shown() {
+    box.dataset.logShow = filter;
+    box.querySelectorAll("[data-log-filter]").forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.dataset.logFilter === filter));
+    });
+    const pre = log();
+    const none = box.querySelector("[data-log-none]");
+    if (none) none.hidden = !(pre && filter === "problems" && Number(pre.dataset.problems) === 0);
+  }
+  // The first line in view and how far down the box it sits.
+  function remember() {
+    const pre = log();
+    if (!pre || atBottom(pre)) { kept = null; return; }
+    const lines = Array.from(pre.querySelectorAll(".ll"));
+    const index = lines.findIndex((l) => l.offsetParent && l.offsetTop + l.offsetHeight > pre.scrollTop);
+    kept = index < 0 ? { top: pre.scrollTop } : {
+      top: pre.scrollTop, index, text: lines[index].textContent, offset: lines[index].offsetTop - pre.scrollTop,
+    };
+  }
+  function restore() {
+    const pre = log();
+    if (!pre) return;
+    if (!kept) { toBottom(); return; }
+    const lines = Array.from(pre.querySelectorAll(".ll"));
+    // The same line, at or above its old place: older lines leave the top as new ones come.
+    for (let i = Math.min(kept.index ?? -1, lines.length - 1); i >= 0; i--) {
+      if (lines[i].textContent === kept.text && lines[i].offsetParent) {
+        pre.scrollTop = lines[i].offsetTop - kept.offset;
+        return;
+      }
+    }
+    pre.scrollTop = kept.top;
+  }
+  box.addEventListener("click", (e) => {
+    const button = e.target.closest("button[data-log-filter]");
+    if (!button) return;
+    const bottom = !log() || atBottom(log());
+    filter = button.dataset.logFilter;
+    shown();
+    if (bottom) toBottom();
+  });
+  document.addEventListener("live:before", remember);
+  document.addEventListener("live:after", () => { shown(); restore(); });
+  shown();
+  toBottom();
+})();
 
 // Review: a player's candidates side by side, with the picture FM27 shows now (Phase 12i), opened
 // by its Compare button. The pictures load when the dialog opens; each opens in the lightbox.

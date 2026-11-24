@@ -136,6 +136,27 @@ def test_watcher_waits_for_a_changed_save_to_settle(tmp_path: Path) -> None:
     assert "c.fm" in d.detail and "synced" in d.detail
 
 
+def test_watcher_decisions_carry_a_code_and_values_for_the_log_page(tmp_path: Path) -> None:
+    """Phase 17i: the Log page words the watcher from a code and values, not the English."""
+    from datetime import datetime
+
+    w = poller.SaveWatcher(settle_seconds=10)
+    save = tmp_path / "Sam Lee - 레드우드.fm"
+    d = w.look(None, already_synced=False, now=0, interval=60)
+    assert (d.reason, d.values) == ("no_save", {})
+    d = w.look(version(save), already_synced=False, now=0, interval=60)
+    assert (d.reason, d.values) == ("settling", {"name": save.name})
+    d = w.look(version(save), already_synced=False, now=5, interval=60)
+    assert (d.reason, d.values) == ("settling", {"name": save.name})
+    d = w.look(version(save), already_synced=False, now=10, interval=60)
+    assert (d.state, d.reason, d.values) == ("due", "reading", {"name": save.name})
+    w.done()
+    d = w.look(version(save), already_synced=True, now=11, interval=60)
+    saved = datetime.fromtimestamp(1_000).strftime("%Y-%m-%d %H:%M")
+    assert (d.reason, d.values) == ("synced", {"name": save.name, "saved": saved})
+    assert d.detail == f"newest save {save.name} (saved {saved}) is synced"
+
+
 def test_watcher_ignores_a_save_already_synced(tmp_path: Path) -> None:
     w = poller.SaveWatcher(settle_seconds=10)
     for now in (0, 60, 120):

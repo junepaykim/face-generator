@@ -72,7 +72,7 @@ class Env:
             renderer_factory=lambda _model: renderer,
             tagger_factory=lambda: tags,
             fm_check=lambda: False,
-            log=lambda line: None,
+            log=lambda *_: None,
         )
         w.run(f)
         return w

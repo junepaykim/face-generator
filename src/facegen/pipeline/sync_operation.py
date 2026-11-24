@@ -25,9 +25,11 @@ from facegen.runtime.contracts import (
     FAILED,
     SYNCED,
     UNREADABLE,
+    LogFn,
     SyncOutcome,
     SyncRequest,
     SyncResult,
+    no_log,
 )
 from facegen.runtime.policy import BUSY_TIMEOUT_MS
 
@@ -198,7 +200,7 @@ def execute_sync(
     request: SyncRequest,
     source_factory: Callable[[], DataSource],
     *,
-    log: Callable[[str], None] = lambda line: None,
+    log: LogFn = no_log,
     before_commit: Callable[[], None] = lambda: None,
     on_committed: Callable[[], None] = lambda: None,
     on_result: Callable[[SyncResult], None] = lambda result: None,
@@ -265,18 +267,18 @@ def execute_sync(
                 outcome = FAILED
                 error = f"publishing the active career's pack failed: {exc}"
             warnings.append(f"publishing the active career's pack failed: {exc}")
-            log(f"Publishing failed: {exc}")
+            log(f"Publishing failed: {exc}", "error")
     except SaveUnreadableError as exc:
         error = str(exc)
         outcome = FAILED if exc.busy else UNREADABLE
         unsupported = exc.unsupported
-        log(error + (f" {UNSUPPORTED_ADVICE}" if unsupported else ""))
+        log(error + (f" {UNSUPPORTED_ADVICE}" if unsupported else ""), "error")
     except NoSaveError as exc:
         error = str(exc)
     except Exception as exc:  # noqa: BLE001 - a background sync reports, never raises
         outcome = FAILED
         error = f"sync failed: {type(exc).__name__}: {exc}"
-        log(error)
+        log(error, "error")
     finally:
         conn.close()
         result = SyncResult(

@@ -49,7 +49,7 @@ class Env:
             Worker(
                 conn, load_settings(conn, self.config), load_kits(), career,
                 renderer_factory=FakeRenderer, tagger_factory=lambda: tagger,
-                fm_check=lambda: False, log=lambda line: None,
+                fm_check=lambda: False, log=lambda *_: None,
             ).run(JobFilter(groups=frozenset({"b"})))  # fmt: skip
         finally:
             conn.close()

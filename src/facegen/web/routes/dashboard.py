@@ -186,24 +186,6 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             request, "_status.html", conn, **dashboard_context(request, conn, sync)
         )
 
-    def log_context(conn: sqlite3.Connection) -> dict[str, Any]:
-        return {
-            "career": load_career(conn),
-            "last_sync": queries.last_sync(conn),
-            "worker": ctx.worker.status() if ctx.worker else None,
-            "poller": ctx.poller.status() if ctx.poller else None,
-        }
-
-    @router.get("/log", response_class=HTMLResponse)
-    def log(request: Request, conn: sqlite3.Connection = Conn) -> Response:
-        """The technical side: the worker's log and the last sync in full (Phase 12)."""
-        rev = live.snapshot(ctx, conn, deps.live_extra())["log"]["rev"]
-        return page(request, "log.html", conn, rev=rev, **log_context(conn))
-
-    @router.get("/log/part", response_class=HTMLResponse)
-    def log_part(request: Request, conn: sqlite3.Connection = Conn) -> Response:
-        return presentation.fragment(request, "_log.html", conn, **log_context(conn))
-
     @router.post("/worker/{action}")
     async def worker_action(action: str, request: Request) -> Response:
         """Pause, Resume and Generate now, from the dashboard or the sidebar's card (Phase

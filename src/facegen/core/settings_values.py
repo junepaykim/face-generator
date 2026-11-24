@@ -30,7 +30,12 @@ class ImageModel:
     """Takes the current picture as a reference on a re-draw (an IP-Adapter)."""
     negative: bool
     """Uses a negative prompt. Z-Image-Turbo draws without guidance, so it has none."""
+    weights: str = ""
+    """How its weights are held on the graphics card (render/renderer.py, render/zimage.py),
+    for the Log page's report (Phase 17i)."""
 
+
+SDXL_WEIGHTS = "fp16, INT8 UNet blocks"
 
 IMAGE_MODELS: dict[str, ImageModel] = {
     "animagine": ImageModel(
@@ -39,12 +44,23 @@ IMAGE_MODELS: dict[str, ImageModel] = {
         photo=False,
         reference=True,
         negative=True,
+        weights=SDXL_WEIGHTS,
     ),
     "realvis": ImageModel(
-        "RealVisXL V5.0", "SG161222/RealVisXL_V5.0", photo=True, reference=True, negative=True
+        "RealVisXL V5.0",
+        "SG161222/RealVisXL_V5.0",
+        photo=True,
+        reference=True,
+        negative=True,
+        weights=SDXL_WEIGHTS,
     ),
     "zimage_turbo": ImageModel(
-        "Z-Image-Turbo", "Tongyi-MAI/Z-Image-Turbo", photo=True, reference=False, negative=False
+        "Z-Image-Turbo",
+        "Tongyi-MAI/Z-Image-Turbo",
+        photo=True,
+        reference=False,
+        negative=False,
+        weights="BF16, NF4 transformer blocks, INT8 text encoder",
     ),
 }
 MODEL_CHOICES = tuple(IMAGE_MODELS)

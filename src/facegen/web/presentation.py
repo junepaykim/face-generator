@@ -45,6 +45,8 @@ JS_TEXTS = (
     "js.quick_no_answer",
     "js.quick_reload",
     "js.copied",
+    "js.copy_failed",
+    "js.copying",
     "gallery.made",
     "dur.seconds",
     "dur.minutes_seconds",

@@ -199,6 +199,8 @@ def test_app_context_reexport_preserves_positional_constructor() -> None:
         # Phase 13, appended so the positions above are unchanged.
         "updates",
         "install_update",
+        # Phase 17i, appended likewise.
+        "open_folder",
     )
     parameters = inspect.signature(AppContext).parameters
     assert tuple(parameters) == names

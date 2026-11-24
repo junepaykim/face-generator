@@ -18,7 +18,15 @@ from typing import Any
 from facegen.datasource.base import DataSource
 from facegen.persistence import db, publication
 from facegen.pipeline.sync_operation import execute_sync
-from facegen.runtime.contracts import FAILED, SyncOutcome, SyncRequest, SyncResult, SyncStatus
+from facegen.runtime.contracts import (
+    FAILED,
+    LogFn,
+    SyncOutcome,
+    SyncRequest,
+    SyncResult,
+    SyncStatus,
+    no_log,
+)
 from facegen.runtime.logging import stamp
 from facegen.runtime.policy import BUSY_TIMEOUT_MS
 from facegen.runtime.sync_process import SyncProcess
@@ -40,7 +48,7 @@ class SyncService:
         command: Sequence[str] | None = None,
         defaults_path: Path | None = None,
         on_done: Callable[[], Any] = lambda: None,
-        log: Callable[[str], None] = lambda line: None,
+        log: LogFn = no_log,
         echo_stderr: bool = True,
     ) -> None:
         if (source_factory is None) == (command is None):

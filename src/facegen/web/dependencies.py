@@ -66,6 +66,17 @@ class CardProbe:
         """Ask in the background, once."""
         self._begin()
 
+    def wait(self, timeout: float) -> Hardware | None:
+        """The answer, asking if nobody has; None if it takes longer than `timeout` seconds
+        (the Log page's report, Phase 17i)."""
+        attempt = self._begin()
+        if attempt is None:
+            return None
+        try:
+            return attempt.result(timeout)
+        except TimeoutError:
+            return None
+
     def known(self) -> Hardware | None:
         """The answer if there is one yet; never waits."""
         with self._lock:

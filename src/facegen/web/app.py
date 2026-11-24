@@ -16,6 +16,7 @@ from facegen.web.routes import (
     dashboard,
     gallery,
     live,
+    log,
     players,
     review,
     settings,
@@ -47,6 +48,7 @@ def create_app(ctx: AppContext) -> FastAPI:
     install_error_pages(app, deps, presentation)
 
     app.include_router(dashboard.create_router(deps, presentation))
+    app.include_router(log.create_router(deps, presentation))
     app.include_router(setup.create_router(deps))
     app.include_router(gallery.create_router(deps, presentation))
     app.include_router(players.create_router(deps, presentation))

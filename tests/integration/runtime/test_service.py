@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 from factories import ABROAD, MANUAL, NEWGEN, RIVAL, player, snapshot
 from fakes import FakeRenderer, FakeTagger
+from support.logs import Lines
 from support.paths import ROOT
 
 from facegen.core.records import Personality, Snapshot
@@ -21,10 +22,11 @@ from facegen.persistence import db
 from facegen.persistence.db import transaction
 from facegen.persistence.settings import Settings, load_settings, set_overrides
 from facegen.pipeline import manual
+from facegen.pipeline.publish import RELOAD_HINT
 from facegen.pipeline.reclassification import classify_and_plan
 from facegen.pipeline.sync import run_sync
 from facegen.pipeline.worker import load_career, worker_lock
-from facegen.runtime.contracts import WORKER_REASONS
+from facegen.runtime.contracts import WORKER_REASONS, LogLine
 from facegen.service import (
     FM_POLL_SECONDS,
     IDLE_UNLOAD_SECONDS,
@@ -206,7 +208,15 @@ def test_draws_my_club_first_publishes_and_goes_idle(env: Env) -> None:
     assert env.queued() == []
     pack = env.settings.paths.fm_user_dir / "graphics" / "facegen"
     assert len(list(pack.glob("*/*.png"))) == 4
-    assert any("Reload Skin" in line for line in status.log)
+    # Each publish says only how many (Phase 17i); the Reload Skin hint comes once, at the end.
+    texts = [line.text for line in status.log]
+    assert "Published 1 picture(s)." in texts
+    assert not any("Reload Skin" in t for t in texts if t.startswith("Published"))
+    assert [t for t in texts if "Reload Skin" in t] == [f"Queue done. {RELOAD_HINT}"]
+    assert texts.index(f"Queue done. {RELOAD_HINT}") > max(
+        i for i, t in enumerate(texts) if t.startswith("Published")
+    )
+    assert {line.level for line in status.log} == {"info"}
 
 
 def test_waits_while_fm27_runs_and_generate_now_overrides(env: Env) -> None:
@@ -338,7 +348,9 @@ def test_a_gpu_fault_whose_cleanup_fails_too_leaves_no_closed_model(env: Env) ->
     assert svc.step() > 0  # does not raise
     assert svc.status().state == "gpu-fault"
     assert svc._worker is not None and not svc._worker.models_loaded
-    assert any("could not free the GPU cleanly" in line for line in svc.status().log)
+    assert [
+        line.level for line in svc.status().log if "could not free the GPU cleanly" in line.text
+    ] == ["warning"]
 
 
 def test_a_gpu_fault_outside_a_job_is_not_retried(env: Env) -> None:
@@ -526,7 +538,7 @@ def test_an_error_outside_a_job_does_not_end_the_thread(env: Env) -> None:
     svc.step = flaky_step  # type: ignore[method-assign]
     svc.start()
     try:
-        _wait_for(lambda: "database is locked" in "\n".join(svc.status().log))
+        _wait_for(lambda: any("database is locked" in line.text for line in svc.status().log))
         svc.wake()  # skip the pause before the retry
         _wait_for(lambda: svc.status().state == "idle" and svc.status().done == 4)
     finally:
@@ -560,11 +572,11 @@ def test_an_idle_worker_says_what_it_holds_back(env: Env) -> None:
 class RecordingLink:
     """Stands in for worker_process.ChildLink."""
 
-    lines: list[str] = field(default_factory=list)
+    lines: list[LogLine] = field(default_factory=list)
     statuses: list[WorkerStatus] = field(default_factory=list)
 
-    def line(self, text: str) -> None:
-        self.lines.append(text)
+    def line(self, line: LogLine) -> None:
+        self.lines.append(line)
 
     def status(self, read) -> None:  # type: ignore[no-untyped-def]
         self.statuses.append(read())
@@ -583,8 +595,8 @@ def test_in_a_worker_process_a_gpu_fault_ends_the_loop(env: Env) -> None:
     status = svc.status()
     assert status.state == "gpu-fault" and "start it again" not in status.detail
     assert status.generate_now and not status.paused  # left for the next process
-    assert any("GPU fault: " in line for line in link.lines)
-    assert not any("drawing stopped" in line for line in link.lines)
+    assert [line.level for line in link.lines if "GPU fault: " in line.text] == ["error"]
+    assert not any("drawing stopped" in line.text for line in link.lines)
     assert link.statuses[-1].state == "gpu-fault"
 
 
@@ -676,8 +688,8 @@ def test_in_a_worker_process_the_link_hears_each_line_and_change_once(env: Env) 
     link = RecordingLink()
     svc = env.service(link=link)
     svc.step()
-    assert any(line.endswith("Mine Two (1002), initial A") for line in link.lines)
-    assert all(line[2] == ":" for line in link.lines)  # time-stamped
+    assert any(line.text.endswith("Mine Two (1002), initial A") for line in link.lines)
+    assert all(re.fullmatch(r"\d\d:\d\d:\d\d", line.time) for line in link.lines)
     assert link.statuses[-1].done == 1
     # Without a link nothing is sent and nothing ends.
     plain = env.service()
@@ -710,7 +722,7 @@ class Watch:
     source: SwitchableSource
     syncer: SyncService
     poller: PollerService
-    log: list[str]
+    log: Lines
 
     def save(self, name: str = "career.fm", mtime: int = 1_800_000_000) -> Path:
         """The game writes a save."""
@@ -734,10 +746,10 @@ class Watch:
 
 @pytest.fixture
 def watch(env: Env) -> Watch:
-    log: list[str] = []
+    log = Lines()
     source = SwitchableSource(snapshot(world()))
     syncer = SyncService(
-        env.settings.paths.db_path, lambda: source, defaults_path=env.config, log=log.append
+        env.settings.paths.db_path, lambda: source, defaults_path=env.config, log=log
     )
     poller = PollerService(
         env.settings.paths.db_path,
@@ -761,7 +773,7 @@ def mapped(env: Env, key: str) -> set[int]:
 
 def test_the_watcher_syncs_a_new_save_once_and_only_once(watch: Watch) -> None:
     assert watch.poller.step() == 60.0  # no save yet
-    assert watch.poller.status().state == "no save"
+    assert (watch.poller.status().state, watch.poller.status().reason) == ("no save", "no_save")
     before = len(watch.runs())
     watch.save()
     watch.poll_until_synced()
@@ -772,9 +784,19 @@ def test_the_watcher_syncs_a_new_save_once_and_only_once(watch: Watch) -> None:
         1_800_000_000.0,
         None,
     )
-    assert watch.poller.status().state == "synced"
+    # A code and values the Log page words (Phase 17i), the English line kept for the report.
+    from datetime import datetime
+
+    saved = datetime.fromtimestamp(1_800_000_000).strftime("%Y-%m-%d %H:%M")
+    status = watch.poller.status()
+    assert (status.state, status.reason) == ("synced", "synced")
+    assert status.values == {"name": "career.fm", "saved": saved}
     assert any(line.startswith("Synced career.fm") for line in watch.log)
     # Nothing new: later looks do not read it again, nor does a restarted watcher.
+    watch.poller.step()
+    status = watch.poller.status()
+    assert (status.reason, status.values) == ("synced", {"name": "career.fm", "saved": saved})
+    assert status.detail == f"newest save career.fm (saved {saved}) is synced"
     for _ in range(3):
         assert watch.poller.step() == 60.0
     fresh = PollerService(
@@ -817,12 +839,19 @@ def test_an_unsupported_build_is_reported_once_and_the_queue_is_kept(watch: Watc
     assert (run["unsupported"], run["build"], run["save_mtime"]) == (1, "27.2.0+999", 1.8e9)
     status = watch.syncer.status()
     assert status.unsupported and "27.2.0+999" in (status.error or "")
-    assert any("bump the pin" in line for line in watch.log)
-    assert watch.poller.status().state == "error"
+    assert any("bump the pin" in line for line in watch.log.at("error"))
+    poller = watch.poller.status()
+    assert (poller.state, poller.reason, poller.values) == (
+        "error",
+        "unsupported",
+        {"name": "career.fm"},
+    )
     # Not tried again until the game writes a new save.
     watch.poller.step()
     assert watch.source.loads == 1
-    assert "its game build is not supported" in watch.poller.status().detail
+    poller = watch.poller.status()
+    assert "its game build is not supported" in poller.detail
+    assert (poller.reason, poller.values) == ("unsupported", {"name": "career.fm"})
     assert watch.env.queued() == queued  # existing jobs and pictures stay
 
 
@@ -877,7 +906,7 @@ def test_a_newer_save_of_another_career_switches_the_pack(watch: Watch) -> None:
     assert any("unmapped" in line for line in watch.log)
 
     run_until_idle(svc)
-    assert any("Now working on career" in line for line in svc.status().log)
+    assert any("Now working on career" in line.text for line in svc.status().log)
     assert mapped(env, two.key) == {5001, 5002} and mapped(env, one.key) == set()
     pack_one = env.settings.paths.fm_user_dir / "graphics" / "facegen" / one.key
     assert (pack_one / f"{MINE}.png").is_file()  # kept: switching back is a config change

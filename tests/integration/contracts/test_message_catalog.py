@@ -30,7 +30,12 @@ from facegen.core.settings_values import (
 from facegen.i18n import LANGUAGES, Translator, catalog
 from facegen.persistence.settings import load_defaults
 from facegen.pipeline.manual import REFUSALS
-from facegen.runtime.contracts import SYNC_NUMBERS, WORKER_REASONS
+from facegen.runtime.contracts import (
+    SYNC_NUMBERS,
+    WATCHER_REASONS,
+    WATCHER_STATES,
+    WORKER_REASONS,
+)
 from facegen.setup import hardware
 from facegen.setup.models import REPOS
 from facegen.web import presentation
@@ -182,6 +187,9 @@ def vocabulary_keys() -> list[str]:
     keys += [f"worker.short.{code}" for code in WORKER_REASONS]
     keys += [f"worker.cause.{c}" for c in ("gpu", "crash", "spawn")]
     keys += [f"worker.then.{c}" for c in ("review", "queue")]
+    keys += [f"log.watcher.{code}" for code in WATCHER_REASONS]
+    keys += [f"log.watcher_state.{state.replace(' ', '_')}" for state in WATCHER_STATES]
+    keys += [f"msg.folder_open.{k}" for k in ("unavailable", "missing", "failed")]
     keys += [
         f"dur.{k}" for k in ("seconds", "minutes", "hours", "hours_minutes", "minutes_seconds")
     ]

@@ -35,3 +35,17 @@ def current() -> Kind:
     except OSError:
         text = None
     return kind(sys.platform, text)
+
+
+def describe(system: Kind | None = None) -> str:
+    """This system in a few words, for the Log page's report (Phase 17i): "Windows 11
+    (10.0.26100)", "WSL (Linux 6.18.58.1-microsoft-standard-WSL2)" or "Linux 6.8.0"."""
+    import platform
+
+    system = system or current()
+    if system == "windows":
+        release, version, _, _ = platform.win32_ver()
+        return f"Windows {release} ({version})" if version else f"Windows {release}".strip()
+    if system == "wsl":
+        return f"WSL (Linux {platform.release()})"
+    return f"Linux {platform.release()}"

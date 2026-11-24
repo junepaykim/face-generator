@@ -213,6 +213,7 @@ timing = "{elapsed} / 평균 {each}"
 [dash.recent]
 title = "방금 생성된 그림"
 all = "갤러리에서 모두 보기 →"
+reload = "새 그림은 FM27에서 설정 → 스킨 다시 불러오기를 하면 보입니다."
 
 [dash.sync]
 active = "FM27 적용: <strong>{name}</strong> (최신 세이브)"
@@ -281,6 +282,40 @@ started_by = "시작"
 watching = "세이브 감시"
 checked = "확인 {time}"
 not_watching = "감시하지 않음(<code>--no-watch</code>): 저장한 뒤 ‘지금 동기화’를 누르세요"
+copy_report = "보고서 복사"
+open_folder = "기록 폴더 열기"
+show = "보기"
+all = "전체"
+problems = "오류·경고"
+no_problems = "오류나 경고가 없습니다."
+
+[log.watcher_state]
+starting = "시작 중"
+not_set = "폴더 미설정"
+no_save = "세이브 없음"
+synced = "동기화됨"
+settling = "대기 중"
+due = "읽는 중"
+syncing = "동기화 중"
+error = "오류"
+stopped = "멈춤"
+
+[log.watcher]
+starting = "FM27 세이브 폴더를 확인하는 중…"
+not_set = "FM27 폴더가 설정되지 않았습니다."
+no_save = "FM27 games 폴더에 아직 세이브가 없습니다."
+synced = "{name} ({saved})"
+settling = "{name} 저장이 끝나면 읽습니다."
+reading = "{name} 읽는 중…"
+publishing = "현재 커리어의 그림 팩을 마무리하는 중…"
+by_hand = "직접 시작한 동기화가 끝나기를 기다리는 중입니다."
+cannot_look = "FM27 games 폴더를 볼 수 없습니다. 잠시 후 다시 시도합니다."
+unreadable = "{name}: 읽지 못했습니다. 다음 저장을 기다립니다."
+unsupported = "{name}: 아직 지원하지 않는 게임 빌드입니다. 다음 저장을 기다립니다."
+sync_failed = "동기화에 실패했습니다. 잠시 후 다시 시도합니다."
+publish_failed = "현재 커리어의 그림 팩을 마무리하지 못했습니다."
+failed = "세이브 감시 중 오류가 났습니다. 잠시 후 다시 시도합니다."
+stopped = "세이브 감시가 멈췄습니다."
 
 [gallery]
 total = "그림 {count:,}장"
@@ -984,6 +1019,11 @@ sync_running = "이미 동기화 중입니다."
 sync_started = "동기화를 시작했습니다. 최신 세이브를 읽습니다."
 reload_hint = "FM27에서 설정 → 스킨 다시 불러오기를 하면 그림이 보입니다."
 
+[msg.folder_open]
+unavailable = "폴더는 Windows에서만 탐색기로 열 수 있습니다."
+missing = "그 폴더가 아직 없습니다."
+failed = "폴더를 열지 못했습니다."
+
 [msg.folder]
 not_fm = "FM27 폴더가 아닙니다: {why}"
 not_saved = "저장하지 못했습니다: {file} {error}"
@@ -1152,6 +1192,8 @@ queued = "대기 중"
 quick_no_answer = "하지 못했습니다. Kitshot이 응답하지 않습니다. 실행 중인지 확인하세요."
 quick_reload = "하지 못했습니다. 페이지를 새로 고친 뒤 다시 시도하세요."
 copied = "복사됨"
+copy_failed = "복사하지 못했습니다."
+copying = "복사하는 중…"
 
 [problem]
 details = "자세히"

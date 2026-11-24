@@ -78,6 +78,7 @@ from facegen.render.renderer import (
     Renderer,
     Tagger,
 )
+from facegen.runtime.contracts import LogFn, print_line
 
 MAX_ATTEMPTS = 3
 PRE_ENCODE_JOBS = 32
@@ -260,7 +261,7 @@ class Worker:
         renderer_factory: Callable[[str], Renderer],
         tagger_factory: Callable[[], Tagger],
         fm_check: Callable[[], bool | None] = fm_running,
-        log: Callable[[str], None] = print,
+        log: LogFn = print_line,
         clock: Callable[[], float] = time.perf_counter,
     ) -> None:
         self.conn = conn
@@ -333,7 +334,7 @@ class Worker:
         try:
             close()
         except Exception as exc:  # noqa: BLE001 - report it; the model is gone either way
-            self.log(f"  could not free the GPU cleanly: {type(exc).__name__}: {exc}")
+            self.log(f"  could not free the GPU cleanly: {type(exc).__name__}: {exc}", "warning")
 
     def runnable(self, f: JobFilter, *, limit: int | None = None) -> list[Job]:
         """Queued jobs that match the filter, in queue order."""
@@ -460,7 +461,10 @@ class Worker:
                     except JobGone:
                         continue
                     (summary.done if outcome.status == "done" else summary.failed).append(outcome)
-                    self.log(f"  {outcome.message} ({outcome.seconds:.1f} s)")
+                    self.log(
+                        f"  {outcome.message} ({outcome.seconds:.1f} s)",
+                        "info" if outcome.status == "done" else "warning",
+                    )
             finally:
                 if publish:
                     summary.publish = self.publish()
@@ -539,7 +543,7 @@ class Worker:
                 winner = this_round[pick]
                 break
             reasons = "; ".join(sorted({r for c in this_round for r in c.result.failures}))
-            self.log(f"  attempt {attempt + 1} failed the check: {reasons}")
+            self.log(f"  attempt {attempt + 1} failed the check: {reasons}", "warning")
 
         context = {
             "wording": wording,
@@ -718,7 +722,9 @@ class Worker:
             try:
                 p = self._preview(job, check_reference=False).prompt
             except Exception as exc:  # noqa: BLE001 - the job reports it again when it runs
-                self.log(f"  not encoded ahead: {job.name} ({type(exc).__name__}: {exc})")
+                self.log(
+                    f"  not encoded ahead: {job.name} ({type(exc).__name__}: {exc})", "warning"
+                )
                 continue
             if p is not None:
                 prompts.append(p)

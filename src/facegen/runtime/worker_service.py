@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
 import threading
@@ -18,13 +19,13 @@ from facegen.datasource.kits import load_kits
 from facegen.persistence import db
 from facegen.persistence.jobs import JobGone, load_career, queued_counts
 from facegen.persistence.settings import load_settings
-from facegen.pipeline.publish import PublishError
+from facegen.pipeline.publish import RELOAD_HINT, PublishError
 from facegen.pipeline.worker import PRE_ENCODE_JOBS, Worker, WorkerBusy, fm_running, worker_lock
 from facegen.render.gpu import describe as describe_gpu
 from facegen.render.gpu import is_fatal
 from facegen.render.renderer import Renderer, Tagger
-from facegen.runtime.contracts import Exit, ExitReason, Link, WorkerStatus
-from facegen.runtime.logging import LOG_LINES, logger, stamp, utc_now
+from facegen.runtime.contracts import Exit, ExitReason, Link, LogLevel, LogLine, WorkerStatus
+from facegen.runtime.logging import LOG_LINES, PYTHON_LEVELS, logger, stamp, utc_now
 from facegen.runtime.policy import BUSY_TIMEOUT_MS, FM_POLL_SECONDS
 
 STOPPED_EXIT = 4
@@ -79,7 +80,7 @@ class WorkerService:
         self._wake = threading.Event()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
-        self._log: deque[str] = deque(maxlen=LOG_LINES)
+        self._log: deque[LogLine] = deque(maxlen=LOG_LINES)
         self._state = "starting"
         self._detail = ""
         self._reason = "starting"
@@ -95,6 +96,9 @@ class WorkerService:
         self._idle_since: float | None = None
         self._unpublished = True
         """Publish at the next chance: after a picture, and once at start."""
+        self._reload_hint = False
+        """Pictures reached FM27's active pack since the queue last ran out: the Reload Skin
+        hint is logged once when it does (Phase 17i)."""
         self._link = link
         self.exit: Exit | None = None
         """In a worker process, why the loop ended; None until it does."""
@@ -156,13 +160,14 @@ class WorkerService:
                 since=self._since,
             )
 
-    def log(self, line: str) -> None:
-        stamped = f"{stamp()}  {line}"
+    def log(self, line: str, level: LogLevel = "info") -> None:
+        """A line for the Log page and the log file; warnings and errors pass their level."""
+        entry = LogLine(stamp(), line, level)
         with self._lock:
-            self._log.append(stamped)
-        logger.info("%s", line)
+            self._log.append(entry)
+        logger.log(PYTHON_LEVELS.get(level, logging.INFO), "%s", line)
         if self._link is not None:
-            self._link.line(stamped)
+            self._link.line(entry)
             self._link.status(self.status)
 
     def _set(
@@ -260,7 +265,7 @@ class WorkerService:
                         self._wait(FM_POLL_SECONDS)
         except Exception as exc:  # noqa: BLE001 - never die silently: show it in the UI
             self._set("error", f"worker crashed: {exc}", reason="crashed", error=str(exc))
-            self.log("".join(traceback.format_exception_only(exc)).strip())
+            self.log("".join(traceback.format_exception_only(exc)).strip(), "error")
             logger.error("worker crashed", exc_info=exc)
             self._leave("crashed", f"worker crashed: {type(exc).__name__}: {exc}")
         finally:
@@ -288,7 +293,7 @@ class WorkerService:
                         reason="retrying",
                         error=message,
                     )
-                    self.log(f"Worker error: {message}")
+                    self.log(f"Worker error: {message}", "error")
                     delay = FM_POLL_SECONDS
             if delay > 0:
                 self._wait(delay)
@@ -309,7 +314,8 @@ class WorkerService:
         if self._worker is not None:
             self._worker.unload()
         self.log(
-            f"  GPU fault: {message}" if leaving else f"  GPU fault, drawing stopped: {message}"
+            f"  GPU fault: {message}" if leaving else f"  GPU fault, drawing stopped: {message}",
+            "error",
         )
         logger.error("GPU fault (%s)", describe_gpu())
         if leaving:
@@ -399,6 +405,9 @@ class WorkerService:
             with self._lock:
                 self._generate_now = False
             self._publish_pending(worker)
+            if self._reload_hint:
+                self._reload_hint = False
+                self.log(f"Queue done. {RELOAD_HINT}")
             now = self._clock()
             if self._idle_since is None:
                 self._idle_since = now
@@ -478,7 +487,7 @@ class WorkerService:
                 self._paused = True
                 self._last_error = f"{job.name}: {message}"
             worker.unload()
-            self.log(f"  error, worker paused: {message}")
+            self.log(f"  error, worker paused: {message}", "error")
             self._set(
                 "error", f"{job.name}: {message}", reason="job_error", name=job.name, error=message
             )
@@ -489,7 +498,10 @@ class WorkerService:
                 self._done += 1
             else:
                 self._failed += 1
-        self.log(f"  {outcome.message} ({outcome.seconds:.1f} s)")
+        self.log(
+            f"  {outcome.message} ({outcome.seconds:.1f} s)",
+            "info" if outcome.status == "done" else "warning",
+        )
         self._unpublished = True
         self._publish_pending(worker)
         self._set("running", "next job", reason="next_job")
@@ -518,15 +530,18 @@ class WorkerService:
         try:
             report = worker.publish()
         except PublishError as exc:
-            self.log(f"Publishing failed: {exc}")
+            self.log(f"Publishing failed: {exc}", "error")
             with self._lock:
                 self._last_error = f"publishing failed: {exc}"
             return
         self._unpublished = False
-        if report.written:
-            where = (
-                "FM27: Settings -> Reload Skin to see them"
-                if report.active
-                else "not shown in FM27: another career's save is newer"
+        if not report.written:
+            return
+        if report.active:  # the Reload Skin hint once, when the queue runs out (Phase 17i)
+            self._reload_hint = True
+            self.log(f"Published {report.written} picture(s).")
+        else:
+            self.log(
+                f"Published {report.written} picture(s); not shown in FM27: another career's"
+                " save is newer."
             )
-            self.log(f"Published {report.written} picture(s); {where}.")

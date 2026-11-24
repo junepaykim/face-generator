@@ -19,7 +19,7 @@ from facegen.core.problems import UNKNOWN, diagnose
 from facegen.i18n import Translator
 from facegen.pipeline.manual import REFUSAL_CODES, REFUSALS, ActionResult, ManualError
 from facegen.pipeline.reclassification import GROUP_COUNT_KEYS, ChangeReport
-from facegen.runtime.contracts import WorkerStatus
+from facegen.runtime.contracts import PollerStatus, WorkerStatus
 
 
 def manual_summary(result: ActionResult, t: Translator) -> str:
@@ -101,6 +101,62 @@ def worker_sentence(status: WorkerStatus, t: Translator) -> str:
         return t(key, **values)
     except (KeyError, IndexError, ValueError):  # a value missing: the English line instead
         return status.detail
+
+
+WATCHER_TONES = {
+    "synced": "ok",
+    "settling": "accent",
+    "due": "accent",
+    "syncing": "accent",
+    "not set": "warn",
+    "error": "bad",
+    "stopped": "bad",
+}
+"""The save watcher's badge colour by state (Phase 17i); grey for the rest."""
+
+
+def short_time(stamp: str, today: str | None = None) -> str:
+    """ "YYYY-MM-DD HH:MM" as "HH:MM" when it is today, else as it is."""
+    today = today or datetime.now().strftime("%Y-%m-%d")
+    day, _, time = stamp.partition(" ")
+    return time if day == today and time else stamp
+
+
+@dataclass(frozen=True, slots=True)
+class WatcherLine:
+    """The save watcher on the Log page (Phase 17i): a badge, then what it is about."""
+
+    badge: str
+    tone: str
+    text: str
+    checked: str | None
+    error: str | None
+    """An error's own text, folded away under Technical details."""
+
+
+def watcher_line(status: PollerStatus, t: Translator, today: str | None = None) -> WatcherLine:
+    """The watcher's state as a badge and its reason in the page's language
+    ("log.watcher.<reason>"); its English line when the reason is unknown."""
+    state_key = "log.watcher_state." + status.state.replace(" ", "_")
+    badge = t(state_key) if t.has(state_key) else status.state
+    values = dict(status.values)
+    error = values.pop("error", None)
+    if "saved" in values:
+        values["saved"] = short_time(str(values["saved"]), today)
+    key = f"log.watcher.{status.reason}"
+    text = status.detail
+    if status.reason and t.has(key):
+        try:
+            text = t(key, **values)
+        except (KeyError, IndexError, ValueError):  # a value missing: the English line instead
+            text = status.detail
+    return WatcherLine(
+        badge=badge,
+        tone=WATCHER_TONES.get(status.state, ""),
+        text=text,
+        checked=status.checked,
+        error=str(error) if error else None,
+    )
 
 
 def side_line(side: Mapping[str, Any], t: Translator) -> str:

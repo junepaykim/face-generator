@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 from factories import player, snapshot
+from support.logs import Lines
 
 from facegen.core.records import Snapshot
 from facegen.core.settings_values import Settings
@@ -91,7 +92,7 @@ def test_sync_commits_before_publishing_and_closes_before_completion(
         Source,
         defaults_path=config_file,
         on_done=completed,
-        log=events.append,
+        log=lambda line, level="info": events.append(line),
     )
     assert syncer.run(save) == SYNCED
     status = syncer.status()
@@ -115,16 +116,16 @@ def test_sync_operation_reports_source_failure_and_closes_connection(
     settings = load_settings(defaults_path=config_file)
     connection = db.connect(settings.paths.db_path)
     monkeypatch.setattr(sync_operation.db, "connect", lambda *args, **kwargs: connection)
-    lines: list[str] = []
+    lines = Lines()
 
     def broken_source() -> Source:
         raise RuntimeError("synthetic reader failure")
 
     result = sync_operation.execute_sync(
-        SyncRequest(str(settings.paths.db_path), str(config_file)), broken_source, log=lines.append
+        SyncRequest(str(settings.paths.db_path), str(config_file)), broken_source, log=lines
     )
     assert result == SyncResult(FAILED, error="sync failed: RuntimeError: synthetic reader failure")
-    assert lines == [result.error]
+    assert lines == [result.error] and lines.levels == ["error"]
     with pytest.raises(sqlite3.ProgrammingError, match="closed"):
         connection.execute("SELECT 1")
 
@@ -175,7 +176,7 @@ def test_raising_log_callback_releases_claim_without_announcing_completion(
     def broken_source() -> Source:
         raise RuntimeError("synthetic reader failure")
 
-    def broken_log(line: str) -> None:
+    def broken_log(line: str, level: str = "info") -> None:
         raise ValueError("synthetic log failure")
 
     syncer = SyncService(

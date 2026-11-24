@@ -86,7 +86,7 @@ def obey(state: Path, *, hang: bool = False) -> None:
         if hang:
             continue
         if cmd == "pause":
-            send({"type": "line", "text": "00:00:00  Paused."})
+            send({"type": "line", "time": "00:00:00", "text": "Paused."})
             exit_("paused")
             return
         if cmd == "stop":

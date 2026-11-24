@@ -43,7 +43,7 @@
     {% endif %}
   </div>
 </aside>
-<main>
+<main{% block main_class %}{% endblock %}>
 {% block head %}{% endblock %}
 {% if setup and setup.state != "ready" and path != "/" %}
 <div class="flash setup">

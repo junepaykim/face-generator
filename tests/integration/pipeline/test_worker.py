@@ -91,7 +91,7 @@ class Env:
             renderer_factory=lambda _model: r,
             tagger_factory=lambda: t,
             fm_check=lambda: fm,
-            log=lambda line: None,
+            log=lambda *_: None,
         )
         return w, r, t
 
@@ -447,7 +447,7 @@ def test_fm_running_stops_before_any_job(env: Env) -> None:
             renderer_factory=lambda _model: loaded.append(1) or FakeRenderer(),
             tagger_factory=FakeTagger,
             fm_check=lambda s=state: s,
-            log=lambda line: None,
+            log=lambda *_: None,
         )
         summary = w.run(MINE)
         assert summary.stopped and summary.done == []
@@ -477,7 +477,7 @@ def test_a_new_model_setting_unloads_the_old_model_before_the_next_job(env: Env)
         renderer_factory=factory,
         tagger_factory=FakeTagger,
         fm_check=lambda: False,
-        log=lambda line: None,
+        log=lambda *_: None,
     )
     first = w.renderer
     assert (

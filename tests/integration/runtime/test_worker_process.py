@@ -8,6 +8,7 @@ import dataclasses
 import io
 import logging
 import os
+import re
 import sqlite3
 import sys
 import time
@@ -24,6 +25,7 @@ from facegen.persistence.jobs import Job
 from facegen.persistence.settings import load_settings
 from facegen.pipeline.sync import run_sync
 from facegen.runtime import worker_process
+from facegen.runtime.contracts import LogLine
 from facegen.runtime.supervision import RestartPolicy
 from facegen.runtime.worker_process import (
     ChildLink,
@@ -119,13 +121,48 @@ def test_lines_that_are_not_messages() -> None:
     assert decode('{"type": "line", "text": "x"}') == {"type": "line", "text": "x"}
 
 
+def test_a_log_line_keeps_its_time_and_level_across_the_pipe(tmp_path: Path) -> None:
+    """Phase 17i: the child sends each line's time, text and level ("info" left out); the
+    parent keeps them, so the Log page can colour and filter the child's lines."""
+    out = io.StringIO()
+    link = ChildLink(out)
+    link.line(LogLine("12:00:00", "  attempt 1 failed the check: blurry", "warning"))
+    link.line(LogLine("12:00:01", "Published 1 picture(s)."))
+    sent = [decode(line) for line in out.getvalue().splitlines()]
+    assert sent == [
+        {
+            "type": "line",
+            "time": "12:00:00",
+            "text": "  attempt 1 failed the check: blurry",
+            "level": "warning",
+        },
+        {"type": "line", "time": "12:00:01", "text": "Published 1 picture(s)."},
+    ]
+    proxy = WorkerProxy([], db_path=tmp_path / "db")
+    for message in sent:
+        assert message is not None
+        proxy._receive(message)
+    proxy._receive({"type": "line", "time": "12:00:02", "text": "odd", "level": "loud"})
+    proxy.log("Starting a new worker process in 3 s.", "warning")
+    log = proxy.status().log
+    # An unknown level ("loud") is a plain line.
+    assert [line.level for line in log] == ["warning", "info", "info", "warning"]
+    assert [line.text for line in log] == [
+        "  attempt 1 failed the check: blurry",
+        "Published 1 picture(s).",
+        "odd",
+        "Starting a new worker process in 3 s.",
+    ]
+    assert log[0].time == "12:00:00" and re.fullmatch(r"\d\d:\d\d:\d\d", log[3].time)
+
+
 def test_the_child_link_sends_each_change_once_and_survives_a_broken_pipe() -> None:
     out = io.StringIO()
     link = ChildLink(out)
     status = WorkerStatus("idle", "", None, False, False, False, False, 0, 0, None, ())
     link.status(lambda: status)
     link.status(lambda: status)
-    link.line("12:00:00  hello")
+    link.line(LogLine("12:00:00", "hello"))
     link.exit(Exit("fault", "CUDA error", job()))
     messages = [decode(line) for line in out.getvalue().splitlines()]
     assert [m["type"] for m in messages if m] == ["status", "line", "exit"]
@@ -136,7 +173,7 @@ def test_the_child_link_sends_each_change_once_and_survives_a_broken_pipe() -> N
             raise BrokenPipeError
 
     broken = ChildLink(Broken())
-    broken.line("x")  # does not raise
+    broken.line(LogLine("12:00:00", "x"))  # does not raise
     assert broken.broken
 
 
@@ -215,7 +252,7 @@ def job_row(db_path: Path, job_id: int) -> sqlite3.Row:
 
 
 def log_text(p: WorkerProxy) -> str:
-    return "\n".join(p.status().log)
+    return "\n".join(map(str, p.status().log))
 
 
 def test_a_clean_start_and_stop(fake: Fake) -> None:

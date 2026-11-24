@@ -20,6 +20,7 @@ from pathlib import Path
 
 import pytest
 from factories import ABROAD, NEWGEN, RIVAL, player, snapshot
+from support.logs import Lines
 from support.paths import ROOT, TESTS
 from support.processes import has_exited
 
@@ -215,7 +216,7 @@ class Child:
     settings: Settings
     config: Path
     state: Path
-    log: list[str] = field(default_factory=list)
+    log: Lines = field(default_factory=Lines)
     services: list[SyncService] = field(default_factory=list)
 
     def syncer(self, plan: str, **kw: object) -> SyncService:
@@ -224,7 +225,7 @@ class Child:
             self.settings.paths.db_path,
             command=sync_command(command),
             defaults_path=self.config,
-            log=self.log.append,
+            log=self.log,
             echo_stderr=False,
             **kw,  # type: ignore[arg-type]
         )
@@ -330,7 +331,8 @@ def test_an_unsupported_save_is_unreadable_and_waits_for_the_next_save(child: Ch
     poll_until_synced(poller, clock)
     status = syncer.status()
     assert status.unsupported and "27.9.0+1" in (status.error or "")
-    assert any("bump the pin" in line for line in child.log)
+    # The child's error line reaches the Log page as an error (Phase 17i).
+    assert any("bump the pin" in line for line in child.log.at("error"))
     run = child.runs()[-1]
     assert (run["unsupported"], run["build"], run["save_mtime"]) == (1, "27.9.0+1", 1.8e9)
     poller.step()
@@ -484,7 +486,7 @@ def test_a_sync_process_that_cannot_start_is_a_failed_sync(child: Child, tmp_pat
         child.settings.paths.db_path,
         command=[str(tmp_path / "no-such-program")],
         defaults_path=child.config,
-        log=child.log.append,
+        log=child.log,
     )
     assert syncer.run() == FAILED
     assert (syncer.status().error or "").startswith("could not start the sync process")

@@ -104,6 +104,8 @@
     </div>
     {% endfor %}
   </div>
+  {# Once, while this run's new pictures may wait for FM27 to load them (Phase 17i). #}
+  {% if worker and worker.done %}<p class="muted small recent-note" data-note>{{ t("dash.recent.reload") }}</p>{% endif %}
 </section>
 {% endif %}
 

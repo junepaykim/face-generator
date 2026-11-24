@@ -570,7 +570,7 @@ def test_male_portrait_opens_with_its_own_sheet_and_gender(env: Env) -> None:
             renderer_factory=FakeRenderer,
             tagger_factory=lambda: FakeTagger(default="boy"),
             fm_check=lambda: False,
-            log=lambda line: None,
+            log=lambda *_: None,
         )
         result = worker.run(JobFilter(groups=frozenset({"a"})), limit=1)
         assert result.done[0].job.unique_id == MINE
@@ -709,7 +709,7 @@ def test_review_page_and_retry(env: Env) -> None:
         renderer_factory=FakeRenderer,
         tagger_factory=lambda: tagger,
         fm_check=lambda: False,
-        log=lambda line: None,
+        log=lambda *_: None,
     ).run(JobFilter(groups=frozenset({"b"})))
     conn.close()
     page = env.client.get("/review").text
@@ -1201,7 +1201,9 @@ def test_every_page_starts_with_the_same_header(env: Env) -> None:
         f"/players/{MINE}": "Mine Player",
     }
     for url, title in titles.items():
-        main = env.client.get(f"{url}?msg=Done").text.split("<main>", 1)[1]
+        main = re.split(
+            r"<main(?: class=\"[\w -]+\")?>", env.client.get(f"{url}?msg=Done").text, 1
+        )[1]
         assert re.match(rf'\s*<header class="page-head">\s*<h1>{re.escape(title)}\b', main), url
         assert main.count('class="page-head"') == 1 and main.count("<h1>") == 1, url
         assert main.index("</header>") < main.index('<div class="flash ok" role="status">Done'), url

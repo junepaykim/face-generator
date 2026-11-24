@@ -1,7 +1,12 @@
 {% extends "base.html" %}
 {% from "_page.html" import page_head %}
 {% block title %}{{ t("nav.log") }}{% endblock %}
-{% block head %}{{ page_head(t("log.title")) }}{% endblock %}
+{% block main_class %} class="fill"{% endblock %}
+{% block head %}{% call page_head(t("log.title")) %}
+  <span class="muted small" data-report-note role="status" aria-live="polite"></span>
+  <button type="button" data-copy-report="/log/report" hidden>{{ t("log.copy_report") }}</button>
+  {% if can_open_folder %}<form method="post" action="/folders/open" data-open-folder><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="name" value="logs"><input type="hidden" name="next" value="/log"><button>{{ t("log.open_folder") }}</button></form>{% endif %}
+{% endcall %}{% endblock %}
 {% block content %}
-<div data-refresh="/log/part" data-topic="log" data-rev="{{ rev }}">{% include "_log.html" %}</div>
+<div class="log-page" data-refresh="/log/part" data-topic="log" data-rev="{{ rev }}">{% include "_log.html" %}</div>
 {% endblock %}

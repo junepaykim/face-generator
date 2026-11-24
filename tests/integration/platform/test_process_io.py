@@ -15,6 +15,7 @@ import pytest
 
 from facegen.desktop.app_window import WindowProcess
 from facegen.platform.pipes import JsonWriter
+from facegen.runtime.contracts import LogLine
 from facegen.runtime.worker_process import ChildLink, WorkerProxy
 from facegen.service import WorkerStatus
 from facegen.setup import models
@@ -138,10 +139,10 @@ def test_pipe_errors_remain_caller_policy(
 
     out = FailsOnce()
     link = ChildLink(out)
-    link.line("first")
+    link.line(LogLine("12:00:00", "first"))
     assert link.broken
     after_error = out.getvalue()
-    link.line("second")
+    link.line(LogLine("12:00:00", "second"))
     assert out.getvalue() == after_error  # the worker child does latch it
 
     for parent in (

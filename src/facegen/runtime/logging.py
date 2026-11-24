@@ -11,6 +11,9 @@ LOG_FILE = Path("logs") / "facegen.log"
 
 logger = logging.getLogger("facegen")
 
+PYTHON_LEVELS = {"info": logging.INFO, "warning": logging.WARNING, "error": logging.ERROR}
+"""A worker log line's level (contracts.LOG_LEVELS) for the log file."""
+
 
 def log_to_file(data_dir: Path) -> Path:
     """Send the "facegen" logger to data/logs/facegen.log (1 MB, three old files kept)."""

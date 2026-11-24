@@ -38,6 +38,9 @@ class AppContext:
     install_update: Callable[[], None] | None = None
     """Starts `Start.bat --update` and quits facegen: set by the desktop app on Windows, in a
     folder that is not a git checkout. None elsewhere: the dashboard says how to update."""
+    open_folder: Callable[[Path], None] | None = None
+    """Shows a folder in Explorer (platform.explorer, Phase 17i); None where it cannot: WSL,
+    Linux and the tests unless they give one."""
 
     def setup(self, settings: Settings) -> SetupState:
         """What first-run setup still needs (Phase 10): FM27's folder, the selected model's

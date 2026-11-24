@@ -7,7 +7,8 @@ one ASCII JSON object per line. Library stdout is redirected to stderr for paren
 Child stdout messages:
 
     {"type": "status", "status": {...}}       WorkerStatus without its log, after a change
-    {"type": "line", "text": "..."}            timestamped dashboard log line
+    {"type": "line", "time": "HH:MM:SS", "text": "...", "level": "warning"}
+                                               a Log page line; "level" only when not info
     {"type": "log", "level": 40, "text": "..."}   logger record, including traceback
     {"type": "exit", "reason": "...", "message": "..." | null, "job": {...} | null}
 
@@ -59,8 +60,8 @@ from facegen.platform.pipes import (  # noqa: F401 - also used from here by the 
 )
 from facegen.platform.procs import describe_exit
 from facegen.render.renderer import Renderer, Tagger
-from facegen.runtime.contracts import Exit, WorkerStatus
-from facegen.runtime.logging import LOG_LINES, stamp, utc_now
+from facegen.runtime.contracts import LOG_LEVELS, Exit, LogLevel, LogLine, WorkerStatus
+from facegen.runtime.logging import LOG_LINES, PYTHON_LEVELS, stamp, utc_now
 from facegen.runtime.policy import BUSY_TIMEOUT_MS
 from facegen.runtime.supervision import DEFAULT_POLICY, FailureHistory, RestartPolicy
 from facegen.runtime.worker_service import WorkerService
@@ -135,6 +136,23 @@ def status_from_json(data: dict[str, Any]) -> WorkerStatus:
     )
 
 
+def line_to_json(line: LogLine) -> dict[str, Any]:
+    """A log line for the pipe; the level only when it is not "info"."""
+    data: dict[str, Any] = {"type": "line", "time": line.time, "text": line.text}
+    if line.level != "info":
+        data["level"] = line.level
+    return data
+
+
+def line_from_json(data: dict[str, Any]) -> LogLine:
+    level = data.get("level") or "info"
+    return LogLine(
+        str(data.get("time") or stamp()),
+        str(data["text"]),
+        level if level in LOG_LEVELS else "info",
+    )
+
+
 class ChildLink:
     """The child's runtime.contracts.Link implementation: messages to the parent."""
 
@@ -156,8 +174,8 @@ class ChildLink:
             except (OSError, ValueError):
                 self.broken = True
 
-    def line(self, text: str) -> None:
-        self.send({"type": "line", "text": text})
+    def line(self, line: LogLine) -> None:
+        self.send(line_to_json(line))
 
     def status(self, read: Callable[[], WorkerStatus]) -> None:
         # Read and send under one lock, so two threads cannot send in the wrong order.
@@ -309,7 +327,7 @@ class WorkerProxy:
         self._thread: threading.Thread | None = None
         self._child: subprocess.Popen[str] | None = None
         self._child_status: WorkerStatus | None = None
-        self._log: deque[str] = deque(maxlen=LOG_LINES)
+        self._log: deque[LogLine] = deque(maxlen=LOG_LINES)
         self._stderr_tail: deque[str] = deque(maxlen=20)
         self._paused = start_paused
         self._state = "paused" if start_paused else "starting"
@@ -406,10 +424,11 @@ class WorkerProxy:
                 since=since,
             )
 
-    def log(self, line: str) -> None:
+    def log(self, line: str, level: LogLevel = "info") -> None:
+        """A line for the Log page and the log file; warnings and errors pass their level."""
         with self._lock:
-            self._log.append(f"{stamp()}  {line}")
-        logger.info("%s", line)
+            self._log.append(LogLine(stamp(), line, level))
+        logger.log(PYTHON_LEVELS.get(level, logging.INFO), "%s", line)
 
     @property
     def child_pid(self) -> int | None:
@@ -463,7 +482,8 @@ class WorkerProxy:
                 child.wait(timeout=max(0.0, self._stop_deadline - time.monotonic()))
             except subprocess.TimeoutExpired:
                 self.log(
-                    f"The worker process did not stop within {self.stop_timeout:g} s; ended it."
+                    f"The worker process did not stop within {self.stop_timeout:g} s; ended it.",
+                    "warning",
                 )
                 child.kill()
         if self._thread is not None:
@@ -566,8 +586,9 @@ class WorkerProxy:
                     elif self._generate_now_seen:
                         self._generate_now = self._generate_now_seen = False
             case "line":
+                line = line_from_json(message)
                 with self._lock:
-                    self._log.append(str(message["text"]))
+                    self._log.append(line)
             case "log":
                 child_logger.log(int(message["level"]), "%s", message["text"])
             case _:
@@ -622,7 +643,7 @@ class WorkerProxy:
                     self._respawn_soon()
             case _:  # ended without saying why: a crash outside Python, or killed
                 text = f"the worker process ended unexpectedly ({describe_exit(code)})"
-                self.log(text[0].upper() + text[1:] + ".")
+                self.log(text[0].upper() + text[1:] + ".", "error")
                 if self._stderr_tail:
                     logger.error("worker process's last output:\n%s", "\n".join(self._stderr_tail))
                 self._failed_child(text, job, "the worker process ended unexpectedly", "crash")
@@ -671,7 +692,9 @@ class WorkerProxy:
                     minutes=round(minutes),
                     error=message,
                 )
-            self.log(f"Drawing stopped after {decision.recent} failures; Resume tries again.")
+            self.log(
+                f"Drawing stopped after {decision.recent} failures; Resume tries again.", "error"
+            )
             return
         delay = decision.restart_in
         with self._lock:
@@ -691,7 +714,7 @@ class WorkerProxy:
                 review=bool(reviewed),
                 error=message,
             )
-        self.log(f"Starting a new worker process in {delay:.0f} s.")
+        self.log(f"Starting a new worker process in {delay:.0f} s.", "warning")
 
     def _send_to_review(self, job: Job, message: str) -> bool:
         n = self._failures.policy.review_after
@@ -704,11 +727,12 @@ class WorkerProxy:
                 conn.close()
         except Exception as exc:  # say so; the job is drawn again instead
             logger.error("could not send job %d to review", job.id, exc_info=exc)
-            self.log(f"Could not send {job.name} to review: {type(exc).__name__}: {exc}")
+            self.log(f"Could not send {job.name} to review: {type(exc).__name__}: {exc}", "error")
             return False
         if sent:
             self.log(
                 f"{job.name} goes to review: the graphics driver failed {_times(n)}"
-                " while drawing it."
+                " while drawing it.",
+                "warning",
             )
         return sent

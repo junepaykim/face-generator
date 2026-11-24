@@ -14,7 +14,8 @@ Parent to child stdin:
 
 Child stdout:
 
-    {"type": "line", "text": "..."}     a line for the dashboard's log (the parent stamps it)
+    {"type": "line", "text": "..."}     a line for the Log page (the parent stamps it); with
+                                        "level": "warning" or "error" when not info
     {"type": "committed"}               the sync's transaction committed; publication follows
     {"type": "result", "result": {...}} runtime.contracts.SyncResult, last
 
@@ -45,7 +46,17 @@ from typing import TYPE_CHECKING, Any, TextIO
 
 from facegen.platform import procs
 from facegen.platform.pipes import JsonWriter, decode, drain_lines, encode
-from facegen.runtime.contracts import FAILED, SYNCED, UNREADABLE, SyncRequest, SyncResult
+from facegen.runtime.contracts import (
+    FAILED,
+    LOG_LEVELS,
+    SYNCED,
+    UNREADABLE,
+    LogFn,
+    LogLevel,
+    SyncRequest,
+    SyncResult,
+    no_log,
+)
 
 if TYPE_CHECKING:
     from facegen.datasource.base import DataSource
@@ -147,8 +158,8 @@ class _Link:
             except (OSError, ValueError):
                 self.broken = True
 
-    def line(self, text: str) -> None:
-        self.send({"type": "line", "text": text})
+    def line(self, text: str, level: LogLevel = "info", /) -> None:
+        self.send({"type": "line", "text": text, **({"level": level} if level != "info" else {})})
 
 
 class _Progress:
@@ -241,7 +252,7 @@ class SyncProcess:
         self,
         command: Sequence[str],
         *,
-        log: Callable[[str], None] = lambda line: None,
+        log: LogFn = no_log,
         echo_stderr: bool = True,
         stop_seconds: float = STOP_SECONDS,
         publish_seconds: float = PUBLISH_SECONDS,
@@ -285,7 +296,7 @@ class SyncProcess:
         if failed is not None:
             logger.error("could not start the sync process", exc_info=failed)
             text = f"could not start the sync process: {failed}"
-            self._log(f"Sync failed: {text}.")
+            self._log(f"Sync failed: {text}.", "error")
             return SyncResult(FAILED, error=text)
         logger.info("sync process %d started: %s", child.pid, " ".join(child.args))
         tail: deque[str] = deque(maxlen=STDERR_LINES)
@@ -305,7 +316,10 @@ class SyncProcess:
                 try:
                     match message.get("type"):
                         case "line":
-                            self._log(str(message["text"]))
+                            level = message.get("level")
+                            self._log(
+                                str(message["text"]), level if level in LOG_LEVELS else "info"
+                            )
                         case "committed":
                             with self._lock:
                                 self._committed_at = time.monotonic()
@@ -333,7 +347,7 @@ class SyncProcess:
         text = f"the sync process ended unexpectedly ({procs.describe_exit(code)})"
         if committed:
             text += "; the sync is stored and unfinished publication will be retried"
-        self._log(f"Sync failed: {text}.")
+        self._log(f"Sync failed: {text}.", "error")
         if tail:
             logger.error("sync process's last output:\n%s", "\n".join(tail))
         return SyncResult(FAILED, error=text)
