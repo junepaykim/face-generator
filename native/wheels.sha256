@@ -1,7 +1,8 @@
-# SHA-256 of the prebuilt facegen-native wheels that `facegen native --install` may install.
+# SHA-256 of the prebuilt kitshot-native wheels that `kitshot native --install` may install.
 # A wheel not listed here is never installed. After pushing a `native-v<version>` tag,
 # .github/workflows/wheels.yml attaches the wheels and SHA256SUMS.txt to that GitHub
 # Release: check the release, then copy its SHA256SUMS.txt lines in below.
 # Format: `sha256sum` output, "<sha256>  <wheel file name>"; the version is in the name.
-517b06150d7bdced0b9f791c639ab0668abe2f94de1a51e687d5fb8bfe2d655d  facegen_native-0.1.0-cp312-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
-577508118966ce76fbe438a1bdc3c5611d3c8c7c4793dc5313ad7bc5b4798cf1  facegen_native-0.1.0-cp312-abi3-win_amd64.whl
+# Phase 17o renamed the extension kitshot-native 0.2.0: its sums go here after the
+# native-v0.2.0 release. Until then `kitshot launch` finds no wheel and Kitshot uses the
+# Python versions. (facegen-native 0.1.0's wheels are in the native-v0.1.0 release.)

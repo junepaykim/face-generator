@@ -1,4 +1,4 @@
-"""`facegen worker` with a fake GPU, for the Phase 7 exit test: `facegen serve` starts this
+"""`kitshot worker` with a fake GPU, for the Phase 7 exit test: `kitshot serve` starts this
 in place of the real worker process (cli.Gpu.program).
 
     python gpu_child.py MARKER [--slow] [--config X] worker [--generate-now]
@@ -22,8 +22,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fakes import FakeRenderer, FakeTagger
 
-from facegen.cli import Gpu, main
-from facegen.core.prompt import Prompt
+from kitshot.cli import Gpu, main
+from kitshot.core.prompt import Prompt
 
 FAULT = "CUDA error: an illegal memory access was encountered"
 

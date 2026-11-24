@@ -11,7 +11,7 @@ from pathlib import Path
 
 from support.paths import ROOT
 
-SOURCE = ROOT / "src" / "facegen"
+SOURCE = ROOT / "src" / "kitshot"
 LAUNCHERS = {
     "subprocess.Popen",
     "subprocess.run",
@@ -103,13 +103,13 @@ def test_core_imports_only_core_or_the_standard_library() -> None:
                 base = import_base(node, path)
                 names = (
                     [f"{base}.{alias.name}" for alias in node.names]
-                    if base == "facegen"
+                    if base == "kitshot"
                     else [base]
                 )
             else:
                 continue
             for name in names:
-                if name == "facegen.core" or name.startswith("facegen.core."):
+                if name == "kitshot.core" or name.startswith("kitshot.core."):
                     continue
                 if name.split(".")[0] in sys.stdlib_module_names:
                     continue

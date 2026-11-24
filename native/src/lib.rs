@@ -1,7 +1,7 @@
-//! facegen's optional Rust extension, imported in Python as `facegen_native`.
+//! Kitshot's optional Rust extension, imported in Python as `kitshot_native`.
 //!
-//! Every function here has a Python version in the `facegen` package that gives the same
-//! result, and the tool runs without this extension (facegen/native.py). It only makes two
+//! Every function here has a Python version in the `kitshot` package that gives the same
+//! result, and the tool runs without this extension (kitshot/native.py). It only makes two
 //! CPU-bound pieces faster:
 //!
 //! - [`figure`]: the scan that finds the figure against the studio backdrop
@@ -19,9 +19,9 @@ pub mod resample;
 
 use pyo3::prelude::*;
 
-/// Rust versions of facegen's CPU-bound picture work. See native/src/lib.rs.
+/// Rust versions of Kitshot's CPU-bound picture work. See native/src/lib.rs.
 #[pymodule]
-mod facegen_native {
+mod kitshot_native {
     #[pymodule_export]
     use super::figure::Grid;
     #[pymodule_export]

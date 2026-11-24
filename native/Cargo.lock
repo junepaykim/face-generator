@@ -104,17 +104,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00d174d5400e5e8fd687ad1049e2f578285fa914201b1af7e8b112a4546bd826"
 
 [[package]]
-name = "facegen-native"
-version = "0.1.0"
-dependencies = [
- "fast_image_resize",
- "image",
- "oxipng",
- "pyo3",
- "rayon",
-]
-
-[[package]]
 name = "fast_image_resize"
 version = "6.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -185,6 +174,17 @@ checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
 dependencies = [
  "equivalent",
  "hashbrown",
+ "rayon",
+]
+
+[[package]]
+name = "kitshot-native"
+version = "0.2.0"
+dependencies = [
+ "fast_image_resize",
+ "image",
+ "oxipng",
+ "pyo3",
  "rayon",
 ]
 

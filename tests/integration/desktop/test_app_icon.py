@@ -11,8 +11,8 @@ import pytest
 from PIL import Image, ImageChops
 from support.paths import ROOT
 
-from facegen.desktop import app_icon
-from facegen.desktop.app_icon import DOT_COLOURS, ICO_SIZES, icon_image, write_ico
+from kitshot.desktop import app_icon
+from kitshot.desktop.app_icon import DOT_COLOURS, ICO_SIZES, icon_image, write_ico
 
 NAVY = (0x1B, 0x30, 0x4D)
 CREAM = (0xF4, 0xF0, 0xE6)
@@ -40,7 +40,7 @@ def test_every_size_windows_asks_for_is_bundled() -> None:
     with pytest.raises(ValueError, match="no bundled icon"):
         app_icon.bundled_png(17)
     # Made from the SVG the pages show (scripts/build_icon.py).
-    assert (ROOT / "src/facegen/web/static/kitshot.svg").read_text("utf-8").startswith("<svg")
+    assert (ROOT / "src/kitshot/web/static/kitshot.svg").read_text("utf-8").startswith("<svg")
 
 
 def test_the_bundled_picture_is_the_users_icon() -> None:

@@ -6,9 +6,9 @@ from dataclasses import fields, replace
 import pytest
 from factories import PLAIN_PERSONALITY
 
-from facegen.core import traits
-from facegen.core.records import Personality
-from facegen.core.traits import (
+from kitshot.core import traits
+from kitshot.core.records import Personality
+from kitshot.core.traits import (
     BANNABLE,
     FIELDS,
     LEANS,

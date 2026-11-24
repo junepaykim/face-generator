@@ -14,14 +14,14 @@ from typing import Any
 import pytest
 from support.desktop import FakeSyncer, FakeWorker
 
-from facegen.cli import main
-from facegen.desktop import shortcuts
-from facegen.desktop.app_controller import NOTICE_TITLE_CHARS, UPDATE_LOOK_SECONDS, AppController
-from facegen.persistence.settings import load_settings
-from facegen.pipeline.publish import packs_root
-from facegen.platform import procs
-from facegen.runtime.update_service import UpdateStatus
-from facegen.setup import launch
+from kitshot.cli import main
+from kitshot.desktop import shortcuts
+from kitshot.desktop.app_controller import NOTICE_TITLE_CHARS, UPDATE_LOOK_SECONDS, AppController
+from kitshot.persistence.settings import load_settings
+from kitshot.pipeline.publish import packs_root
+from kitshot.platform import procs
+from kitshot.runtime.update_service import UpdateStatus
+from kitshot.setup import launch
 
 
 class Clock:
@@ -86,11 +86,11 @@ def test_a_broken_update_check_does_not_stop_the_tray() -> None:
 
 
 def test_the_hook_is_only_set_where_an_update_in_place_works(tmp_path: Path) -> None:
-    from facegen.desktop import shell as desktop
+    from kitshot.desktop import shell as desktop
 
     (tmp_path / "Start.bat").write_bytes(b"@echo off\r\n")
-    assert desktop._can_update_here("nt", tmp_path)  # an installed or unzipped facegen
-    assert not desktop._can_update_here("posix", tmp_path)  # Linux and WSL: `facegen serve`
+    assert desktop._can_update_here("nt", tmp_path)  # an installed or unzipped Kitshot
+    assert not desktop._can_update_here("posix", tmp_path)  # Linux and WSL: `kitshot serve`
     (tmp_path / ".git").mkdir()
     assert not desktop._can_update_here("nt", tmp_path)  # a git checkout: git pull
     assert not desktop._can_update_here("nt", tmp_path / "elsewhere")  # no Start.bat
@@ -98,17 +98,17 @@ def test_the_hook_is_only_set_where_an_update_in_place_works(tmp_path: Path) -> 
         procs.start_console("Start.bat", "--update", cwd=".", os_name="posix")
     calls: list[tuple[Any, ...]] = []
     procs.start_console(
-        r"C:\facegen\Start.bat",
+        r"C:\kitshot\Start.bat",
         "--update",
-        cwd=r"C:\facegen",
+        cwd=r"C:\kitshot",
         os_name="nt",
         startfile=lambda *a: calls.append(a),
     )
-    assert calls == [(r"C:\facegen\Start.bat", "open", "--update", r"C:\facegen")]
+    assert calls == [(r"C:\kitshot\Start.bat", "open", "--update", r"C:\kitshot")]
 
 
 def test_the_app_mutex_is_windows_only() -> None:
-    from facegen.desktop import shell as desktop
+    from kitshot.desktop import shell as desktop
 
     release = desktop.hold_app_mutex("posix")
     release()  # nothing to let go
@@ -120,10 +120,10 @@ FOLDERS = {
     "desktop": r"C:\Users\me\OneDrive\바탕 화면",
     "programs": r"C:\Users\me\AppData\Roaming\Microsoft\Windows\Start Menu\Programs",
 }
-PYW = r"C:\Users\me\AppData\Local\facegen\.venv\Scripts\pythonw.exe"
-APP = r"C:\Users\me\AppData\Local\facegen\.venv\Scripts\facegen-app.exe"
+PYW = r"C:\Users\me\AppData\Local\kitshot\.venv\Scripts\pythonw.exe"
+APP = r"C:\Users\me\AppData\Local\kitshot\.venv\Scripts\kitshot-app.exe"
 STARTUP = r"C:\Users\me\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup"
-ROOT = r"C:\Users\me\AppData\Local\facegen"
+ROOT = r"C:\Users\me\AppData\Local\kitshot"
 ICON = ROOT + r"\data\app\kitshot-0123456789.ico"
 OLD_ICON = ROOT + r"\data\app\facegen.ico"
 START_BAT = ROOT + r"\Start.bat"
@@ -152,7 +152,7 @@ def test_refresh_points_only_our_earlier_shortcuts_at_the_app(
     assert links[0].path not in script and "Test-Path -LiteralPath" in script
     assert f"if (@('{START_BAT}', '{PYW}') -icontains $s.TargetPath)" in script
     assert f"$s.TargetPath = '{APP}'" in script
-    assert "$s.Arguments = '-m facegen.desktop app'" in script
+    assert "$s.Arguments = '-m kitshot.desktop app'" in script
     assert "WindowStyle" not in script
     # None there under either name: PowerShell is not even started.
     assert shortcuts.refresh(links, replacing, run=run, exists=lambda p: False) == []
@@ -212,15 +212,15 @@ def test_refresh_gives_the_apps_shortcuts_the_new_icon() -> None:
 def test_the_refreshed_startup_shortcut_stays_minimised() -> None:
     link = shortcuts.startup_shortcut(STARTUP, program=APP, root=ROOT, icon=ICON)
     script = shortcuts.refresh_script([link], [PYW])
-    assert "$s.Arguments = '-m facegen.desktop app --minimized'" in script
+    assert "$s.Arguments = '-m kitshot.desktop app --minimized'" in script
     assert f"$s.WindowStyle = {shortcuts.WINDOW_MINIMIZED}" in script
 
 
 def test_paths_with_quotes_stay_whole_in_the_refresh() -> None:
     link = shortcuts.Shortcut(r"C:\Users\O'Neil\Desktop\facegen.lnk", PYW, "-m x", ROOT, ICON)
-    script = shortcuts.refresh_script([link], [r"C:\Users\O'Neil\facegen\Start.bat"])
+    script = shortcuts.refresh_script([link], [r"C:\Users\O'Neil\kitshot\Start.bat"])
     assert r"'C:\Users\O''Neil\Desktop\facegen.lnk'" in script
-    assert r"@('C:\Users\O''Neil\facegen\Start.bat') -icontains" in script
+    assert r"@('C:\Users\O''Neil\kitshot\Start.bat') -icontains" in script
 
 
 @pytest.mark.skipif(os.name == "nt", reason="on Windows it would change this PC's shortcuts")
@@ -233,7 +233,7 @@ def test_launch_leaves_shortcuts_alone_off_windows(tmp_path: Path) -> None:
 # --- removing the picture pack -------------------------------------------------------------
 
 
-def test_remove_pack_deletes_only_facegens_graphics(config_file: Path) -> None:
+def test_remove_pack_deletes_only_kitshots_graphics(config_file: Path) -> None:
     settings = load_settings(defaults_path=config_file)
     fm = settings.paths.fm_user_dir
     assert fm is not None
@@ -258,8 +258,8 @@ def test_remove_pack_refuses_a_redirected_graphics_folder(config_file: Path) -> 
     fm = settings.paths.fm_user_dir
     assert fm is not None
     elsewhere = config_file.parent / "other-disk" / "graphics"
-    (elsewhere / "facegen").mkdir(parents=True)
-    (elsewhere / "facegen" / "1.png").write_bytes(b"png")
+    (elsewhere / "kitshot").mkdir(parents=True)
+    (elsewhere / "kitshot" / "1.png").write_bytes(b"png")
     fm.mkdir(parents=True, exist_ok=True)
     try:
         (fm / "graphics").symlink_to(elsewhere, target_is_directory=True)
@@ -270,7 +270,7 @@ def test_remove_pack_refuses_a_redirected_graphics_folder(config_file: Path) -> 
     out = io.StringIO()
     assert main(["--config", str(config_file), "remove-pack", "--yes"], out=out) == 1
     assert "Not removed: refusing to delete outside" in out.getvalue()
-    assert (elsewhere / "facegen" / "1.png").is_file()
+    assert (elsewhere / "kitshot" / "1.png").is_file()
 
 
 def test_remove_pack_asks_first(config_file: Path, monkeypatch: pytest.MonkeyPatch) -> None:

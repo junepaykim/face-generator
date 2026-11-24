@@ -14,13 +14,13 @@ from factories import NEWGEN, RIVAL, player
 from fastapi.testclient import TestClient
 from support.web import BASE, KOREAN_WINDOWS, client_for, fake_worker, synced
 
-from facegen.core import presets
-from facegen.persistence import db
-from facegen.persistence.settings import load_defaults, load_settings
-from facegen.pipeline import settings_history
-from facegen.setup import hardware
-from facegen.setup.hardware import Hardware
-from facegen.web.app import AppContext, create_app
+from kitshot.core import presets
+from kitshot.persistence import db
+from kitshot.persistence.settings import load_defaults, load_settings
+from kitshot.pipeline import settings_history
+from kitshot.setup import hardware
+from kitshot.setup.hardware import Hardware
+from kitshot.web.app import AppContext, create_app
 
 GIB = 2**30
 

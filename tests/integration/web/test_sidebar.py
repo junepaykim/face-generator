@@ -16,10 +16,10 @@ from factories import NEWGEN, RIVAL, player
 from fastapi.testclient import TestClient
 from support.web import BASE, KOREAN_WINDOWS, client_for, fake_worker, synced
 
-from facegen.persistence import db
-from facegen.runtime.contracts import SyncControl, SyncStatus, WorkerControl, WorkerStatus
-from facegen.service import WorkerService
-from facegen.web.app import AppContext, create_app
+from kitshot.persistence import db
+from kitshot.runtime.contracts import SyncControl, SyncStatus, WorkerControl, WorkerStatus
+from kitshot.service import WorkerService
+from kitshot.web.app import AppContext, create_app
 
 PAGES = ("/", "/gallery", "/players", "/review", "/log", "/settings", "/settings/advanced")
 

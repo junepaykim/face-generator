@@ -14,8 +14,8 @@ from factories import NEWGEN, RIVAL, player
 from fastapi.testclient import TestClient
 from support.web import KOREAN_WINDOWS, client_for, fake_worker, synced
 
-from facegen.core.age import WORDINGS
-from facegen.web.forms import BAND_TAGS
+from kitshot.core.age import WORDINGS
+from kitshot.web.forms import BAND_TAGS
 
 
 @pytest.fixture

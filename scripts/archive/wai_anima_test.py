@@ -62,7 +62,7 @@ import bakeoff
 import zimage_test
 from bakeoff import Case
 
-from facegen.qc import CONTENT_TAGS  # the quality check's content tags
+from kitshot.qc import CONTENT_TAGS  # the quality check's content tags
 
 WAI = ("LyliaEngine/waiIllustriousSDXL_v170", "waiIllustriousSDXL_v170.safetensors")
 DMD2 = ("tianweiy/DMD2", "dmd2_sdxl_4step_lora_fp16.safetensors")

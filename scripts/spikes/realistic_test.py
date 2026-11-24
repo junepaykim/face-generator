@@ -14,7 +14,7 @@ model in one weight format:
 Weight formats, for the Linear layers inside the numbered transformer blocks (embedders,
 modulation, norms and the final layer keep the model's dtype):
 
-    int8  one scale per output channel, rebuilt per call (facegen.render.quantise, production)
+    int8  one scale per output channel, rebuilt per call (kitshot.render.quantise, production)
     nf4   4-bit NormalFloat codes, one absmax per 64 weights, rebuilt per call (pure PyTorch,
           no new package)
     bf16  the published weights (fp16 for SDXL): the quality reference for PSNR and SSIM
@@ -50,7 +50,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from facegen.render.gpu import prepare_environment
+from kitshot.render.gpu import prepare_environment
 
 prepare_environment()
 
@@ -349,7 +349,7 @@ def quantise(model: Any, weights: str, device: str = "cuda") -> int:
     """Swap the block Linear layers for INT8 or NF4 ones, built on `device` layer by layer;
     returns how many. The rest of the model stays where it is."""
     if weights == "int8":
-        from facegen.render.quantise import Int8Linear as cls
+        from kitshot.render.quantise import Int8Linear as cls
 
         names = block_linears(model)
     elif weights == "nf4":
@@ -446,7 +446,7 @@ def _qwen3_te(dtype_weights: str) -> Any:
     import torch
     from transformers import AutoModelForCausalLM
 
-    from facegen.render.quantise import quantise_linears
+    from kitshot.render.quantise import quantise_linears
 
     te = AutoModelForCausalLM.from_pretrained(
         ZIMAGE, subfolder="text_encoder", dtype=torch.bfloat16, local_files_only=True
@@ -509,8 +509,8 @@ def load_sdxl(col: Column) -> Any:
     import torch
     from diffusers import AutoencoderKL, DPMSolverMultistepScheduler, StableDiffusionXLPipeline
 
-    from facegen.render.quantise import quantise_linears
-    from facegen.render.renderer import INT8_SCOPE
+    from kitshot.render.quantise import quantise_linears
+    from kitshot.render.renderer import INT8_SCOPE
 
     vae = AutoencoderKL.from_pretrained(ANIMAGINE, subfolder="vae", dtype=torch.float16)
     pipe = StableDiffusionXLPipeline.from_pretrained(
@@ -570,8 +570,8 @@ def load_dit(col: Column) -> Any:
 def _sdxl_embeddings(pipe: Any, cache: dict, text: str, peaks: Peaks) -> Any:
     import torch
 
-    from facegen.render.gpu import on_gpu
-    from facegen.render.renderer import _encode_text
+    from kitshot.render.gpu import on_gpu
+    from kitshot.render.renderer import _encode_text
 
     if text not in cache:
         with torch.no_grad(), on_gpu(pipe.text_encoder, pipe.text_encoder_2):
@@ -583,7 +583,7 @@ def render_sdxl(pipe: Any, col: Column, case: Case, size: tuple[int, int], peaks
                 cache: dict, phase: str) -> Any:  # fmt: skip
     import torch
 
-    from facegen.render.renderer import pair_embeddings
+    from kitshot.render.renderer import pair_embeddings
 
     positive = _sdxl_embeddings(pipe, cache, prompt_for(case), peaks)
     negative = _sdxl_embeddings(pipe, cache, NEGATIVE, peaks)
@@ -762,10 +762,10 @@ def render_baseline(run_dir: Path) -> None:
     """The production Animagine renderer on its own prompts: render and detail-pass peaks."""
     import torch
 
-    from facegen.core.prompt import build_prompt
-    from facegen.core.traits import pick_pose, picture_seed, sample_sheet
-    from facegen.datasource.kits import Kit
-    from facegen.render.renderer import AnimagineRenderer
+    from kitshot.core.prompt import build_prompt
+    from kitshot.core.traits import pick_pose, picture_seed, sample_sheet
+    from kitshot.datasource.kits import Kit
+    from kitshot.render.renderer import AnimagineRenderer
 
     path = run_dir / "models.json"
     if path.exists() and BASELINE in json.loads(path.read_text()):
@@ -908,7 +908,7 @@ def nf4_check() -> None:
     import torch
     from diffusers import ZImageTransformer2DModel
 
-    from facegen.render.quantise import Int8Linear
+    from kitshot.render.quantise import Int8Linear
 
     nf4 = _nf4_class()
     t = ZImageTransformer2DModel.from_pretrained(
@@ -956,8 +956,8 @@ PROBES = ("1boy", "solo", "male focus", "realistic", "photorealistic", "photo (m
 def tag(run_dir: Path) -> None:
     from PIL import Image
 
-    from facegen.render.quality_checks import CONTENT_TAGS, TAG_THRESHOLD, head_top
-    from facegen.render.tagger import Eva02Tagger
+    from kitshot.render.quality_checks import CONTENT_TAGS, TAG_THRESHOLD, head_top
+    from kitshot.render.tagger import Eva02Tagger
 
     path = run_dir / "tags_eva02.json"
     data = json.loads(path.read_text()) if path.exists() else {}

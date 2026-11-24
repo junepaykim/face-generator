@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from facegen.persistence.settings import DEFAULTS_PATH
+from kitshot.persistence.settings import DEFAULTS_PATH
 
 FM_USER_LINE = 'fm_user_dir = ""'
 FM_INSTALL_LINE = 'fm_install_dir = ""'

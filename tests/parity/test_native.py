@@ -2,7 +2,7 @@
 """The Rust extension (native/) against the Python versions it stands in for. No GPU.
 
 Skipped when the extension is not in use (`uv sync --no-group native`), unless
-FACEGEN_REQUIRE_NATIVE is set: then that fails, as when the wheels workflow tests a
+KITSHOT_REQUIRE_NATIVE is set: then that fails, as when the wheels workflow tests a
 prebuilt wheel (.github/workflows/wheels.yml).
 """
 
@@ -17,14 +17,14 @@ import pytest
 from fakes import BACKDROPS, figure
 from PIL import Image, ImageChops, ImageDraw
 
-from facegen.pipeline.publish import published_bytes, published_pictures
-from facegen.platform import native
-from facegen.qc import head_top
-from facegen.render.figure import PyGrid, grid
-from facegen.render.picture import face_box
+from kitshot.pipeline.publish import published_bytes, published_pictures
+from kitshot.platform import native
+from kitshot.qc import head_top
+from kitshot.render.figure import PyGrid, grid
+from kitshot.render.picture import face_box
 
 if native.ext is None:
-    if os.environ.get("FACEGEN_REQUIRE_NATIVE"):
+    if os.environ.get("KITSHOT_REQUIRE_NATIVE"):
         pytest.fail(f"the Rust extension is required here: {native.reason}", pytrace=False)
     pytest.skip(f"the Rust extension is not in use: {native.reason}", allow_module_level=True)
 ext = native.ext

@@ -11,9 +11,9 @@ Example:
 The catalog reader deliberately validates the observed length/pointer layout and
 fails on changes, rather than associating a team with a neighbouring asset by guess.
 
-After an FM27 update, refresh the colours that ship with facegen: run this with
+After an FM27 update, refresh the colours that ship with Kitshot: run this with
 --all-home, then `scripts/build_kit_catalog.py`, which reduces the report to club IDs and
-colour names (src/facegen/data/kit_catalog.json). Raise PROBE_VERSION whenever
+colour names (src/kitshot/data/kit_catalog.json). Raise PROBE_VERSION whenever
 estimate_colours changes what it reports.
 """
 

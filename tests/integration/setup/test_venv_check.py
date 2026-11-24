@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from facegen.persistence.settings import PROJECT_ROOT
-from facegen.setup import venv_check
+from kitshot.persistence.settings import PROJECT_ROOT
+from kitshot.setup import venv_check
 
 
 def dist(site: Path, folder: str, *files: str) -> None:
@@ -21,9 +21,9 @@ def test_a_dist_info_without_metadata_or_record_is_half_installed(tmp_path: Path
     dist(tmp_path, "six-1.17.0.dist-info", "METADATA", "RECORD", "WHEEL")
     # What the console closing during the first uv sync left of torch (2026-11-16).
     dist(tmp_path, "torch-2.15.0+cu132.dist-info", "entry_points.txt")
-    dist(tmp_path, "facegen_native-0.1.0.dist-info", "METADATA")  # RECORD not written yet
+    dist(tmp_path, "kitshot_native-0.1.0.dist-info", "METADATA")  # RECORD not written yet
     (tmp_path / "stray.dist-info").write_text("not a folder", encoding="utf-8")
-    assert venv_check.broken([tmp_path, tmp_path]) == ["facegen_native", "torch"]
+    assert venv_check.broken([tmp_path, tmp_path]) == ["kitshot_native", "torch"]
     assert venv_check.reinstall_options(["torch"]) == "--reinstall-package torch"
     assert venv_check.broken([tmp_path / "missing"]) == []
 
@@ -48,7 +48,7 @@ def test_start_bat_runs_the_check_after_uv_sync() -> None:
     text = (PROJECT_ROOT / "Start.bat").read_bytes().decode("ascii")
     assert text.count("\r\n") == text.count("\n")  # CRLF throughout
     sync = text.index('"%UV%" sync --locked --inexact --no-group native --no-group dev\r\n')
-    check = text.index("""('call "%PY%" -m facegen.venv_check')""")
+    check = text.index("""('call "%PY%" -m kitshot.venv_check')""")
     repair = text.index('"%UV%" sync --locked --inexact --no-group native --no-group dev %REPAIR%')
-    launch = text.index('"%PY%" -m facegen.cli launch --log')
+    launch = text.index('"%PY%" -m kitshot.cli launch --log')
     assert sync < check < repair < launch

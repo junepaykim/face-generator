@@ -1,4 +1,4 @@
-//! The figure scan behind `qc.head_top` and `picture.face_box` (facegen/figure.py).
+//! The figure scan behind `qc.head_top` and `picture.face_box` (kitshot/figure.py).
 //!
 //! A [`Grid`] is a small RGB copy of a picture. `Grid.scaled` makes it from the full picture
 //! with a bit-exact port of Pillow's resize (resample.rs), so the Rust and Python scans see
@@ -35,7 +35,7 @@ fn distance(a: Rgb, b: Rgb) -> u32 {
 }
 
 /// A small RGB picture, row by row, three bytes a pixel.
-#[pyclass(frozen, module = "facegen_native")]
+#[pyclass(frozen, module = "kitshot_native")]
 pub struct Grid {
     #[pyo3(get)]
     width: usize,

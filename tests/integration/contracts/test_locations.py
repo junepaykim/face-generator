@@ -9,12 +9,12 @@ from pathlib import Path
 
 import pytest
 
-from facegen import locations
-from facegen.datasource import kits
-from facegen.desktop import shell as desktop
-from facegen.persistence import settings
-from facegen.platform import procs
-from facegen.setup import native_wheel
+from kitshot import locations
+from kitshot.datasource import kits
+from kitshot.desktop import shell as desktop
+from kitshot.persistence import settings
+from kitshot.platform import native, procs
+from kitshot.setup import native_wheel
 
 
 def test_resource_loaders_ignore_the_working_directory(
@@ -30,18 +30,21 @@ def test_resource_loaders_ignore_the_working_directory(
     loaded = settings.load_settings(defaults_path=config)
     assert loaded.paths.data_dir == locations.PROJECT_ROOT / "relative-data"
     assert settings.local_path(config) == tmp_path / "local.toml"
-    assert desktop.FALLBACK_LOG == locations.PROJECT_ROOT / "data" / "logs" / "facegen.log"
+    assert desktop.FALLBACK_LOG == locations.PROJECT_ROOT / "data" / "logs" / "kitshot.log"
     table = kits.load_kits(data_dir=tmp_path)
     assert table.kit_for(636, goalkeeper=False)[1] == "table"
     assert table.kit_for(679, goalkeeper=False)[1] == "bundled"
     planned = native_wheel.plan(native_wheel.Host("win32", "AMD64", "cpython", (3, 12)))
-    assert planned.wheel is not None and planned.sha256 is not None
+    assert planned.version == native.VERSION  # native/ read from the checkout, not from here
+    # Phase 17o: kitshot-native 0.2.0 has no released wheel yet (native/wheels.sha256).
+    listed = native_wheel.parse_sums(native_wheel.SUMS_PATH.read_text(encoding="utf-8"))
+    assert (planned.wheel is not None) == any(native.VERSION in name for name in listed)
 
 
 def test_desktop_fallback_paths_survive_without_installed_dependencies(tmp_path: Path) -> None:
     """A moved checkout can still report startup errors before loading any dependencies."""
     checkout = tmp_path / "moved-checkout"
-    package = checkout / "src" / "facegen"
+    package = checkout / "src" / "kitshot"
     package.mkdir(parents=True)
     source = Path(locations.__file__).parent
     for name in ("__init__.py", "locations.py"):
@@ -50,9 +53,9 @@ def test_desktop_fallback_paths_survive_without_installed_dependencies(tmp_path:
     script = """
 import json
 import sys
-from facegen import locations
-from facegen.desktop import shell as desktop
-assert 'facegen.persistence.settings' not in sys.modules
+from kitshot import locations
+from kitshot.desktop import shell as desktop
+assert 'kitshot.persistence.settings' not in sys.modules
 print(json.dumps([str(locations.CONFIG_DIR), str(locations.NATIVE_DIR), str(desktop.FALLBACK_LOG)]))
 """
     result = procs.run_quiet(
@@ -67,5 +70,5 @@ print(json.dumps([str(locations.CONFIG_DIR), str(locations.NATIVE_DIR), str(desk
     assert json.loads(result.stdout) == [
         str(checkout / "config"),
         str(checkout / "native"),
-        str(checkout / "data" / "logs" / "facegen.log"),
+        str(checkout / "data" / "logs" / "kitshot.log"),
     ]

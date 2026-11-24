@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from facegen.platform import memory
+from kitshot.platform import memory
 
 
 def test_release_free_memory_trims_on_linux_only(monkeypatch: pytest.MonkeyPatch) -> None:

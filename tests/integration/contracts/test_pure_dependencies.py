@@ -9,7 +9,7 @@ from pathlib import Path
 
 from support.paths import ROOT
 
-from facegen.platform import procs
+from kitshot.platform import procs
 
 
 def test_policy_imports_do_not_load_adapters(tmp_path: Path) -> None:
@@ -21,25 +21,25 @@ import sys
 class NoAdapters(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
         blocked = {
-            'facegen.persistence.settings', 'facegen.persistence.settings_store', 'facegen.persistence.sheet_store',
-            'facegen.datasource.kits', 'facegen.qc', 'facegen.render.tagger', 'facegen.render.renderer',
-            'facegen.persistence.db', 'facegen.platform.fm_paths', 'facegen.platform.platform_info',
+            'kitshot.persistence.settings', 'kitshot.persistence.settings_store', 'kitshot.persistence.sheet_store',
+            'kitshot.datasource.kits', 'kitshot.qc', 'kitshot.render.tagger', 'kitshot.render.renderer',
+            'kitshot.persistence.db', 'kitshot.platform.fm_paths', 'kitshot.platform.platform_info',
             'sqlite3', 'fmsave', 'torch', 'timm', 'huggingface_hub',
         }
         if any(fullname == name or fullname.startswith(name + '.') for name in blocked):
             raise AssertionError('policy loaded adapter: ' + fullname)
 
 sys.meta_path.insert(0, NoAdapters())
-from facegen.core import age
-from facegen.core import classify
-from facegen.core import planner
-from facegen.core import prompt
-from facegen.core import shoot
-from facegen.core import wardrobe
-from facegen.core.kit_values import Kit
-from facegen.render.quality_checks import TagResult, check, expectation
-from facegen.core.settings_values import MyClubSettings
-from facegen.core.traits import sample_sheet
+from kitshot.core import age
+from kitshot.core import classify
+from kitshot.core import planner
+from kitshot.core import prompt
+from kitshot.core import shoot
+from kitshot.core import wardrobe
+from kitshot.core.kit_values import Kit
+from kitshot.render.quality_checks import TagResult, check, expectation
+from kitshot.core.settings_values import MyClubSettings
+from kitshot.core.traits import sample_sheet
 
 sheet = sample_sheet('test-career', 123, 1)
 kit = Kit(('blue',))
@@ -59,11 +59,11 @@ assert TagResult({'general': 1.0}, {}).rating == 'general'
 
 
 def test_compatibility_exports_keep_the_same_values_and_types() -> None:
-    from facegen import qc
-    from facegen.core import kit_values, settings_values
-    from facegen.datasource import kits
-    from facegen.persistence import settings
-    from facegen.render import quality_checks, tagger
+    from kitshot import qc
+    from kitshot.core import kit_values, settings_values
+    from kitshot.datasource import kits
+    from kitshot.persistence import settings
+    from kitshot.render import quality_checks, tagger
 
     assert settings.Settings is settings_values.Settings
     assert settings.Paths is settings_values.Paths

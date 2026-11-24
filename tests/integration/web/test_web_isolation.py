@@ -18,13 +18,13 @@ from PIL import Image
 from support.config import write_config
 from support.desktop import FakeSyncer, FakeWorker
 
-from facegen.persistence import db
-from facegen.persistence.settings import load_settings
-from facegen.pipeline.sync import run_sync
-from facegen.runtime.policy import BUSY_TIMEOUT_MS
-from facegen.setup.hardware import Hardware
-from facegen.web.app import AppContext, create_app
-from facegen.web.routes.assets import make_thumb
+from kitshot.persistence import db
+from kitshot.persistence.settings import load_settings
+from kitshot.pipeline.sync import run_sync
+from kitshot.runtime.policy import BUSY_TIMEOUT_MS
+from kitshot.setup.hardware import Hardware
+from kitshot.web.app import AppContext, create_app
+from kitshot.web.routes.assets import make_thumb
 
 BASE = "http://127.0.0.1:8765"
 

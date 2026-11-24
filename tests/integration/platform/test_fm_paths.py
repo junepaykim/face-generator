@@ -7,8 +7,8 @@ from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 
 import pytest
 
-from facegen.platform import fm_paths
-from facegen.platform.fm_paths import (
+from kitshot.platform import fm_paths
+from kitshot.platform.fm_paths import (
     PathStyleError,
     WindowsInfo,
     choose_user_dir,

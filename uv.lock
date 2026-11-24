@@ -8,8 +8,8 @@ resolution-markers = [
 
 [manifest]
 members = [
-    "facegen",
-    "facegen-native",
+    "kitshot",
+    "kitshot-native",
 ]
 
 [[package]]
@@ -425,78 +425,6 @@ wheels = [
 ]
 
 [[package]]
-name = "facegen"
-version = "0.1.6"
-source = { editable = "." }
-dependencies = [
-    { name = "fastapi" },
-    { name = "fmsave" },
-    { name = "jinja2" },
-    { name = "pillow" },
-    { name = "python-multipart" },
-    { name = "uvicorn" },
-]
-
-[package.dev-dependencies]
-desktop = [
-    { name = "pystray", marker = "sys_platform == 'win32'" },
-    { name = "pywebview", marker = "sys_platform == 'win32'" },
-]
-dev = [
-    { name = "httpx" },
-    { name = "pytest" },
-    { name = "ruff" },
-]
-gpu = [
-    { name = "accelerate" },
-    { name = "diffusers" },
-    { name = "safetensors" },
-    { name = "timm" },
-    { name = "torch", version = "2.15.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
-    { name = "torch", version = "2.15.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "sys_platform == 'win32'" },
-    { name = "transformers" },
-]
-native = [
-    { name = "facegen-native", marker = "sys_platform != 'win32'" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "fastapi", specifier = ">=0.115" },
-    { name = "fmsave", specifier = "==0.12.6" },
-    { name = "jinja2", specifier = ">=3.1" },
-    { name = "pillow", specifier = ">=10" },
-    { name = "python-multipart", specifier = ">=0.0.9" },
-    { name = "uvicorn", specifier = ">=0.30" },
-]
-
-[package.metadata.requires-dev]
-desktop = [
-    { name = "pystray", marker = "sys_platform == 'win32'", specifier = ">=0.19.5" },
-    { name = "pywebview", marker = "sys_platform == 'win32'", specifier = ">=6.2" },
-]
-dev = [
-    { name = "httpx", specifier = ">=0.27" },
-    { name = "pytest", specifier = ">=8" },
-    { name = "ruff", specifier = ">=0.6" },
-]
-gpu = [
-    { name = "accelerate", specifier = ">=1.0" },
-    { name = "diffusers", specifier = ">=0.35" },
-    { name = "safetensors", specifier = ">=0.4" },
-    { name = "timm", specifier = ">=1.0" },
-    { name = "torch", marker = "sys_platform != 'win32'", specifier = ">=2.6" },
-    { name = "torch", marker = "sys_platform == 'win32'", specifier = ">=2.6", index = "https://download.pytorch.org/whl/cu132" },
-    { name = "transformers", specifier = ">=4.50" },
-]
-native = [{ name = "facegen-native", marker = "sys_platform != 'win32'", directory = "native" }]
-
-[[package]]
-name = "facegen-native"
-version = "0.1.0"
-source = { directory = "native" }
-
-[[package]]
 name = "fastapi"
 version = "0.162.5"
 source = { registry = "https://pypi.org/simple" }
@@ -706,6 +634,78 @@ sdist = { url = "https://files.pythonhosted.org/packages/df/bf/f7da0350254c0ed7c
 wheels = [
     { url = "https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl", hash = "sha256:85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67", size = 134899, upload-time = "2025-03-05T20:05:00.369Z" },
 ]
+
+[[package]]
+name = "kitshot"
+version = "0.1.6"
+source = { editable = "." }
+dependencies = [
+    { name = "fastapi" },
+    { name = "fmsave" },
+    { name = "jinja2" },
+    { name = "pillow" },
+    { name = "python-multipart" },
+    { name = "uvicorn" },
+]
+
+[package.dev-dependencies]
+desktop = [
+    { name = "pystray", marker = "sys_platform == 'win32'" },
+    { name = "pywebview", marker = "sys_platform == 'win32'" },
+]
+dev = [
+    { name = "httpx" },
+    { name = "pytest" },
+    { name = "ruff" },
+]
+gpu = [
+    { name = "accelerate" },
+    { name = "diffusers" },
+    { name = "safetensors" },
+    { name = "timm" },
+    { name = "torch", version = "2.15.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
+    { name = "torch", version = "2.15.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "sys_platform == 'win32'" },
+    { name = "transformers" },
+]
+native = [
+    { name = "kitshot-native", marker = "sys_platform != 'win32'" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = ">=0.115" },
+    { name = "fmsave", specifier = "==0.12.6" },
+    { name = "jinja2", specifier = ">=3.1" },
+    { name = "pillow", specifier = ">=10" },
+    { name = "python-multipart", specifier = ">=0.0.9" },
+    { name = "uvicorn", specifier = ">=0.30" },
+]
+
+[package.metadata.requires-dev]
+desktop = [
+    { name = "pystray", marker = "sys_platform == 'win32'", specifier = ">=0.19.5" },
+    { name = "pywebview", marker = "sys_platform == 'win32'", specifier = ">=6.2" },
+]
+dev = [
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "pytest", specifier = ">=8" },
+    { name = "ruff", specifier = ">=0.6" },
+]
+gpu = [
+    { name = "accelerate", specifier = ">=1.0" },
+    { name = "diffusers", specifier = ">=0.35" },
+    { name = "safetensors", specifier = ">=0.4" },
+    { name = "timm", specifier = ">=1.0" },
+    { name = "torch", marker = "sys_platform != 'win32'", specifier = ">=2.6" },
+    { name = "torch", marker = "sys_platform == 'win32'", specifier = ">=2.6", index = "https://download.pytorch.org/whl/cu132" },
+    { name = "transformers", specifier = ">=4.50" },
+]
+native = [{ name = "kitshot-native", marker = "sys_platform != 'win32'", directory = "native" }]
+
+[[package]]
+name = "kitshot-native"
+version = "0.2.0"
+source = { directory = "native" }
 
 [[package]]
 name = "lazy-importer"

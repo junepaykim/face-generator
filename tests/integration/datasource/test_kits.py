@@ -10,8 +10,8 @@ from pathlib import Path
 import pytest
 from support.paths import ROOT
 
-from facegen.core.prompt import CONTENT_NEGATIVE
-from facegen.datasource.kits import (
+from kitshot.core.prompt import CONTENT_NEGATIVE
+from kitshot.datasource.kits import (
     BUNDLE_NAME,
     CATALOG_REPORT,
     COLOURS,
@@ -241,7 +241,7 @@ def test_no_catalog_file_means_the_bundle_alone(tmp_path: Path) -> None:
         load_kits(data_dir=tmp_path)
 
 
-# --- the bundled catalog (src/facegen/data/kit_catalog.json) -----------------------------------
+# --- the bundled catalog (src/kitshot/data/kit_catalog.json) -----------------------------------
 
 
 def test_a_club_in_the_table_in_the_bundle_or_in_neither(tmp_path: Path) -> None:
@@ -316,7 +316,7 @@ def test_with_estimates_without_a_bundle_or_a_date() -> None:
 
 def test_the_bundled_file_parses_and_every_row_is_a_known_colour() -> None:
     raw = json.loads(
-        resources.files("facegen").joinpath("data", BUNDLE_NAME).read_text(encoding="utf-8")
+        resources.files("kitshot").joinpath("data", BUNDLE_NAME).read_text(encoding="utf-8")
     )
     # Only our own estimates leave the PC: no texture names, GUIDs, bundles or images.
     assert set(raw) == {"about", "format", "source", "clubs"}
@@ -403,7 +403,7 @@ def test_the_build_script_keeps_only_colour_names() -> None:
 def test_the_build_script_rebuilds_the_shipped_bundle_from_its_own_output(tmp_path: Path) -> None:
     """The shipped bundle is in the build script's layout (one club per line, sorted)."""
     build = build_script()
-    shipped = resources.files("facegen").joinpath("data", BUNDLE_NAME).read_text(encoding="utf-8")
+    shipped = resources.files("kitshot").joinpath("data", BUNDLE_NAME).read_text(encoding="utf-8")
     data = json.loads(shipped)
     clubs = {int(k): tuple(v) for k, v in data["clubs"].items()}
     assert list(clubs) == sorted(clubs)

@@ -13,12 +13,12 @@ from pathlib import Path
 import pytest
 from support.paths import ROOT
 
-from facegen.core import presets
-from facegen.core.classify import MY_CLUB_PARTS, WHERE_TEXT, WHO_TEXT, WHY_CODES, Why
-from facegen.core.cutoffs import SCOPES as CUTOFF_SCOPES
-from facegen.core.domain import JOB_KINDS
-from facegen.core.problems import KINDS as PROBLEM_KINDS
-from facegen.core.settings_values import (
+from kitshot.core import presets
+from kitshot.core.classify import MY_CLUB_PARTS, WHERE_TEXT, WHO_TEXT, WHY_CODES, Why
+from kitshot.core.cutoffs import SCOPES as CUTOFF_SCOPES
+from kitshot.core.domain import JOB_KINDS
+from kitshot.core.problems import KINDS as PROBLEM_KINDS
+from kitshot.core.settings_values import (
     ASPECT_CHOICES,
     CUTOFF_MODES,
     DETAIL_SIZES,
@@ -27,21 +27,21 @@ from facegen.core.settings_values import (
     MODEL_CHOICES,
     THEME_CHOICES,
 )
-from facegen.i18n import LANGUAGES, Translator, catalog
-from facegen.persistence.settings import load_defaults
-from facegen.pipeline.manual import REFUSALS
-from facegen.runtime.contracts import (
+from kitshot.i18n import LANGUAGES, Translator, catalog
+from kitshot.persistence.settings import load_defaults
+from kitshot.pipeline.manual import REFUSALS
+from kitshot.runtime.contracts import (
     SYNC_NUMBERS,
     WATCHER_REASONS,
     WATCHER_STATES,
     WORKER_REASONS,
 )
-from facegen.setup import hardware
-from facegen.setup.models import REPOS
-from facegen.web import presentation
-from facegen.web.forms import TABS, editable_keys, settings_sections
-from facegen.web.messages import CHECK_FAILURES
-from facegen.web.queries import (
+from kitshot.setup import hardware
+from kitshot.setup.models import REPOS
+from kitshot.web import presentation
+from kitshot.web.forms import TABS, editable_keys, settings_sections
+from kitshot.web.messages import CHECK_FAILURES
+from kitshot.web.queries import (
     GALLERY_SORTS,
     GROUP_FILTERS,
     LEAGUES,
@@ -55,7 +55,7 @@ from facegen.web.queries import (
     WHERE_FILTERS,
 )
 
-WEB = ROOT / "src" / "facegen" / "web"
+WEB = ROOT / "src" / "kitshot" / "web"
 PLURAL = re.compile(r"\.(one|other)$")
 # t("key" ...), tr("key" ...), t('key' ...) and the catalog keys handed to the script.
 LITERAL_KEY = re.compile(r"""\btr?\(\s*["']([a-z_][a-z0-9_.\- ]*)["']""")

@@ -27,21 +27,21 @@ from fastapi.testclient import TestClient
 from support.paths import ROOT
 from support.web import KOREAN_WINDOWS, post_player_action
 
-from facegen.core.records import Snapshot
-from facegen.datasource.kits import load_kits
-from facegen.datasource.photos import PhotoIndex, PhotoScan
-from facegen.persistence import db
-from facegen.persistence.settings import (
+from kitshot.core.records import Snapshot
+from kitshot.datasource.kits import load_kits
+from kitshot.datasource.photos import PhotoIndex, PhotoScan
+from kitshot.persistence import db
+from kitshot.persistence.settings import (
     Settings,
     is_fixed,
     load_defaults,
     load_settings,
     set_overrides,
 )
-from facegen.pipeline.sync import run_sync
-from facegen.pipeline.worker import JobFilter, Worker, load_career
-from facegen.service import SyncService, WorkerService
-from facegen.web.app import AppContext, SetupState, create_app
+from kitshot.pipeline.sync import run_sync
+from kitshot.pipeline.worker import JobFilter, Worker, load_career
+from kitshot.service import SyncService, WorkerService
+from kitshot.web.app import AppContext, SetupState, create_app
 
 MINE = 1001  # my club: A
 STAR = 1002  # pre-existing at another club: hand-picked only
@@ -353,7 +353,7 @@ def test_every_picture_opens_in_the_lightbox(env: Env) -> None:
 def test_only_outside_pages_open_in_the_web_browser() -> None:
     """Phase 17b: in the app's window a target="_blank" link opens the web browser; only the
     update's "What's new" (on GitHub) may do that."""
-    templates = ROOT / "src" / "facegen" / "web" / "templates"
+    templates = ROOT / "src" / "kitshot" / "web" / "templates"
     blank = {p.name for p in templates.glob("*.html") if "_blank" in p.read_text(encoding="utf-8")}
     assert blank == {"_update.html"}
 
@@ -460,7 +460,7 @@ def test_bulk_pin(env: Env) -> None:
 def test_player_actions_read_the_settings_again_under_the_write_lock(
     env: Env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from facegen.pipeline import manual
+    from kitshot.pipeline import manual
 
     read: list[bool] = []
     real = manual._action_transaction
@@ -624,7 +624,7 @@ def test_pick_another_candidate_on_the_player_page(
         raise OSError(28, "No space left on device")
 
     with monkeypatch.context() as patch:
-        patch.setattr("facegen.pipeline.publish._write_atomic", disk_full)
+        patch.setattr("kitshot.pipeline.publish._write_atomic", disk_full)
         failure = follow(env, post_player_action(env.client, f"/players/{MINE}/pick", data=pick))
     assert "Publishing failed" in failure and "The disk is full." in failure
     retry_form = next(
@@ -1085,7 +1085,7 @@ def test_redirects_stay_on_this_site(env: Env) -> None:
 
 
 def test_dashboard_reports_an_unsupported_build(env: Env) -> None:
-    from facegen.pipeline.sync import record_failed_sync
+    from kitshot.pipeline.sync import record_failed_sync
 
     assert "cannot be read" not in env.client.get("/").text
     c = env.conn()
@@ -1147,7 +1147,7 @@ def test_dashboard_names_the_career_fm27_is_shown(env: Env) -> None:
 
 
 def test_pages_link_the_script_and_styles_by_version(env: Env) -> None:
-    from facegen.web.app import HERE, static_version
+    from kitshot.web.app import HERE, static_version
 
     version = static_version(HERE / "static")
     page = env.client.get("/settings/advanced").text
@@ -1163,7 +1163,7 @@ def test_pages_carry_the_kitshot_name_and_mark(
     even where Windows's registry maps .svg to another type ("nosniff" would refuse it)."""
     import mimetypes
 
-    from facegen.web.app import HERE, static_version
+    from kitshot.web.app import HERE, static_version
 
     mimetypes.init()
     monkeypatch.setitem(mimetypes.types_map, ".svg", "text/xml")

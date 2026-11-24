@@ -9,9 +9,9 @@ from itertools import count
 
 import pytest
 
-from facegen.persistence import db, player_queries
-from facegen.persistence.player_queries import PlayerFilter, players_page
-from facegen.web.queries import review_count
+from kitshot.persistence import db, player_queries
+from kitshot.persistence.player_queries import PlayerFilter, players_page
+from kitshot.web.queries import review_count
 
 CAREER = 1
 _ids = count(1)

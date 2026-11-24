@@ -4,7 +4,7 @@
 # point and the "reset to defaults" target. Rules are described in docs/spec.md.
 
 [paths]
-# Empty: found on this PC (src/facegen/fm_paths.py). To set a folder yourself, put it in
+# Empty: found on this PC (src/kitshot/fm_paths.py). To set a folder yourself, put it in
 # config/local.toml, which is not in git, so the repository holds no Windows user name. A
 # Windows path works on Windows and from WSL; write it in single quotes:
 #   [paths]
@@ -12,7 +12,7 @@
 #
 # FM27's user folder (saves and graphics), looked for in Windows's Documents folder
 # (wherever it was moved, OneDrive included), then %OneDrive%\Documents and
-# %USERPROFILE%\Documents. Not found: facegen says so and reads no save.
+# %USERPROFILE%\Documents. Not found: Kitshot says so and reads no save.
 fm_user_dir = ""
 # FM27's install folder, read only for its list of the photos it ships (docs/research.md
 # section 4). Looked for in every Steam library, then Epic's and the Xbox app's installs. Not
@@ -139,7 +139,7 @@ c_pa = "-"
 [staff]
 # My club's staff (coaches, physios, scouts, analysts, the board, and the manager: you) get
 # pictures like the players at my club: group A quality, tracked while at my club, re-drawn
-# when their age wording changes. They wear club wear for their job (src/facegen/core/wardrobe.py:
+# when their age wording changes. They wear club wear for their job (src/kitshot/core/wardrobe.py:
 # suits, coats, training wear, lab coats) with the club's colours on one piece, not the
 # playing kit, and their age wording comes from [age.staff]. Staff at other clubs are not
 # read. Pin a person to "never" on their page to leave them out. Requested by the user,
@@ -148,7 +148,7 @@ enabled = true
 
 [media]
 # Journalists and press officers (user, 2026-11-13), read from the save by
-# src/facegen/datasource/people.py. They are drawn once at group B quality, as [style] gender
+# src/kitshot/datasource/people.py. They are drawn once at group B quality, as [style] gender
 # says, in clothes for their work, and not tracked. Journalists from my club's country
 # and my club's press officers are drawn without a request; any other journalist can be
 # picked on the Players page. Pin a regular at my club to A on their page: group A quality,
@@ -160,13 +160,13 @@ press_officers = true
 # Pre-existing players with no photo in FM27 (a silhouette) are picked like newgens: the
 # group A, B and C thresholds apply to them, though the academy rules do not (user,
 # 2026-11-12). "No photo" means FM27 ships none for them and no facepack in the graphics
-# folder maps them; facegen's own pictures do not count. Both are re-read at each sync. If
+# folder maps them; Kitshot's own pictures do not count. Both are re-read at each sync. If
 # FM27's photo list cannot be read, no one counts as without a photo.
 enabled = true
 
 [age]
 # Real age (whole years) picks an age wording, W01 (youngest look) to W10 (oldest); the
-# wording text is fixed in src/facegen/core/age.py. Each table gives, per wording, the first
+# wording text is fixed in src/kitshot/core/age.py. Each table gives, per wording, the first
 # real age that gets it; it applies until the next used wording's first age. "-" leaves a
 # wording out of that table (Phase 12, user 2026-11-17: every table offers all ten). Ages
 # below a table's first used wording use that wording. First ages must rise from W01 to W10.
@@ -326,18 +326,18 @@ muscular_strength_from = 14         # Strength this or higher: "muscular female"
 # Personality weights the default expression of a newly sampled character sheet (docs/spec.md
 # section 4); nothing else. A player's attribute in about the top or bottom tenth of men's
 # players makes the expression it points to more likely, e.g. high Pressure confident, high
-# Professionalism serious; the table is in src/facegen/traits.py. Each such attribute
+# Professionalism serious; the table is in src/kitshot/traits.py. Each such attribute
 # multiplies its expression's weight by (1 + weight): at 2, one high Pressure takes
 # "confident" from 1 in 4 to 1 in 2. 0 turns it off. Stored sheets are not re-sampled.
 weight = 2
 
 [schedule]
-# `facegen serve` looks at FM27's saves folder this often. When the newest save has changed
+# `kitshot serve` looks at FM27's saves folder this often. When the newest save has changed
 # and then stays unchanged for a few seconds, it is copied and synced (spec section 6).
 poll_seconds = 60
 # false: the GPU works only while FM27 is closed; "Generate now" in the UI overrides it.
 generate_while_fm_running = false
-# Groups whose automatic jobs `facegen serve` draws. Manual requests from the UI always run,
+# Groups whose automatic jobs `kitshot serve` draws. Manual requests from the UI always run,
 # whatever their group. All three since Phase 4.
 auto_groups = ["a", "b", "c"]
 
@@ -380,13 +380,13 @@ theme = "auto"                      # auto, light or dark
 new_pictures = true
 
 [updates]
-# Look for a newer facegen once a day (Phase 13): one request for this repository's list of
+# Look for a newer Kitshot once a day (Phase 13): one request for this repository's list of
 # releases on GitHub, which sends nothing about this PC or its user. A newer one is offered on
 # the dashboard; nothing is downloaded until you choose Update. false: never look.
 check = true
 
 [ui]
-# Local only: there is no login, so `facegen serve` refuses any address but loopback. These
+# Local only: there is no login, so `kitshot serve` refuses any address but loopback. These
 # keys can only be changed here, not from the UI.
 host = "127.0.0.1"
 port = 8765

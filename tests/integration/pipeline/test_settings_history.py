@@ -11,10 +11,10 @@ from pathlib import Path
 import pytest
 from factories import MANUAL, MY_CLUB, NEWGEN, RIVAL, media_person, player, snapshot, staff_member
 
-from facegen.cli import main
-from facegen.core.records import Snapshot
-from facegen.persistence import db
-from facegen.persistence.settings import (
+from kitshot.cli import main
+from kitshot.core.records import Snapshot
+from kitshot.persistence import db
+from kitshot.persistence.settings import (
     SettingsError,
     load_settings,
     local_path,
@@ -22,12 +22,12 @@ from facegen.persistence.settings import (
     set_override,
     set_overrides,
 )
-from facegen.pipeline import settings_history as history
-from facegen.pipeline.publish import config_xml, pack_dir, write_config
-from facegen.pipeline.sync import run_sync
-from facegen.pipeline.sync_operation import execute_sync
-from facegen.runtime.contracts import SYNCED, SyncRequest
-from facegen.setup.folder_setup import write_local_path
+from kitshot.pipeline import settings_history as history
+from kitshot.pipeline.publish import config_xml, pack_dir, write_config
+from kitshot.pipeline.sync import run_sync
+from kitshot.pipeline.sync_operation import execute_sync
+from kitshot.runtime.contracts import SYNCED, SyncRequest
+from kitshot.setup.folder_setup import write_local_path
 
 RIVAL_C = NEWGEN + 3  # my league, CA 120: group C until C's bar passes 120
 
@@ -330,7 +330,7 @@ def test_a_change_saved_before_phase_16_can_be_undone_after_it(conn: sqlite3.Con
     undoing an old "CA above 150" puts back the default "at least" cut."""
     import json as _json
 
-    from facegen.persistence.db import rename_settings
+    from kitshot.persistence.db import rename_settings
 
     conn.execute(
         "INSERT INTO settings (key, value, updated_at) VALUES ('groups.a.ca_above', '150', 'then')"

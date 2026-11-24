@@ -7,7 +7,7 @@ from dataclasses import replace
 
 import pytest
 
-from facegen.core.cutoffs import (
+from kitshot.core.cutoffs import (
     LEAGUE_CELLS,
     NO_CUT,
     Cut,
@@ -20,7 +20,7 @@ from facegen.core.cutoffs import (
     share_text,
     split_cell,
 )
-from facegen.core.settings_values import CutoffSettings, MyClubTiers
+from kitshot.core.settings_values import CutoffSettings, MyClubTiers
 
 DEFAULT = CutoffSettings(
     mode="auto",

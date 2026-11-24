@@ -6,8 +6,8 @@ from dataclasses import replace
 
 import pytest
 
-from facegen.core.age import WORDINGS
-from facegen.core.prompt import (
+from kitshot.core.age import WORDINGS
+from kitshot.core.prompt import (
     COMPOSITION_NEGATIVE,
     CONTENT_NEGATIVE,
     CONTENT_POSITIVE,
@@ -17,9 +17,9 @@ from facegen.core.prompt import (
     build_prompt,
     drawn_traits,
 )
-from facegen.core.traits import POSE, CharacterSheet, eyes_drawn_round, sample_sheet
-from facegen.datasource.kits import Kit
-from facegen.persistence.settings import MyClubSettings
+from kitshot.core.traits import POSE, CharacterSheet, eyes_drawn_round, sample_sheet
+from kitshot.datasource.kits import Kit
+from kitshot.persistence.settings import MyClubSettings
 
 SHEET = CharacterSheet(
     hair_colour="black",

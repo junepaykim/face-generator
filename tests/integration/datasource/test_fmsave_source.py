@@ -15,8 +15,8 @@ from types import SimpleNamespace as NS
 import pytest
 from support.fmsave import UID_MAP, coded, fm_staff
 
-from facegen.core.records import Gender, Personality
-from facegen.datasource.fmsave_source import (
+from kitshot.core.records import Gender, Personality
+from kitshot.datasource.fmsave_source import (
     FmsaveDataSource,
     club_gender,
     competition_key,
@@ -506,7 +506,7 @@ def test_a_reader_refusing_the_build_makes_the_save_unsupported(
 ) -> None:
     import fmsave
 
-    from facegen.datasource.base import UnsupportedSaveError
+    from kitshot.datasource.base import UnsupportedSaveError
 
     save = FakeSave(
         known_build=False, fail=fmsave.UnsupportedGameError("players: section schema differs")
@@ -528,7 +528,7 @@ def test_a_failed_layout_check_on_an_unknown_build_makes_the_save_unsupported(
     club table. The page should say the build cannot be read yet, not "unexpected error"."""
     import fmsave
 
-    from facegen.datasource.base import UnsupportedSaveError
+    from kitshot.datasource.base import UnsupportedSaveError
 
     message = "section 'game_db': club table framing is invalid or ambiguous"
     save = FakeSave(known_build=False, fail=fmsave.ReaderCheckError(message))
@@ -543,7 +543,7 @@ def test_a_failed_layout_check_on_an_unknown_build_makes_the_save_unsupported(
 def test_a_save_from_another_game_is_unsupported(monkeypatch: pytest.MonkeyPatch) -> None:
     import fmsave
 
-    from facegen.datasource.base import SaveReadError, UnsupportedSaveError
+    from kitshot.datasource.base import SaveReadError, UnsupportedSaveError
 
     _patch_open(monkeypatch, fmsave.UnsupportedGameError("Career.fm is an FM25 save"))
     with pytest.raises(UnsupportedSaveError, match="FM25"):

@@ -9,40 +9,40 @@ import pytest
 from support.config import write_config
 from support.paths import TESTS
 
-from facegen.persistence import db
-from facegen.persistence.settings import Settings, load_settings
+from kitshot.persistence import db
+from kitshot.persistence.settings import Settings, load_settings
 
 
 @pytest.fixture(autouse=True)
 def no_folder_detection(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Ignore the checkout's local paths and real FM folders; tests can supply their own."""
     monkeypatch.setattr(
-        "facegen.persistence.settings.LOCAL_PATH", tmp_path / "config" / "local.toml"
+        "kitshot.persistence.settings.LOCAL_PATH", tmp_path / "config" / "local.toml"
     )
-    monkeypatch.setattr("facegen.persistence.settings.detect_folder", lambda key: None)
+    monkeypatch.setattr("kitshot.persistence.settings.detect_folder", lambda key: None)
 
 
 @pytest.fixture(autouse=True)
 def no_release_requests(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Nothing asks GitHub for facegen's releases or downloads one: tests that need answers
+    """Nothing asks GitHub for Kitshot's releases or downloads one: tests that need answers
     pass their own fetchers (setup/update.py)."""
 
     def refuse(url: str, *args: object, **kwargs: object) -> None:
-        from facegen.setup.update import UpdateError
+        from kitshot.setup.update import UpdateError
 
         raise UpdateError(f"tests do not reach the network: {url}")
 
-    monkeypatch.setattr("facegen.setup.update.fetch_json", refuse)
-    monkeypatch.setattr("facegen.setup.update.download", refuse)
+    monkeypatch.setattr("kitshot.setup.update.fetch_json", refuse)
+    monkeypatch.setattr("kitshot.setup.update.download", refuse)
 
 
 @pytest.fixture(autouse=True)
 def no_real_shortcuts_or_app_exe(monkeypatch: pytest.MonkeyPatch) -> None:
-    """On Windows, `facegen launch` would rewrite this PC's facegen shortcuts and put
-    facegen-app.exe in the venv running the tests. Asked without arguments, the shortcut
+    """On Windows, `kitshot launch` would rewrite this PC's kitshot shortcuts and put
+    kitshot-app.exe in the venv running the tests. Asked without arguments, the shortcut
     folders are unknown; the copy is never made in this interpreter's own Scripts folder.
     Tests that need either pass their own folders or a temporary venv."""
-    from facegen.desktop import app_exe, shortcuts
+    from kitshot.desktop import app_exe, shortcuts
 
     folders, ensure = shortcuts.windows_folders, app_exe.ensure
     own_scripts = Path(sys.executable).parent.resolve()

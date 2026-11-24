@@ -16,14 +16,14 @@ from factories import ABROAD, NEWGEN, RIVAL, player, snapshot
 from fastapi.testclient import TestClient
 from support.web import KOREAN_WINDOWS, client_for, fake_worker, synced
 
-from facegen.persistence import db
-from facegen.persistence.settings import load_settings
-from facegen.pipeline import manual
-from facegen.pipeline.sync import run_sync
-from facegen.runtime.worker_service import WorkerService
-from facegen.web import live, queries
-from facegen.web.app import AppContext
-from facegen.web.queries import GalleryFilter
+from kitshot.persistence import db
+from kitshot.persistence.settings import load_settings
+from kitshot.pipeline import manual
+from kitshot.pipeline.sync import run_sync
+from kitshot.runtime.worker_service import WorkerService
+from kitshot.web import live, queries
+from kitshot.web.app import AppContext
+from kitshot.web.queries import GalleryFilter
 
 WORLD = [
     player(1001, name="Mine Alpha", ca=150, pa=160),

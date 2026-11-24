@@ -10,11 +10,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from facegen import cli
-from facegen.desktop import shell as desktop
-from facegen.persistence.settings import load_settings
-from facegen.runtime import composition as runtime
-from facegen.runtime import logging as service_logging
+from kitshot import cli
+from kitshot.desktop import shell as desktop
+from kitshot.persistence.settings import load_settings
+from kitshot.runtime import composition as runtime
+from kitshot.runtime import logging as service_logging
 
 
 @pytest.mark.parametrize("server_fails", [False, True])
@@ -44,7 +44,7 @@ def test_serve_propagates_the_first_cleanup_failure(
         stop_updates=lambda: None,  # the update check (Phase 13) is not a quit step
     )
     monkeypatch.setattr(runtime, "build_runtime", lambda *args, **kwargs: rt)
-    monkeypatch.setattr(service_logging, "log_to_file", lambda data_dir: data_dir / "facegen.log")
+    monkeypatch.setattr(service_logging, "log_to_file", lambda data_dir: data_dir / "kitshot.log")
 
     def server(*args: object, **kwargs: object) -> None:
         calls.append("server")

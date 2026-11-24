@@ -12,14 +12,14 @@ from pathlib import Path
 
 from support.paths import ROOT
 
-from facegen.desktop import instance
-from facegen.platform import procs
+from kitshot.desktop import instance
+from kitshot.platform import procs
 
 HOLDER = """
 import sys
 from pathlib import Path
 sys.path.insert(0, sys.argv[2])
-from facegen.desktop.instance import InstanceLock
+from kitshot.desktop.instance import InstanceLock
 lock = InstanceLock(Path(sys.argv[1]))
 print("held" if lock.acquire() else "busy", flush=True)
 sys.stdin.readline()

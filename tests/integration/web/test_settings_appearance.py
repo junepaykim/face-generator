@@ -14,12 +14,12 @@ from factories import MANUAL_MODE, MY_CLUB, media_person, player, snapshot, staf
 from fastapi.testclient import TestClient
 from support.web import KOREAN_WINDOWS, client_for, fake_worker
 
-from facegen.core.age import TABLES
-from facegen.i18n import Translator
-from facegen.persistence import db
-from facegen.persistence.settings import load_settings, set_overrides
-from facegen.pipeline.sync import run_sync
-from facegen.web.forms import describe_key, label_parts, value_text
+from kitshot.core.age import TABLES
+from kitshot.i18n import Translator
+from kitshot.persistence import db
+from kitshot.persistence.settings import load_settings, set_overrides
+from kitshot.pipeline.sync import run_sync
+from kitshot.web.forms import describe_key, label_parts, value_text
 
 MINE = 1030  # at my club, 19: my club's W03 (19-21)
 

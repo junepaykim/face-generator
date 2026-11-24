@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from facegen.i18n import DEFAULT, Translator, negotiate
+from kitshot.i18n import DEFAULT, Translator, negotiate
 
 
 @pytest.mark.parametrize(

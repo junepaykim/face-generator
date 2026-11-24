@@ -12,13 +12,13 @@ from fakes import FakeRenderer, FakeTagger
 from fastapi.testclient import TestClient
 from httpx import Response
 
-from facegen.core.records import PlayerRecord
-from facegen.datasource.kits import load_kits
-from facegen.persistence import db
-from facegen.persistence.settings import load_settings, set_overrides
-from facegen.pipeline.sync import run_sync
-from facegen.runtime.worker_service import WorkerService
-from facegen.web.app import AppContext, create_app
+from kitshot.core.records import PlayerRecord
+from kitshot.datasource.kits import load_kits
+from kitshot.persistence import db
+from kitshot.persistence.settings import load_settings, set_overrides
+from kitshot.pipeline.sync import run_sync
+from kitshot.runtime.worker_service import WorkerService
+from kitshot.web.app import AppContext, create_app
 
 BASE = "http://127.0.0.1:8765"
 KOREAN_WINDOWS = {"Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"}

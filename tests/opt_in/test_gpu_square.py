@@ -4,7 +4,7 @@ the worker runs it passes the check (the head-position check included), peaks un
 reserved, keeps its shape in the master, the record and the published picture, and a "new
 picture" crops its reference face from the square. Opt-in:
 
-    FACEGEN_TEST_GPU=1 uv run --no-sync pytest tests/opt_in/test_gpu_square.py -s
+    KITSHOT_TEST_GPU=1 uv run --no-sync pytest tests/opt_in/test_gpu_square.py -s
 
 Needs the GPU, every model's files and the EVA02 tagger in the Hugging Face cache (with
 h94/IP-Adapter for the SDXL models' re-draws), and FM27 closed. Nothing is downloaded. One
@@ -27,7 +27,7 @@ import pytest
 pytestmark = [
     pytest.mark.gpu,
     pytest.mark.skipif(
-        os.environ.get("FACEGEN_TEST_GPU") != "1", reason="set FACEGEN_TEST_GPU=1 to use the GPU"
+        os.environ.get("KITSHOT_TEST_GPU") != "1", reason="set KITSHOT_TEST_GPU=1 to use the GPU"
     ),
 ]
 
@@ -40,7 +40,7 @@ detail pass failed the check."""
 
 @pytest.fixture(scope="module")
 def tagger() -> Iterator[Any]:
-    from facegen.render.tagger import Eva02Tagger
+    from kitshot.render.tagger import Eva02Tagger
 
     tagger = Eva02Tagger()
     yield tagger
@@ -49,8 +49,8 @@ def tagger() -> Iterator[Any]:
 
 @pytest.fixture(scope="module", params=MODELS)
 def loaded(request: pytest.FixtureRequest) -> Iterator[tuple[str, Any]]:
-    from facegen.platform.memory import release_free_memory
-    from facegen.runtime.dependencies import default_renderer
+    from kitshot.platform.memory import release_free_memory
+    from kitshot.runtime.dependencies import default_renderer
 
     renderer = default_renderer(request.param)
     yield request.param, renderer
@@ -62,9 +62,9 @@ def loaded(request: pytest.FixtureRequest) -> Iterator[tuple[str, Any]]:
 def _setup(conn: sqlite3.Connection, settings: Any, tmp_path: Path, model: str) -> Any:
     from factories import player, snapshot
 
-    from facegen.core.settings_values import PictureSettings, StyleSettings
-    from facegen.persistence.settings import Paths
-    from facegen.pipeline.sync import run_sync
+    from kitshot.core.settings_values import PictureSettings, StyleSettings
+    from kitshot.persistence.settings import Paths
+    from kitshot.pipeline.sync import run_sync
 
     s = replace(
         settings,
@@ -81,8 +81,8 @@ def _setup(conn: sqlite3.Connection, settings: Any, tmp_path: Path, model: str) 
 
 
 def _worker(conn: sqlite3.Connection, s: Any, renderer: Any, tagger: Any) -> Any:
-    from facegen.datasource.kits import load_kits
-    from facegen.pipeline.worker import Worker, load_career
+    from kitshot.datasource.kits import load_kits
+    from kitshot.pipeline.worker import Worker, load_career
 
     career = load_career(conn)
     assert career is not None
@@ -99,7 +99,7 @@ def _worker(conn: sqlite3.Connection, s: Any, renderer: Any, tagger: Any) -> Any
 
 
 def _run_one(w: Any) -> sqlite3.Row:
-    from facegen.pipeline.worker import JobFilter
+    from kitshot.pipeline.worker import JobFilter
 
     summary = w.run(JobFilter(groups=frozenset({"a"}), my_club_only=True))
     assert not summary.failed, [o.message for o in summary.failed]
@@ -128,7 +128,7 @@ def _check_square(image: sqlite3.Row, data: Path, fm: Path, career_key: str) -> 
     for cand in check["candidates"]:
         with Image.open(data / cand["path"]) as c:
             assert c.size == (1024, 1024)
-    with Image.open(fm / "graphics" / "facegen" / career_key / f"{UID}.png") as published:
+    with Image.open(fm / "graphics" / "kitshot" / career_key / f"{UID}.png") as published:
         assert published.size == (1024, 1024)  # group A's long edge, square
     return render
 
@@ -142,8 +142,8 @@ def test_a_square_group_a_job_and_its_redraw(
 ) -> None:
     import torch
 
-    from facegen.core.settings_values import IMAGE_MODELS
-    from facegen.pipeline import manual
+    from kitshot.core.settings_values import IMAGE_MODELS
+    from kitshot.pipeline import manual
 
     model, renderer = loaded
     s = _setup(conn, settings, tmp_path, model)

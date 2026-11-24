@@ -1,5 +1,5 @@
 """Phase 14: each sync in a process of its own. The messages and the child's side in this
-process, then SyncService over the real `facegen sync-process` with a fake reader by a plan
+process, then SyncService over the real `kitshot sync-process` with a fake reader by a plan
 (sync_child.py): synced, an unsupported save, a crash, Quit while reading, writing and
 publishing, and the save watcher and Sync now over the child."""
 
@@ -24,14 +24,14 @@ from support.logs import Lines
 from support.paths import ROOT, TESTS
 from support.processes import has_exited
 
-from facegen.core.records import Snapshot
-from facegen.persistence import db, publication
-from facegen.persistence.settings import Settings, load_settings
-from facegen.pipeline.sync import run_sync
-from facegen.platform import procs
-from facegen.platform.pipes import decode, encode
-from facegen.runtime import sync_process
-from facegen.runtime.contracts import (
+from kitshot.core.records import Snapshot
+from kitshot.persistence import db, publication
+from kitshot.persistence.settings import Settings, load_settings
+from kitshot.pipeline.sync import run_sync
+from kitshot.platform import procs
+from kitshot.platform.pipes import decode, encode
+from kitshot.runtime import sync_process
+from kitshot.runtime.contracts import (
     FAILED,
     SYNC_NUMBERS,
     SYNCED,
@@ -39,8 +39,8 @@ from facegen.runtime.contracts import (
     SyncRequest,
     SyncResult,
 )
-from facegen.runtime.poller_service import PollerService
-from facegen.runtime.sync_process import (
+from kitshot.runtime.poller_service import PollerService
+from kitshot.runtime.sync_process import (
     STOPPED_ERROR,
     STOPPED_EXIT,
     STOPPED_PUBLISHING_ERROR,
@@ -51,7 +51,7 @@ from facegen.runtime.sync_process import (
     serve_child,
     sync_command,
 )
-from facegen.runtime.sync_service import SyncService
+from kitshot.runtime.sync_service import SyncService
 
 
 def wait_for(check: Callable[[], bool], timeout: float = 30.0) -> None:
@@ -120,7 +120,7 @@ def test_requests_and_results_survive_the_pipe() -> None:
 
 
 def test_the_command_line() -> None:
-    assert sync_command() == [sys.executable, "-m", "facegen.cli", "sync-process"]
+    assert sync_command() == [sys.executable, "-m", "kitshot.cli", "sync-process"]
     assert sync_command(("py", "x.py")) == ["py", "x.py", "sync-process"]
 
 
@@ -196,7 +196,7 @@ def test_a_child_without_a_request_says_so_and_ends_with_2(tmp_path: Path) -> No
     assert serve_child(iter(["not json"]), out, WorldSource) is None
     assert out.getvalue() == ""
     done = procs.run_quiet(
-        [sys.executable, "-m", "facegen.cli", "sync-process"],
+        [sys.executable, "-m", "kitshot.cli", "sync-process"],
         input='{"cmd": "wake"}\n',
         capture_output=True,
         text=True,
@@ -351,7 +351,7 @@ def test_a_crash_is_a_failed_sync_with_its_last_words_in_the_log_and_is_tried_ag
     poller = child.poller(syncer, clock)
     before = len(child.runs())
     write_save(child.settings)
-    with caplog.at_level(logging.INFO, logger="facegen"):
+    with caplog.at_level(logging.INFO, logger="kitshot"):
         poll_until_synced(poller, clock)
     error = "the sync process ended unexpectedly (exit code 3)"
     assert syncer.status().error == error and not syncer.status().running
@@ -379,7 +379,7 @@ def test_quit_during_a_sync_ends_it_at_once_with_the_database_as_it_was(
     write_save(child.settings)
     before = dump(child.settings.paths.db_path)
     syncer = child.syncer(plan)
-    caplog.set_level(logging.INFO, logger="facegen")
+    caplog.set_level(logging.INFO, logger="kitshot")
     assert syncer.start()
     wait_for(lambda: child.marker(marker) is not None)
     pid = child.marker(marker)
@@ -396,7 +396,7 @@ def test_quit_during_a_sync_ends_it_at_once_with_the_database_as_it_was(
     assert dump(child.settings.paths.db_path) == before
     with closing(db.connect(child.settings.paths.db_path)) as conn, db.transaction(conn):
         conn.execute("UPDATE settings SET value = value WHERE 0")  # nothing holds it
-    # No other sync starts while facegen quits.
+    # No other sync starts while Kitshot quits.
     assert not syncer.start() and syncer.run() is None and child.starts() == [plan]
 
 
@@ -408,7 +408,7 @@ def test_quit_after_the_commit_lets_publication_finish_for_a_while(
     syncer = child.syncer("slow-publish")
     assert syncer.process is not None
     syncer.process.publish_seconds = 1.0
-    caplog.set_level(logging.INFO, logger="facegen")
+    caplog.set_level(logging.INFO, logger="kitshot")
     assert syncer.start()
     wait_for(lambda: child.marker("publishing") is not None and bool(child.log))
     assert child.log[0].startswith("Synced career.fm")  # sent after "committed"
@@ -426,7 +426,7 @@ def test_quit_after_the_commit_lets_publication_finish_for_a_while(
     # that always crashes also proves recovery never parses the synthetic save again.
     fm = child.settings.paths.fm_user_dir
     assert fm is not None
-    old_config = fm / "graphics" / "facegen" / "old" / "config.xml"
+    old_config = fm / "graphics" / "kitshot" / "old" / "config.xml"
     old_config.parent.mkdir(parents=True)
     old_config.write_text('<record from="2" to="graphics/pictures/person/2/portrait"/>')
     restarted = child.syncer("die")
@@ -435,7 +435,7 @@ def test_quit_after_the_commit_lets_publication_finish_for_a_while(
     def unavailable(folder: Path) -> None:
         raise OSError("games listing unavailable")
 
-    monkeypatch.setattr("facegen.runtime.poller_service.find_latest_save", unavailable)
+    monkeypatch.setattr("kitshot.runtime.poller_service.find_latest_save", unavailable)
     poller.step()
     assert "games listing unavailable" in poller.status().detail
     assert restarted.status().trigger == "publish recovery" and restarted.status().error is None

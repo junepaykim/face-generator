@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from facegen.render.gpu import describe, is_fatal
+from kitshot.render.gpu import describe, is_fatal
 
 
 class AcceleratorError(RuntimeError):

@@ -5,7 +5,7 @@ from __future__ import annotations
 import struct
 from datetime import date
 
-from facegen.datasource.people import (
+from kitshot.datasource.people import (
     CLUB_PERSON_TYPE,
     FEMALE_NAME_FLAG,
     JOURNALIST_TYPE,

@@ -99,16 +99,16 @@ def draw(model: str, gender: str, cases: list[Case], tagger: Any) -> list[dict[s
     """Draws one model's cases through the worker; returns a row per current picture."""
     from factories import NEWGEN, club, player, snapshot
 
-    from facegen.core.settings_values import PictureSettings, StyleSettings
-    from facegen.datasource.kits import load_kits
-    from facegen.persistence import db
-    from facegen.persistence.settings import Paths, load_settings
-    from facegen.pipeline.sync import run_sync
-    from facegen.pipeline.worker import JobFilter, Worker, load_career
-    from facegen.platform.memory import release_free_memory
-    from facegen.runtime.dependencies import default_renderer
+    from kitshot.core.settings_values import PictureSettings, StyleSettings
+    from kitshot.datasource.kits import load_kits
+    from kitshot.persistence import db
+    from kitshot.persistence.settings import Paths, load_settings
+    from kitshot.pipeline.sync import run_sync
+    from kitshot.pipeline.worker import JobFilter, Worker, load_career
+    from kitshot.platform.memory import release_free_memory
+    from kitshot.runtime.dependencies import default_renderer
 
-    tmp = Path(tempfile.mkdtemp(prefix=f"facegen-readme-{model}-"))
+    tmp = Path(tempfile.mkdtemp(prefix=f"kitshot-readme-{model}-"))
     s = replace(
         load_settings(),
         paths=Paths(fm_user_dir=tmp / "fm", data_dir=tmp / "data", fm_install_dir=tmp / "install"),
@@ -302,7 +302,7 @@ def main() -> None:
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
     os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
     sys.path.insert(0, str(ROOT / "tests"))
-    from facegen.render.tagger import Eva02Tagger
+    from kitshot.render.tagger import Eva02Tagger
 
     OUT.mkdir(parents=True, exist_ok=True)
     only = set(args.only.split(",")) if args.only else None

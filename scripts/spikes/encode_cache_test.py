@@ -2,7 +2,7 @@
 
 With the text encoders offloaded (production since 2026-11-11), each job moved them (1.5 GiB)
 onto the card to encode its prompt and back. The renderer now keeps prompt embeddings in system
-memory (`facegen.prompt_cache`) and the worker encodes the next jobs' prompts in one trip. This
+memory (`kitshot.prompt_cache`) and the worker encodes the next jobs' prompts in one trip. This
 draws made-up group A players (IDs 930001-930006, not from a save) as the worker does: the
 prompt encoded, three candidates, the tagger on them, the detail pass, the tagger on it. The
 last is a re-draw with the first one's picture as the reference (IP-Adapter at 0.1).
@@ -30,12 +30,12 @@ import time
 from pathlib import Path
 from typing import Any
 
-from facegen.core.prompt import Prompt, build_prompt
-from facegen.core.traits import pick_pose, picture_seed, sample_sheet
-from facegen.datasource.kits import Kit
-from facegen.render.gpu import on_gpu, prepare_environment
-from facegen.render.picture import face_box
-from facegen.render.tagger import Eva02Tagger
+from kitshot.core.prompt import Prompt, build_prompt
+from kitshot.core.traits import pick_pose, picture_seed, sample_sheet
+from kitshot.datasource.kits import Kit
+from kitshot.render.gpu import on_gpu, prepare_environment
+from kitshot.render.picture import face_box
+from kitshot.render.tagger import Eva02Tagger
 
 prepare_environment()
 
@@ -56,7 +56,7 @@ MODES = ("per-job", "batch", "resident")
 
 
 def main(args: list[str]) -> None:
-    from facegen.pipeline.worker import AnimagineRenderer, Reference
+    from kitshot.pipeline.worker import AnimagineRenderer, Reference
 
     mode = args[0] if args else ""
     tag = args[args.index("--tag") + 1] if "--tag" in args else "after"

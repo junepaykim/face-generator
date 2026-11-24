@@ -1,4 +1,4 @@
-"""`facegen serve`'s background work: the worker loop (driven step by step) and "sync now"."""
+"""`kitshot serve`'s background work: the worker loop (driven step by step) and "sync now"."""
 
 from __future__ import annotations
 
@@ -16,18 +16,18 @@ from fakes import FakeRenderer, FakeTagger
 from support.logs import Lines
 from support.paths import ROOT
 
-from facegen.core.records import Personality, Snapshot
-from facegen.datasource.kits import load_kits
-from facegen.persistence import db
-from facegen.persistence.db import transaction
-from facegen.persistence.settings import Settings, load_settings, set_overrides
-from facegen.pipeline import manual
-from facegen.pipeline.publish import RELOAD_HINT
-from facegen.pipeline.reclassification import classify_and_plan
-from facegen.pipeline.sync import run_sync
-from facegen.pipeline.worker import load_career, worker_lock
-from facegen.runtime.contracts import WORKER_REASONS, Exit, LogLine
-from facegen.service import (
+from kitshot.core.records import Personality, Snapshot
+from kitshot.datasource.kits import load_kits
+from kitshot.persistence import db
+from kitshot.persistence.db import transaction
+from kitshot.persistence.settings import Settings, load_settings, set_overrides
+from kitshot.pipeline import manual
+from kitshot.pipeline.publish import RELOAD_HINT
+from kitshot.pipeline.reclassification import classify_and_plan
+from kitshot.pipeline.sync import run_sync
+from kitshot.pipeline.worker import load_career, worker_lock
+from kitshot.runtime.contracts import WORKER_REASONS, Exit, LogLine
+from kitshot.service import (
     FM_POLL_SECONDS,
     IDLE_UNLOAD_SECONDS,
     PollerService,
@@ -154,9 +154,9 @@ def test_queue_filters_and_lookahead_apply_before_jobs_are_loaded(
 ) -> None:
     from collections import Counter
 
-    from facegen.core.job_records import JobFilter
-    from facegen.persistence import jobs
-    from facegen.pipeline.worker import PRE_ENCODE_JOBS
+    from kitshot.core.job_records import JobFilter
+    from kitshot.persistence import jobs
+    from kitshot.pipeline.worker import PRE_ENCODE_JOBS
 
     many = [player(10_000 + i) for i in range(PRE_ENCODE_JOBS + 5)]
     run_sync(env.conn, snapshot([*world(), *many]), env.settings, save_file="career.fm")
@@ -206,7 +206,7 @@ def test_draws_my_club_first_publishes_and_goes_idle(env: Env) -> None:
     status = svc.status()
     assert status.state == "idle" and status.done == 4 and status.models_loaded
     assert env.queued() == []
-    pack = env.settings.paths.fm_user_dir / "graphics" / "facegen"
+    pack = env.settings.paths.fm_user_dir / "graphics" / "kitshot"
     assert len(list(pack.glob("*/*.png"))) == 4
     # Each publish says only how many (Phase 17i); the Reload Skin hint comes once, at the end.
     texts = [line.text for line in status.log]
@@ -370,7 +370,7 @@ def test_a_gpu_fault_outside_a_job_is_not_retried(env: Env) -> None:
 def test_worker_errors_reach_the_log_file_with_their_traceback(env: Env) -> None:
     import logging
 
-    from facegen.service import log_to_file
+    from kitshot.service import log_to_file
 
     path = log_to_file(env.settings.paths.data_dir)
     assert log_to_file(env.settings.paths.data_dir) == path  # asked twice: one handler
@@ -379,7 +379,7 @@ def test_worker_errors_reach_the_log_file_with_their_traceback(env: Env) -> None
         env.service().step()
         text = path.read_text(encoding="utf-8")
     finally:
-        log = logging.getLogger("facegen")
+        log = logging.getLogger("kitshot")
         for handler in list(log.handlers):
             log.removeHandler(handler)
             handler.close()
@@ -621,7 +621,7 @@ def test_in_a_worker_process_pause_publishes_and_ends_the_loop(env: Env) -> None
     svc.step()
     assert svc.exit is not None and svc.exit.reason == "paused"
     assert not svc.status().models_loaded
-    pack = env.settings.paths.fm_user_dir / "graphics" / "facegen"
+    pack = env.settings.paths.fm_user_dir / "graphics" / "kitshot"
     assert len(list(pack.glob("*/*.png"))) == 1
 
 
@@ -769,7 +769,7 @@ def watch(env: Env) -> Watch:
 def mapped(env: Env, key: str) -> set[int]:
     import re
 
-    path = env.settings.paths.fm_user_dir / "graphics" / "facegen" / key / "config.xml"
+    path = env.settings.paths.fm_user_dir / "graphics" / "kitshot" / key / "config.xml"
     return (
         {int(x) for x in re.findall(r'from="(\d+)"', path.read_text())} if path.exists() else set()
     )
@@ -831,7 +831,7 @@ def test_the_watcher_leaves_a_save_alone_while_it_is_being_written(watch: Watch)
 
 
 def test_an_unsupported_build_is_reported_once_and_the_queue_is_kept(watch: Watch) -> None:
-    from facegen.datasource.base import UnsupportedSaveError
+    from kitshot.datasource.base import UnsupportedSaveError
 
     queued = watch.env.queued()
     watch.source.snap = UnsupportedSaveError(
@@ -862,8 +862,8 @@ def test_an_unsupported_build_is_reported_once_and_the_queue_is_kept(watch: Watc
 def test_a_save_still_being_copied_is_tried_again(
     watch: Watch, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from facegen.datasource import snapshots
-    from facegen.datasource.base import SaveBusyError
+    from kitshot.datasource import snapshots
+    from kitshot.datasource.base import SaveBusyError
 
     real = snapshots.copy_snapshot
     calls: list[int] = []
@@ -912,7 +912,7 @@ def test_a_newer_save_of_another_career_switches_the_pack(watch: Watch) -> None:
     run_until_idle(svc)
     assert any("Now working on career" in line.text for line in svc.status().log)
     assert mapped(env, two.key) == {5001, 5002} and mapped(env, one.key) == set()
-    pack_one = env.settings.paths.fm_user_dir / "graphics" / "facegen" / one.key
+    pack_one = env.settings.paths.fm_user_dir / "graphics" / "kitshot" / one.key
     assert (pack_one / f"{MINE}.png").is_file()  # kept: switching back is a config change
 
     # Back to career one: its save is written again.
@@ -964,7 +964,7 @@ def test_serve_publishes_once_at_start(env: Env) -> None:
     the first idle pass, without waiting for a new picture."""
     run_until_idle(env.service())
     key = load_career(env.conn).key  # type: ignore[union-attr]
-    pack = env.settings.paths.fm_user_dir / "graphics" / "facegen" / key
+    pack = env.settings.paths.fm_user_dir / "graphics" / "kitshot" / key
     for png in pack.glob("*.png"):
         png.unlink()
     env.conn.execute("UPDATE images SET published_path = NULL")
@@ -1032,7 +1032,7 @@ def test_exit_test_transfer_and_release_are_redrawn_with_no_manual_step(watch: W
     assert json.loads(redrawn["render"])["reference"] is None  # not at my club: no reference
     key = load_career(env.conn).key  # type: ignore[union-attr]
     with Image.open(
-        env.settings.paths.fm_user_dir / "graphics" / "facegen" / key / f"{academy}.png"
+        env.settings.paths.fm_user_dir / "graphics" / "kitshot" / key / f"{academy}.png"
     ) as im:
         assert im.size == (576, 768)  # group B's size, 3:4
     assert academy in mapped(env, key) and env.queued() == []
@@ -1146,7 +1146,7 @@ def test_every_reason_the_worker_gives_is_known() -> None:
     message catalog's contract test words in both languages."""
     used: set[str] = set()
     for name in ("worker_service.py", "worker_process.py"):
-        source = (ROOT / "src" / "facegen" / "runtime" / name).read_text(encoding="utf-8")
+        source = (ROOT / "src" / "kitshot" / "runtime" / name).read_text(encoding="utf-8")
         used |= set(re.findall(r'reason="([a-z_]+)"', source))
         used |= set(re.findall(r'_mark\(\s*"[a-z-]+",\s*[^,]+,\s*"([a-z_]+)"', source))
         used |= set(re.findall(r'"fm_running" if running else "([a-z_]+)"', source))

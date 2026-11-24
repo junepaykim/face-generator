@@ -1,8 +1,8 @@
-"""Make Kitshot's bundled icon pictures, src/facegen/data/icon/kitshot-<size>.png, from the
-user's SVG, src/facegen/web/static/kitshot.svg (Phase 17c).
+"""Make Kitshot's bundled icon pictures, src/kitshot/data/icon/kitshot-<size>.png, from the
+user's SVG, src/kitshot/web/static/kitshot.svg (Phase 17c).
 
 The desktop app loads these PNGs (desktop/app_icon.py) for the tray, the window, the .ico
-and facegen-app.exe; the web pages use the SVG itself. Each size is drawn from the SVG at
+and kitshot-app.exe; the web pages use the SVG itself. Each size is drawn from the SVG at
 that size by librsvg (the renderer behind rsvg-convert), called here through ctypes with
 cairo, so no Python package is needed. On Ubuntu/WSL: the librsvg2-2 and libcairo2 packages.
 
@@ -20,8 +20,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SVG = ROOT / "src" / "facegen" / "web" / "static" / "kitshot.svg"
-OUT = ROOT / "src" / "facegen" / "data" / "icon"
+SVG = ROOT / "src" / "kitshot" / "web" / "static" / "kitshot.svg"
+OUT = ROOT / "src" / "kitshot" / "data" / "icon"
 SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256)
 """Every size Windows asks an .ico for (desktop/app_icon.py ICO_SIZES)."""
 CAIRO_FORMAT_ARGB32 = 0

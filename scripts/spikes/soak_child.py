@@ -1,4 +1,4 @@
-"""`facegen worker` with the real renderer, measured: the child that soak_test.py starts.
+"""`kitshot worker` with the real renderer, measured: the child that soak_test.py starts.
 
     python soak_child.py SANDBOX FAULT_ON_JOB [--config X] worker [--generate-now]
 
@@ -20,7 +20,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from facegen.cli import Gpu, _default_renderer, _default_tagger, main
+from kitshot.cli import Gpu, _default_renderer, _default_tagger, main
 
 
 def real_fault() -> None:

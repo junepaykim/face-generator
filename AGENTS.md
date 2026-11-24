@@ -30,12 +30,13 @@ Local guides add only directory-specific instructions; commands below use the re
 
 | Path | Responsibility / local guide |
 |---|---|
-| `src/facegen/` | Python implementation; [guide](src/facegen/AGENTS.md). |
-| `src/facegen/core/` | Plain records, classification, sheets, prompts and planning. |
-| `src/facegen/{persistence,pipeline,render}/` | Storage, application operations, image generation/QC. |
-| `src/facegen/{runtime,platform,setup,desktop}/` | Services/processes, OS adapters, installation and Windows shell. |
-| `src/facegen/web/` | HTTP/templates/JS/CSS; [guide](src/facegen/web/AGENTS.md). |
-| `src/facegen/datasource/` | Save, photo and kit adapters; [guide](src/facegen/datasource/AGENTS.md). |
+| `src/kitshot/` | Python implementation; [guide](src/kitshot/AGENTS.md). |
+| `src/facegen/` | Entry points older installs still start; forward to `kitshot` only. |
+| `src/kitshot/core/` | Plain records, classification, sheets, prompts and planning. |
+| `src/kitshot/{persistence,pipeline,render}/` | Storage, application operations, image generation/QC. |
+| `src/kitshot/{runtime,platform,setup,desktop}/` | Services/processes, OS adapters, installation and Windows shell. |
+| `src/kitshot/web/` | HTTP/templates/JS/CSS; [guide](src/kitshot/web/AGENTS.md). |
+| `src/kitshot/datasource/` | Save, photo and kit adapters; [guide](src/kitshot/datasource/AGENTS.md). |
 | `native/` | Optional Rust/PyO3 CPU extension; [guide](native/AGENTS.md). |
 | `tests/` | Test tiers, fixtures and doubles; [guide](tests/AGENTS.md). |
 | `config/` | Defaults and kit table; `local.toml` holds this PC's paths. |
@@ -52,7 +53,7 @@ Local guides add only directory-specific instructions; commands below use the re
   Default `uv sync` includes the large GPU group; hard rule 4 applies. Use `--inexact`
   when syncing an environment with a separately installed native wheel to retain it.
 - Windows torch uses the configured `pytorch-cu132` index. Desktop dependencies install
-  only on Windows; Linux/WSL uses `facegen serve`. This PC has an RTX 4080 (16 GB).
+  only on Windows; Linux/WSL uses `kitshot serve`. This PC has an RTX 4080 (16 GB).
 - FM folders are discovered by `platform/fm_paths.py` or set in ignored
   `config/local.toml`; `--config X` uses `local.toml` beside X. Windows paths work in WSL.
   Never hardcode a Windows user name in tracked files.
@@ -61,7 +62,7 @@ Local guides add only directory-specific instructions; commands below use the re
 
 ## Cross-module rules
 
-- `core/` imports only the standard library and `facegen.core`, including lazy and
+- `core/` imports only the standard library and `kitshot.core`, including lazy and
   type-only imports. Policy takes plain records; adapters own I/O. Keep type hints.
 - Seed all randomness from career, unique ID and version; identical inputs reproduce
   the sheet and prompt. Store the full prompt, seed and model name with each picture.
@@ -77,7 +78,7 @@ suite must run offline. These are Bash/WSL commands; CI sets the same offline va
 on Windows. Keep real-GPU/save opt-ins unset for the final default gate.
 
 ```bash
-env -u FACEGEN_TEST_GPU -u FACEGEN_TEST_SAVE HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+env -u KITSHOT_TEST_GPU -u KITSHOT_TEST_SAVE HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
   uv run --no-sync pytest -ra
 uv run --no-sync ruff check .
 uv run --no-sync ruff format --check .
@@ -96,7 +97,8 @@ Windows GUI acceptance. Do not synchronize dependencies just to run a check.
 1. **Never modify saves.** Do not write, move or delete anything in FM27's `games/`.
    Copy a save to `data/snapshots/` and parse the copy.
 2. **Stay in our graphics folder.** Under the FM27 user folder, write only inside
-   `graphics/facegen/`; never edit/delete other packs.
+   `graphics/kitshot/`; never edit/delete other packs. Our own pre-rename folder,
+   `graphics/facegen/`, may only be removed whole (Phase 17o).
 3. **Content is fixed.** Fully clothed, non-sexual sports portraits only. No setting,
    prompt, wardrobe or pose may weaken this; never publish an image that failed QC.
 4. **Ask before large downloads.** Get approval before model weights or GPU libraries.
@@ -105,4 +107,4 @@ Windows GUI acceptance. Do not synchronize dependencies just to run a check.
 6. **Nothing leaves this PC.** Do not upload saves, player data or pictures.
 7. **Keep generated data out of git:** root `data/`, models, pictures and saves.
    Only small made-up README samples in `docs/images/` are excepted. `docs/*.md` stays
-   ignored and must never be added back to git; bundled `src/facegen/data/` is source data.
+   ignored and must never be added back to git; bundled `src/kitshot/data/` is source data.

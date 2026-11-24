@@ -9,12 +9,12 @@ from fakes import BACKDROPS, backdrop
 from fakes import figure as figure_on
 from PIL import Image, ImageDraw
 
-from facegen import qc
-from facegen.core.man_traits import ManSheet
-from facegen.core.traits import CharacterSheet
-from facegen.datasource.kits import Kit
-from facegen.persistence.settings import MyClubSettings
-from facegen.qc import (
+from kitshot import qc
+from kitshot.core.man_traits import ManSheet
+from kitshot.core.traits import CharacterSheet
+from kitshot.datasource.kits import Kit
+from kitshot.persistence.settings import MyClubSettings
+from kitshot.qc import (
     CheckResult,
     TagResult,
     best,

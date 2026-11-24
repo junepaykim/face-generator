@@ -1,4 +1,4 @@
-"""`facegen launch`, what Start.bat runs after `uv sync` (Phase 11): Start.bat stays thin and
+"""`kitshot launch`, what Start.bat runs after `uv sync` (Phase 11): Start.bat stays thin and
 its decisions are here."""
 
 from __future__ import annotations
@@ -8,9 +8,9 @@ import threading
 import time
 from pathlib import Path
 
-from facegen.cli import main
-from facegen.desktop import instance
-from facegen.setup import launch
+from kitshot.cli import main
+from kitshot.desktop import instance
+from kitshot.setup import launch
 
 
 def test_tee_writes_the_console_and_the_log_without_progress_lines() -> None:
@@ -125,7 +125,7 @@ def test_the_download_question_and_its_answer_reach_the_log() -> None:
     assert "answer: 'y'" in log.getvalue()
 
 
-def test_facegen_launch_open_running_from_the_command_line(config_file: Path) -> None:
+def test_kitshot_launch_open_running_from_the_command_line(config_file: Path) -> None:
     out = io.StringIO()
     log = config_file.parent / "data" / "logs" / "start.log"
     code = main(
@@ -136,8 +136,8 @@ def test_facegen_launch_open_running_from_the_command_line(config_file: Path) ->
     assert not (config_file.parent / "data" / "facegen.db").exists()  # no database needed
 
 
-def test_facegen_launch_runs_the_wheel_and_the_models_steps(config_file: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    from facegen.setup import operations as setup_operations
+def test_kitshot_launch_runs_the_wheel_and_the_models_steps(config_file: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from kitshot.setup import operations as setup_operations
 
     seen: list[tuple[str, object]] = []
 
@@ -162,11 +162,11 @@ def test_facegen_launch_runs_the_wheel_and_the_models_steps(config_file: Path, m
     assert not (config_file.parent / "data" / "facegen.db").exists()
 
 
-def test_facegen_launch_offers_the_model_chosen_in_settings(config_file: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def test_kitshot_launch_offers_the_model_chosen_in_settings(config_file: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """Phase 15e: only the selected model's files are offered."""
-    from facegen.persistence import db
-    from facegen.persistence.settings import load_settings, set_override
-    from facegen.setup import operations as setup_operations
+    from kitshot.persistence import db
+    from kitshot.persistence.settings import load_settings, set_override
+    from kitshot.setup import operations as setup_operations
 
     conn = db.connect(load_settings(defaults_path=config_file).paths.db_path)
     set_override(conn, "style.model", "realvis", config_file)
@@ -197,9 +197,9 @@ class Console(io.StringIO):
 
 
 def on_windows_with_a_wsl_local_file(config_file: Path, monkeypatch) -> Path:  # type: ignore[no-untyped-def]
-    from facegen.setup import operations as setup_operations
+    from kitshot.setup import operations as setup_operations
 
-    monkeypatch.setattr("facegen.platform.platform_info.current", lambda: "windows")
+    monkeypatch.setattr("kitshot.platform.platform_info.current", lambda: "windows")
     monkeypatch.setattr(setup_operations, "prepare_native", lambda **kwargs: 0)
     monkeypatch.setattr(setup_operations, "prepare_models", lambda **kwargs: 0)
     local = config_file.with_name("local.toml")
@@ -271,8 +271,8 @@ def test_open_running_says_nothing_about_settings_it_cannot_read(
 
 
 def test_the_apps_message_box_says_a_settings_error_plainly() -> None:
-    from facegen.desktop import shell as desktop
-    from facegen.persistence.settings import SettingsError
+    from kitshot.desktop import shell as desktop
+    from kitshot.persistence.settings import SettingsError
 
     error = SettingsError("config/local.toml, paths.fm_user_dir: write it as 'C:\\x'")
     assert desktop.explain(error) == "config/local.toml, paths.fm_user_dir: write it as 'C:\\x'"

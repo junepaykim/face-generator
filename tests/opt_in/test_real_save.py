@@ -7,17 +7,17 @@ from pathlib import Path
 
 import pytest
 
-from facegen.core.records import Gender
-from facegen.datasource.fmsave_source import FmsaveDataSource
+from kitshot.core.records import Gender
+from kitshot.datasource.fmsave_source import FmsaveDataSource
 
 pytestmark = pytest.mark.real_save
 
 
 @pytest.mark.skipif(
-    not os.environ.get("FACEGEN_TEST_SAVE"), reason="set FACEGEN_TEST_SAVE to a save copy"
+    not os.environ.get("KITSHOT_TEST_SAVE"), reason="set KITSHOT_TEST_SAVE to a save copy"
 )
 def test_reads_a_real_save_copy() -> None:
-    snap = FmsaveDataSource().load(Path(os.environ["FACEGEN_TEST_SAVE"]))
+    snap = FmsaveDataSource().load(Path(os.environ["KITSHOT_TEST_SAVE"]))
     assert snap.meta.game == "FM27"
     assert len(snap.players) > 1000
     assert snap.managed_club_id in snap.clubs

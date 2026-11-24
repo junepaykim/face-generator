@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections import Counter
 
-from facegen.core.man_traits import LOOKS, REGIONS, WORLD
-from facegen.core.nations import NATIONS, nation_name, region_of
+from kitshot.core.man_traits import LOOKS, REGIONS, WORLD
+from kitshot.core.nations import NATIONS, nation_name, region_of
 
 
 def test_every_nation_has_a_region_with_a_mix_of_known_looks() -> None:

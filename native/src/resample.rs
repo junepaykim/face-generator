@@ -120,7 +120,7 @@ fn pool() -> &'static ThreadPool {
         let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
         ThreadPoolBuilder::new()
             .num_threads(THREADS.min(cores))
-            .thread_name(|i| format!("facegen-resize-{i}"))
+            .thread_name(|i| format!("kitshot-resize-{i}"))
             .build()
             .expect("the resize thread pool")
     })

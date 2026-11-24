@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from facegen.core.problems import KINDS, UNKNOWN, diagnose
+from kitshot.core.problems import KINDS, UNKNOWN, diagnose
 
 
 @pytest.mark.parametrize(
@@ -18,7 +18,7 @@ from facegen.core.problems import KINDS, UNKNOWN, diagnose
         ("AssertionError: Torch not compiled with CUDA enabled", "no_gpu"),
         ("OSError: [Errno 28] No space left on device: 'data/masters/x.png'", "disk_full"),
         ("PermissionError: [WinError 5] Access is denied: 'C:\\\\FM\\\\graphics'", "no_permission"),
-        ("PermissionError: [Errno 13] Permission denied: '/fm/graphics/facegen'", "no_permission"),
+        ("PermissionError: [Errno 13] Permission denied: '/fm/graphics/kitshot'", "no_permission"),
         ("[WinError 32] The process cannot access the file because it is being used by another process", "file_in_use"),
         ("sqlite3.OperationalError: database is locked", "db_busy"),
         ("FM27's folder is not set and was not found on this PC", "folder"),

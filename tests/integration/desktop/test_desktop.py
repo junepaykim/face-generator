@@ -24,20 +24,20 @@ from fakes import FakeRenderer, FakeTagger
 from support.paths import TESTS
 from support.processes import has_exited
 
-from facegen.cli import Gpu, main
-from facegen.desktop import instance
-from facegen.desktop import shell as desktop
-from facegen.desktop.app_controller import AppController, Notice, View
-from facegen.desktop.app_window import NO_WEBVIEW2
-from facegen.runtime.composition import CannotStart, port_answers
+from kitshot.cli import Gpu, main
+from kitshot.desktop import instance
+from kitshot.desktop import shell as desktop
+from kitshot.desktop.app_controller import AppController, Notice, View
+from kitshot.desktop.app_window import NO_WEBVIEW2
+from kitshot.runtime.composition import CannotStart, port_answers
 
 
 @pytest.fixture(autouse=True)
 def quick_and_clean(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """A quicker heartbeat, and the "facegen" logger without the files earlier tests gave it
+    """A quicker heartbeat, and the "kitshot" logger without the files earlier tests gave it
     (log_to_file adds one), put back as it was afterwards."""
     monkeypatch.setattr(desktop, "REFRESH_SECONDS", 0.05)
-    log = logging.getLogger("facegen")
+    log = logging.getLogger("kitshot")
     monkeypatch.setattr(log, "handlers", [])
     monkeypatch.setattr(log, "propagate", log.propagate)
     monkeypatch.setattr(log, "level", log.level)
@@ -274,7 +274,7 @@ def test_the_app_from_start_to_quit(config_file: Path, tmp_path: Path) -> None:
 
 def test_update_now_starts_the_update_and_quits(config_file: Path) -> None:
     """Where an update in place works (faked here: Windows, not a git checkout), the web app
-    gets Update now's hook: it starts Start.bat --update and quits facegen a moment later."""
+    gets Update now's hook: it starts Start.bat --update and quits Kitshot a moment later."""
     record = Record()
     updates: list[str] = []
     base = record.shell
@@ -326,14 +326,14 @@ def test_the_tray_alone_opens_the_dashboard_in_the_browser(config_file: Path) ->
 def test_quit_during_a_sync_ends_its_process_at_once(
     config_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Phase 14: the app syncs in a process of its own (here `facegen sync-process` with a
+    """Phase 14: the app syncs in a process of its own (here `kitshot sync-process` with a
     fake reader that takes a minute, sync_child.py); the tray answers meanwhile, and Quit
     ends the sync within seconds with the database as it was."""
     import sqlite3
     from contextlib import closing
 
-    from facegen.persistence.settings import load_settings
-    from facegen.runtime import sync_process
+    from kitshot.persistence.settings import load_settings
+    from kitshot.runtime import sync_process
 
     state = tmp_path / "sync-child"
     program = [sys.executable, str(TESTS / "sync_child.py"), str(state), "slow"]
@@ -434,7 +434,7 @@ def test_a_second_start_that_gets_no_answer_says_so(
 def test_a_crash_is_logged_and_shown_with_the_logs_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    fallback = tmp_path / "data" / "logs" / "facegen.log"
+    fallback = tmp_path / "data" / "logs" / "kitshot.log"
     monkeypatch.setattr(desktop, "FALLBACK_LOG", fallback)
     shown: list[tuple[str, str]] = []
     try:
@@ -449,13 +449,13 @@ def test_a_crash_is_logged_and_shown_with_the_logs_path(
 
 
 def test_a_crash_goes_to_the_log_file_once_there_is_one(tmp_path: Path) -> None:
-    from facegen.service import log_to_file
+    from kitshot.service import log_to_file
 
     log = log_to_file(tmp_path)
     shown: list[str] = []
     path = desktop.report_crash(CannotStart("Port 8765 is in use."), lambda t, x: shown.append(x))
     assert path.resolve() == log.resolve()
-    assert "facegen could not start" in log.read_text(encoding="utf-8")
+    assert "Kitshot could not start" in log.read_text(encoding="utf-8")
     assert shown[0].startswith("Port 8765 is in use.\n\nThe details are in:")
 
 
@@ -468,7 +468,7 @@ def test_known_failures_are_said_in_plain_words() -> None:
     if os.name == "nt":
         assert "Start.bat" in text
     else:
-        assert "need Windows" in text and "facegen serve" in text
+        assert "need Windows" in text and "kitshot serve" in text
     other = ModuleNotFoundError("No module named 'fastapi'", name="fastapi")
     assert "A part of Kitshot is missing (fastapi)" in desktop.explain(other)
     assert desktop.explain(OSError("disk full")) == "OSError: disk full"
@@ -486,34 +486,36 @@ def test_pythonw_counts_as_no_console_whatever_handles_it_has(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     assert desktop.has_console()  # pytest gives this process stdout and stderr
-    monkeypatch.setattr(sys, "executable", r"C:\facegen\.venv\Scripts\pythonw.exe")
+    monkeypatch.setattr(sys, "executable", r"C:\kitshot\.venv\Scripts\pythonw.exe")
     assert not desktop.has_console()  # Start.bat's console closes right after starting it
+    monkeypatch.setattr(sys, "executable", r"C:\kitshot\.venv\Scripts\kitshot-app.exe")
+    assert not desktop.has_console()  # pythonw.exe's copy under Kitshot's name
     monkeypatch.setattr(sys, "executable", r"C:\facegen\.venv\Scripts\facegen-app.exe")
-    assert not desktop.has_console()  # pythonw.exe's copy under facegen's name
-    monkeypatch.setattr(sys, "executable", r"C:\facegen\.venv\Scripts\python.exe")
+    assert not desktop.has_console()  # its name before Phase 17o (a taskbar pin)
+    monkeypatch.setattr(sys, "executable", r"C:\kitshot\.venv\Scripts\python.exe")
     assert desktop.has_console()
     monkeypatch.setattr(sys, "stdout", None)
     assert not desktop.has_console()
 
 
 def test_without_a_console_the_output_goes_to_the_log(caplog: pytest.LogCaptureFixture) -> None:
-    stream = desktop.LogStream(logging.getLogger("facegen.stdout"), logging.INFO)
-    with caplog.at_level(logging.INFO, logger="facegen.stdout"):
-        stream.write("Log: data/logs/facegen.log\nfacegen UI at http://127.0.0.1:8765/")
-        assert [r.getMessage() for r in caplog.records] == ["Log: data/logs/facegen.log"]
+    stream = desktop.LogStream(logging.getLogger("kitshot.stdout"), logging.INFO)
+    with caplog.at_level(logging.INFO, logger="kitshot.stdout"):
+        stream.write("Log: data/logs/kitshot.log\nKitshot UI at http://127.0.0.1:8765/")
+        assert [r.getMessage() for r in caplog.records] == ["Log: data/logs/kitshot.log"]
         stream.write("\n\n")  # empty lines are dropped
         stream.write("half a line")
         stream.flush()
     assert [r.getMessage() for r in caplog.records] == [
-        "Log: data/logs/facegen.log",
-        "facegen UI at http://127.0.0.1:8765/",
+        "Log: data/logs/kitshot.log",
+        "Kitshot UI at http://127.0.0.1:8765/",
         "half a line",
     ]
     assert stream.writable() and not stream.isatty() and stream.encoding == "utf-8"
 
 
 def test_the_log_stream_does_not_loop_through_a_handler_writing_back() -> None:
-    log = logging.getLogger("facegen.loop-test")
+    log = logging.getLogger("kitshot.loop-test")
     log.propagate = False
     stream = desktop.LogStream(log, logging.WARNING)
     seen: list[str] = []
@@ -533,7 +535,7 @@ def test_the_heartbeat_answers_a_second_start_and_passes_notices(tmp_path: Path)
     controller = AppController(worker=None, syncer=None, open_dashboard=lambda: opened.append("x"))
     tray = FakeTray(controller)
     beat = desktop.Refresher(controller, tray, tmp_path, every=60)
-    beat.announce(Notice("hidden", "facegen is still running", "In the tray."))
+    beat.announce(Notice("hidden", "kitshot is still running", "In the tray."))
     instance.request_open(tmp_path)
     beat.tick()
     assert opened == ["x"] and not (tmp_path / instance.OPEN_REQUEST_NAME).exists()
@@ -542,10 +544,10 @@ def test_the_heartbeat_answers_a_second_start_and_passes_notices(tmp_path: Path)
     assert opened == ["x"] and len(tray.notices) == 1
 
 
-def test_facegen_tray_on_a_pc_without_pystray_says_why(
+def test_kitshot_tray_on_a_pc_without_pystray_says_why(
     config_file: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    pytest.importorskip("facegen")
+    pytest.importorskip("kitshot")
     try:
         import pystray  # noqa: F401
     except ImportError:
@@ -562,5 +564,5 @@ def test_facegen_tray_on_a_pc_without_pystray_says_why(
     err = capsys.readouterr().err
     assert "Kitshot could not start" in err and "pystray" in err
     assert not port_answers("127.0.0.1", port)
-    log = (config_file.parent / "data" / "logs" / "facegen.log").read_text(encoding="utf-8")
+    log = (config_file.parent / "data" / "logs" / "kitshot.log").read_text(encoding="utf-8")
     assert "ModuleNotFoundError" in log

@@ -1,7 +1,7 @@
-"""Phase 0.1 spike: group counts computed straight from fmsave, sharing no code with facegen.
+"""Phase 0.1 spike: group counts computed straight from fmsave, sharing no code with kitshot.
 
 Used for the Phase 1 exit test. These historical counts predate the staff, media, youth
-and photo-less rules; they do not describe current `facegen sync --dry-run` results.
+and photo-less rules; they do not describe current `kitshot sync --dry-run` results.
 
     uv run python scripts/archive/dry_run_counts.py SNAPSHOT [--all-genders]
 """

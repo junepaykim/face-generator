@@ -17,15 +17,15 @@ from fakes import FakeRenderer, FakeTagger
 from fastapi.testclient import TestClient
 from support.web import BASE, KOREAN_WINDOWS
 
-from facegen.core.records import Snapshot
-from facegen.datasource.kits import load_kits
-from facegen.persistence.settings import DEFAULTS_PATH, load_defaults, load_settings
-from facegen.runtime.contracts import WorkerStatus
-from facegen.service import SyncService, WorkerService
-from facegen.setup.hardware import Hardware
-from facegen.setup.models import ModelsStatus, files_for
-from facegen.web import guide
-from facegen.web.app import AppContext, create_app
+from kitshot.core.records import Snapshot
+from kitshot.datasource.kits import load_kits
+from kitshot.persistence.settings import DEFAULTS_PATH, load_defaults, load_settings
+from kitshot.runtime.contracts import WorkerStatus
+from kitshot.service import SyncService, WorkerService
+from kitshot.setup.hardware import Hardware
+from kitshot.setup.models import ModelsStatus, files_for
+from kitshot.web import guide
+from kitshot.web.app import AppContext, create_app
 
 GIB = 2**30
 NOW = datetime(2026, 11, 17, 12, 0, tzinfo=UTC)

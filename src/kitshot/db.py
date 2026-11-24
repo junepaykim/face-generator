@@ -1,0 +1,5 @@
+"""Compatibility exports for the web app."""
+
+from kitshot.persistence.db import ACTIVE_CAREER_ORDER, connect
+
+__all__ = ["ACTIVE_CAREER_ORDER", "connect"]

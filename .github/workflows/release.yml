@@ -71,7 +71,7 @@ jobs:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
           mkdir -p build
-          git archive --format=zip --prefix=facegen/ -o build/source.zip HEAD
+          git archive --format=zip --prefix=kitshot/ -o build/source.zip HEAD
           curl -fsSL -o build/uv-x86_64-pc-windows-msvc.zip \
             "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-pc-windows-msvc.zip"
           args=(--archive build/source.zip --uv-zip build/uv-x86_64-pc-windows-msvc.zip --out build/stage)
@@ -90,7 +90,7 @@ jobs:
           Start-Process $setup -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/SP-","/CURRENTUSER","/DIR=$dir" -Wait
           $iscc = "$dir\ISCC.exe"
           if (-not (Test-Path $iscc)) { throw "Inno Setup did not install to $dir" }
-          & $iscc "/DVersion=${{ steps.stage.outputs.version }}" "/DStage=$PWD\build\stage" "/DOutput=$PWD\build\dist" installer\facegen.iss
+          & $iscc "/DVersion=${{ steps.stage.outputs.version }}" "/DStage=$PWD\build\stage" "/DOutput=$PWD\build\dist" installer\kitshot.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: SHA-256 sums
         shell: bash

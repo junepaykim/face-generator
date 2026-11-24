@@ -1,5 +1,5 @@
 """The prebuilt Rust extension: which wheel a PC takes, its checksum, the install, and how
-the extension's state is reported (native_wheel.py, native.py, `facegen native`). No network
+the extension's state is reported (native_wheel.py, native.py, `kitshot native`). No network
 and no uv: downloads come from file:// URLs or fakes, the install is a fake."""
 
 from __future__ import annotations
@@ -17,10 +17,10 @@ from pathlib import Path
 import pytest
 from support.paths import ROOT
 
-from facegen.cli import cmd_native, main
-from facegen.platform import native
-from facegen.setup import native_wheel
-from facegen.setup.native_wheel import (
+from kitshot.cli import cmd_native, main
+from kitshot.platform import native
+from kitshot.setup import native_wheel
+from kitshot.setup.native_wheel import (
     Host,
     Plan,
     WheelError,
@@ -30,8 +30,8 @@ from facegen.setup.native_wheel import (
     parse_wheel_name,
 )
 
-WIN = "facegen_native-0.1.0-cp312-abi3-win_amd64.whl"
-LINUX = "facegen_native-0.1.0-cp312-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl"
+WIN = "kitshot_native-0.1.0-cp312-abi3-win_amd64.whl"
+LINUX = "kitshot_native-0.1.0-cp312-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl"
 WINDOWS_PC = Host(system="win32", machine="AMD64", implementation="cpython", python=(3, 12))
 LINUX_PC = Host(
     system="linux", machine="x86_64", implementation="cpython", python=(3, 12), glibc=(2, 39)
@@ -60,7 +60,7 @@ def test_wheel_names() -> None:
     assert linux is not None
     assert linux.platforms == ("manylinux_2_17_x86_64", "manylinux2014_x86_64")
     assert parse_wheel_name("numpy-2.0.0-cp312-cp312-win_amd64.whl") is None
-    assert parse_wheel_name("facegen_native-0.1.0.tar.gz") is None
+    assert parse_wheel_name("kitshot_native-0.1.0.tar.gz") is None
     assert parse_wheel_name("SHA256SUMS.txt") is None
 
 
@@ -74,7 +74,7 @@ def test_sums_lists() -> None:
 
 
 def test_the_tracked_files_agree() -> None:
-    """native/wheels.sha256 parses and lists only facegen-native wheels; the version facegen
+    """native/wheels.sha256 parses and lists only kitshot-native wheels; the version Kitshot
     calls is the crate's and the Python package's."""
     listed = parse_sums((ROOT / "native" / "wheels.sha256").read_text(encoding="utf-8"))
     assert all(parse_wheel_name(name) is not None for name in listed)
@@ -103,7 +103,7 @@ def test_which_pc_takes_which_wheel() -> None:
     assert not fits(Host("linux", "aarch64", "cpython", (3, 12), glibc=(2, 39)), linux)
     assert not fits(Host("darwin", "arm64", "cpython", (3, 12)), linux)
     # A wheel for one CPython only (not abi3).
-    exact = parse_wheel_name("facegen_native-0.1.0-cp312-cp312-win_amd64.whl")
+    exact = parse_wheel_name("kitshot_native-0.1.0-cp312-cp312-win_amd64.whl")
     assert exact is not None
     assert fits(WINDOWS_PC, exact) and not fits(Host("win32", "AMD64", "cpython", (3, 13)), exact)
 
@@ -150,7 +150,7 @@ def test_plan_reads_the_version_and_the_list(tmp_path: Path) -> None:
     assert planned.url == native_wheel.release_url("0.1.0", WIN)
     assert WIN in planned.describe()
     empty = native_wheel.plan(WINDOWS_PC, native_dir=native_dir(tmp_path / "x", "0.1.0"))
-    assert empty.wheel is None and "No prebuilt facegen-native 0.1.0" in empty.describe()
+    assert empty.wheel is None and "No prebuilt kitshot-native 0.1.0" in empty.describe()
 
 
 def test_install_checks_the_sum_before_installing(tmp_path: Path) -> None:
@@ -249,11 +249,11 @@ def test_uv_install_runs_uv_pip_quietly(tmp_path: Path, monkeypatch: pytest.Monk
 def test_install_verification_loads_the_extension_in_a_fresh_process(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: str
 ) -> None:
-    (tmp_path / "facegen_native.py").write_text("", encoding="utf-8")
-    metadata = tmp_path / f"facegen_native-{version}.dist-info"
+    (tmp_path / "kitshot_native.py").write_text("", encoding="utf-8")
+    metadata = tmp_path / f"kitshot_native-{version}.dist-info"
     metadata.mkdir()
     (metadata / "METADATA").write_text(
-        f"Name: facegen-native\nVersion: {version}\n", encoding="utf-8"
+        f"Name: kitshot-native\nVersion: {version}\n", encoding="utf-8"
     )
     run = native_wheel.procs.run_quiet
 
@@ -273,22 +273,22 @@ def test_install_verification_loads_the_extension_in_a_fresh_process(
 
 
 def test_only_the_wanted_version_is_loaded(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = types.ModuleType("facegen_native")
-    monkeypatch.setitem(sys.modules, "facegen_native", fake)
+    fake = types.ModuleType("kitshot_native")
+    monkeypatch.setitem(sys.modules, "kitshot_native", fake)
     monkeypatch.setattr(native, "installed_version", lambda: native.VERSION)
     assert native._load() == (fake, "")
     # An older wheel is not loaded at all (Windows could not replace a loaded one).
     monkeypatch.setattr(native, "installed_version", lambda: "0.0.1")
     ext, reason = native._load()
     assert ext is None and "0.0.1 is installed" in reason and native.VERSION in reason
-    monkeypatch.setitem(sys.modules, "facegen_native", None)  # import fails
+    monkeypatch.setitem(sys.modules, "kitshot_native", None)  # import fails
     monkeypatch.setattr(native, "installed_version", lambda: None)
     assert native._load() == (None, "not installed")
 
 
 def test_status_says_what_is_in_use() -> None:
     assert native.Status(True, "0.1.0", "wheel", "").describe() == (
-        "in use (facegen-native 0.1.0, prebuilt wheel)"
+        "in use (kitshot-native 0.1.0, prebuilt wheel)"
     )
     assert native.Status(True, "0.1.0", "build", "").describe().endswith("built from native/)")
     assert native.Status(False, None, None, "not installed").describe() == (
@@ -299,7 +299,7 @@ def test_status_says_what_is_in_use() -> None:
     assert now.in_use or now.reason
 
 
-# --- `facegen native` --------------------------------------------------------------------------
+# --- `kitshot native` --------------------------------------------------------------------------
 
 
 def run_native(
@@ -352,14 +352,14 @@ def test_native_command_without_install_only_reports(
 ) -> None:
     code, text, fetched, installed = run_native(tmp_path, monkeypatch)
     assert code == 0 and fetched == [] and installed == []
-    assert "not in use" in text and WIN in text and "facegen native --install" in text
+    assert "not in use" in text and WIN in text and "kitshot native --install" in text
 
 
 @pytest.mark.parametrize(
     ("kw", "says"),
     [
         ({"served": b"tampered"}, "SHA-256"),
-        ({"listed": None}, "No prebuilt facegen-native 0.1.0"),
+        ({"listed": None}, "No prebuilt kitshot-native 0.1.0"),
         ({"loads": False}, "does not load"),
     ],
 )
@@ -382,7 +382,7 @@ def test_native_command_leaves_an_extension_in_use_alone(
 def test_native_command_needs_no_database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     opened: list[object] = []
-    monkeypatch.setattr("facegen.cli.db.connect", lambda *a, **k: opened.append(a))
+    monkeypatch.setattr("kitshot.cli.db.connect", lambda *a, **k: opened.append(a))
     out = io.StringIO()
     assert main(["native"], out=out) == 0
     assert "Rust code" in out.getvalue() and opened == []

@@ -5,17 +5,17 @@ rem   1. If Kitshot is running already, show its window and stop here.
 rem   2. Find uv (on PATH or in .bin\); else install it into .bin\ with Astral's installer.
 rem   3. uv sync: Python 3.12 and the libraries (about 3 GB the first time, PyTorch most of it);
 rem      packages a setup cut short left half-installed are installed again (venv_check.py).
-rem   4. facegen launch: the prebuilt Rust extension (a failure is only a warning), then the
+rem   4. kitshot launch: the prebuilt Rust extension (a failure is only a warning), then the
 rem      model files: their size is shown and they are downloaded only after one "y".
-rem   5. Start Kitshot's window with no console, and close this one: facegen-app.exe (the
+rem   5. Start Kitshot's window with no console, and close this one: kitshot-app.exe (the
 rem      venv's pythonw.exe under Kitshot's name and icon, made by step 4), else pythonw.exe.
 rem
 rem   Start.bat --shortcut   also puts a Kitshot shortcut on the desktop and in the Start Menu.
 rem   Start.bat --update     first waits for Kitshot to quit and puts the newest release over
-rem                          this folder (src/facegen/setup/update.py; data\ is kept), then
+rem                          this folder (src/kitshot/setup/update.py; data\ is kept), then
 rem                          goes on as above with the new files. Kitshot's Update now runs it.
 rem
-rem The decisions live in Python (src/facegen/setup/launch.py and update.py), where they are
+rem The decisions live in Python (src/kitshot/setup/launch.py and update.py), where they are
 rem tested; this file only runs the steps. A log is kept in data\logs\start.log. Errors stay
 rem on screen.
 
@@ -25,7 +25,7 @@ set "ROOT=%~dp0"
 set "LOG=%ROOT%data\logs\start.log"
 set "PY=%ROOT%.venv\Scripts\python.exe"
 set "PYW=%ROOT%.venv\Scripts\pythonw.exe"
-set "APP=%ROOT%.venv\Scripts\facegen-app.exe"
+set "APP=%ROOT%.venv\Scripts\kitshot-app.exe"
 set "SHORTCUT="
 set "UPDATE="
 if /i "%~1"=="--shortcut" set "SHORTCUT=1"
@@ -62,7 +62,7 @@ if exist "%ROOT%data\update-recovery\pending.json" (
   goto pause_and_fail
 )
 if not exist "%PY%" goto find_uv
-"%PY%" -m facegen.cli launch --open-running --log "%LOG%"
+"%PY%" -m kitshot.cli launch --open-running --log "%LOG%"
 set "CODE=%ERRORLEVEL%"
 if "%CODE%"=="0" goto done
 if "%CODE%"=="4" goto fail_running
@@ -79,7 +79,7 @@ rem cmd reads a batch file line by line as it runs it, and the update replaces t
 rem the rest runs from this block, which cmd has read in full: the update, then the new
 rem Start.bat (from its first line), which sets up the new version's libraries and starts it.
 (
-  "%PY%" -m facegen.cli update --log "%LOG%"
+  "%PY%" -m kitshot.cli update --log "%LOG%"
   if errorlevel 1 pause
   endlocal
   call "%~f0"
@@ -116,7 +116,7 @@ if not exist "%PYW%" goto fail_sync
 rem A setup cut short (the console closed while uv unpacked a package) leaves the package
 rem half-installed, and uv sync alone does not notice: install those again.
 set "REPAIR="
-for /f "delims=" %%a in ('call "%PY%" -m facegen.venv_check') do set "REPAIR=%%a"
+for /f "delims=" %%a in ('call "%PY%" -m kitshot.venv_check') do set "REPAIR=%%a"
 if not defined REPAIR goto setup_done
 echo An earlier setup was cut short; installing again: %REPAIR%
 call :log "repair: %REPAIR%"
@@ -125,24 +125,24 @@ set "CODE=%ERRORLEVEL%"
 call :log "uv sync (repair): exit %CODE%"
 if not "%CODE%"=="0" goto fail_sync
 set "REPAIR="
-for /f "delims=" %%a in ('call "%PY%" -m facegen.venv_check') do set "REPAIR=%%a"
+for /f "delims=" %%a in ('call "%PY%" -m kitshot.venv_check') do set "REPAIR=%%a"
 if defined REPAIR goto fail_sync
 :setup_done
 
 rem --- 4. the Rust extension and the models ----------------------------------------------------
-"%PY%" -m facegen.cli launch --log "%LOG%"
+"%PY%" -m kitshot.cli launch --log "%LOG%"
 set "CODE=%ERRORLEVEL%"
-call :log "facegen launch: exit %CODE%"
+call :log "kitshot launch: exit %CODE%"
 if not "%CODE%"=="0" goto fail_launch
 if not defined SHORTCUT goto start_app
-"%PY%" -m facegen.cli shortcuts
-call :log "facegen shortcuts: exit %ERRORLEVEL%"
+"%PY%" -m kitshot.cli shortcuts
+call :log "kitshot shortcuts: exit %ERRORLEVEL%"
 
 rem --- 5. the window ---------------------------------------------------------------------------
 :start_app
 call :log "starting Kitshot app"
 if not exist "%APP%" set "APP=%PYW%"
-start "" "%APP%" -m facegen.desktop app
+start "" "%APP%" -m kitshot.desktop app
 goto done
 
 :fail_running

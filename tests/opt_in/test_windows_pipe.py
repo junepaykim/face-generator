@@ -20,7 +20,7 @@ def test_waiting_for_a_command_leaves_the_stdin_handle_free() -> None:
     GetFileInformationByHandle is one of them: it waited behind a plain `os.read`."""
     code = (
         "import ctypes, msvcrt, threading, time\n"
-        "from facegen.runtime.worker_process import fd_lines\n"
+        "from kitshot.runtime.worker_process import fd_lines\n"
         "threading.Thread(target=lambda: list(fd_lines(0)), daemon=True).start()\n"
         "time.sleep(0.5)\n"
         "info = ctypes.create_string_buffer(64)\n"

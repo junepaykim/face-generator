@@ -12,10 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from facegen.cli import cmd_hardware
-from facegen.persistence.settings import load_defaults, load_settings, set_overrides
-from facegen.setup import hardware
-from facegen.setup.hardware import HIGH, LOW, MEDIUM, NONE, Hardware, changes, recommend
+from kitshot.cli import cmd_hardware
+from kitshot.persistence.settings import load_defaults, load_settings, set_overrides
+from kitshot.setup import hardware
+from kitshot.setup.hardware import HIGH, LOW, MEDIUM, NONE, Hardware, changes, recommend
 
 GIB = 2**30
 
@@ -134,11 +134,11 @@ def test_detect_with_a_card(monkeypatch: pytest.MonkeyPatch) -> None:
     assert recommend(found.vram_gib) is MEDIUM
 
 
-# --- the probe: `facegen hardware --json` in a child process -----------------------------------
+# --- the probe: `kitshot hardware --json` in a child process -----------------------------------
 
 
 def program(tmp_path: Path, body: str) -> tuple[str, ...]:
-    """A stand-in for `python -m facegen.cli`: it answers `... hardware --json`."""
+    """A stand-in for `python -m kitshot.cli`: it answers `... hardware --json`."""
     path = tmp_path / "fake_cli.py"
     path.write_text(textwrap.dedent(body), encoding="utf-8")
     return (sys.executable, str(path))
@@ -170,11 +170,11 @@ def test_a_probe_that_fails_or_hangs_is_an_answer(tmp_path: Path) -> None:
 
 
 def test_the_probe_command_passes_the_config(tmp_path: Path) -> None:
-    command = hardware.command(("py", "-m", "facegen.cli"), tmp_path / "x.toml")
+    command = hardware.command(("py", "-m", "kitshot.cli"), tmp_path / "x.toml")
     assert command == [
         "py",
         "-m",
-        "facegen.cli",
+        "kitshot.cli",
         "--config",
         str(tmp_path / "x.toml"),
         "hardware",
@@ -182,7 +182,7 @@ def test_the_probe_command_passes_the_config(tmp_path: Path) -> None:
     ]
 
 
-def test_facegen_hardware(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_kitshot_hardware(monkeypatch: pytest.MonkeyPatch) -> None:
     card = Hardware("Fake 8 GB", 8 * GIB, None, "2.15.0", "13.2")
     out = io.StringIO()
     current = dict(load_settings().values)

@@ -1,0 +1,1391 @@
+# Kitshot's English UI text (Phase 12). Keys are used by the templates and the web routes;
+# ko.toml holds the same keys in Korean. Values in braces are filled in; a table with "one"
+# and "other" picks by the number in {count}. {a}, {b} and {c} name the picture groups (a
+# coloured chip on a page). A text may hold simple HTML (a link, a code span): the catalog is
+# trusted, the values filled in are escaped. Keep explanations short: what one or two uses
+# make obvious needs none; the rest goes in an ⓘ tip (keys ending in "tip").
+
+[app]
+name = "Kitshot"
+
+[group]
+a = "Detailed"
+b = "Standard"
+c = "Light"
+
+[term]
+a = "The most careful pictures: the best of several candidates, then a detail pass. My club's players and the very best."
+b = "One picture each at standard quality: strong and promising players in my league, continental competitions and my youth teams, and the press."
+c = "Quick, smaller pictures for the other useful players in my league."
+tracked = "Drawn again when they change club or look older, so the picture stays up to date."
+pinned = "Set by hand to a group, or to never draw, instead of following the rules."
+
+[band]
+W01 = "Child face"
+W02 = "Young face"
+W03 = "Late teens"
+W04 = "Early twenties"
+W05 = "Youthful"
+W06 = "Late youthful"
+W07 = "Young adult"
+W08 = "Grown adult"
+W09 = "Mature look"
+W10 = "Veteran look"
+
+[nav]
+label = "Pages"
+dashboard = "Dashboard"
+gallery = "Gallery"
+players = "Players"
+review = "Review"
+log = "Log"
+settings = "Settings"
+
+[side]
+in_game = "in-game {date}"
+unknown = "unknown"
+no_career = "no career yet"
+left = "{words} · {count:,} left"
+sync_warn = "The last sync failed or had warnings"
+version = "v{version}"
+update = "Update"
+
+[common]
+close = "Close"
+group = "{group} group"
+unknown = "unknown"
+none = "none"
+free_agent = "free agent"
+info = "More about this"
+
+[col]
+player = "Player"
+name = "Name"
+age = "Age"
+club = "Club"
+job = "Job"
+group = "Group"
+order = "Order"
+why = "Why"
+origin = "Origin"
+picture = "Picture"
+version = "Version"
+age_band = "Age look"
+state = "State"
+drawn = "Made"
+status = "Status"
+updated = "Updated"
+
+[kind]
+initial = "first picture"
+kit = "new kit"
+age = "older look"
+upgrade = "upgrade to {a}"
+reroll = "new face"
+redraw = "new picture"
+
+[tier]
+0 = "requested"
+1 = "{a}, my club"
+2 = "{a}"
+3 = "{b}"
+4 = "{c}"
+
+[status]
+drawing = "generating"
+queued = "queued: {kind}"
+in_review = "in review"
+sent_to_review = "sent to Review"
+published = "in FM27"
+drawn = "made"
+
+[job_status]
+queued = "queued"
+running = "generating"
+done = "done"
+failed = "failed"
+cancelled = "cancelled"
+
+[worker.state]
+starting = "Starting"
+idle = "Idle"
+paused = "Paused"
+waiting = "Waiting"
+setup = "Setup needed"
+running = "Generating"
+error = "Error"
+gpu-fault = "Graphics error"
+stopped = "Stopped"
+restarting = "Restarting"
+
+[tag]
+staff = "staff"
+youth_team = "youth team"
+my_club = "my club"
+my_league = "my league"
+continental = "continental"
+not_mens = "not men's"
+not_mens_football = "not men's football"
+academy = "academy"
+fm_photo = "FM27 photo"
+fm_photo_title = "FM27 ships a photo"
+facepack = "facepack"
+facepack_title = "A facepack in the graphics folder has a picture"
+no_photo = "no photo"
+no_photo_title = "FM27 shows a silhouette"
+pin = "pinned: {pin}"
+pinned_to = "pinned: {pin}"
+tracked = "auto-update"
+reference = "reference picture"
+
+[tag.media]
+journalist = "journalist"
+"press officer" = "press officer"
+
+[trait]
+hair_colour = "hair colour"
+hair_style = "hair style"
+fringe = "fringe"
+eye_colour = "eye colour"
+eye_shape = "eye shape"
+skin = "skin"
+accessory = "accessory"
+mark = "mark"
+expression = "expression"
+height = "height"
+build = "build"
+
+[setup.banner]
+title = "Set up:"
+folder_gone = "FM27's folder ({folder}) is not there any more."
+folder_missing = "FM27's folder was not found."
+choose = "<a href=\"/#setup\">Choose it on the dashboard</a>."
+models = "the models are not downloaded yet ({size}). <a href=\"/#setup\">Download them on the dashboard</a>."
+
+[setup.folder]
+title = "Set up: FM27's folder"
+gone = "FM27's folder was <code>{folder}</code>, and it is not there any more. Choose where it is now."
+missing = "Kitshot could not find FM27's folder. It holds the <code>games</code> and <code>graphics</code> folders, usually <code>Documents\\Sports Interactive\\Football Manager 27</code>."
+aria = "FM27's folder"
+use = "Use this folder"
+browse = "Browse…"
+browse_title = "Opens a folder window on this PC"
+no_browse = "Type or paste the folder: Browse cannot open a window from here."
+
+[setup.models]
+title = "Set up: the models"
+file = "Downloading file {index:,} of {files:,}: <code>{name}</code>"
+starting = "Downloading: starting"
+progress = "{percent}% · {done} of {total}"
+stop_note = "Closing Kitshot stops the download. The next download skips completed files and restarts the interrupted file."
+intro = "Kitshot needs these models from Hugging Face: {size}, downloaded once."
+rest_here = " The rest is here already."
+saved_in = "Saved in"
+free = "Free space there"
+no_space = "Not enough free space: {size} and 1 GB to spare are needed there."
+download = "Download {size}"
+done = "The models are downloaded."
+
+[dash.unsupported]
+title = "The newest save cannot be read"
+build = "<strong>{file}</strong> was saved by FM27 build <strong>{build}</strong>, which the save reader does not support."
+unknown = "<strong>{file}</strong>: the save reader does not support its game or build."
+advice = "Existing pictures and the queue are kept, and nothing new is queued from this save. When an fmsave release supports the build: bump the pin, re-run the Phase 0.1 checks and note the result in docs/research.md (AGENTS.md rule 5)."
+
+[dash.worker]
+title = "Status"
+drawing = "Generating {name} · {kind} · {group}"
+restart = "Close Kitshot and start it again to go on."
+resume = "Resume"
+pause = "Pause"
+generate_now = "Generate now"
+skip = "Skip"
+skip_title = "Stop generating {name} now; it is generated again after the rest of the queue"
+absent = "Pictures are not generated in this process (<code>kitshot serve --no-worker</code>)."
+
+[dash.worker.generate_now_why]
+fm = "Generate now, even while FM27 is running"
+held = { one = "Also generate the {count:,} picture in groups not drawn automatically", other = "Also generate the {count:,} pictures in groups not drawn automatically" }
+both = "Generate the whole queue now, every group, even while FM27 is running"
+
+[dash.now]
+current_alt = "{name}'s current picture"
+current = "Current"
+timing = "{elapsed} / avg {each}"
+
+[dash.recent]
+title = "Latest pictures"
+all = "View all in Gallery →"
+reload = "New pictures show in FM27 after Settings → Reload Skin."
+
+[dash.sync]
+active = "Active pack: <strong>{name}</strong> (newest save)"
+others = "Other careers: {names}"
+recovered = "Recovered the active career's FM27 pack."
+title = "Last sync"
+save = "Save"
+when = "When"
+failed = "Failed: {error}"
+never = "Never synced."
+syncing = "syncing"
+running = "Started {started}; this takes about half a minute."
+nothing_new = "Nothing new in the save."
+warnings = { one = "{count:,} warning", other = "{count:,} warnings" }
+now = "Sync now"
+now_title = "Read the newest save and update the queue"
+
+[dash.sync.chip]
+queued = "{count:,} queued"
+new_at_my_club = "{count:,} new at my club"
+new_staff = "{count:,} new staff"
+updated = "{count:,} updated"
+cancelled = "{count:,} cancelled"
+none = "Queue unchanged"
+
+[dash.sync.trigger]
+poller = "the save watcher"
+"sync now" = "Sync now"
+command = "kitshot sync"
+
+[dash.counts]
+title = "Players"
+my_club = "{count:,} at my club"
+staff = ", <a href=\"/players?role=staff\">{count:,} staff</a>"
+youth = "<a href=\"/players?role=youth\">{count:,} in my youth teams</a>"
+media = "<a href=\"/players?role=media&amp;group=grouped\">{count:,} journalists and press officers</a>"
+tracked = "Auto-update"
+pinned = "Pinned"
+pictures = "Pictures"
+pictures_value = "<a href=\"/players?picture=yes\">{current:,}</a> ({published:,} in FM27)"
+no_photo = "No photo"
+no_photo_value = "<a href=\"/players?origin=existing&amp;role=players&amp;photo=none\">{count:,}</a> pre-existing players, {picked:,} of them in a group"
+off_in_settings = "(off in Settings)"
+photos_unknown = "unknown: FM27's photo list could not be read"
+no_career = "No career yet. Sync a save to begin."
+
+[dash.queue]
+title = "Queue"
+left = { one = "{count:,} picture left", other = "{count:,} pictures left" }
+eta = "about {time}"
+eta_unknown = "the time shows after a few pictures"
+held = { one = "{count:,} of them waits for Generate now", other = "{count:,} of them wait for Generate now" }
+empty = "The queue is empty."
+list = "Show the list"
+first = "The first {count:,}"
+reference = "reference picture"
+cancel = "Cancel"
+skipped = "skipped"
+
+[log]
+title = "Log"
+worker = "Generating"
+empty = "Nothing yet."
+sync = "Saves"
+build = "Build"
+started_by = "Started by"
+watching = "Save watcher"
+checked = "checked {time}"
+not_watching = "not watching (<code>--no-watch</code>): press Sync now after saving"
+copy_report = "Copy report"
+open_folder = "Open log folder"
+show = "Show"
+all = "All"
+problems = "Errors and warnings"
+no_problems = "No errors or warnings."
+
+[log.watcher_state]
+starting = "Starting"
+not_set = "Not set"
+no_save = "No save"
+synced = "Synced"
+settling = "Waiting"
+due = "Reading"
+syncing = "Syncing"
+error = "Error"
+stopped = "Stopped"
+
+[log.watcher]
+starting = "Looking at FM27's saves folder…"
+not_set = "FM27's folder is not set."
+no_save = "No save in FM27's games folder yet."
+synced = "{name} ({saved})"
+settling = "{name} changed; it is read once it stops changing."
+reading = "Reading {name}…"
+publishing = "Finishing the active career's pack…"
+by_hand = "Waiting for the sync started by hand."
+cannot_look = "Cannot look at FM27's games folder; trying again shortly."
+unreadable = "{name} could not be read; waiting for the next save."
+unsupported = "{name} is from a game build the reader does not support yet; waiting for the next save."
+sync_failed = "The sync failed; trying again shortly."
+publish_failed = "The active career's pack could not be finished."
+failed = "The save watcher hit an error; trying again shortly."
+stopped = "The save watcher has stopped."
+
+[gallery]
+total = { one = "{count:,} picture", other = "{count:,} pictures" }
+none = "No pictures yet."
+to_dashboard = "See the progress on the Dashboard"
+none_match = "No pictures match."
+where = "Where"
+role_any = "Everyone"
+made = "Made {time}"
+sent = "Sent to Review"
+
+[gallery.where_option]
+any = "Every club"
+mine = "My club"
+league = "My league"
+other = "Other leagues"
+
+[gallery.sort]
+new = "Newest"
+name = "By name"
+ca = "By CA"
+
+[gallery.role]
+player = "Player"
+staff = "Staff"
+journalist = "Journalist"
+"press officer" = "Press officer"
+
+[pager]
+label = "Pages"
+page = "Page number"
+previous = "Previous page"
+next = "Next page"
+
+[lightbox]
+title = "Picture"
+reset = "Reset"
+previous = "Previous picture"
+next = "Next picture"
+
+[players]
+draw_in = "Draw in"
+draw = "Draw"
+redraw = "Redraw"
+pin = "Pin"
+total = "{count:,} players"
+tick_all = "Tick every player on this page"
+tick = "Tick {name}"
+none = "No players match."
+photos_unknown_sync = "Who has a photo is not known: the last sync could not read FM27's photo list."
+photos_unknown_next = "Who has a photo is not known yet: it is read at the next sync."
+media_local = "my club's country"
+media_elsewhere = "elsewhere"
+origin_staff = "staff"
+origin_media = "media"
+origin_newgen = "newgen"
+origin_existing = "pre-existing"
+no_picture_yet = "No picture yet"
+copy_id = "Copy unique ID"
+only_targets = "Showing picture targets only."
+show_everyone = "Show everyone in the save ({count:,})"
+
+[players.filter]
+name = "Name or unique ID"
+club_chip = "Club: {club}"
+any_club = "Any club"
+league = "League"
+min = "min"
+max = "max"
+ca_min = "CA at least"
+ca_max = "CA at most"
+pa_min = "PA at least"
+pa_max = "PA at most"
+origin = "Newgen or pre-existing"
+role = "Players, staff or media"
+photo = "Photo in FM27"
+photo_title = "The photo FM27 shows without a Kitshot picture: its own, or a facepack's"
+scope = "Scope"
+sort = "Sort"
+apply = "Filter"
+clear = "Clear"
+more = "More filters"
+shown = "Shown"
+shown_title = "Picture targets: in a group, with a picture, queued, in review or pinned"
+
+[players.bulk]
+draw_title = "Pins them to this group. Anyone without a picture, or with one from a lower group, is drawn first."
+redraw_title = "A new picture of the same character, in each one's own group. Anyone without a picture is skipped."
+pin_as = "Pin as"
+pin = "Pin"
+pin_never = "Never draw"
+pin_clear = "No pin"
+clear_selection = "Clear selection"
+
+[players.league]
+any = "Any league"
+mine = "My league"
+continental = "Continental competition"
+other = "Elsewhere"
+
+[players.origin]
+any = "Newgen or pre-existing"
+newgen = "Newgens"
+existing = "Pre-existing"
+
+[players.role]
+any = "Everyone"
+players = "Players"
+youth = "My club's youth teams"
+staff = "My club's staff"
+media = "Journalists and press officers"
+
+[players.group]
+any = "Any group"
+grouped = "In a group"
+a = "{a} group"
+b = "{b} group"
+c = "{c} group"
+none = "No group"
+pinned = "Pinned"
+tracked = "Auto-update"
+
+[players.picture]
+any = "Any picture state"
+yes = "Has a picture"
+no = "No picture"
+queued = "Queued or generating"
+review = "In review"
+
+[players.photo]
+any = "Any photo"
+game = "FM27 photo"
+facepack = "Facepack picture"
+none = "No photo or facepack"
+
+[players.scope]
+mens = "Men's football"
+all = "All players"
+
+[players.shown]
+targets = "Picture targets"
+everyone = "Everyone in the save"
+
+[players.sort]
+ca = "Sort by CA"
+pa = "Sort by PA"
+name = "Sort by name"
+age = "Sort by age"
+club = "Sort by club"
+
+# A player's reasons (Phase 17h): a short chip, and the sentence as its tooltip ([why.full]).
+[why]
+met = "{attr} {at}+"
+met_full = "{attr} {value} ({at}+)"
+met_share = "{attr} {value} (top {share}%: {at}+)"
+staff = "My club's staff"
+manager_no_photo = "Manager, no photo"
+journalist = "Local journalist"
+press_officer = "Press officer"
+academy = "Academy"
+not_mens = "Not men's football"
+pin = "Pinned"
+pin_never = "Never draw"
+staff_off = "Staff pictures off"
+left_staff = "Left my staff"
+gone = "Not in the save"
+
+[why.part]
+first_team = "First team"
+youth = "Youth team"
+loans = "Loaned out"
+
+[why.where]
+league = "My league"
+above = "League above"
+below = "League below"
+continental = "Continental"
+
+[why.who]
+newgen = "Newgen"
+no_photo = "Pre-existing, no photo"
+
+[why.full]
+staff = "On my club's staff"
+manager_no_photo = "A manager in my league without a photo"
+journalist = "A journalist from my club's country"
+press_officer = "My club's press officer"
+academy = "Came through my academy"
+not_mens = "Not in men's football"
+pin = "Pinned to {group}"
+pin_never = "Pinned to never draw"
+staff_off = "Staff pictures are off in Settings"
+left_staff = "No longer on my club's staff"
+gone = "Not in the latest save"
+tracked_regular = "Auto-update: a regular at my club"
+tracked_academy = "Auto-update: came through my academy"
+tracked_loan = "Auto-update while I hold the contract"
+tracked_at_club = "Auto-update while at my club"
+cut = "{who}, {where}: {met}"
+cut_everywhere = "{who}: {met}"
+part_cut = "{part}: {met}"
+
+[why.full.part]
+first_team = "In my club's first team"
+youth = "In my club's youth or reserve team"
+loans = "Loaned out by my club"
+
+[why.full.where]
+league = "in my league"
+above = "in the league above"
+below = "in the league below"
+continental = "in a continental competition"
+
+[player]
+current_alt = "Current picture of {name}"
+restored_on = "restored {date}"
+not_published = "not in FM27 yet"
+no_picture = "no picture"
+unique_id = "unique ID {uid}"
+staff_now = "on my club's staff"
+staff_was = "was on my club's staff"
+journalist = "journalist"
+journalist_local = "journalist from my club's country"
+press = "press officer"
+press_local = "my club's press officer"
+in_youth = " in my club's youth or reserve teams"
+from_academy = " from my academy"
+gender_unknown = "gender unknown"
+woman_in_save = "a woman in the save"
+man_in_save = "a man in the save"
+drawn_woman = ", drawn as a woman"
+drawn_man = ", drawn as a man"
+left_staff = "no longer on my club's staff"
+not_in_save = "not in the latest save"
+on_loan = "(on loan from {club})"
+born = "(born {date})"
+height = "Height"
+height_value = "{cm} cm · Strength {strength}"
+photo = "Photo"
+photo_both = "FM27's and a facepack's"
+photo_game = "FM27's"
+photo_facepack = "a facepack's"
+photo_none = "none: FM27 shows a silhouette"
+photo_unknown = "unknown until the next sync"
+personality = "Personality"
+personality_unknown = "unknown until the next sync"
+no_rule = "no rule applies"
+now = "Now"
+drawing = "generating: {kind}"
+requested = " (requested)"
+with_reference = "with the current face as a reference"
+nothing_queued = "nothing queued"
+new_face = "New face"
+new_face_title = "A new character, then a picture of it"
+new_picture_title = "A new picture of the same character"
+flag = "Send to Review"
+flag_title = "List it in Review; the picture stays in FM27 until a new one passes"
+new_picture_title_ref = "A new picture of the same character, keeping the current face"
+retry = "Retry"
+cancel_request = "Cancel request"
+remove = "Remove picture"
+remove_confirm = "Remove {name}'s picture from FM27 and never draw them? The game's own photo comes back after Reload Skin."
+pin_none = "No pin (rules decide)"
+pin_never = "Never draw"
+pin_set = "Set"
+pin_tip = "Pinning to a group generates a picture in that group, whatever the rules say. Never draw leaves this person out."
+pin_tip_media = "Pin a regular at my club to {a}: drawn at {a} quality, and updated when their age look changes."
+sheet = "Character"
+sheet_tip = "At my club, banned words are left out, tan or dark skin is drawn {steps} step(s) lighter, and {percent}% of sharp eyes are drawn round."
+eyes_round = "This player's eyes are drawn round."
+base_seed = "base seed"
+version = "version"
+sheet_later = "Made with the first picture."
+leans = "Personality favours:"
+leans_off = " (off in Settings)"
+lean = "{reason} → {expression}"
+current = "Current picture"
+kit = "Kit: {kit}"
+kit_catalog = "(colours from FM27's kit image)"
+kit_bundled = "(colours from FM27's kit image, bundled)"
+kit_fallback = "(fallback kit)"
+pose = "pose: {pose}"
+backdrop = "backdrop: {backdrop}"
+style = "style: {style}"
+seed = "seed {seed}"
+took = "made in {time}"
+detail_used = "detail pass used"
+detail_rejected = "detail pass rejected by the check"
+picked_by_hand = "picked by hand"
+pick_tip = "Click a picture that passed to use it instead."
+pick_tip_detail = "Click a picture that passed to use it instead. Only the automatic pick has the detail pass."
+auto_pick = "automatic pick"
+pick_title = "Use this picture"
+retry_publish = "Retry publishing this picture"
+full_size = "Full size"
+reference_alt = "The face given as a reference"
+reference_used = "Drawn with v{version}'s face as a reference, strength {scale}."
+reference_unused = "Drawn without a reference: {why}."
+chosen = "chosen"
+passed = "passed"
+failed = "failed"
+score = "score {score}"
+prompt = "Prompt"
+history = "History"
+history_tip = "Restore shows an earlier picture in FM27 again. It stays until the player's next club or age change, or a move up to {a}."
+reference_version = "(reference v{version})"
+state_current = "current"
+state_current_restored = "current (restored)"
+state_failed = "failed the check"
+state_replaced = "replaced or removed"
+restore = "Restore"
+restore_confirm = "Show v{version} in FM27 again instead of the current picture?"
+jobs = "Jobs"
+
+[review]
+tip = "Pictures that failed the quality check three times, which are not in FM27, and pictures you sent here, which stay in FM27 until a new one passes. Retry generates again with new seeds; Redraw draws the same character again; New face makes a new character first."
+age = "age {age}"
+give_up = "Never draw this player"
+pin_never = "Never draw"
+nothing = "No players to review right now."
+tick_all = "Select all"
+compare = "Compare"
+flagged = "Sent by you"
+flagged_title = "You sent this picture here; it stays in FM27 until a new one passes"
+keep = "Keep picture"
+keep_title = "Take it off Review; the picture stays in FM27"
+compare_title = "{name}: the candidates side by side"
+now = "Now in FM27"
+candidate = "Candidate {n}"
+
+[review.failure]
+rating = "Not rated safe ({rating})"
+content = "Content not allowed: {tags}"
+hair = "Hair colour not seen"
+eyes = "Eye colour not seen"
+people = "Not one person: {what}"
+figure = "No person found against the background"
+head = "Head too low ({share} down)"
+
+[settings]
+intro_tip = "Settings save automatically and apply at once. Undo, or an entry in Recent changes, puts earlier values back. Pictures already made are never deleted."
+undo = "Undo"
+undo_title = "Put back what the last change replaced"
+redo = "Redo"
+redo_title = "Make the change you undid last again"
+all_saved = "All changes are saved."
+changed_legend = "Changed from the default:"
+reset = "Reset all to defaults"
+reset_title = "Every setting back to its default, as one change you can undo"
+save = "Save"
+noscript = "With JavaScript off, changes are saved with this button."
+default = "Default: {value}"
+use_default = "Use default"
+history = "History ({count:,})"
+step_down = "One less"
+step_up = "One more"
+age_label = "{band} ({tags})"
+tabs = "Settings sections"
+
+[settings.tab]
+cutoffs = "Cutoffs"
+quality = "Quality"
+targets = "Targets"
+appearance = "Appearance"
+system = "System"
+
+[settings.info]
+title = "About this run"
+model = "Image model"
+model_loaded = "loaded"
+model_not_loaded = "not loaded"
+session = "This run"
+session_value = "{done:,} made, {failed:,} sent to review"
+watcher = "Save watcher"
+watching = "watching the saves folder"
+not_watching = "off (<code>--no-watch</code>): press Sync now after saving"
+photos = "FM27's photo list"
+photos_value = "{count:,} photos"
+facepacks = { one = "; {count:,} facepack with {mapped:,}", other = "; {count:,} facepacks with {mapped:,}" }
+photos_unknown = "could not be read"
+no_worker = "not generated in this process"
+version = "Version"
+updates = "Updates"
+update_checking = "checking…"
+update_available = "Kitshot {version} is available: <a href=\"{url}\" target=\"_blank\" rel=\"noopener noreferrer\">what's new</a>"
+update_latest = "up to date"
+update_failed = "could not check"
+update_off = "not looked for (switched off below)"
+update_never = "not checked yet"
+update_checked = "checked {when}"
+update_check = "Check for updates now"
+
+[settings.folders]
+title = "FM27's folders"
+user = "Saves and graphics"
+install = "Install"
+found = "found on this PC"
+from = "from {file}"
+none = "not set, and not found on this PC"
+open_fm = "Open FM27's folder"
+open_pack = "Open pack folder"
+
+[settings.gpu]
+title = "Graphics card"
+tip = "Auto-configure sets the {a} group's candidates, the detail pass and VAE tiling for this PC's graphics card."
+button = "Auto-configure for my GPU…"
+card = "{name} · {gb} GB"
+
+[settings.value]
+on = "on"
+off = "off"
+none = "none"
+skip = "not used"
+share = "top {share}%"
+at_least = "{value}+"
+
+[settings.error]
+range = "must be from {low} to {high}"
+choice = "must be one of {choices}"
+ages_rise = "each look must start at an older age than the one before"
+one_wording = "keep at least one look in this table"
+type = "has the wrong kind of value"
+scale = "must be above 0 and at most 1"
+number = "needs a number"
+whole_numbers = "needs whole numbers"
+on_off = "needs on or off"
+band = "needs a whole number, or leave it empty if not used"
+cell = "needs a number, or - to switch it off"
+
+[settings.title]
+cutoffs = "My league and continental"
+"cutoffs.my_club" = "My club"
+"cutoffs.share" = "Shares"
+"cutoffs.manual" = "My league, set by hand"
+"cutoffs.everywhere" = "Everywhere"
+groups = "Picture quality"
+"groups.a" = "{a} group"
+"groups.b" = "{b} group"
+"groups.c" = "{c} group"
+picture = "Picture shape"
+staff = "My club's staff"
+media = "Journalists and press officers"
+no_photo = "Pre-existing players without a photo"
+eligibility = "Who counts"
+newgen = "Newgens"
+age = "Age looks"
+"age.a_my_club" = "Age looks: {a} at my club"
+"age.a_other_club" = "Age looks: {a} elsewhere"
+"age.b" = "Age looks: {b}"
+"age.c" = "Age looks: {c}"
+"age.staff" = "Age looks: my club's staff"
+"age.media" = "Age looks: journalists and press officers"
+reference = "Reference picture"
+my_club = "Look at my club"
+body = "Height and build"
+personality = "Personality"
+schedule = "Running"
+render = "Rendering"
+style = "Picture style"
+display = "Language and look"
+notifications = "Notifications"
+updates = "Updates"
+database_ids = "FM27 database IDs"
+
+[settings.note]
+eligibility = "Applies from the next sync."
+staff = "Staff are drawn at {a} quality. Managers in my league without a photo get a {c} picture."
+picture = "Applies to pictures drawn from now on."
+media = "Journalists and press officers are drawn in the {b} group."
+my_club = "Applies to pictures drawn from now on."
+body = "Applies to new characters."
+style = "Z-Image-Turbo needs a graphics card with 10 GB or more."
+
+[settings.tip]
+cutoffs = "Players at other clubs are picked by their share of a league: top 12% means the best 12% of its newgens and players without a photo, by CA or PA. Shares are measured again at every sync, so they follow promotion and relegation. Manual sets my league's cuts as numbers instead. - switches a cell off."
+cutoffs_my_club = "Everyone at my club gets a picture. Youth teams and players I loaned out reach {a} by my league's or the global {a} cut."
+age = "The age each look starts at; it lasts until the next one used. An empty cell is a look the column does not use. The grey words are what the picture is drawn with."
+personality = "How much a new character's expression follows their personality. 0: not at all. 1: a fitting expression is twice as likely. 2: three times as likely."
+reference = "When a picture is drawn again (a new kit, an older look, a new picture), the current face guides the new one so the player still looks the same. A stronger reference keeps the face closer but can blur the kit."
+style = "Applies to pictures drawn from now on. Existing pictures stay as they are until they are drawn again."
+
+[settings.field_tip]
+fallback_min_unique_id = "Used only for a career's first sync, if Kitshot cannot tell newgens apart by their IDs."
+banned_traits = "Pictures with these words become much less likely."
+continental_competition_ids = "Leave empty to find them from my club's fixtures, UEFA competitions included."
+
+[settings.hint]
+generate_while_fm_running = "Off: drawing pauses while FM27 is open."
+
+[settings.placeholder]
+continental_competition_ids = "e.g. 1301394, 1301396"
+
+[settings.label]
+published_long_edge = "Picture height (px)"
+candidates = "Candidates per picture"
+detail_size = "Detail pass"
+vae_tiling = "VAE tiling (decode in tiles to save graphics memory)"
+model = "Model"
+gender = "Gender"
+first_team = "First team"
+youth = "Youth and reserve teams"
+loans = "Players I loaned out"
+academy_alumni = "Academy players stay in the {b} group after they leave"
+a_ca = "{a} CA"
+a_pa = "{a} PA"
+b_ca = "{b} CA"
+b_pa = "{b} PA"
+c_ca = "{c} CA"
+c_pa = "{c} PA"
+above_b_ca = "League above: {b} CA"
+above_c_ca = "League above: {c} CA"
+below_c_ca = "League below: {c} CA"
+continental_b_ca = "Continental: {b} CA"
+aspect = "Picture shape"
+from = "Youngest look"
+to = "Oldest look"
+start = "First look up to age"
+end = "Last look from age"
+age_mode = "Ages"
+mens_football_only = "Men's football only"
+continental_competition_ids = "Continental competition IDs (editor database IDs)"
+loaned_out_at_my_club = "Count players I loaned out as my club's"
+fallback_min_unique_id = "Newgen IDs start at"
+scale = "Reference strength (0 to 1)"
+other_clubs = "Also for players outside my club"
+banned_traits = "Banned words (comma-separated)"
+soften_skin = "Draw tan and dark skin lighter"
+round_eyes = "Share of sharp eyes drawn round (0 to 1)"
+short_below_cm = "Petite below (cm)"
+tall_from_cm = "Tall from (cm)"
+slim_strength_at_most = "Skinny at Strength at most"
+muscular_strength_from = "Muscular from Strength"
+weight = "Personality in the expression"
+poll_seconds = "Check the saves folder every (seconds)"
+generate_while_fm_running = "Generate pictures while FM27 is running"
+auto_groups = "Groups drawn automatically"
+
+[settings.label_in]
+"cutoffs.mode" = "My league's cuts"
+"cutoffs.light_above" = "{c} pictures for the league above"
+"cutoffs.light_below" = "{c} pictures for the league below"
+"staff.enabled" = "Draw my club's staff"
+"no_photo.enabled" = "Pick them by the same cuts as newgens"
+"media.journalists" = "Draw journalists from my club's country"
+"media.press_officers" = "Draw my club's press officers"
+"reference.enabled" = "Use the current face when drawing again"
+"display.language" = "Language"
+"display.theme" = "Theme"
+"notifications.new_pictures" = "Notify me when new pictures are done"
+"updates.check" = "Look for a newer Kitshot once a day"
+
+[settings.choice.detail_size]
+"x1.5" = "x1.5 (best)"
+smaller = "Smaller (low VRAM)"
+off = "Off"
+
+[settings.choice]
+custom = "{value} (custom)"
+
+[settings.choice.soften_skin]
+0 = "0 (Off)"
+1 = "1"
+2 = "2"
+
+[settings.choice.mode]
+auto = "Auto (top %)"
+manual = "Manual (numbers)"
+
+[settings.choice.age_mode]
+auto = "Auto"
+manual = "Custom"
+
+[settings.choice.aspect]
+"3:4" = "3:4 portrait"
+"1:1" = "1:1 square"
+
+[settings.choice.language]
+auto = "Auto (Windows)"
+en = "English"
+ko = "한국어"
+
+[settings.choice.theme]
+auto = "Auto (Windows)"
+light = "Light"
+dark = "Dark"
+
+[settings.choice.model]
+animagine = "Anime (Animagine XL)"
+realvis = "Photo (RealVisXL)"
+zimage_turbo = "Photo (Z-Image-Turbo)"
+
+[settings.choice.gender]
+woman = "Woman"
+man = "Man"
+
+[settings.level]
+basic = "Basic"
+advanced = "Advanced"
+
+[settings.basic]
+who = "Who gets a picture"
+who_tip = "Everyone at my club gets one. This sets how far it reaches at other clubs."
+reach = "Players at other clubs"
+custom = "Set by hand in {advanced}."
+staff = "My club's staff"
+journalists = "Journalists from my club's country"
+press_officers = "My club's press officers"
+no_photo = "Existing players with no photo"
+quality = "Picture quality"
+quality_tip = "Pick what your graphics card's memory allows. Who gets a picture does not change."
+recommended = "Recommended"
+check_card = "Check the graphics card…"
+when = "Drawing on its own"
+when_tip = "Pictures you ask for on a player's page are always drawn."
+fm_running_tip = "FM27 and the drawing share the graphics card, so the game may slow down."
+preset = "{kind}: {option}"
+
+[settings.basic.reach_option]
+fewer = "Fewer"
+default = "Default"
+more = "More"
+
+[settings.basic.quality_option]
+high = "Best"
+medium = "Balanced"
+low = "Memory saver"
+
+[cutoffs]
+summary = "Now:"
+top = "top"
+either = "CA {ca}+ or PA {pa}+"
+above = "League above"
+below = "League below"
+continental = "Continental"
+clubs = { one = "{count:,} club", other = "{count:,} clubs" }
+none = "none"
+no_league = "No league was found in the latest save: only the everywhere cuts pick players at other clubs."
+not_synced = "Values show once a save is synced."
+
+[cutoffs.col]
+league_ca = "My league: CA"
+league_pa = "My league: PA"
+elsewhere = "Other leagues"
+
+[cutoffs.effective]
+value = "≈ {name} {value}+"
+share = "≈ top {share}%"
+
+[cutoffs.found]
+league = "My league:"
+above = "Above:"
+below = "Below:"
+continental = "Continental:"
+
+[ages]
+look = "Look"
+mode = "Ages"
+mode_tip = "Auto spreads the looks evenly between two ages. Custom: you set the age each look starts at."
+adjust = "Adjust"
+spread_looks = "Looks"
+spread_ages = "Ages"
+all_down = "All −1"
+all_up = "All +1"
+all_down_title = "Every age in this column one year lower"
+all_up_title = "Every age in this column one year higher"
+not_used = "Not used"
+count_title = "People with this look now"
+count = "{count:,} now"
+and_under = "{age} and under"
+and_over = "{age} and over"
+any = "any age"
+
+[ages.col]
+a_my_club = "{a} · my club"
+a_other_club = "{a} · elsewhere"
+b = "{b}"
+c = "{c}"
+staff = "My club's staff"
+media = "Journalists and press officers"
+
+[history]
+title = "Recent changes"
+defaults = "reset to defaults"
+auto_configure = "auto-configured for the graphics card"
+shift = "{table}: every age {years}"
+undone = "undone"
+more = "{count:,} more"
+changed = { one = "{count:,} player changed group", other = "{count:,} players changed group" }
+highest = "; the {count:,} with the highest PA"
+undo = "Undo"
+undo_later = "Undo this and every later change"
+none = "No changes yet."
+
+[hardware]
+page_title = "Graphics card"
+heading = "Auto-configure for my GPU"
+back = "← Settings"
+card_title = "This PC's graphics card"
+cannot_ask = "the card cannot be asked in this process"
+cannot_ask_here = "The card cannot be asked in this process."
+card = "Card"
+no_cuda = "no CUDA graphics card"
+why = "Why"
+ask_again = "Ask the card again"
+preset_heading = "Preset: {title}"
+tip = "Who gets a picture never changes here: a smaller card is slower, it does not draw fewer people. Pictures already made stay as they are."
+apply = { one = "Apply this {count:,} change", other = "Apply these {count:,} changes" }
+nothing = "Nothing to change: the settings already suit this card."
+
+[hardware.col]
+setting = "Setting"
+now = "Now"
+after = "After"
+default = "Default"
+
+[hardware.preset.high]
+title = "12 GB or more"
+note = "The defaults: {a} is the best of 3 candidates, with the detail pass at 1344x1728."
+
+[hardware.preset.medium]
+title = "10 to under 12 GB"
+note = "{a} is the best of 3, with a smaller detail pass (1152x1472)."
+
+[hardware.preset.low]
+title = "under 10 GB"
+note = "{a} is the best of 2 with no detail pass, decoded in tiles to save memory. Slower; who gets a picture does not change."
+
+[hardware.preset.none]
+title = "no CUDA graphics card"
+note = "Nothing changes: Kitshot needs an NVIDIA card with CUDA, and none was found."
+
+[manual]
+queued = "{count:,} queued"
+pinned = "{count:,} pinned (already have a picture)"
+skipped = "{count:,} skipped ({why})"
+join = ", "
+nothing = "nothing to do"
+
+[report]
+count = "{name} {before:,} → {after:,}"
+tracked = "auto-update"
+queued = "{count:,} queued"
+queued_age = "{count:,} queued ({age:,} for a new age look)"
+updated = "{count:,} updated"
+cancelled = "{count:,} cancelled"
+queue = "queue: {what}"
+unchanged = "no player moved; the queue is unchanged"
+
+[msg]
+no_career = "No career yet: sync a save first."
+worker_absent = "Pictures are not generated in this process."
+gpu_fault_advice = "The graphics driver reported an error. Close Kitshot and start it again to go on; the queue is kept."
+sync_absent = "Syncing is not available in this process."
+sync_running = "A sync is already running."
+sync_started = "Sync started: reading the newest save."
+reload_hint = "In FM27: Settings -> Reload Skin (스킨 다시 불러오기) to see the pictures."
+skipped = "Skipped {name}: it is generated again after the rest of the queue."
+skip_gone = "Not skipped: that picture is already finished."
+
+[msg.folder_open]
+unavailable = "Folders open in Explorer on Windows only."
+missing = "That folder is not there yet."
+failed = "The folder could not be opened."
+
+[msg.folder]
+not_fm = "Not FM27's folder: {why}"
+not_saved = "Not saved: {file} {error}"
+no_effect = "Not saved: the folder did not take effect."
+reading = "Reading the newest save now."
+press_sync = "Press Sync now to read the newest save."
+next_sync = "It is used from the next sync."
+saved = "FM27's folder is {folder}. {then}"
+no_browse = "Browse is not available here: type or paste the folder."
+none_chosen = "No folder chosen."
+
+[msg.models]
+absent = "The models are not downloaded by this process."
+confirm = "Not downloaded: confirm with the Download button."
+here = "The models are here already."
+space = "Not enough free space: {size} and 1 GB to spare are needed in {folder}."
+running = "The download is running already."
+started = "Downloading the models ({size})."
+changed = "The model was changed in Settings: check the download again."
+
+[msg.player]
+bad_id = "Bad player ID."
+tick_first = "Tick at least one player first."
+none = "No player {uid} in this career."
+pinned_good = "Pinned to {group}; the picture is already good enough."
+queued_as = "Queued in the {group} group."
+new_face = "New face queued: a new character, generated next."
+new_picture = "Redraw queued."
+pinned_queued = "Pinned to {group} and queued."
+pinned_never = "Never drawn from now on; queued jobs cancelled."
+pin_cleared = "Pin cleared; the rules decide."
+removed = "Picture removed; this person is never drawn again. {reload}"
+nothing_published = "Never drawn from now on; there was no picture in FM27."
+retry = "Queued again with new seeds."
+bad_picture = "Bad picture ID."
+other_career = "Not shown in FM27: another career's save is newer."
+still_never = " It is still set to never draw, so it is not updated."
+restored = "v{version} is the current picture again.{note} {where}"
+picked = "v{version} now uses the picture you picked. {where}"
+cancelled = "Request cancelled."
+nothing_to_cancel = "Nothing to cancel."
+publish_failed = "Publishing failed: {error}"
+flagged = "Sent to Review; the picture stays in FM27 until a new one passes."
+kept = "Picture kept and taken off Review."
+not_flagged = "That picture was not sent to Review."
+
+[msg.bulk]
+retry = "Retry: {summary}."
+new_face = "New face: {summary}."
+generate = "Draw in the {group} group: {summary}."
+new_picture = "Redraw: {summary}."
+pin = "Pin to {group}: {summary}."
+pinned_never = "{count:,} player(s) pinned to never."
+unpinned = "{count:,} player(s) unpinned."
+
+[msg.settings]
+saved = "Saved: {what}."
+undone = "Undone: {what}."
+redone = "Redone: {what}."
+all_defaults = "every setting back to its default ({what})"
+eligibility = "Applies from the next sync."
+not_done = "Not done: {error}"
+no_undo = "Nothing to undo."
+no_redo = "Nothing to redo."
+nothing = "Nothing changed."
+check_field = "Not saved: check the field."
+not_saved = "Not saved: {error}"
+
+[msg.hardware]
+no_card = "Nothing changed: no CUDA graphics card ({why})."
+suits = "Nothing to change: the settings already suit the {card}."
+configured = "Auto-configured for the {card} ({preset}). {outcome} Undo puts it all back."
+
+[msg.update]
+absent = "Kitshot does not look for updates here."
+failed = "Kitshot could not ask GitHub for its newest version. Check the internet connection and try again."
+available = "Kitshot {version} is available."
+latest = "Kitshot {version} is the newest version."
+not_here = "This Kitshot cannot update itself: quit it and run Start.bat --update in its folder."
+not_started = "The update could not be started: {error}"
+
+[update]
+title = "Kitshot {version} is out"
+current = "You have {version}."
+whats_new = "What's new"
+install = "Update now"
+install_title = "Kitshot closes, updates in a window of its own and starts again"
+later = "Later"
+how_git = "This folder is a git checkout: update it with <code>git pull</code> and <code>uv sync</code>."
+how_manual = "To update, quit Kitshot and run <code>Start.bat --update</code> in its folder."
+updating_title = "Updating Kitshot"
+updating = "Kitshot closes now and a window shows the update to {version}. When it is done, Kitshot starts again by itself."
+
+[worker.reason]
+starting = "Starting…"
+no_career = "No career yet: generating starts once Kitshot has read a save."
+queue_empty = "Every picture is up to date. New ones are queued when FM27 saves."
+held = { one = "{count:,} picture in {groups} is not drawn automatically. Generate now draws it.", other = "{count:,} pictures in {groups} are not drawn automatically. Generate now draws them." }
+paused = "Paused."
+paused_error = "Paused after an error."
+models_missing = { one = "{count:,} picture waits for the models to be downloaded.", other = "{count:,} pictures wait for the models to be downloaded." }
+fm_running = { one = "Waiting for FM27 to close, so the game keeps the graphics card. {count:,} picture waits.", other = "Waiting for FM27 to close, so the game keeps the graphics card. {count:,} pictures wait." }
+fm_unknown = { one = "Kitshot cannot tell whether FM27 is open, so it waits to be safe. {count:,} picture waits.", other = "Kitshot cannot tell whether FM27 is open, so it waits to be safe. {count:,} pictures wait." }
+other_worker = "Another Kitshot is generating; this one waits for it."
+drawing = "Generating {name} · {kind} · {group}"
+next_job = "Picture done; on to the next."
+job_error = "Paused: {name} could not be generated."
+retrying = "Something went wrong; trying again shortly."
+crashed = "Stopped after an error. Close Kitshot and start it again."
+gpu_fault = "The graphics driver reported an error. Close Kitshot and start it again to go on; the queue is kept."
+gpu_fault_child = "The graphics driver reported an error; starting again by itself."
+restarting = "{cause}{then}. Starting again in {seconds} s."
+gave_up = "Stopped: the graphics card or its driver failed {count:,} times within {minutes} minutes. The queue is kept. Resume tries again; if it keeps happening, close other programs that use the graphics card, or restart the PC."
+stopped = "Stopped."
+
+# The picture being drawn, by job kind (Phase 17e): an upgrade names its group once.
+[worker.drawing]
+initial = "Generating {name} · first picture · {group}"
+kit = "Generating {name} · new kit · {group}"
+age = "Generating {name} · older look · {group}"
+upgrade = "Upgrading {name} to {group}"
+reroll = "Generating {name} · new face · {group}"
+redraw = "Generating {name} · new picture · {group}"
+
+[worker.short]
+starting = "Starting"
+no_career = "No career yet"
+queue_empty = "Idle"
+held = "Waiting for Generate now"
+paused = "Paused"
+paused_error = "Paused after an error"
+models_missing = "Models needed"
+fm_running = "FM27 running"
+fm_unknown = "Can't check FM27"
+other_worker = "Another Kitshot running"
+drawing = "Generating"
+next_job = "Generating"
+job_error = "Paused after an error"
+retrying = "Retrying soon"
+crashed = "Stopped after an error"
+gpu_fault = "Graphics error"
+gpu_fault_child = "Graphics error, restarting"
+restarting = "Restarting"
+gave_up = "Stopped after errors"
+stopped = "Stopped"
+
+[worker.cause]
+gpu = "The graphics driver reported an error"
+crash = "The generating process ended unexpectedly"
+spawn = "The generating process could not start"
+
+[worker.then]
+review = "; {name} went to review"
+queue = "; {name} is back in the queue"
+
+[dur]
+seconds = "{count} s"
+minutes = "{count} min"
+hours = "{count} h"
+hours_minutes = "{hours} h {minutes} min"
+minutes_seconds = "{minutes} min {seconds} s"
+
+[js]
+saving = "Saving…"
+no_answer = "Not saved: Kitshot did not answer. Is it still running?"
+unsaved_confirm = "Some changes could not be saved (see the fields marked in red). Leave them unsaved?"
+ticked = "{count:,} ticked"
+done_at = "done ≈ {time}"
+queued = "Queued"
+quick_no_answer = "Not done: Kitshot did not answer. Is it still running?"
+quick_reload = "Not done: reload the page and try again."
+copied = "Copied"
+copy_failed = "Could not copy."
+copying = "Copying…"
+
+[problem]
+details = "Technical details"
+sync = "The save could not be read"
+download = "The download stopped"
+publish = "The pictures could not be put into FM27"
+
+[problem.link]
+log = "Open the log"
+autoconfig = "Auto-configure for my GPU"
+models = "Download the models"
+settings = "Open Settings"
+
+[problem.review]
+qc = "Failed the quality check three times."
+gpu = "The graphics driver failed while this picture was being made."
+failed = "This picture could not be made."
+
+[problem.cause]
+gpu_memory = "The graphics card ran out of memory."
+no_gpu = "No usable NVIDIA graphics card was found."
+gpu_fault = "The graphics driver reported an error."
+disk_full = "The disk is full."
+no_permission = "Kitshot was not allowed to write a file."
+file_in_use = "Another program was using the file."
+db_busy = "Kitshot's database was busy."
+folder = "FM27's folder is not set."
+no_save = "There is no save to read yet."
+save_busy = "FM27 was still writing the save."
+models_missing = "The picture models are not downloaded."
+network = "The internet connection failed."
+unknown = "Something unexpected went wrong."
+
+[problem.do]
+gpu_memory = "Close other programs that use the graphics card, or let Auto-configure use less memory, then press Resume."
+no_gpu = "Install or update the NVIDIA driver, then start Kitshot again."
+gpu_fault = "If it keeps happening, update the graphics driver or restart the PC."
+disk_full = "Free some space, then try again."
+no_permission = "Check that FM27's folder and Kitshot's folder are not read-only and that security software is not blocking Kitshot, then try again."
+file_in_use = "Wait a moment and try again; FM27 may be loading its graphics."
+db_busy = "Kitshot tries again by itself."
+folder = "Choose FM27's folder on the dashboard or in Settings."
+no_save = "Save the game in FM27, then press Sync now."
+save_busy = "Kitshot reads it again once FM27 has finished saving."
+models_missing = "Download them under Set up on the dashboard."
+network = "Check the internet connection and download again. Completed files are kept."
+unknown = "Try again. If it happens again, the details below and the Log page say more."
+
+[manual.refusal]
+absent = "not in the latest save"
+not_mens = "not in men's football"
+drawing = "being generated right now"
+never = "set to never draw; clear the pin first"
+no_picture = "no picture to draw again; use Draw"
+no_group = "in no group; use Draw and choose one"
+no_failed = "no failed picture to retry"
+
+[manual.error]
+career_changed = "This form no longer matches the active career. Reload the page and try again."
+named = "{name}: {why}"
+no_player = "No player {uid} in this career."
+busy = "{name} is being generated right now; try again in a moment."
+nothing_to_retry = "{name} has nothing to retry."
+no_image = "{name} has no picture {image}."
+already_current = "v{version} is already the current picture."
+failed_check = "v{version} failed the quality check, so it is never put into FM27."
+file_missing = "The picture file of v{version} is missing."
+no_current = "{name} has no picture."
+no_candidate = "v{version} has no such picture."
+candidate_failed = "That picture failed the quality check, so it is never put into FM27."
+already_picked = "That picture is already in use for v{version}."
+candidate_missing = "The picture file is missing."
+picture_changed = "v{version} has been drawn since this page was opened. Reload the page and pick again."
+
+[error_page]
+not_found = "Not found"
+not_found_text = "This page or player is not here."
+server = "Something went wrong"
+server_text = "Kitshot hit an unexpected error. The rest of Kitshot still works."
+back = "Back to the dashboard"
+
+[guide]
+title = "Getting started"
+title_done = "Ready"
+close = "Close"
+
+[guide.step]
+folder = "FM27's folder"
+gpu = "Graphics card"
+models = "Picture models"
+sync = "Your save"
+pictures = "First pictures"
+
+[guide.folder]
+missing = "Not found. Choose it below."
+gone = "<code>{folder}</code> is not there any more. Choose where it is now."
+hint = "It holds the <code>games</code> and <code>graphics</code> folders, usually <code>Documents\\Sports Interactive\\Football Manager 27</code>. A save from its games folder works too."
+
+[guide.gpu]
+asking = "Checking the graphics card…"
+fine = "{card}, {gib} GB: the settings suit it."
+suggest = { one = "{card}, {gib} GB: {count:,} setting should change for this card.", other = "{card}, {gib} GB: {count:,} settings should change for this card." }
+apply = "Apply"
+none = "No NVIDIA graphics card with CUDA was found, so pictures cannot be made on this PC."
+
+[guide.models]
+done = "Downloaded."
+
+[guide.sync]
+done = "{career} · in-game {date}"
+wait = "Read once FM27's folder is set."
+working = "Reading the newest save…"
+save = "Save the game in FM27; Kitshot reads it by itself."
+press = "Save the game in FM27, then press Sync now."
+
+[guide.pictures]
+done = { one = "{count:,} picture made. In FM27: Settings → Reload Skin to see it.", other = "{count:,} pictures made. In FM27: Settings → Reload Skin to see them." }
+wait = "Starts once the save is read and the models are here."
+drawing = "Generating {name}…"
+starting = "Starting…"
+fm = "FM27 is open, so Kitshot waits until you close it. Generate now starts at once."
+held = "The pictures waiting are in groups that are not drawn automatically."
+paused = "Paused."
+nobody = "Nobody in this save gets a picture yet. Check the group thresholds in Settings."
+
+[models.repo]
+"cagliostrolab/animagine-xl-4.0" = "Animagine XL 4.0, the image model"
+"SG161222/RealVisXL_V5.0" = "RealVisXL V5.0, the image model"
+"Tongyi-MAI/Z-Image-Turbo" = "Z-Image-Turbo, the image model"
+"h94/IP-Adapter" = "IP-Adapter plus-face, for re-draws that keep the face"
+"SmilingWolf/wd-eva02-large-tagger-v3" = "WD EVA02 tagger, for the quality check"

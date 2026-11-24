@@ -17,9 +17,9 @@ from fastapi.testclient import TestClient
 from support.desktop import FakeWorker, status
 from support.web import BASE, KOREAN_WINDOWS, client_for, fake_worker, synced
 
-from facegen.persistence.settings import load_settings
-from facegen.runtime.contracts import LogLine, PollerStatus
-from facegen.web.app import AppContext, create_app
+from kitshot.persistence.settings import load_settings
+from kitshot.runtime.contracts import LogLine, PollerStatus
+from kitshot.web.app import AppContext, create_app
 
 TODAY = datetime.now().strftime("%Y-%m-%d")
 LINES = (
@@ -126,7 +126,7 @@ def test_copy_report_and_open_log_folder_in_the_header(log_client: TestClient) -
 
 
 def test_without_explorer_there_is_no_open_folder(config_file: Path, db_path: Path) -> None:
-    """WSL's `facegen serve` and Linux: no Explorer, so no button, and the route says so."""
+    """WSL's `kitshot serve` and Linux: no Explorer, so no button, and the route says so."""
     with client(config_file, db_path) as c:
         assert "/folders/open" not in head(c.get("/log").text)
         r = c.post("/folders/open", data={"name": "logs"}, headers={"Accept": "application/json"})

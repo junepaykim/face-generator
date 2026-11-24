@@ -8,11 +8,11 @@ from pathlib import PureWindowsPath
 
 import pytest
 
-from facegen.core.job_records import Job
-from facegen.core.settings_values import Settings
-from facegen.runtime.contracts import LogLine, PollerStatus, SyncStatus, WorkerStatus
-from facegen.runtime.report import ReportFacts, build, log_line, redact
-from facegen.setup.hardware import Hardware
+from kitshot.core.job_records import Job
+from kitshot.core.settings_values import Settings
+from kitshot.runtime.contracts import LogLine, PollerStatus, SyncStatus, WorkerStatus
+from kitshot.runtime.report import ReportFacts, build, log_line, redact
+from kitshot.setup.hardware import Hardware
 
 HOME = r"C:\Users\Sam Lee"
 FM = HOME + r"\Documents\Sports Interactive\Football Manager 27"
@@ -39,7 +39,7 @@ def facts(settings: Settings, **kw: object) -> ReportFacts:
     paths = replace(
         settings.paths,
         fm_user_dir=PureWindowsPath(FM),  # type: ignore[arg-type]
-        data_dir=PureWindowsPath(HOME + r"\AppData\Local\facegen\data"),  # type: ignore[arg-type]
+        data_dir=PureWindowsPath(HOME + r"\AppData\Local\kitshot\data"),  # type: ignore[arg-type]
     )
     worker = WorkerStatus(
         state="running",
@@ -117,7 +117,7 @@ def test_the_report_says_what_helps_and_hides_the_home_folder(settings: Settings
         "Last sync: Sam Lee - 레드우드.fm at 2026-11-22T18:20:02",
         "  Warning: 2 kits unknown",
         r"FM27 folder: %USERPROFILE%\Documents\Sports Interactive\Football Manager 27",
-        r"Data folder: %USERPROFILE%\AppData\Local\facegen\data",
+        r"Data folder: %USERPROFILE%\AppData\Local\kitshot\data",
     ):
         assert expected in lines, expected
     assert any(line.startswith("Save watcher: synced (checked 18:55:10)") for line in lines)

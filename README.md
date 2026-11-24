@@ -1,4 +1,4 @@
-<img src="src/facegen/web/static/kitshot.svg" alt="" width="88" align="right">
+<img src="src/kitshot/web/static/kitshot.svg" alt="" width="88" align="right">
 
 # Kitshot
 
@@ -10,11 +10,11 @@ the save, draws on a local GPU and publishes a graphics pack the game can load.
 
 | Engineering challenge | Implementation | Measured result |
 |---|---|---|
-| [Fit SDXL inference in 8 GiB](src/facegen/render/quantise.py) | Store the UNet’s linear-layer weights in INT8. Keep text encoders and the quality tagger in system RAM between uses. | On an RTX 4080, peak VRAM reserved by PyTorch fell from **10.95 to 6.88 GiB** for a full-quality portrait and from **11.82 to 7.70 GiB** for a reference-guided redraw. |
-| [Load a 6B photo model on a 16 GB PC](src/facegen/render/zimage.py) | Build Z-Image-Turbo’s transformer tensor by tensor from its fp32 files straight onto the GPU, storing block layers in 4-bit NF4. Convert the text encoder to INT8 before the transformer loads. | Peak system RAM while loading fell from **12.2 to 4.3 GiB**, and load time from **20.3 to about 13.5 s**, with byte-identical pictures. |
-| [Keep the UI responsive during save reads](src/facegen/runtime/sync_process.py) | Move save parsing and database sync from a thread in the desktop app to a child process with its own Python interpreter. | During a 320 MB save sync under WSL2, 90th-percentile latency fell on both the Players page (**1,272 → 77 ms**) and the status endpoint (**2,021 → 153 ms**). |
+| [Fit SDXL inference in 8 GiB](src/kitshot/render/quantise.py) | Store the UNet’s linear-layer weights in INT8. Keep text encoders and the quality tagger in system RAM between uses. | On an RTX 4080, peak VRAM reserved by PyTorch fell from **10.95 to 6.88 GiB** for a full-quality portrait and from **11.82 to 7.70 GiB** for a reference-guided redraw. |
+| [Load a 6B photo model on a 16 GB PC](src/kitshot/render/zimage.py) | Build Z-Image-Turbo’s transformer tensor by tensor from its fp32 files straight onto the GPU, storing block layers in 4-bit NF4. Convert the text encoder to INT8 before the transformer loads. | Peak system RAM while loading fell from **12.2 to 4.3 GiB**, and load time from **20.3 to about 13.5 s**, with byte-identical pictures. |
+| [Keep the UI responsive during save reads](src/kitshot/runtime/sync_process.py) | Move save parsing and database sync from a thread in the desktop app to a child process with its own Python interpreter. | During a 320 MB save sync under WSL2, 90th-percentile latency fell on both the Players page (**1,272 → 77 ms**) and the status endpoint (**2,021 → 153 ms**). |
 | [Speed up portrait publishing with Rust](native/src/portrait.rs) | A PyO3 extension releases Python’s GIL and uses Rayon to resize and encode multiple PNGs in parallel. | Republishing a 58-portrait pack took **6.4 s**, down from **57.0 s** (**8.9× faster**), with identical FM portrait mappings. |
-| [Query a SQLite catalogue of 181,315 people](src/facegen/persistence/player_queries.py) | Select the 100 IDs for the requested page before joining their details. For the Review filter, find matching jobs once. | Median time for the first page including its count fell from **136 to 52 ms**. With the Review filter, it fell from **155 to 23 ms**. |
+| [Query a SQLite catalogue of 181,315 people](src/kitshot/persistence/player_queries.py) | Select the 100 IDs for the requested page before joining their details. For the Review filter, find matching jobs once. | Median time for the first page including its count fell from **136 to 52 ms**. With the Review filter, it fell from **155 to 23 ms**. |
 
 <p align="center">
   <img src="docs/images/hero.jpg" alt="Four generated portraits of made-up players in football kits: two photos of men, then two anime women" width="760">
@@ -84,7 +84,7 @@ flowchart LR
     ui["Web UI<br/>hand picks"] --> queue
     queue --> gpu["GPU worker<br/>Animagine XL or RealVisXL (INT8)<br/>Z-Image-Turbo (NF4)"]
     gpu --> check{"Checks: content,<br/>hair, eyes, one person"}
-    check -->|"pass"| pub["graphics/facegen/<br/>+ config.xml"]
+    check -->|"pass"| pub["graphics/kitshot/<br/>+ config.xml"]
     check -.->|"fails 3 rounds"| review["Review page"]
     pub --> fm["FM27: Reload Skin"]
 ```
@@ -101,7 +101,7 @@ child processes through pipes.
   during a 55-second sync of a 326 MB save.
 
 By default the worker waits while FM27 is running and frees the GPU when you start the
-game. Its log is in `data/logs/facegen.log`.
+game. Its log is in `data/logs/kitshot.log`.
 
 ## The constraint
 
@@ -300,7 +300,7 @@ portraits; the published size is the height. With these defaults my test saves h
   10 GB cards and up. The presets are not yet tried on smaller cards.
 - **Club colours.** A hand-tuned kit table takes priority. For 832 clubs, the app also
   ships colour estimates from FM27’s home shirt images. Clubs missing from both sources
-  get a neutral kit. [Kit catalogue](src/facegen/data/kit_catalog.json)
+  get a neutral kit. [Kit catalogue](src/kitshot/data/kit_catalog.json)
 - **A new photo shoot each time.** The character sheet keeps a player's face, hair and
   eyes; each picture draws the rest. The kit is worn with short, long or layered sleeves,
   a collar, or as club training wear: a track jacket, open over the shirt or zipped to a
@@ -380,8 +380,8 @@ query rewrite returned identical results across 446 filter, sort and page combin
 ## Development
 
 See the [project guide](AGENTS.md) for source setup, the repository layout and development
-commands. From a prepared checkout, `uv run facegen sync --dry-run` previews who would get a
-portrait and `uv run facegen status` shows careers and queued work.
+commands. From a prepared checkout, `uv run kitshot sync --dry-run` previews who would get a
+portrait and `uv run kitshot status` shows careers and queued work.
 
 ### Tests
 
@@ -390,7 +390,7 @@ behaviour and checks parity between the Python and Rust image paths when both ar
 installed. [Test suite guide](tests/AGENTS.md)
 
 ```bash
-env -u FACEGEN_TEST_GPU -u FACEGEN_TEST_SAVE HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+env -u KITSHOT_TEST_GPU -u KITSHOT_TEST_SAVE HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
   uv run --no-sync pytest -ra
 ```
 
@@ -400,7 +400,7 @@ equivalence and the 8 GiB budget: one file per image model (`test_gpu.py` for An
 every model and gender. Run one file at a time.
 
 ```bash
-FACEGEN_TEST_GPU=1 uv run --no-sync pytest tests/opt_in/test_gpu.py
+KITSHOT_TEST_GPU=1 uv run --no-sync pytest tests/opt_in/test_gpu.py
 ```
 
 ### Release and source layout
@@ -410,7 +410,7 @@ publishes the executable with a SHA-256 checksum. [Release workflow](.github/wor
 
 | Path | Contents |
 |---|---|
-| [src/facegen/](src/facegen/) | Python pipeline, GPU renderer, FastAPI dashboard and desktop app |
+| [src/kitshot/](src/kitshot/) | Python pipeline, GPU renderer, FastAPI dashboard and desktop app |
 | [native/](native/) | Rust image processing exposed to Python through PyO3 |
 | [config/](config/) | Default settings and club kit colour overrides |
 | [scripts/spikes/](scripts/spikes/) | Experiments behind the GPU and SQLite measurements |
@@ -448,6 +448,8 @@ Skin** in FM27 to see them.
 
 The dashboard checks daily. **Update now** installs a new version and keeps your portraits,
 database and settings. You can turn off daily checks in **Settings → Advanced → System**.
+Versions before the rename kept FM27's pictures in `graphics\facegen`; after the update, the
+next sync or new picture moves them to `graphics\kitshot`. Then choose **Reload Skin** in FM27.
 
 ### Uninstall
 

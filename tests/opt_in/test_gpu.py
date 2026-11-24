@@ -1,5 +1,5 @@
 # AGENT INVARIANT: Do not weaken or bypass these assertions to make implementation changes pass without explicit user approval.
-"""The real model and tagger. Opt-in: FACEGEN_TEST_GPU=1 uv run --no-sync pytest tests/opt_in/test_gpu.py
+"""The real model and tagger. Opt-in: KITSHOT_TEST_GPU=1 uv run --no-sync pytest tests/opt_in/test_gpu.py
 
 Needs the GPU, the models in the Hugging Face cache (Animagine, the EVA02 tagger and, for the
 reference test, h94/IP-Adapter), and FM27 closed. Draws one made-up player; the pictures stay
@@ -18,15 +18,15 @@ import pytest
 pytestmark = [
     pytest.mark.gpu,
     pytest.mark.skipif(
-        os.environ.get("FACEGEN_TEST_GPU") != "1", reason="set FACEGEN_TEST_GPU=1 to use the GPU"
+        os.environ.get("KITSHOT_TEST_GPU") != "1", reason="set KITSHOT_TEST_GPU=1 to use the GPU"
     ),
 ]
 
 
 @pytest.fixture(scope="module")
 def gpu() -> Iterator[tuple[Any, Any]]:
-    from facegen.pipeline.worker import AnimagineRenderer
-    from facegen.qc import Eva02Tagger
+    from kitshot.pipeline.worker import AnimagineRenderer
+    from kitshot.qc import Eva02Tagger
 
     renderer = AnimagineRenderer()
     tagger = Eva02Tagger()
@@ -38,9 +38,9 @@ def gpu() -> Iterator[tuple[Any, Any]]:
 
 @pytest.fixture(scope="module")
 def case() -> tuple[Any, Any, Any]:
-    from facegen.core.prompt import build_prompt
-    from facegen.core.traits import sample_sheet
-    from facegen.datasource.kits import Kit
+    from kitshot.core.prompt import build_prompt
+    from kitshot.core.traits import sample_sheet
+    from kitshot.datasource.kits import Kit
 
     sheet = sample_sheet("gpu-test", 1, 1)
     kit = Kit(shirt=("blue", "white"), pattern="stripes", shorts="blue")
@@ -54,9 +54,9 @@ def _difference(a: Any, b: Any) -> float:
 
 
 def test_render_check_and_detail(gpu: tuple[Any, Any], case: tuple[Any, Any, Any]) -> None:
-    from facegen import qc
-    from facegen.pipeline.worker import HEIGHT, WIDTH
-    from facegen.render.picture import crop_to_aspect
+    from kitshot import qc
+    from kitshot.pipeline.worker import HEIGHT, WIDTH
+    from kitshot.render.picture import crop_to_aspect
 
     renderer, tagger = gpu
     sheet, kit, prompt = case
@@ -79,12 +79,12 @@ def test_render_check_and_detail(gpu: tuple[Any, Any], case: tuple[Any, Any, Any
 def test_a_man_through_the_mens_check(gpu: tuple[Any, Any]) -> None:
     """A man as the worker prompts Animagine for him: his seeded sheet in tags at his age, in
     his shoot's kit (core/style.py), judged by the men's check (Phase 15h, 15k)."""
-    from facegen import qc
-    from facegen.core.man_traits import sample_man_sheet
-    from facegen.core.shoot import shoot_for
-    from facegen.core.style import portrait_prompt, shoot_hair
-    from facegen.core.traits import sample_sheet
-    from facegen.datasource.kits import Kit
+    from kitshot import qc
+    from kitshot.core.man_traits import sample_man_sheet
+    from kitshot.core.shoot import shoot_for
+    from kitshot.core.style import portrait_prompt, shoot_hair
+    from kitshot.core.traits import sample_sheet
+    from kitshot.datasource.kits import Kit
 
     renderer, tagger = gpu
     age = 24
@@ -117,9 +117,9 @@ def test_a_man_through_the_mens_check(gpu: tuple[Any, Any]) -> None:
 def test_reference_picture(gpu: tuple[Any, Any], case: tuple[Any, Any, Any]) -> None:
     """IP-Adapter loads on the first reference, draws with it, and switches out again so a
     picture without a reference is the plain model's."""
-    from facegen import qc
-    from facegen.pipeline.worker import Reference
-    from facegen.render.picture import crop_to_aspect, face_box
+    from kitshot import qc
+    from kitshot.pipeline.worker import Reference
+    from kitshot.render.picture import crop_to_aspect, face_box
 
     renderer, tagger = gpu
     sheet, kit, prompt = case
@@ -159,9 +159,9 @@ def test_offloaded_models_keep_peak_vram_under_8_gib(
     encoder are back in system memory afterwards."""
     import torch
 
-    from facegen.core.prompt import build_prompt
-    from facegen.pipeline.worker import Reference
-    from facegen.render.picture import face_box
+    from kitshot.core.prompt import build_prompt
+    from kitshot.pipeline.worker import Reference
+    from kitshot.render.picture import face_box
 
     renderer, tagger = gpu
     sheet, kit, _ = case
@@ -197,9 +197,9 @@ def test_pre_encoded_prompts_draw_bit_for_bit_what_encoding_per_job_drew(
     import torch
     from encoding_reference import encode_pair_before_cache
 
-    from facegen.core.prompt import build_prompt
-    from facegen.render.gpu import on_gpu
-    from facegen.render.renderer import CFG, HEIGHT, STEPS, WIDTH
+    from kitshot.core.prompt import build_prompt
+    from kitshot.render.gpu import on_gpu
+    from kitshot.render.renderer import CFG, HEIGHT, STEPS, WIDTH
 
     renderer, _ = gpu
     sheet, kit, _ = case

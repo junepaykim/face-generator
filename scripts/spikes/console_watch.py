@@ -1,4 +1,4 @@
-"""Phase 8 on Windows: does a console window flash while `facegen serve` runs?
+"""Phase 8 on Windows: does a console window flash while `kitshot serve` runs?
 
 Records every console window Windows shows (a WinEvent hook on EVENT_OBJECT_SHOW, so even a
 window shown for a few milliseconds is caught) and the program that owns it.
@@ -8,12 +8,12 @@ window shown for a few milliseconds is caught) and the program that owns it.
 
 `--selftest` first proves the watcher sees a flash: a window-less Python (pythonw.exe) starts
 tasklist.exe plainly, which opens a console, and then through `procs.run_quiet`, which must
-not. The run starts `facegen serve` with pythonw.exe (no console of its own, as the app shell
+not. The run starts `kitshot serve` with pythonw.exe (no console of its own, as the app shell
 of Phase 11 will) on a sandbox in data/console/<name>/: its own config, database, data folder
 and a stand-in FM27 folder with the soak test's made-up players queued, so the user's
 database and FM27's real folders are never touched. The worker process it starts asks
 tasklist.exe whether FM27 runs before each job, every 30 s while FM27 runs; with FM27 closed it
-draws the made-up players on the GPU. At the end facegen and its worker process are ended
+draws the made-up players on the GPU. At the end Kitshot and its worker process are ended
 (taskkill) and the windows seen are listed, with whether the model loaded and the jobs' states.
 
 Windows only. Console windows of other programs opened meanwhile are listed too, with their
@@ -127,7 +127,7 @@ def pythonw() -> str:
 def selftest() -> int:
     plain = "import subprocess; subprocess.run(['tasklist.exe'], capture_output=True)"
     quiet = (
-        "from facegen.platform import procs; procs.run_quiet(['tasklist.exe'], timeout=30,"
+        "from kitshot.platform import procs; procs.run_quiet(['tasklist.exe'], timeout=30,"
         " capture_output=True)"
     )
     results = {}
@@ -149,9 +149,9 @@ def run(name: str, seconds: float, port: int) -> int:
     from factories import snapshot
     from soak_test import world, write_config
 
-    from facegen.persistence import db
-    from facegen.persistence.settings import load_settings
-    from facegen.pipeline.sync import run_sync
+    from kitshot.persistence import db
+    from kitshot.persistence.settings import load_settings
+    from kitshot.pipeline.sync import run_sync
 
     sandbox = ROOT / "data" / "console" / name
     if sandbox.exists():
@@ -169,12 +169,12 @@ def run(name: str, seconds: float, port: int) -> int:
     w = Watcher()
     log = (sandbox / "serve-output.txt").open("w", encoding="utf-8")
     server = subprocess.Popen(
-        [pythonw(), "-m", "facegen.cli", "--config", str(config), "serve", "--port", str(port)],
+        [pythonw(), "-m", "kitshot.cli", "--config", str(config), "serve", "--port", str(port)],
         stdout=log,
         stderr=subprocess.STDOUT,
         cwd=ROOT,
     )
-    print(f"facegen serve (pid {server.pid}) under pythonw.exe for {seconds:.0f} s", flush=True)
+    print(f"kitshot serve (pid {server.pid}) under pythonw.exe for {seconds:.0f} s", flush=True)
     t0 = time.monotonic()
     try:
         while time.monotonic() - t0 < seconds and server.poll() is None:
@@ -190,7 +190,7 @@ def run(name: str, seconds: float, port: int) -> int:
         w.pump(2.0)
         w.close()
         log.close()
-    facegen_log = settings.paths.data_dir / "logs" / "facegen.log"
+    facegen_log = settings.paths.data_dir / "logs" / "kitshot.log"
     text = facegen_log.read_text(encoding="utf-8", errors="replace") if facegen_log.exists() else ""
     conn = db.connect(settings.paths.db_path)
     try:

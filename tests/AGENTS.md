@@ -46,7 +46,7 @@ pass without explicit user approval; fix the implementation or raise the conflic
 - `fake_child.py`: worker protocol/fault/crash/hang scenarios. `gpu_child.py` runs the
   real worker loop with fake rendering and fault injection; it requires no GPU.
 - `fake_window_child.py`: real window protocol with a fake GUI.
-- `sync_child.py`: real `facegen sync-process` with a fake reader by plan (synced,
+- `sync_child.py`: real `kitshot sync-process` with a fake reader by plan (synced,
   unsupported, crash, slow read/transaction/publication for Quit).
 - `support/config.py`, `desktop.py`, `fmsave.py`, `people.py`, `photos.py`: temporary
   settings, controller doubles, reader-shaped records, byte fixtures and photo catalogs.
@@ -60,7 +60,7 @@ pass without explicit user approval; fix the implementation or raise the conflic
   real user state/caches. Use `tmp_path`, fake disks/fetchers and installed packages;
   loopback HTTP servers are allowed. Never configure real FM folders or runtime databases.
 - Real GPU/save tests require separate authorization and explicit selection:
-  `FACEGEN_TEST_GPU=1` uses cached models; `FACEGEN_TEST_SAVE` names a snapshot copy.
+  `KITSHOT_TEST_GPU=1` uses cached models; `KITSHOT_TEST_SAVE` names a snapshot copy.
 - The Windows pipe test runs on native Windows and skips on Linux/WSL. There is no real
   GUI pytest case; future GUI cases need an explicit opt-in gate plus `windows_only`.
 - CPU encoding/quantization parity uses tiny random models and installed tensor libraries,

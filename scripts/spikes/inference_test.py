@@ -16,7 +16,7 @@ production; only how the UNet computes changes. Variants (joined with "+"):
            for every attention call with head dim 64/96/128 (all 140 in the UNet; the VAE's
            single 512-wide head stays on SDPA). Not a project dependency; run with
            `uv run --with sageattention==1.0.6` (approved by the user for this test).
-  w8       weight-only INT8 as production now has it (facegen.quantise): the same 700
+  w8       weight-only INT8 as production now has it (kitshot.quantise): the same 700
            layers stored as INT8 per output channel and rebuilt in fp16 per call; no compile.
 
 The baseline is AnimagineRenderer with fp16_accumulation and int8_weights off, which draws
@@ -51,14 +51,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from facegen.core.prompt import Prompt, build_prompt
-from facegen.core.traits import pick_pose, picture_seed, sample_sheet
-from facegen.datasource.kits import Kit, load_kits
-from facegen.persistence.settings import load_settings
-from facegen.render import quality_checks as qc
-from facegen.render.gpu import prepare_environment
-from facegen.render.picture import face_box
-from facegen.render.tagger import Eva02Tagger
+from kitshot.core.prompt import Prompt, build_prompt
+from kitshot.core.traits import pick_pose, picture_seed, sample_sheet
+from kitshot.datasource.kits import Kit, load_kits
+from kitshot.persistence.settings import load_settings
+from kitshot.render import quality_checks as qc
+from kitshot.render.gpu import prepare_environment
+from kitshot.render.picture import face_box
+from kitshot.render.tagger import Eva02Tagger
 
 prepare_environment()
 
@@ -167,7 +167,7 @@ def quantised_unet(kind: str) -> tuple[torch.nn.Module, int]:
     """A second UNet with its transformer-block Linear layers in FP8 or INT8, on the GPU."""
     from diffusers import UNet2DConditionModel
 
-    from facegen.pipeline.worker import MODEL_REPO
+    from kitshot.pipeline.worker import MODEL_REPO
 
     unet = UNet2DConditionModel.from_pretrained(
         MODEL_REPO, subfolder="unet", dtype=torch.float16, use_safetensors=True
@@ -190,8 +190,8 @@ def weight_only_unet() -> tuple[torch.nn.Module, int]:
     """A second UNet quantised exactly as AnimagineRenderer does by default."""
     from diffusers import UNet2DConditionModel
 
-    from facegen.pipeline.worker import INT8_SCOPE, MODEL_REPO
-    from facegen.render.quantise import quantise_linears
+    from kitshot.pipeline.worker import INT8_SCOPE, MODEL_REPO
+    from kitshot.render.quantise import quantise_linears
 
     unet = UNet2DConditionModel.from_pretrained(
         MODEL_REPO, subfolder="unet", dtype=torch.float16, use_safetensors=True
@@ -204,7 +204,7 @@ def bf16_unet() -> torch.nn.Module:
     """A second UNet in bf16, casting the pipeline's fp16 inputs and its output."""
     from diffusers import UNet2DConditionModel
 
-    from facegen.pipeline.worker import MODEL_REPO
+    from kitshot.pipeline.worker import MODEL_REPO
 
     unet = UNet2DConditionModel.from_pretrained(
         MODEL_REPO, subfolder="unet", dtype=torch.bfloat16, use_safetensors=True
@@ -281,7 +281,7 @@ def render(name: str) -> None:
         sys.exit(f"render the baseline first: {sys.argv[0]} render {BASE}")
     from PIL import Image
 
-    from facegen.pipeline.worker import AnimagineRenderer
+    from kitshot.pipeline.worker import AnimagineRenderer
 
     out_dir = RUN / name
     out_dir.mkdir(parents=True, exist_ok=True)

@@ -1,4 +1,4 @@
-"""The bytes of facegen-app.exe's resources: version information, icons and the launcher
+"""The bytes of kitshot-app.exe's resources: version information, icons and the launcher
 without its signature (desktop/app_exe.py)."""
 
 from __future__ import annotations
@@ -10,8 +10,8 @@ from dataclasses import dataclass, field
 import pytest
 from support.pe import IMAGE_SIZE, SECURITY_AT, synthetic_pe
 
-from facegen.desktop import app_exe
-from facegen.desktop.app_exe import AppExeError
+from kitshot.desktop import app_exe
+from kitshot.desktop.app_exe import AppExeError
 
 
 @pytest.mark.parametrize(
@@ -75,14 +75,14 @@ def test_the_version_information_names_kitshot() -> None:
     assert strings["FileDescription"] == strings["ProductName"] == "Kitshot"
     assert strings["CompanyName"] == "Kitshot"
     assert strings["FileVersion"] == strings["ProductVersion"] == "0.1.2"
-    assert strings["OriginalFilename"] == "facegen-app.exe"
+    assert strings["OriginalFilename"] == "kitshot-app.exe"
     assert "Python Software Foundation" in strings["LegalCopyright"]
     translation = root.child("VarFileInfo").child("Translation")
     assert translation.value == struct.pack("<HH", 0x0409, 1200)
 
 
 def test_an_icon_file_becomes_pictures_and_their_directory() -> None:
-    from facegen.desktop.app_icon import icon_image
+    from kitshot.desktop.app_icon import icon_image
 
     buffer = io.BytesIO()
     icon_image(None, 256).save(buffer, format="ICO", sizes=[(16, 16), (32, 32), (256, 256)])
@@ -133,7 +133,7 @@ def test_the_stamp_changes_with_each_input() -> None:
 
 def test_a_new_product_name_makes_the_copy_again(monkeypatch: pytest.MonkeyPatch) -> None:
     """The stamp holds the version information, so the rename to Kitshot (Phase 17c) remade
-    copies that said facegen."""
+    copies that said kitshot."""
     key = app_exe.stamp_key(b"launcher", b"icon", "0.1.2")
-    monkeypatch.setattr(app_exe, "NAME", "facegen")
+    monkeypatch.setattr(app_exe, "NAME", "kitshot")
     assert app_exe.stamp_key(b"launcher", b"icon", "0.1.2") != key

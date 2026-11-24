@@ -15,13 +15,13 @@ from fakes import FakeRenderer, FakeTagger
 from fastapi.testclient import TestClient
 from support.web import KOREAN_WINDOWS, client_for, post_player_action, synced
 
-from facegen.datasource.kits import load_kits
-from facegen.i18n import Translator
-from facegen.persistence import db
-from facegen.persistence.settings import load_settings
-from facegen.pipeline import manual
-from facegen.pipeline.worker import JobFilter, Worker, load_career
-from facegen.web.messages import check_failure_text
+from kitshot.datasource.kits import load_kits
+from kitshot.i18n import Translator
+from kitshot.persistence import db
+from kitshot.persistence.settings import load_settings
+from kitshot.pipeline import manual
+from kitshot.pipeline.worker import JobFilter, Worker, load_career
+from kitshot.web.messages import check_failure_text
 
 ONE, TWO, THREE = NEWGEN + 2, NEWGEN + 4, NEWGEN + 6
 MINE = 1001

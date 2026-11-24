@@ -10,10 +10,10 @@ from typing import Any, Self
 
 from support.desktop import FakeStartup, FakeSyncer, FakeWorker, status
 
-from facegen.desktop import app_window
-from facegen.desktop.app_controller import NOTICE_CHARS, NOTICE_TITLE_CHARS, AppController, Notice
-from facegen.desktop.app_window import AppWindow
-from facegen.desktop.tray import TrayIcon
+from kitshot.desktop import app_window
+from kitshot.desktop.app_controller import NOTICE_CHARS, NOTICE_TITLE_CHARS, AppController, Notice
+from kitshot.desktop.app_window import AppWindow
+from kitshot.desktop.tray import TrayIcon
 
 
 def wait_for(check, timeout: float = 5.0) -> None:  # type: ignore[no-untyped-def]
@@ -251,12 +251,12 @@ def test_the_window_shows_the_dashboard() -> None:
 
 def test_the_window_has_kitshots_icon_and_app_id() -> None:
     webview = FakeWebview()
-    win = AppWindow("http://127.0.0.1:8765/", icon=r"C:\facegen\kitshot.ico", webview=webview)
+    win = AppWindow("http://127.0.0.1:8765/", icon=r"C:\kitshot\kitshot.ico", webview=webview)
     assert webview.window is not None
     webview.window.closed.set()
     win.run()
-    assert webview.started == {"icon": r"C:\facegen\kitshot.ico"}
-    assert app_window.APP_ID == "facegen.app"  # kept until Phase 17o
+    assert webview.started == {"icon": r"C:\kitshot\kitshot.ico"}
+    assert app_window.APP_ID == "kitshot.app"  # facegen.app before Phase 17o
     app_window.use_app_id(os_name="posix")  # nothing to do off Windows
 
 

@@ -11,15 +11,15 @@ from pathlib import Path
 import pytest
 from factories import player, snapshot
 
-from facegen.cli import main
-from facegen.core.records import Snapshot
-from facegen.datasource import photos
-from facegen.persistence import db
-from facegen.persistence.settings import DEFAULTS_PATH, Paths, Settings, load_settings
-from facegen.pipeline.publish import FolderNotSetError as PublishFolderNotSet
-from facegen.pipeline.publish import PublishError, publish_pack, unpublish
-from facegen.runtime.poller import FolderNotSetError, NoSaveError, sync_save
-from facegen.service import FAILED, PollerService, SyncService
+from kitshot.cli import main
+from kitshot.core.records import Snapshot
+from kitshot.datasource import photos
+from kitshot.persistence import db
+from kitshot.persistence.settings import DEFAULTS_PATH, Paths, Settings, load_settings
+from kitshot.pipeline.publish import FolderNotSetError as PublishFolderNotSet
+from kitshot.pipeline.publish import PublishError, publish_pack, unpublish
+from kitshot.runtime.poller import FolderNotSetError, NoSaveError, sync_save
+from kitshot.service import FAILED, PollerService, SyncService
 
 NOT_SET = "FM27's folder is not set and was not found on this PC"
 

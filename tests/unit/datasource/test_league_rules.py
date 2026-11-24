@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import struct
 
-from facegen.core.records import DivisionList
-from facegen.datasource.league_rules import (
+from kitshot.core.records import DivisionList
+from kitshot.datasource.league_rules import (
     Record,
     competition_id,
     competition_rules,

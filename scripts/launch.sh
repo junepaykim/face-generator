@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Starts `facegen serve` and opens the web UI in the Windows browser once it answers.
-# If facegen is already running, it only opens the browser.
+# Starts `kitshot serve` and opens the web UI in the Windows browser once it answers.
+# If Kitshot is already running, it only opens the browser.
 # Meant for a Windows desktop shortcut:  wsl.exe -d <distro> -- bash <repo>/scripts/launch.sh
 set -u
 
 cd "$(dirname "$(readlink -f "$0")")/.." || exit 1
 # wsl.exe runs this without a login shell, so add the folders that hold uv and cargo.
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-printf '\033]0;facegen\007'   # window title
+printf '\033]0;Kitshot\007'   # window title
 
 # The UI address is fixed in config/default.toml ([ui] host and port).
 port=$(awk -F= '/^\[/{ui=($0=="[ui]")} ui && $1~/^port *$/{gsub(/[ "]/,"",$2); print $2}' config/default.toml)
@@ -17,7 +17,7 @@ answers() { curl -s -o /dev/null --noproxy '*' --max-time 2 "$url"; }
 open_browser() { (cd /mnt/c && cmd.exe /c start "" "$url" >/dev/null 2>&1); }
 
 if answers; then
-    echo "facegen is already running; opening $url"
+    echo "kitshot is already running; opening $url"
     open_browser
     exit 0
 fi
@@ -32,13 +32,13 @@ fi
 ) &
 opener=$!
 
-uv run facegen serve "$@"
+uv run kitshot serve "$@"
 status=$?
 kill "$opener" 2>/dev/null
 
 if [ "$status" -ne 0 ]; then
     echo
-    echo "facegen serve stopped with exit code $status."
+    echo "kitshot serve stopped with exit code $status."
     read -r -p "Press Enter to close this window." _
 fi
 exit "$status"

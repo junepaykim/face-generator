@@ -1,12 +1,12 @@
 [package]
-name = "facegen-native"
-version = "0.1.0"
+name = "kitshot-native"
+version = "0.2.0"
 edition = "2024"
-description = "Rust versions of facegen's CPU-bound picture work, for Python through PyO3."
+description = "Rust versions of Kitshot's CPU-bound picture work, for Python through PyO3."
 publish = false
 
 [lib]
-name = "facegen_native"
+name = "kitshot_native"
 # cdylib is the Python extension; rlib lets `cargo test` link the unit tests.
 crate-type = ["cdylib", "rlib"]
 

@@ -6,7 +6,7 @@ name: Native wheels
 # and runs tests/parity/test_native.py against each built wheel, with the build from native/ left
 # out. A `native-v<version>` tag, <version> being native/pyproject.toml's, attaches the
 # wheels and SHA256SUMS.txt to a GitHub Release, not marked latest (that is the app's newest
-# `v` release, release.yml). Then copy those sums into native/wheels.sha256: `facegen native
+# `v` release, release.yml). Then copy those sums into native/wheels.sha256: `kitshot native
 # --install` takes only a wheel listed there.
 
 on:
@@ -161,9 +161,9 @@ jobs:
         env:
           HF_HUB_OFFLINE: "1"
           TRANSFORMERS_OFFLINE: "1"
-          FACEGEN_REQUIRE_NATIVE: "1" # fail, not skip, if the wheel does not load
+          KITSHOT_REQUIRE_NATIVE: "1" # fail, not skip, if the wheel does not load
         run: |
-          uv run --no-sync python -c "from facegen.platform import native; assert native.ext is not None, 'The installed wheel must load'"
+          uv run --no-sync python -c "from kitshot.platform import native; assert native.ext is not None, 'The installed wheel must load'"
           uv run --no-sync pytest tests/parity/test_native.py
 
   release:
@@ -200,5 +200,5 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --latest=false \
-            --title "facegen-native ${RELEASE_TAG#native-v}" \
-            --notes "Prebuilt wheels of facegen's optional Rust extension (abi3, Python 3.12 and later). Add SHA256SUMS.txt to native/wheels.sha256 so that \`facegen native --install\` takes them."
+            --title "kitshot-native ${RELEASE_TAG#native-v}" \
+            --notes "Prebuilt wheels of Kitshot's optional Rust extension (abi3, Python 3.12 and later). Add SHA256SUMS.txt to native/wheels.sha256 so that \`kitshot native --install\` takes them."

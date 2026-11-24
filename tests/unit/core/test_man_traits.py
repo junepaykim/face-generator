@@ -9,7 +9,7 @@ from dataclasses import replace
 import pytest
 from factories import PLAIN_PERSONALITY
 
-from facegen.core.man_traits import (
+from kitshot.core.man_traits import (
     EXPRESSION,
     FACIAL_HAIR,
     GREY_AFTER_YEARS,
@@ -24,9 +24,9 @@ from facegen.core.man_traits import (
     drawn,
     sample_man_sheet,
 )
-from facegen.core.man_traits import EYE_COLOUR as MAN_EYES
-from facegen.core.traits import EXPRESSION as WOMEN_EXPRESSION
-from facegen.core.traits import sample_sheet
+from kitshot.core.man_traits import EYE_COLOUR as MAN_EYES
+from kitshot.core.traits import EXPRESSION as WOMEN_EXPRESSION
+from kitshot.core.traits import sample_sheet
 
 ENGLAND, JAPAN, NIGERIA = 765, 116, 38
 

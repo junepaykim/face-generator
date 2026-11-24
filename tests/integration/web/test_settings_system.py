@@ -17,11 +17,11 @@ from factories import NEWGEN, RIVAL, player
 from fastapi.testclient import TestClient
 from support.web import BASE, KOREAN_WINDOWS, fake_worker, synced
 
-from facegen.i18n import Translator
-from facegen.persistence.db import RENAMED_SETTINGS
-from facegen.persistence.settings import load_defaults, load_settings
-from facegen.web.app import AppContext, create_app
-from facegen.web.forms import KEY_SECTIONS, describe_key, settings_sections, settings_tabs
+from kitshot.i18n import Translator
+from kitshot.persistence.db import RENAMED_SETTINGS
+from kitshot.persistence.settings import load_defaults, load_settings
+from kitshot.web.app import AppContext, create_app
+from kitshot.web.forms import KEY_SECTIONS, describe_key, settings_sections, settings_tabs
 
 MOVED = (
     "eligibility.mens_football_only",
@@ -202,7 +202,7 @@ def test_a_folder_not_set_and_where_one_came_from_in_korean(config_file: Path) -
 
 
 def test_open_folder_only_where_explorer_opens(config_file: Path) -> None:
-    with make_client(config_file) as c:  # WSL's `facegen serve`, Linux: no Explorer
+    with make_client(config_file) as c:  # WSL's `kitshot serve`, Linux: no Explorer
         for url in ("/settings/advanced", "/settings/basic"):
             assert "/folders/open" not in c.get(url).text, url
     opener = Opener()

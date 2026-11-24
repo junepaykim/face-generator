@@ -13,28 +13,28 @@ from pathlib import Path
 
 import pytest
 
-import facegen
-from facegen.cli import main
-from facegen.desktop import app_exe, app_icon, shortcuts
-from facegen.platform import procs
+import kitshot
+from kitshot.cli import main
+from kitshot.desktop import app_exe, app_icon, shortcuts
+from kitshot.platform import procs
 
 FOLDERS = {
     "desktop": r"C:\Users\me\OneDrive\바탕 화면",
     "programs": r"C:\Users\me\AppData\Roaming\Microsoft\Windows\Start Menu\Programs",
     "startup": r"C:\Users\me\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup",
 }
-PYW = r"C:\facegen\.venv\Scripts\pythonw.exe"
-ROOT = r"C:\facegen"
-ICON = r"C:\facegen\data\app\kitshot-0123456789.ico"
+PYW = r"C:\kitshot\.venv\Scripts\pythonw.exe"
+ROOT = r"C:\kitshot"
+ICON = r"C:\kitshot\data\app\kitshot-0123456789.ico"
 
 
 def test_the_app_command_line() -> None:
-    assert shortcuts.app_arguments() == "-m facegen.desktop app"
-    assert shortcuts.app_arguments(minimized=True) == "-m facegen.desktop app --minimized"
+    assert shortcuts.app_arguments() == "-m kitshot.desktop app"
+    assert shortcuts.app_arguments(minimized=True) == "-m kitshot.desktop app --minimized"
     assert shortcuts.app_arguments(config=r"C:\my configs\a.toml") == (
-        r'-m facegen.desktop --config "C:\my configs\a.toml" app'
+        r'-m kitshot.desktop --config "C:\my configs\a.toml" app'
     )
-    assert shortcuts.pythonw_beside(r"C:\facegen\.venv\Scripts\python.exe") == PYW
+    assert shortcuts.pythonw_beside(r"C:\kitshot\.venv\Scripts\python.exe") == PYW
 
 
 def test_desktop_and_start_menu_shortcuts() -> None:
@@ -44,7 +44,7 @@ def test_desktop_and_start_menu_shortcuts() -> None:
         r"C:\Users\me\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Kitshot.lnk",
     ]
     assert all(link.target == PYW and link.working_dir == ROOT for link in links)
-    assert all(link.arguments == "-m facegen.desktop app" and not link.minimized for link in links)
+    assert all(link.arguments == "-m kitshot.desktop app" and not link.minimized for link in links)
     assert all(link.description.startswith("Kitshot: ") for link in links)
     only = shortcuts.app_shortcuts(
         {"programs": FOLDERS["programs"]}, program=PYW, root=ROOT, icon=ICON
@@ -55,12 +55,12 @@ def test_desktop_and_start_menu_shortcuts() -> None:
 def test_the_startup_shortcut_starts_in_the_tray() -> None:
     link = shortcuts.startup_shortcut(FOLDERS["startup"], program=PYW, root=ROOT, icon=ICON)
     assert link.path.endswith(r"Startup\Kitshot.lnk")
-    assert link.arguments == "-m facegen.desktop app --minimized" and link.minimized
+    assert link.arguments == "-m kitshot.desktop app --minimized" and link.minimized
 
 
 def test_the_powershell_quotes_every_path_as_it_is() -> None:
     odd = shortcuts.Shortcut(
-        r"C:\Users\O'Brien\Desktop\facegen.lnk", PYW, "-m facegen.desktop app", ROOT, ICON
+        r"C:\Users\O'Brien\Desktop\facegen.lnk", PYW, "-m kitshot.desktop app", ROOT, ICON
     )
     script = shortcuts.powershell_script(
         [odd, shortcuts.startup_shortcut(FOLDERS["startup"], program=PYW, root=ROOT, icon=ICON)]
@@ -188,7 +188,7 @@ def test_this_app_writes_the_icon_once(tmp_path: Path, monkeypatch: pytest.Monke
     assert icon == tmp_path / "app" / app_icon.ico_name() and icon.is_file()
     assert icon.name.startswith("kitshot-")
     assert app.program.endswith("pythonw.exe") and app.config is None
-    assert asked == [(Path(sys.executable).parent, icon, facegen.__version__)]
+    assert asked == [(Path(sys.executable).parent, icon, kitshot.__version__)]
     stamp = icon.stat().st_mtime_ns
     shortcuts.this_app(tmp_path)
     assert icon.stat().st_mtime_ns == stamp
@@ -204,14 +204,14 @@ def test_the_shortcuts_run_the_copy_once_it_is_made(
     [link] = shortcuts.app_shortcuts(
         {"programs": FOLDERS["programs"]}, program=app.program, root=ROOT, icon=app.icon
     )
-    assert link.target == str(copy) and link.arguments == "-m facegen.desktop app"
+    assert link.target == str(copy) and link.arguments == "-m kitshot.desktop app"
 
 
 def test_a_changed_icon_reaches_the_shortcuts_and_the_app_copy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A new icon is a new .ico file: the shortcuts and the window are given its path, and
-    facegen-app.exe is made again from it (its stamp holds the .ico's bytes)."""
+    kitshot-app.exe is made again from it (its stamp holds the .ico's bytes)."""
     from PIL import Image
 
     asked: list[Path] = []

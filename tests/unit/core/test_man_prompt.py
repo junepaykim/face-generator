@@ -8,8 +8,8 @@ from dataclasses import replace
 
 import pytest
 
-from facegen.core.kit_values import Kit
-from facegen.core.man_prompt import (
+from kitshot.core.kit_values import Kit
+from kitshot.core.man_prompt import (
     ADULT_FROM_AGE,
     BOY_NEGATIVE,
     MAN_COMPOSITION_NEGATIVE,
@@ -29,11 +29,11 @@ from facegen.core.man_prompt import (
     photo_prompt,
     shirt_sentence,
 )
-from facegen.core.man_traits import ManSheet, sample_man_sheet
-from facegen.core.prompt import CONTENT_NEGATIVE, CONTENT_POSITIVE, QUALITY, RATING
-from facegen.core.shoot import LOOKS as KIT_LOOKS
-from facegen.core.shoot import Backdrop, KitLook, Pose
-from facegen.core.wardrobe import HELD_PROPS, LOOKS, PROPS, ROLES, dress, outfit_for
+from kitshot.core.man_traits import ManSheet, sample_man_sheet
+from kitshot.core.prompt import CONTENT_NEGATIVE, CONTENT_POSITIVE, QUALITY, RATING
+from kitshot.core.shoot import LOOKS as KIT_LOOKS
+from kitshot.core.shoot import Backdrop, KitLook, Pose
+from kitshot.core.wardrobe import HELD_PROPS, LOOKS, PROPS, ROLES, dress, outfit_for
 
 SHEET = ManSheet(
     look="west african",

@@ -25,12 +25,12 @@ from fastapi.testclient import TestClient
 from support.paths import ROOT
 from support.web import KOREAN_WINDOWS, client_for, fake_worker
 
-from facegen.i18n import Translator
-from facegen.persistence import db
-from facegen.persistence.settings import load_settings
-from facegen.pipeline.sync import run_sync
-from facegen.platform.procs import run_quiet
-from facegen.web.forms import describe_key, label_parts
+from kitshot.i18n import Translator
+from kitshot.persistence import db
+from kitshot.persistence.settings import load_settings
+from kitshot.pipeline.sync import run_sync
+from kitshot.platform.procs import run_quiet
+from kitshot.web.forms import describe_key, label_parts
 
 TABS = ("cutoffs", "quality", "targets", "appearance", "system")
 
@@ -43,7 +43,7 @@ def test_autosave_waits_for_edits_before_reload() -> None:
         [
             node,
             Path(__file__).with_name("settings_autosave.cjs"),
-            ROOT / "src/facegen/web/static/app.js",
+            ROOT / "src/kitshot/web/static/app.js",
         ],
         check=True,
         timeout=15,

@@ -18,8 +18,8 @@ from factories import ABROAD, NEWGEN, RIVAL, player
 from fastapi.testclient import TestClient
 from support.web import KOREAN_WINDOWS, client_for, fake_worker, post_player_action, synced
 
-from facegen.runtime.worker_service import WorkerService
-from facegen.web.queries import PlayerPageFilter
+from kitshot.runtime.worker_service import WorkerService
+from kitshot.web.queries import PlayerPageFilter
 
 MINE = 1001
 STAR = 1002

@@ -8,9 +8,9 @@ from typing import Any
 
 import pytest
 
-from facegen.platform import procs
-from facegen.platform.platform_info import kind
-from facegen.platform.procs import (
+from kitshot.platform import procs
+from kitshot.platform.platform_info import kind
+from kitshot.platform.procs import (
     CREATE_NO_WINDOW,
     linux_process_running,
     quiet_flags,

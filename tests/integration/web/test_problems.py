@@ -13,10 +13,10 @@ from factories import NEWGEN, RIVAL, player
 from fastapi.testclient import TestClient
 from support.web import BASE, KOREAN_WINDOWS, client_for, fake_worker, post_player_action, synced
 
-from facegen.persistence import db
-from facegen.runtime.contracts import WorkerStatus
-from facegen.web import queries
-from facegen.web.app import AppContext, create_app
+from kitshot.persistence import db
+from kitshot.runtime.contracts import WorkerStatus
+from kitshot.web import queries
+from kitshot.web.app import AppContext, create_app
 
 MINE = 1001
 KID = NEWGEN + 2

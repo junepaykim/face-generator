@@ -9,10 +9,10 @@ from pathlib import Path
 import pytest
 from support.photos import catalog, config_xml
 
-from facegen.datasource import photos
-from facegen.datasource.photos import CATALOG_DIR, facepack_ids, game_photo_ids, scan
-from facegen.persistence import photo_index
-from facegen.persistence.settings import Paths
+from kitshot.datasource import photos
+from kitshot.datasource.photos import CATALOG_DIR, facepack_ids, game_photo_ids, scan
+from kitshot.persistence import photo_index
+from kitshot.persistence.settings import Paths
 
 # --- parsing --------------------------------------------------------------------------------
 
@@ -75,7 +75,8 @@ def test_scan_reads_the_catalog_and_every_facepack_but_ours(paths: Paths) -> Non
     g = paths.graphics_dir
     write(g / "megapack" / "config.xml", config_xml(2, 3))
     write(g / "faces" / "newgens" / "config.xml", config_xml(4))
-    write(g / "facegen" / "career" / "config.xml", config_xml(99))  # ours: never counts
+    write(g / "kitshot" / "career" / "config.xml", config_xml(99))  # ours: never counts
+    write(g / "facegen" / "career" / "config.xml", config_xml(98))  # ours before Phase 17o
     result = scan(paths)
     assert result.index is not None
     assert result.index.game == {1, 2}

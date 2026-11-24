@@ -1,7 +1,7 @@
 """Phase 0.2 spike: a test picture pack for checking how FM27 shows player pictures.
 
 Writes labelled test cards and a classic facepack config.xml into
-<FM27 user dir>/graphics/facegen/test/ (AGENTS.md hard rule 2: nowhere else). Each card
+<FM27 user dir>/graphics/kitshot/test/ (AGENTS.md hard rule 2: nowhere else). Each card
 has coloured edge bands (red top, blue bottom, green left, orange right) so cropping is
 visible, lines at one and two thirds of the height, and a figure with its head in the top
 third, as the spec asks for.
@@ -25,7 +25,7 @@ import sys
 import zlib
 from pathlib import Path
 
-from facegen.persistence.settings import load_settings
+from kitshot.persistence.settings import load_settings
 
 SHAPES = {
     "square": (1024, 1024, "SQUARE"),
@@ -174,7 +174,7 @@ def config_xml(ids: list[int]) -> str:
 
 def target_dir(override: str | None) -> Path:
     fm = load_settings().paths.fm_user_dir.resolve()
-    allowed = fm / "graphics" / "facegen"
+    allowed = fm / "graphics" / "kitshot"
     folder = Path(override).resolve() if override else allowed / "test"
     if folder.is_relative_to(fm) and not folder.is_relative_to(allowed):
         sys.exit(f"refusing to write outside {allowed}")
@@ -191,7 +191,7 @@ def write_config(folder: Path) -> list[int]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--dir", help="write here instead of graphics/facegen/test")
+    parser.add_argument("--dir", help="write here instead of graphics/kitshot/test")
     sub = parser.add_subparsers(dest="command", required=True)
     install = sub.add_parser("install", help="add or replace pictures: ID:SHAPE ...")
     install.add_argument("entries", nargs="+", metavar="ID:SHAPE")

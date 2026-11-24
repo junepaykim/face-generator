@@ -8,11 +8,11 @@ from pathlib import Path
 import pytest
 from factories import ABROAD, MY_CLUB, NEWGEN, player, snapshot
 
-from facegen.cli import main
-from facegen.core.records import Snapshot
-from facegen.datasource.base import UnsupportedSaveError
-from facegen.persistence.settings import DEFAULTS_PATH
-from facegen.platform import native
+from kitshot.cli import main
+from kitshot.core.records import Snapshot
+from kitshot.datasource.base import UnsupportedSaveError
+from kitshot.persistence.settings import DEFAULTS_PATH
+from kitshot.platform import native
 
 FM_USER_LINE = 'fm_user_dir = ""'
 FM_INSTALL_LINE = 'fm_install_dir = ""'
@@ -91,7 +91,7 @@ def test_sync_reads_fm27s_photo_list_and_picks_pre_existing_players_without_one(
 ) -> None:
     from support.photos import catalog, config_xml
 
-    from facegen.datasource.photos import CATALOG_DIR
+    from kitshot.datasource.photos import CATALOG_DIR
 
     snap = snapshot(
         [
@@ -110,7 +110,7 @@ def test_sync_reads_fm27s_photo_list_and_picks_pre_existing_players_without_one(
     pack.mkdir(parents=True)
     (pack / "config.xml").write_bytes(config_xml(1004))
     # Our own packs never count as a facepack.
-    ours = env["games"].parent / "graphics" / "facegen" / "another-career"
+    ours = env["games"].parent / "graphics" / "kitshot" / "another-career"
     ours.mkdir(parents=True)
     (ours / "config.xml").write_bytes(config_xml(1002))
 
@@ -184,7 +184,7 @@ def test_unsupported_save_is_reported_and_recorded(env: dict[str, Path]) -> None
 
 
 def test_a_save_that_cannot_be_read_is_not_called_unsupported(env: dict[str, Path]) -> None:
-    from facegen.datasource.base import SaveReadError
+    from kitshot.datasource.base import SaveReadError
 
     code, text = run(env, "sync", source=FakeSource(SaveReadError("damaged")))
     assert code == 3 and "damaged" in text and "bump the pin" not in text
@@ -199,7 +199,7 @@ def test_status_marks_the_active_career(env: dict[str, Path]) -> None:
 def test_status_says_whether_the_rust_extension_is_in_use(env: dict[str, Path]) -> None:
     _, status = run(env, "status")
     line = next(x for x in status.splitlines() if x.startswith("Rust code"))
-    assert ("in use (facegen-native" in line) == (native.ext is not None)
+    assert ("in use (kitshot-native" in line) == (native.ext is not None)
     assert ("the Python versions run" in line) == (native.ext is None)
 
 
@@ -220,7 +220,7 @@ def test_my_club_players_are_listed_first(env: dict[str, Path]) -> None:
 def run_gpu(env: dict[str, Path], *args: str, fm: bool | None = False) -> tuple[int, str]:
     from fakes import FakeRenderer, FakeTagger
 
-    from facegen.cli import Gpu
+    from kitshot.cli import Gpu
 
     out = io.StringIO()
     renderer, tagger = FakeRenderer(), FakeTagger()
@@ -236,12 +236,12 @@ def run_gpu(env: dict[str, Path], *args: str, fm: bool | None = False) -> tuple[
 
 def test_run_needs_a_career(env: dict[str, Path]) -> None:
     code, text = run_gpu(env, "run")
-    assert code == 2 and "Run `facegen sync`" in text
+    assert code == 2 and "Run `kitshot sync`" in text
 
 
 def test_publish_needs_the_requested_career(env: dict[str, Path]) -> None:
     code, text = run(env, "publish")
-    assert code == 2 and text.strip() == "No careers yet. Run `facegen sync`."
+    assert code == 2 and text.strip() == "No careers yet. Run `kitshot sync`."
     run(env, "sync")
     code, text = run(env, "publish", "--career", "absent")
     assert code == 2 and text.strip() == "No career 'absent'."
@@ -264,7 +264,7 @@ def test_run_publish_gallery_and_status(env: dict[str, Path]) -> None:
     assert "Done        1 pictures, 0 sent to review" in text
     assert "Published   1 pictures" in text and "Reload Skin" in text
     assert "Gallery" in text
-    packs = list((env["games"].parent / "graphics" / "facegen").iterdir())
+    packs = list((env["games"].parent / "graphics" / "kitshot").iterdir())
     assert len(packs) == 1 and sorted(p.name for p in packs[0].iterdir()) == [
         "1001.png",
         "config.xml",
@@ -294,7 +294,7 @@ def test_serve_starts_the_ui_and_the_worker_and_stops_cleanly(env: dict[str, Pat
     from fakes import FakeRenderer, FakeTagger
     from fastapi.testclient import TestClient
 
-    from facegen.cli import Gpu
+    from kitshot.cli import Gpu
 
     run(env, "sync")
     seen: dict[str, object] = {}
@@ -360,7 +360,7 @@ def test_sync_of_another_careers_newer_save_switches_the_pack(
     run(env, "sync")
     code, text = run_gpu(env, "run", "--group", "a", "--my-club")
     assert code == 0, text
-    first = next((env["games"].parent / "graphics" / "facegen").iterdir())
+    first = next((env["games"].parent / "graphics" / "kitshot").iterdir())
     assert 'from="1001"' in (first / "config.xml").read_text()
 
     other = env["games"] / "Other.fm"
@@ -376,7 +376,7 @@ def test_sync_of_another_careers_newer_save_switches_the_pack(
 
     # An explicit publish can repair the older pack using just its stored masters.
     (first / "1001.png").unlink()
-    monkeypatch.setattr("facegen.datasource.kits.KITS_PATH", env["data"] / "missing-kits.toml")
+    monkeypatch.setattr("kitshot.datasource.kits.KITS_PATH", env["data"] / "missing-kits.toml")
     code, text = run(env, "publish", "--career", first.name)
     assert code == 0 and f"1 pictures to {first}, not mapped" in text
     assert (first / "1001.png").is_file()
@@ -397,7 +397,7 @@ def test_serve_refuses_to_listen_beyond_this_pc(env: dict[str, Path]) -> None:
 def test_run_without_the_models_says_how_to_get_them(env: dict[str, Path]) -> None:
     from fakes import FakeRenderer, FakeTagger
 
-    from facegen.cli import Gpu
+    from kitshot.cli import Gpu
 
     run(env, "sync")
     out = io.StringIO()
@@ -408,7 +408,7 @@ def test_run_without_the_models_says_how_to_get_them(env: dict[str, Path]) -> No
         models_ready=lambda model: asked.append(model) and False,
     )  # fmt: skip
     code = main(["--config", str(env["config"]), "run"], gpu=gpu, out=out)
-    assert code == 2 and "facegen models --download" in out.getvalue()
+    assert code == 2 and "kitshot models --download" in out.getvalue()
     assert asked == ["animagine"] and "about 11.6 GB" in out.getvalue()
     assert renderer.calls == []
     # A dry run needs no models.
@@ -420,8 +420,8 @@ def test_run_without_the_models_says_how_to_get_them(env: dict[str, Path]) -> No
 def test_only_the_real_renderer_asks_for_the_model_files() -> None:
     from fakes import FakeRenderer
 
-    from facegen.cli import Gpu
-    from facegen.setup import models
+    from kitshot.cli import Gpu
+    from kitshot.setup import models
 
     assert Gpu().models_check() is models.ready_now
     assert Gpu(renderer=FakeRenderer).models_check() is None  # the tests' fakes need none
@@ -435,8 +435,8 @@ def test_serve_with_the_real_worker_offers_the_model_download(
     from fakes import FakeRenderer, FakeTagger
     from fastapi.testclient import TestClient
 
-    from facegen.cli import Gpu
-    from facegen.setup import models
+    from kitshot.cli import Gpu
+    from kitshot.setup import models
 
     run(env, "sync")
 
@@ -467,8 +467,8 @@ def test_serve_with_the_real_worker_offers_the_model_download(
 
 
 def test_models_and_hardware_need_no_database(env: dict[str, Path], monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    from facegen import cli
-    from facegen.setup import hardware
+    from kitshot import cli
+    from kitshot.setup import hardware
 
     monkeypatch.setattr(cli, "cmd_models", lambda args, out: 7)
     assert main(["--config", str(env["config"]), "models"], out=io.StringIO()) == 7

@@ -7,9 +7,9 @@ from typing import Any
 
 import pytest
 
-from facegen.persistence import settings as settings_module
-from facegen.persistence.db import transaction
-from facegen.persistence.settings import (
+from kitshot.persistence import settings as settings_module
+from kitshot.persistence.db import transaction
+from kitshot.persistence.settings import (
     DEFAULTS_PATH,
     FOUND,
     NOT_SET,
@@ -352,7 +352,7 @@ def test_personality_weight_is_checked(conn: sqlite3.Connection) -> None:
 
 
 def test_several_overrides_are_checked_together(conn: sqlite3.Connection) -> None:
-    from facegen.persistence.settings import set_overrides
+    from kitshot.persistence.settings import set_overrides
 
     # Each alone would put short_below_cm above tall_from_cm; together they are fine.
     s = set_overrides(conn, {"body.short_below_cm": 195, "body.tall_from_cm": 200})
@@ -364,7 +364,7 @@ def test_several_overrides_are_checked_together(conn: sqlite3.Connection) -> Non
 
 
 def test_entering_the_default_again_clears_the_override(conn: sqlite3.Connection) -> None:
-    from facegen.persistence.settings import merge_overrides, set_overrides
+    from kitshot.persistence.settings import merge_overrides, set_overrides
 
     set_overrides(conn, {"cutoffs.everywhere.a_ca": 150, "cutoffs.everywhere.a_pa": 160})
     assert merge_overrides(conn, {"cutoffs.everywhere.a_ca": 165}).overridden == {
@@ -377,7 +377,7 @@ def test_entering_the_default_again_clears_the_override(conn: sqlite3.Connection
 
 def test_where_the_ui_listens_is_not_a_ui_setting(conn: sqlite3.Connection) -> None:
     """A browser must not be able to open the tool to the network."""
-    from facegen.persistence.settings import is_fixed
+    from kitshot.persistence.settings import is_fixed
 
     for key, value in (("ui.host", "0.0.0.0"), ("ui.port", 9000)):
         assert is_fixed(key)
@@ -457,7 +457,7 @@ def test_the_cutoff_cells_take_a_share_a_number_or_off(conn: sqlite3.Connection)
 
 
 def test_an_explicit_defaults_file_takes_the_local_file_beside_it(tmp_path: Path) -> None:
-    from facegen.persistence.settings import local_label, local_path
+    from kitshot.persistence.settings import local_label, local_path
 
     config = tmp_path / "test.toml"
     config.write_text(DEFAULTS_PATH.read_text(encoding="utf-8"), encoding="utf-8")

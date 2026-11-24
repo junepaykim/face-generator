@@ -6,17 +6,17 @@ import pytest
 from factories import ABROAD, RIVAL, facts, snapshot, staff_member
 from support.fmsave import UID_MAP, coded, fm_staff
 
-from facegen.core.classify import Group, Rules, classify
-from facegen.core.cutoffs import effective_cutoffs
-from facegen.core.traits import sample_sheet
-from facegen.core.wardrobe import role_for
-from facegen.datasource.fmsave_source import convert_staff
-from facegen.datasource.kits import load_kits
-from facegen.datasource.photos import PhotoIndex, PhotoScan
-from facegen.persistence.jobs import JobFilter, allocate_sheet, claim, load_career, queued_jobs
-from facegen.persistence.settings import load_settings
-from facegen.pipeline.sync import run_sync
-from facegen.pipeline.worker import Worker
+from kitshot.core.classify import Group, Rules, classify
+from kitshot.core.cutoffs import effective_cutoffs
+from kitshot.core.traits import sample_sheet
+from kitshot.core.wardrobe import role_for
+from kitshot.datasource.fmsave_source import convert_staff
+from kitshot.datasource.kits import load_kits
+from kitshot.datasource.photos import PhotoIndex, PhotoScan
+from kitshot.persistence.jobs import JobFilter, allocate_sheet, claim, load_career, queued_jobs
+from kitshot.persistence.settings import load_settings
+from kitshot.pipeline.sync import run_sync
+from kitshot.pipeline.worker import Worker
 
 
 def test_read_only_my_staff_and_league_first_team_managers():

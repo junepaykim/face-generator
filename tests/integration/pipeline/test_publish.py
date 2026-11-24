@@ -1,4 +1,4 @@
-"""Publishing into FM27's folder. Guards AGENTS.md hard rule 2: only graphics/facegen/."""
+"""Publishing into FM27's folder. Guards AGENTS.md hard rule 2: only graphics/kitshot/."""
 
 from __future__ import annotations
 
@@ -10,17 +10,19 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from facegen.persistence.settings import Settings, load_settings
-from facegen.pipeline.publish import (
+from kitshot.persistence.settings import Settings, load_settings
+from kitshot.pipeline.publish import (
     PublishError,
     config_xml,
     deactivate_packs,
+    legacy_packs_root,
     pack_dir,
     publish_active,
     publish_career,
     publish_pack,
     published_bytes,
     published_pictures,
+    remove_legacy_packs,
     remove_packs,
     unpublish,
     write_config,
@@ -58,9 +60,9 @@ def test_config_xml_maps_database_and_generated_people() -> None:
     )
 
 
-def test_pack_dir_stays_inside_graphics_facegen(tmp_path: Path) -> None:
+def test_pack_dir_stays_inside_graphics_kitshot(tmp_path: Path) -> None:
     fm = tmp_path / "fm"
-    assert pack_dir(fm, "ca0a7bbf751") == fm / "graphics" / "facegen" / "ca0a7bbf751"
+    assert pack_dir(fm, "ca0a7bbf751") == fm / "graphics" / "kitshot" / "ca0a7bbf751"
     for bad in ("", ".", "..", "../games", "a/b", "a\\b", "c:x"):
         with pytest.raises(PublishError):
             pack_dir(fm, bad)
@@ -88,7 +90,7 @@ def test_publish_pack_refuses_a_redirected_pack_root(
     graphics.mkdir(parents=True)
     other_pack = graphics / "other-pack"
     other_pack.mkdir()
-    _link_directory(graphics / "facegen", other_pack)
+    _link_directory(graphics / "kitshot", other_pack)
     master = tmp_path / "m.png"
     Image.new("RGB", (64, 64)).save(master)
     _career(conn)
@@ -108,7 +110,7 @@ def test_publish_pack_downscales_to_3_4(
     _image(conn, 42, "b", str(master))
     report = publish_pack(conn, pack_settings, 1, "k")
     assert report.written == 1
-    dest = tmp_path / "fm" / "graphics" / "facegen" / "k" / "42.png"
+    dest = tmp_path / "fm" / "graphics" / "kitshot" / "k" / "42.png"
     with Image.open(dest) as im:
         assert im.size == (576, 768) and im.format == "PNG"
     assert not list(dest.parent.glob(".*part"))  # no temporary files left
@@ -124,7 +126,7 @@ def test_failed_atomic_replacement_keeps_the_previous_portrait_until_retry(
     Image.new("RGB", (48, 64)).save(master)
     _career(conn)
     _image(conn, 42, "b", str(master))
-    folder = tmp_path / "fm" / "graphics" / "facegen" / "k"
+    folder = tmp_path / "fm" / "graphics" / "kitshot" / "k"
     folder.mkdir(parents=True)
     dest = folder / "42.png"
     old = master.read_bytes()
@@ -138,7 +140,7 @@ def test_failed_atomic_replacement_keeps_the_previous_portrait_until_retry(
         raise OSError("could not replace the portrait")
 
     with monkeypatch.context() as patch:
-        patch.setattr("facegen.pipeline.publish.os.replace", fail_replace)
+        patch.setattr("kitshot.pipeline.publish.os.replace", fail_replace)
         with pytest.raises(OSError, match="could not replace the portrait"):
             publish_pack(conn, pack_settings, 1, "k")
     assert dest.read_bytes() == old
@@ -210,7 +212,7 @@ def test_publish_career_is_idempotent(conn: sqlite3.Connection, tmp_path: Path) 
     _image(conn, 40, "a", "masters/a.png", current=0)  # a rejected picture: never published
 
     first = publish_career(conn, 1, "k", fm, SIZES, data_dir=data)
-    folder = fm / "graphics" / "facegen" / "k"
+    folder = fm / "graphics" / "kitshot" / "k"
     assert (first.written, first.unchanged, first.missing, first.mapped) == (2, 0, (30,), 2)
     assert first.config_changed and first.changed
     assert sorted(p.name for p in folder.iterdir()) == ["10.png", "20.png", "config.xml"]
@@ -261,7 +263,7 @@ def test_publish_repairs_old_mappings_without_redrawing_or_reencoding(
         assert not items, "repairing a mapping must reuse the published pictures"
         return iter(())
 
-    monkeypatch.setattr("facegen.pipeline.publish.published_pictures", no_encoding)
+    monkeypatch.setattr("kitshot.pipeline.publish.published_pictures", no_encoding)
     report = publish_career(conn, 1, "k", fm, SIZES, data_dir=data)
     assert (report.written, report.unchanged, report.mapped) == (0, 2, 2)
     assert report.config_changed
@@ -284,7 +286,7 @@ def test_unpublish_removes_file_and_mapping(conn: sqlite3.Connection, tmp_path: 
     _image(conn, 20, "a", "masters/a.png")
     publish_career(conn, 1, "k", fm, SIZES, data_dir=data)
     assert unpublish(conn, 1, "k", 10, fm)
-    folder = fm / "graphics" / "facegen" / "k"
+    folder = fm / "graphics" / "kitshot" / "k"
     assert not (folder / "10.png").exists() and (data / "masters" / "a.png").exists()
     text = (folder / "config.xml").read_text()
     assert 'from="10"' not in text and 'from="20"' in text
@@ -299,7 +301,7 @@ def test_unpublish_removes_file_and_mapping(conn: sqlite3.Connection, tmp_path: 
 def _mapped(fm: Path, key: str) -> set[int]:
     import re
 
-    text = (fm / "graphics" / "facegen" / key / "config.xml").read_text()
+    text = (fm / "graphics" / "kitshot" / key / "config.xml").read_text()
     return {int(x) for x in re.findall(r'from="(\d+)"', text)}
 
 
@@ -329,7 +331,7 @@ def test_an_inactive_pack_has_its_pictures_but_maps_nothing(
     _two_careers(conn, data)
     report = publish_career(conn, 1, "k", fm, SIZES, data_dir=data, active=False)
     assert (report.written, report.mapped, report.active) == (2, 0, False)
-    folder = fm / "graphics" / "facegen" / "k"
+    folder = fm / "graphics" / "kitshot" / "k"
     assert (folder / "10.png").is_file() and _mapped(fm, "k") == set()
     # Activating it later only rewrites config.xml.
     again = publish_career(conn, 1, "k", fm, SIZES, data_dir=data)
@@ -341,19 +343,19 @@ def test_deactivate_packs_unmaps_every_other_pack(tmp_path: Path) -> None:
     fm = tmp_path / "fm"
     for key in ("k", "k2", "k3"):
         write_config(pack_dir(fm, key), [1, 2], fm)
-    (fm / "graphics" / "facegen" / "no-config").mkdir()
-    (fm / "graphics" / "facegen" / "stray.txt").write_text("x")
+    (fm / "graphics" / "kitshot" / "no-config").mkdir()
+    (fm / "graphics" / "kitshot" / "stray.txt").write_text("x")
     assert deactivate_packs(fm, keep="k2") == ("k", "k3")
     assert _mapped(fm, "k") == set() and _mapped(fm, "k2") == {1, 2}
-    assert not (fm / "graphics" / "facegen" / "no-config" / "config.xml").exists()
+    assert not (fm / "graphics" / "kitshot" / "no-config" / "config.xml").exists()
     assert deactivate_packs(fm, keep="k2") == ()  # nothing left to change
     assert deactivate_packs(tmp_path / "nowhere", keep=None) == ()
 
 
 def test_deactivate_packs_does_not_follow_symlinks(tmp_path: Path) -> None:
-    # Nothing outside graphics/facegen/ is touched, even through a link.
+    # Nothing outside graphics/kitshot/ is touched, even through a link.
     fm = tmp_path / "fm"
-    folder = fm / "graphics" / "facegen"
+    folder = fm / "graphics" / "kitshot"
     folder.mkdir(parents=True)
     outside = tmp_path / "other-pack"  # stands in for someone else's pack
     outside.mkdir()
@@ -365,27 +367,27 @@ def test_deactivate_packs_does_not_follow_symlinks(tmp_path: Path) -> None:
 
 def test_remove_packs_refuses_a_graphics_folder_that_leads_elsewhere(tmp_path: Path) -> None:
     # FM27's graphics folder moved to another disk and linked back: publishing refuses to
-    # write there, so the facegen folder found there is someone else's.
+    # write there, so the Kitshot folder found there is someone else's.
     fm, elsewhere = tmp_path / "fm", tmp_path / "other-disk" / "graphics"
     fm.mkdir()
-    (elsewhere / "facegen" / "theirs").mkdir(parents=True)
-    (elsewhere / "facegen" / "theirs" / "1.png").write_bytes(b"png")
+    (elsewhere / "kitshot" / "theirs").mkdir(parents=True)
+    (elsewhere / "kitshot" / "theirs" / "1.png").write_bytes(b"png")
     _link_directory(fm / "graphics", elsewhere)
     with pytest.raises(PublishError, match="refusing to delete outside"):
         remove_packs(fm, tmp_path / "data")
-    assert (elsewhere / "facegen" / "theirs" / "1.png").is_file()
+    assert (elsewhere / "kitshot" / "theirs" / "1.png").is_file()
     with pytest.raises(PublishError, match="refusing to write outside"):
         pack_dir(fm, "k")  # as publishing does
 
 
-def test_remove_packs_removes_a_linked_facegen_folder_but_not_its_target(tmp_path: Path) -> None:
+def test_remove_packs_removes_a_linked_kitshot_folder_but_not_its_target(tmp_path: Path) -> None:
     fm, outside = tmp_path / "fm", tmp_path / "other-pack"
     (fm / "graphics").mkdir(parents=True)
     outside.mkdir()
     (outside / "1.png").write_bytes(b"png")
-    _link_directory(fm / "graphics" / "facegen", outside)
+    _link_directory(fm / "graphics" / "kitshot", outside)
     assert remove_packs(fm, tmp_path / "data")
-    assert not (fm / "graphics" / "facegen").exists() and (outside / "1.png").is_file()
+    assert not (fm / "graphics" / "kitshot").exists() and (outside / "1.png").is_file()
     assert not remove_packs(fm, tmp_path / "data")  # nothing left to remove
 
 
@@ -394,7 +396,97 @@ def test_remove_packs_deletes_our_own_folder(tmp_path: Path) -> None:
     write_config(pack_dir(fm, "k"), [1], fm)
     (fm / "graphics" / "theirs").mkdir()
     assert remove_packs(fm, tmp_path / "data")
-    assert not (fm / "graphics" / "facegen").exists() and (fm / "graphics" / "theirs").is_dir()
+    assert not (fm / "graphics" / "kitshot").exists() and (fm / "graphics" / "theirs").is_dir()
+
+
+def _old_pack(fm: Path, key: str = "k") -> Path:
+    """Our pack as a version before Phase 17o published it, in graphics/facegen/."""
+    folder = legacy_packs_root(fm) / key
+    folder.mkdir(parents=True)
+    (folder / "10.png").write_bytes(b"old png")
+    (folder / "config.xml").write_text(config_xml([10]))
+    return folder
+
+
+def test_remove_packs_also_deletes_our_folder_from_before_the_rename(tmp_path: Path) -> None:
+    fm = tmp_path / "fm"
+    _old_pack(fm)
+    (fm / "graphics" / "theirs").mkdir()
+    assert remove_packs(fm, tmp_path / "data")  # only the old folder was there
+    assert not legacy_packs_root(fm).exists() and (fm / "graphics" / "theirs").is_dir()
+    write_config(pack_dir(fm, "k"), [1], fm)
+    _old_pack(fm)
+    assert remove_packs(fm, tmp_path / "data")
+    assert not (fm / "graphics" / "kitshot").exists() and not legacy_packs_root(fm).exists()
+    assert not remove_legacy_packs(fm)  # nothing left
+
+
+def test_remove_legacy_packs_refuses_a_graphics_folder_that_leads_elsewhere(
+    tmp_path: Path,
+) -> None:
+    fm, elsewhere = tmp_path / "fm", tmp_path / "other-disk" / "graphics"
+    fm.mkdir()
+    (elsewhere / "facegen" / "theirs").mkdir(parents=True)
+    _link_directory(fm / "graphics", elsewhere)
+    with pytest.raises(PublishError, match="refusing to delete outside"):
+        remove_legacy_packs(fm)
+    assert (elsewhere / "facegen" / "theirs").is_dir()
+
+
+def test_publishing_the_active_pack_moves_it_out_of_graphics_facegen(
+    conn: sqlite3.Connection, pack_settings: Settings
+) -> None:
+    """An installed copy updated from 0.1.x: its stored published paths point into
+    graphics/facegen/. The next publish of the active pack writes every picture into
+    graphics/kitshot/ and only then removes the old folder; FM27's other packs stay."""
+    fm, data = pack_settings.paths.fm_user_dir, pack_settings.paths.data_dir
+    assert fm is not None
+    _two_careers(conn, data)
+    conn.execute("UPDATE careers SET last_save_mtime = 100 WHERE id = 1")
+    old = _old_pack(fm)
+    conn.execute(
+        "UPDATE images SET published_path = ? WHERE career_id = 1 AND unique_id = 10",
+        (str(old / "10.png"),),
+    )
+    theirs = fm / "graphics" / "megapack"
+    theirs.mkdir()
+    (theirs / "config.xml").write_text(config_xml([10]))
+
+    # Another career's pack being written (not the active one) leaves the old folder.
+    inactive = publish_pack(conn, pack_settings, 2, "k2")
+    assert not inactive.active and not inactive.legacy_removed and old.is_dir()
+
+    report = publish_active(conn, pack_settings)
+    assert report is not None and report.legacy_removed and report.changed
+    assert report.written == 2 and _mapped(fm, "k") == {10, 11}
+    assert not legacy_packs_root(fm).exists()
+    assert (theirs / "config.xml").is_file()
+    path = conn.execute(
+        "SELECT published_path FROM images WHERE career_id = 1 AND unique_id = 10"
+    ).fetchone()[0]
+    assert Path(path) == fm / "graphics" / "kitshot" / "k" / "10.png"
+    again = publish_active(conn, pack_settings)
+    assert again is not None and not again.legacy_removed and not again.changed
+
+
+def test_an_old_folder_that_cannot_be_removed_does_not_fail_the_publish(
+    conn: sqlite3.Connection, pack_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kitshot.pipeline import publish
+
+    fm, data = pack_settings.paths.fm_user_dir, pack_settings.paths.data_dir
+    assert fm is not None
+    _two_careers(conn, data)
+    conn.execute("UPDATE careers SET last_save_mtime = 100 WHERE id = 1")
+    _old_pack(fm)
+
+    def in_use(path: object) -> None:
+        raise PermissionError("[WinError 32] being used by another process")
+
+    monkeypatch.setattr(publish.shutil, "rmtree", in_use)
+    report = publish_active(conn, pack_settings)
+    assert report is not None and not report.legacy_removed and _mapped(fm, "k") == {10, 11}
+    assert legacy_packs_root(fm).is_dir()  # tried again at the next publish
 
 
 def test_publish_pack_follows_the_newest_save(
@@ -419,7 +511,7 @@ def test_publish_pack_follows_the_newest_save(
     assert switched is not None and switched.folder.name == "k"
     assert switched.deactivated == ("k2",) and switched.written == 0 and switched.changed
     assert _mapped(fm, "k") == {10, 11} and _mapped(fm, "k2") == set()
-    assert (fm / "graphics" / "facegen" / "k2" / "10.png").is_file()  # kept for later
+    assert (fm / "graphics" / "kitshot" / "k2" / "10.png").is_file()  # kept for later
     assert not publish_active(conn, pack_settings).changed  # type: ignore[union-attr]
 
 
@@ -434,14 +526,14 @@ def test_unpublish_from_an_inactive_pack_keeps_it_unmapped(
     _two_careers(conn, data)
     publish_career(conn, 1, "k", fm, SIZES, data_dir=data, active=False)
     assert unpublish(conn, 1, "k", 10, fm, active=False)
-    assert not (fm / "graphics" / "facegen" / "k" / "10.png").exists()
+    assert not (fm / "graphics" / "kitshot" / "k" / "10.png").exists()
     assert _mapped(fm, "k") == set()
 
 
 def test_publish_lock_lets_one_writer_in_at_a_time(tmp_path: Path) -> None:
     import threading
 
-    from facegen.pipeline.publish import publish_lock
+    from kitshot.pipeline.publish import publish_lock
 
     entered = threading.Event()
 
@@ -472,7 +564,7 @@ def test_square_pictures_are_published_square_next_to_portraits(
     _image(conn, 3, "b", str(old))
     conn.execute("UPDATE images SET aspect = '1:1' WHERE unique_id = 2")
     assert publish_pack(conn, pack_settings, 1, "k").written == 3
-    folder = tmp_path / "fm" / "graphics" / "facegen" / "k"
+    folder = tmp_path / "fm" / "graphics" / "kitshot" / "k"
     sizes = {}
     for uid in (1, 2, 3):
         with Image.open(folder / f"{uid}.png") as im:
@@ -482,7 +574,7 @@ def test_square_pictures_are_published_square_next_to_portraits(
 
 @pytest.mark.parametrize("rust", [False, True])
 def test_published_bytes_in_each_shape(tmp_path: Path, rust: bool) -> None:
-    from facegen.platform import native
+    from kitshot.platform import native
 
     if rust and native.ext is None:
         pytest.skip("the native extension is not built")

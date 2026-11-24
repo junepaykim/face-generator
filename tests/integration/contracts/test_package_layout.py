@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 from support.paths import ROOT
 
-from facegen.platform import procs
+from kitshot.platform import procs
 
 
 def run_python(tmp_path: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -42,9 +42,9 @@ import sys
 class NoAdapters(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
         blocked = {
-            'sqlite3', 'PIL', 'fastapi', 'fmsave', 'facegen_native', 'torch',
+            'sqlite3', 'PIL', 'fastapi', 'fmsave', 'kitshot_native', 'torch',
             'diffusers', 'transformers', 'timm', 'huggingface_hub', 'webview', 'pystray',
-            'facegen.persistence.settings', 'facegen.runtime.composition',
+            'kitshot.persistence.settings', 'kitshot.runtime.composition',
         }
         if any(fullname == name or fullname.startswith(name + '.') for name in blocked):
             raise AssertionError('startup loaded adapter: ' + fullname)
@@ -52,10 +52,10 @@ class NoAdapters(importlib.abc.MetaPathFinder):
 sys.meta_path.insert(0, NoAdapters())
 for name in ('core', 'datasource', 'persistence', 'pipeline', 'render', 'runtime',
              'desktop', 'setup', 'platform'):
-    importlib.import_module('facegen.' + name)
+    importlib.import_module('kitshot.' + name)
 
-from facegen.desktop import shell
-from facegen.setup import venv_check
+from kitshot.desktop import shell
+from kitshot.setup import venv_check
 assert callable(shell.main)
 assert callable(venv_check.main)
 """,
@@ -67,28 +67,28 @@ def test_package_version_tracks_the_checkout_and_installed_distribution(tmp_path
     import tomllib
 
     expected = tomllib.loads((ROOT / "pyproject.toml").read_text("utf-8"))["project"]["version"]
-    result = run_python(tmp_path, "-c", "from facegen import __version__; print(__version__)")
+    result = run_python(tmp_path, "-c", "from kitshot import __version__; print(__version__)")
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == expected
 
     # A regular wheel includes distribution metadata and no source-tree pyproject.toml.
-    metadata = tmp_path / "facegen-2.0.1.dist-info"
+    metadata = tmp_path / "kitshot-2.0.1.dist-info"
     metadata.mkdir()
-    (metadata / "METADATA").write_text("Name: facegen\nVersion: 2.0.1\n", encoding="utf-8")
+    (metadata / "METADATA").write_text("Name: kitshot\nVersion: 2.0.1\n", encoding="utf-8")
     result = run_python(
         tmp_path,
         "-c",
         "from pathlib import Path\n"
-        "from facegen import locations\n"
+        "from kitshot import locations\n"
         "locations.PROJECT_ROOT = Path.cwd()\n"
-        "from facegen import __version__\n"
+        "from kitshot import __version__\n"
         "print(__version__)",
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "2.0.1"
 
 
-@pytest.mark.parametrize("module", ["facegen.cli", "facegen.desktop", "facegen.app_window"])
+@pytest.mark.parametrize("module", ["kitshot.cli", "kitshot.desktop", "kitshot.app_window"])
 def test_published_module_help_without_installed_dependencies(tmp_path: Path, module: str) -> None:
     result = run_python(tmp_path, "-m", module, "--help")
     assert result.returncode == 0, result.stderr
@@ -105,10 +105,10 @@ def test_environment_check_wrapper_preserves_its_exit_and_output(tmp_path: Path)
         """
 import runpy
 from pathlib import Path
-from facegen.setup import venv_check
+from kitshot.setup import venv_check
 
 venv_check.site_dirs = lambda: [Path.cwd()]
-runpy.run_module('facegen.venv_check', run_name='__main__')
+runpy.run_module('kitshot.venv_check', run_name='__main__')
 """,
     )
     assert result.returncode == 5, result.stderr
@@ -174,15 +174,15 @@ WEB_EXPORTS = [
 def test_web_compatibility_exports_keep_the_canonical_objects(
     legacy: str, canonical: str, names: str
 ) -> None:
-    facade = importlib.import_module("facegen." + legacy)
-    implementation = importlib.import_module("facegen." + canonical)
+    facade = importlib.import_module("kitshot." + legacy)
+    implementation = importlib.import_module("kitshot." + canonical)
     for name in names.split():
         assert getattr(facade, name) is getattr(implementation, name), name
 
 
 def test_app_context_reexport_preserves_positional_constructor() -> None:
-    from facegen.web.app import AppContext
-    from facegen.web.context import AppContext as CanonicalContext
+    from kitshot.web.app import AppContext
+    from kitshot.web.context import AppContext as CanonicalContext
 
     assert AppContext is CanonicalContext
     names = (
@@ -218,8 +218,8 @@ def test_app_context_reexport_preserves_positional_constructor() -> None:
 
 def test_web_imports_canonical_modules_and_keeps_composition_out_of_handlers() -> None:
     """Include imports inside functions and TYPE_CHECKING, including relative imports."""
-    web = ROOT / "src" / "facegen" / "web"
-    facades = {f"facegen.{legacy}" for legacy, _, _ in WEB_EXPORTS}
+    web = ROOT / "src" / "kitshot" / "web"
+    facades = {f"kitshot.{legacy}" for legacy, _, _ in WEB_EXPORTS}
     violations = []
     for path in sorted(web.rglob("*.py")):
         package = ".".join(path.parent.relative_to(ROOT / "src").parts)
@@ -238,10 +238,10 @@ def test_web_imports_canonical_modules_and_keeps_composition_out_of_handlers() -
                     name == facade or name.startswith(facade + ".") for facade in facades
                 )
                 if path != web / "app.py":
-                    forbidden |= name == "facegen.web.app" or name.startswith("facegen.web.app.")
+                    forbidden |= name == "kitshot.web.app" or name.startswith("kitshot.web.app.")
                     if "routes" not in path.relative_to(web).parts:
-                        forbidden |= name == "facegen.web.routes" or name.startswith(
-                            "facegen.web.routes."
+                        forbidden |= name == "kitshot.web.routes" or name.startswith(
+                            "kitshot.web.routes."
                         )
                 if forbidden:
                     violations.append(f"{path.relative_to(ROOT)}:{node.lineno}: imports {name}")

@@ -1,6 +1,6 @@
 # AGENT INVARIANT: Do not weaken or bypass these assertions to make implementation changes pass without explicit user approval.
 """Z-Image-Turbo with NF4 transformer blocks and an INT8 text encoder, and the tagger. Opt-in:
-FACEGEN_TEST_GPU=1 uv run --no-sync pytest tests/opt_in/test_gpu_zimage.py
+KITSHOT_TEST_GPU=1 uv run --no-sync pytest tests/opt_in/test_gpu_zimage.py
 
 Needs the GPU, Tongyi-MAI/Z-Image-Turbo (all of it) and the EVA02 tagger in the Hugging Face
 cache, and FM27 closed. Draws one made-up man; the pictures stay in memory. Run with -s to see
@@ -23,7 +23,7 @@ import pytest
 pytestmark = [
     pytest.mark.gpu,
     pytest.mark.skipif(
-        os.environ.get("FACEGEN_TEST_GPU") != "1", reason="set FACEGEN_TEST_GPU=1 to use the GPU"
+        os.environ.get("KITSHOT_TEST_GPU") != "1", reason="set KITSHOT_TEST_GPU=1 to use the GPU"
     ),
 ]
 
@@ -35,11 +35,11 @@ NATION = 38  # Nigeria: a West African look, as run `realistic`'s fixed prompt
 
 def _case(age: int) -> tuple[Any, Any, Any]:
     """A made-up man at `age`: his sheet, what he wears and the prompt Z-Image-Turbo is given."""
-    from facegen.core.kit_values import Kit
-    from facegen.core.man_traits import sample_man_sheet
-    from facegen.core.shoot import shoot_for
-    from facegen.core.style import portrait_prompt, shoot_hair
-    from facegen.core.traits import sample_sheet
+    from kitshot.core.kit_values import Kit
+    from kitshot.core.man_traits import sample_man_sheet
+    from kitshot.core.shoot import shoot_for
+    from kitshot.core.style import portrait_prompt, shoot_hair
+    from kitshot.core.traits import sample_sheet
 
     sheet = sample_sheet("gpu-test-zimage", 1, 1)
     man = sample_man_sheet("gpu-test-zimage", 1, 1, nation=NATION)
@@ -66,7 +66,7 @@ def _prompt(age: int) -> Any:
 
 def _men_check(tagger: Any, image: Any, age: int) -> Any:
     """The men's check (render/quality_checks.py) on one picture; prints what it saw."""
-    from facegen.render import quality_checks as qc
+    from kitshot.render import quality_checks as qc
 
     man, wear, _ = _case(age)
     tags = tagger([image])[0]
@@ -77,8 +77,8 @@ def _men_check(tagger: Any, image: Any, age: int) -> Any:
 
 @pytest.fixture(scope="module")
 def gpu() -> Iterator[tuple[Any, Any]]:
-    from facegen.render.tagger import Eva02Tagger
-    from facegen.render.zimage import ZImageRenderer
+    from kitshot.render.tagger import Eva02Tagger
+    from kitshot.render.zimage import ZImageRenderer
 
     renderer = ZImageRenderer()
     tagger = Eva02Tagger()
@@ -104,9 +104,9 @@ def _one_man(tags: Any) -> dict[str, Any]:
 def test_render_and_detail(gpu: tuple[Any, Any]) -> None:
     import torch
 
-    from facegen.render.picture import crop_to_aspect
-    from facegen.render.renderer import HEIGHT, WIDTH
-    from facegen.render.zimage import MAX_TOKENS, ZIMAGE_REPO
+    from kitshot.render.picture import crop_to_aspect
+    from kitshot.render.renderer import HEIGHT, WIDTH
+    from kitshot.render.zimage import MAX_TOKENS, ZIMAGE_REPO
 
     renderer, tagger = gpu
     assert renderer.model == ZIMAGE_REPO
@@ -140,8 +140,8 @@ def test_no_reference_and_no_overlong_prompt(gpu: tuple[Any, Any]) -> None:
     pipeline would cut at 512 tokens is refused too."""
     from PIL import Image
 
-    from facegen.core.prompt import Prompt
-    from facegen.render.renderer import Reference
+    from kitshot.core.prompt import Prompt
+    from kitshot.render.renderer import Reference
 
     renderer, _ = gpu
     assert renderer.reference_adapter is False
@@ -183,9 +183,9 @@ def test_cached_prompts_draw_bit_for_bit_what_direct_encoding_draws(
     memory and copied back equals the pipeline's own encoding, and draws the same bytes."""
     import torch
 
-    from facegen.render.gpu import on_gpu
-    from facegen.render.renderer import HEIGHT, WIDTH
-    from facegen.render.zimage import GUIDANCE, MAX_TOKENS, STEPS
+    from kitshot.render.gpu import on_gpu
+    from kitshot.render.renderer import HEIGHT, WIDTH
+    from kitshot.render.zimage import GUIDANCE, MAX_TOKENS, STEPS
 
     renderer, _ = gpu
     prompt = _prompt(31)

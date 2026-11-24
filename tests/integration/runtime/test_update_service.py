@@ -8,15 +8,15 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from facegen.runtime.update_service import CHECK_EVERY, RETRY_EVERY, UpdateService
-from facegen.setup import update
+from kitshot.runtime.update_service import CHECK_EVERY, RETRY_EVERY, UpdateService
+from kitshot.setup import update
 
 
 def app_folder(tmp_path: Path, version: str = "0.9.0") -> Path:
     root = tmp_path / "app"
     root.mkdir(parents=True, exist_ok=True)
     (root / "pyproject.toml").write_text(
-        f'[project]\nname = "facegen"\nversion = "{version}"\n', encoding="utf-8"
+        f'[project]\nname = "kitshot"\nversion = "{version}"\n', encoding="utf-8"
     )
     return root
 

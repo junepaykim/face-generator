@@ -9,7 +9,7 @@ import threading
 import pytest
 from support.desktop import FakeStartup, FakeSyncer, FakeWorker, status
 
-from facegen.desktop.app_controller import (
+from kitshot.desktop.app_controller import (
     MENU_STATUS_CHARS,
     NOTICE_CHARS,
     NOTICE_TITLE_CHARS,
@@ -19,8 +19,8 @@ from facegen.desktop.app_controller import (
     describe_worker,
     dot_for,
 )
-from facegen.persistence.jobs import Job
-from facegen.service import SyncStatus
+from kitshot.persistence.jobs import Job
+from kitshot.service import SyncStatus
 
 STATES = (
     "starting",

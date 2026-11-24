@@ -9,12 +9,12 @@ from pathlib import Path
 
 import pytest
 
-from facegen.core.classify import Why
-from facegen.core.settings_values import Settings
-from facegen.persistence import db, jobs, player_queries
-from facegen.persistence.settings import load_settings
-from facegen.pipeline.reclassification import reclassify
-from facegen.platform.locking import file_lock
+from kitshot.core.classify import Why
+from kitshot.core.settings_values import Settings
+from kitshot.persistence import db, jobs, player_queries
+from kitshot.persistence.settings import load_settings
+from kitshot.pipeline.reclassification import reclassify
+from kitshot.platform.locking import file_lock
 
 TABLES = {"careers", "clubs", "players", "traits", "images", "jobs", "settings", "sync_runs"}
 
@@ -254,7 +254,7 @@ def test_phase_5_migration_republishes_square_pictures_and_can_record_a_restore(
         "INSERT INTO images (career_id, unique_id, version, reason, group_name, model, prompt,"
         " negative_prompt, seed, master_path, published_path, is_current, created_at)"
         " VALUES (1, 7, 1, 'initial', 'a', 'm', 'p', 'n', 1, 'masters/c1/7/v001.png',"
-        " '/fm/graphics/facegen/c1/7.png', 1, 'now')"
+        " '/fm/graphics/kitshot/c1/7.png', 1, 'now')"
     )
     assert db.migrate(conn) == len(db.MIGRATIONS)
     row = conn.execute("SELECT * FROM images").fetchone()
@@ -471,7 +471,7 @@ def _history(conn: sqlite3.Connection, before: dict, after: dict) -> None:
 def test_the_detail_pass_switch_is_renamed_to_its_size_at_connect(tmp_path: Path) -> None:
     """Phase 10c: a stored detail pass off is "off", on the size it drew at (named by scale
     since Phase 16: "x1.5"); the settings history follows, so an older change can still be
-    undone. No schema number changes, so an older facegen on the same database still opens it."""
+    undone. No schema number changes, so an older Kitshot on the same database still opens it."""
     path = tmp_path / "facegen.db"
     conn = db.connect(path)
     conn.executemany(

@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from facegen.core.estimate import Drawn, estimate_queue, seconds_per_picture
+from kitshot.core.estimate import Drawn, estimate_queue, seconds_per_picture
 
 START = datetime(2026, 11, 17, 10, 0, tzinfo=UTC)
 

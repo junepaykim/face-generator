@@ -19,12 +19,12 @@ from unittest.mock import Mock
 import pytest
 from support.paths import ROOT
 
-from facegen.cli import cmd_models
-from facegen.core.settings_values import IMAGE_MODELS, MODEL_CHOICES
-from facegen.persistence import db
-from facegen.persistence.settings import load_settings, set_override
-from facegen.setup import models
-from facegen.setup.models import (
+from kitshot.cli import cmd_models
+from kitshot.core.settings_values import IMAGE_MODELS, MODEL_CHOICES
+from kitshot.persistence import db
+from kitshot.persistence.settings import load_settings, set_override
+from kitshot.setup import models
+from kitshot.setup.models import (
     HubCache,
     ModelDownload,
     ModelFile,
@@ -153,8 +153,8 @@ def test_every_model_the_settings_offer_has_a_list() -> None:
 
 
 def test_the_files_are_those_the_code_loads() -> None:
-    from facegen import qc
-    from facegen.render import renderer, zimage
+    from kitshot import qc
+    from kitshot.render import renderer, zimage
 
     image_repo = {
         "animagine": renderer.ANIMAGINE.repo,
@@ -442,7 +442,7 @@ def test_the_child_runs_online_and_quiet() -> None:
     env = child_env({"HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1", "PATH": "/bin"})
     assert "HF_HUB_OFFLINE" not in env and "TRANSFORMERS_OFFLINE" not in env
     assert env["PATH"] == "/bin" and env["HF_HUB_DISABLE_PROGRESS_BARS"] == "1"
-    assert models.child_command(("python", "-m", "facegen.cli"))[-2:] == ["models", "--child"]
+    assert models.child_command(("python", "-m", "kitshot.cli"))[-2:] == ["models", "--child"]
 
 
 # --- the parent's side ------------------------------------------------------------------------
@@ -522,7 +522,7 @@ def test_a_child_that_cannot_be_started(tmp_path: Path) -> None:
     assert "could not be started" in (download.status().error or "")
 
 
-# --- facegen models ---------------------------------------------------------------------------
+# --- kitshot models ---------------------------------------------------------------------------
 
 
 def args(**kw: object) -> argparse.Namespace:
@@ -548,7 +548,7 @@ def test_status_lists_each_model_and_says_what_to_run(tmp_path: Path) -> None:
     assert cmd_models(args(), out, cache=HubCache(tmp_path)) == 1
     text = out.getvalue()
     assert "cagliostrolab/animagine-xl-4.0" in text and "file(s) missing" in text
-    assert "facegen models --download" in text
+    assert "kitshot models --download" in text
     all_files(tmp_path)
     out = io.StringIO()
     assert cmd_models(args(), out, cache=HubCache(tmp_path)) == 0
@@ -621,7 +621,7 @@ def test_models_lists_only_the_chosen_models_repositories(tmp_path: Path) -> Non
 
 
 def test_models_follows_the_model_saved_in_settings(tmp_path: Path, config_file: Path) -> None:
-    """Without --model, `facegen models` checks the model chosen in Settings; before the first
+    """Without --model, `kitshot models` checks the model chosen in Settings; before the first
     start there is no database, and it is not created."""
     db_path = load_settings(defaults_path=config_file).paths.db_path
     out = io.StringIO()

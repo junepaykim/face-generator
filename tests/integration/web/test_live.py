@@ -19,10 +19,10 @@ from factories import NEWGEN, RIVAL, player
 from fastapi.testclient import TestClient
 from support.web import BASE, KOREAN_WINDOWS, client_for, fake_worker, synced
 
-from facegen.runtime.contracts import SyncControl, SyncStatus
-from facegen.service import WorkerService
-from facegen.web import live
-from facegen.web.app import AppContext, close_streams, create_app
+from kitshot.runtime.contracts import SyncControl, SyncStatus
+from kitshot.service import WorkerService
+from kitshot.web import live
+from kitshot.web.app import AppContext, close_streams, create_app
 
 
 @pytest.fixture(autouse=True)

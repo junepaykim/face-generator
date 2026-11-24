@@ -15,12 +15,12 @@ from factories import NEWGEN, RIVAL, player
 from fastapi.testclient import TestClient
 from support.web import BASE, KOREAN_WINDOWS, client_for, fake_worker, synced
 
-from facegen.core.job_records import Job
-from facegen.i18n import Translator
-from facegen.persistence import db
-from facegen.runtime.contracts import SyncControl, SyncStatus, WorkerStatus
-from facegen.web.app import AppContext, create_app
-from facegen.web.messages import clock, duration, worker_sentence
+from kitshot.core.job_records import Job
+from kitshot.i18n import Translator
+from kitshot.persistence import db
+from kitshot.runtime.contracts import SyncControl, SyncStatus, WorkerStatus
+from kitshot.web.app import AppContext, create_app
+from kitshot.web.messages import clock, duration, worker_sentence
 
 MINE = [1001, 1002, 1003]  # my club: group A
 KIDS = [NEWGEN + 2 * i for i in range(1, 7)]  # rivals in my league, CA 90, PA 152: group B

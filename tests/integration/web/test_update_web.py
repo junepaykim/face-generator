@@ -14,12 +14,12 @@ import pytest
 from fastapi.testclient import TestClient
 from support.web import BASE, KOREAN_WINDOWS
 
-from facegen.persistence import db
-from facegen.persistence.settings import load_settings
-from facegen.pipeline import settings_history
-from facegen.runtime.update_service import UpdateService
-from facegen.setup import update
-from facegen.web.app import AppContext, create_app
+from kitshot.persistence import db
+from kitshot.persistence.settings import load_settings
+from kitshot.pipeline import settings_history
+from kitshot.runtime.update_service import UpdateService
+from kitshot.setup import update
+from kitshot.web.app import AppContext, create_app
 
 
 class Releases:
@@ -46,7 +46,7 @@ class Env:
         root = tmp_path / "app"
         root.mkdir(parents=True)
         (root / "pyproject.toml").write_text(
-            '[project]\nname = "facegen"\nversion = "0.9.0"\n', encoding="utf-8"
+            '[project]\nname = "kitshot"\nversion = "0.9.0"\n', encoding="utf-8"
         )
         if checkout:
             (root / ".git").mkdir()

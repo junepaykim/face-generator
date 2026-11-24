@@ -13,11 +13,11 @@ from datetime import date
 import pytest
 from factories import NEWGEN, player, snapshot
 
-from facegen.core.records import ClubRecord, CompetitionRules, DivisionList, Gender
-from facegen.persistence import league_stats
-from facegen.persistence.settings import load_settings, read_overrides
-from facegen.pipeline import settings_history as history
-from facegen.pipeline.sync import run_sync
+from kitshot.core.records import ClubRecord, CompetitionRules, DivisionList, Gender
+from kitshot.persistence import league_stats
+from kitshot.persistence.settings import load_settings, read_overrides
+from kitshot.pipeline import settings_history as history
+from kitshot.pipeline.sync import run_sync
 
 MY_CLUB = 100
 MINE = range(100, 110)  # my league: 10 clubs, reputation about 3000

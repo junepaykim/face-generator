@@ -1,11 +1,11 @@
 """Stage the installer's folder: the release payload, uv.exe and the icon (Phase 13).
 
-    git archive --format=zip --prefix=facegen/ -o build/source.zip <tag>
+    git archive --format=zip --prefix=kitshot/ -o build/source.zip <tag>
     uv run --no-sync python installer/stage.py --archive build/source.zip \
         --uv-zip build/uv-x86_64-pc-windows-msvc.zip --out build/stage --tag <tag>
-    iscc /DVersion=<version> /DStage=build\\stage /DOutput=build\\dist installer\\facegen.iss
+    iscc /DVersion=<version> /DStage=build\\stage /DOutput=build\\dist installer\\kitshot.iss
 
-The payload is exactly what an update in place writes (facegen.setup.update.unpack_payload),
+The payload is exactly what an update in place writes (kitshot.setup.update.unpack_payload),
 so an installed folder and an updated one hold the same files. uv.exe comes from uv's release
 zip after its SHA-256 matches installer/uv.sha256, and goes to .bin\\uv.exe, where Start.bat
 looks for it. The icon, kitshot.ico, is made from the bundled pictures
@@ -27,7 +27,7 @@ HERE = Path(__file__).resolve().parent
 UV_SUMS = HERE / "uv.sha256"
 UV_ZIP = "uv-x86_64-pc-windows-msvc.zip"
 ICO = "kitshot.ico"
-"""The installer's icon in the stage (SetupIconFile and the shortcuts, installer/facegen.iss)."""
+"""The installer's icon in the stage (SetupIconFile and the shortcuts, installer/kitshot.iss)."""
 
 
 def expected_sum(name: str, sums: Path | None = None) -> str:
@@ -64,8 +64,8 @@ def stage_uv(uv_zip: Path, dest: Path) -> Path:
 
 
 def main(argv: list[str] | None = None) -> int:
-    from facegen.desktop.app_icon import write_ico
-    from facegen.setup import update
+    from kitshot.desktop.app_icon import write_ico
+    from kitshot.setup import update
 
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(

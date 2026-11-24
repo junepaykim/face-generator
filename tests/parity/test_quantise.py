@@ -8,7 +8,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from facegen.render.quantise import (
+from kitshot.render.quantise import (
     NF4_CODE,
     NF4_GROUP,
     Int8Linear,

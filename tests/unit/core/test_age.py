@@ -4,9 +4,9 @@ from dataclasses import replace
 
 import pytest
 
-from facegen.core.age import TABLES, WORDINGS, age_wording, audience, drawn_as_man, table_name
-from facegen.core.classify import Group
-from facegen.persistence.settings import Settings
+from kitshot.core.age import TABLES, WORDINGS, age_wording, audience, drawn_as_man, table_name
+from kitshot.core.classify import Group
+from kitshot.persistence.settings import Settings
 
 # docs/spec.md section 3: real age -> age wording, per table (user, 2026-11-11).
 SPEC = {
@@ -101,7 +101,7 @@ def _manual_staff(settings: Settings) -> Settings:
 
 def _manual(settings: Settings, *tables: str) -> Settings:
     """The settings with these tables set look by look (Custom) instead of spread."""
-    from facegen.persistence.settings import build_settings
+    from kitshot.persistence.settings import build_settings
 
     return build_settings(dict(settings.values) | {f"age.{t}.mode": "manual" for t in tables})
 
@@ -133,7 +133,7 @@ def test_staff_are_spread_over_28_to_64_by_default(settings: Settings) -> None:
 
 
 def test_staff_ages_up_to_100_are_allowed_in_the_tables(settings: Settings) -> None:
-    from facegen.persistence.settings import build_settings
+    from kitshot.persistence.settings import build_settings
 
     values = dict(settings.values) | {"age.staff.mode": "manual"}
     values["age.staff.W10"] = 99
@@ -222,7 +222,7 @@ def test_audience_reads_a_players_row() -> None:
 
 
 def test_mens_wordings_are_refused_in_a_table(settings: Settings) -> None:
-    from facegen.persistence.settings import SettingsError, build_settings
+    from kitshot.persistence.settings import SettingsError, build_settings
 
     values = dict(settings.values)
     values["age.staff.M2"] = 40
@@ -240,7 +240,7 @@ def test_custom_table(settings: Settings) -> None:
 
 
 def test_the_staff_spread_of_the_request() -> None:
-    from facegen.core.age import band_ages, spread_table
+    from kitshot.core.age import band_ages, spread_table
 
     rows = spread_table("W02", "W10", 28, 64)
     assert rows == (
@@ -255,7 +255,7 @@ def test_the_staff_spread_of_the_request() -> None:
 
 
 def test_a_leftover_year_goes_to_the_younger_looks() -> None:
-    from facegen.core.age import spread_table
+    from kitshot.core.age import spread_table
 
     # 3 looks between over 30-40: 9 years, 3 each; over 30-41: 10 years, 4, 3, 3.
     assert spread_table("W04", "W08", 30, 40) == (
@@ -267,7 +267,7 @@ def test_a_leftover_year_goes_to_the_younger_looks() -> None:
 
 
 def test_spreads_with_one_or_two_looks() -> None:
-    from facegen.core.age import spread_table
+    from kitshot.core.age import spread_table
 
     assert spread_table("W05", "W05", 20, 60) == ((0, "W05"),)
     assert spread_table("W05", "W06", 20, 60) == ((0, "W05"), (60, "W06"))
@@ -284,14 +284,14 @@ def test_spreads_with_one_or_two_looks() -> None:
     ],
 )
 def test_a_spread_that_cannot_work_is_refused(first: str, last: str, start: int, end: int) -> None:
-    from facegen.core.age import spread_table
+    from kitshot.core.age import spread_table
 
     with pytest.raises(ValueError):
         spread_table(first, last, start, end)
 
 
 def test_the_auto_mode_fills_the_staff_table(settings: Settings) -> None:
-    from facegen.persistence.settings import SettingsError, build_settings
+    from kitshot.persistence.settings import SettingsError, build_settings
 
     values = dict(settings.values) | {"age.staff.mode": "auto"}
     s = build_settings(values)
@@ -325,8 +325,8 @@ PLAYER_SPREADS = {
 
 @pytest.mark.parametrize("table", TABLES)
 def test_every_table_can_be_spread(settings: Settings, table: str) -> None:
-    from facegen.core.age import spread_table
-    from facegen.persistence.settings import SettingsError, build_settings
+    from kitshot.core.age import spread_table
+    from kitshot.persistence.settings import SettingsError, build_settings
 
     values = dict(settings.values) | {f"age.{table}.mode": "auto"}
     s = build_settings(values)
@@ -345,7 +345,7 @@ def test_every_table_can_be_spread(settings: Settings, table: str) -> None:
 
 
 def test_a_table_spread_moves_each_player_to_the_spreads_look(settings: Settings) -> None:
-    from facegen.persistence.settings import build_settings
+    from kitshot.persistence.settings import build_settings
 
     s = build_settings(dict(settings.values) | {"age.b.mode": "auto"})
     # W02 to W09 over 18-29: 18 and under W02, then 10 years over W03-W08 (2, 2, 2, 2, 1, 1).
@@ -366,14 +366,14 @@ def test_a_table_spread_moves_each_player_to_the_spreads_look(settings: Settings
 
 
 def test_the_age_modes_are_checked(settings: Settings) -> None:
-    from facegen.persistence.settings import SettingsError, build_settings
+    from kitshot.persistence.settings import SettingsError, build_settings
 
     with pytest.raises(SettingsError, match="age.c.mode"):
         build_settings(dict(settings.values) | {"age.c.mode": "spread"})
 
 
 def test_a_shift_moves_every_used_age_and_keeps_them_within_0_to_100() -> None:
-    from facegen.core.age import NOT_USED, shift_table
+    from kitshot.core.age import NOT_USED, shift_table
 
     table = {"W01": NOT_USED, "W02": 15, "W03": 19, "W10": 99}
     assert shift_table(table, -1) == {"W01": NOT_USED, "W02": 14, "W03": 18, "W10": 98}

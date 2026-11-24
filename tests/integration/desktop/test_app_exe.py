@@ -1,4 +1,4 @@
-"""facegen-app.exe in a venv's Scripts folder: when it is made, kept or given up
+"""kitshot-app.exe in a venv's Scripts folder: when it is made, kept or given up
 (desktop/app_exe.py). The Win32 resource step itself runs in opt_in/test_windows_app_exe.py."""
 
 from __future__ import annotations
@@ -10,8 +10,8 @@ from pathlib import Path
 import pytest
 from support.pe import IMAGE_SIZE, synthetic_pe
 
-from facegen.desktop import app_exe
-from facegen.desktop.app_exe import APP_EXE, STAMP, AppExeError
+from kitshot.desktop import app_exe
+from kitshot.desktop.app_exe import APP_EXE, STAMP, AppExeError
 
 
 class Maker:
@@ -94,8 +94,8 @@ def test_a_copy_that_cannot_be_made_leaves_pythonw(
     venv: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     maker = Maker()
-    maker.fail = AppExeError("facegen-app.exe did not start Python")
-    with caplog.at_level(logging.WARNING, logger="facegen"):
+    maker.fail = AppExeError("kitshot-app.exe did not start Python")
+    with caplog.at_level(logging.WARNING, logger="kitshot"):
         assert ensure(venv, maker) is None
     assert "did not start Python" in caplog.text and leftovers(venv) == []
     assert not (venv / "Scripts" / STAMP).exists()
@@ -139,7 +139,7 @@ def test_a_copy_already_running_is_not_made_again_first(
 
 
 def test_a_file_nobody_holds_is_not_in_use(tmp_path: Path) -> None:
-    free = tmp_path / "facegen-app.exe"
+    free = tmp_path / "kitshot-app.exe"
     free.write_bytes(b"copy")
     assert not app_exe.in_use(free)
     assert not app_exe.in_use(tmp_path / "missing.exe")
@@ -154,7 +154,7 @@ def test_make_appends_what_followed_the_sections_and_checks_the_start(
         changed.append((path.read_bytes(), ico, version))
 
     monkeypatch.setattr(app_exe, "replace_resources", replace_resources)
-    target = tmp_path / ".facegen-app-1.exe"
+    target = tmp_path / ".kitshot-app-1.exe"
     launcher = synthetic_pe(extra=b"metadata", cert=b"S" * 16)
     app_exe.make(target, launcher, b"icon", "0.1.2", starts=lambda exe: exe == target)
     [(image, ico, version)] = changed

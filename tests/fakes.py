@@ -7,10 +7,10 @@ from typing import Any
 
 from PIL import Image, ImageDraw
 
-from facegen.core.prompt import Prompt
-from facegen.core.settings_values import IMAGE_MODELS
-from facegen.core.traits import ACCESSORY, EYE_COLOUR, FIELDS, HAIR_COLOUR, MARK
-from facegen.render.quality_checks import TagResult
+from kitshot.core.prompt import Prompt
+from kitshot.core.settings_values import IMAGE_MODELS
+from kitshot.core.traits import ACCESSORY, EYE_COLOUR, FIELDS, HAIR_COLOUR, MARK
+from kitshot.render.quality_checks import TagResult
 
 GENERAL = {"general": 0.95, "sensitive": 0.04, "questionable": 0.0, "explicit": 0.0}
 SENSITIVE = {"general": 0.30, "sensitive": 0.65, "questionable": 0.04, "explicit": 0.0}
@@ -132,7 +132,7 @@ class FakeRenderer:
         """The size each picture was asked for, in order."""
         self.vae_tiling = False
 
-    # The two stages of prompt encoding (facegen.prompt_cache), without the cache's size limit.
+    # The two stages of prompt encoding (kitshot.prompt_cache), without the cache's size limit.
 
     def prepare(self, prompts: Iterable[Prompt]) -> int:
         prompts = list(prompts)

@@ -1,6 +1,6 @@
 # AGENT INVARIANT: Do not weaken or bypass these assertions to make implementation changes pass without explicit user approval.
 """RealVisXL V5.0 with INT8 UNet blocks, the realistic SDXL model, and the tagger. Opt-in:
-FACEGEN_TEST_GPU=1 uv run --no-sync pytest tests/opt_in/test_gpu_realvis.py
+KITSHOT_TEST_GPU=1 uv run --no-sync pytest tests/opt_in/test_gpu_realvis.py
 
 Needs the GPU, the models in the Hugging Face cache (RealVisXL, the EVA02 tagger and, for the
 reference test, h94/IP-Adapter), and FM27 closed. Draws one made-up man; the pictures stay in
@@ -23,7 +23,7 @@ import pytest
 pytestmark = [
     pytest.mark.gpu,
     pytest.mark.skipif(
-        os.environ.get("FACEGEN_TEST_GPU") != "1", reason="set FACEGEN_TEST_GPU=1 to use the GPU"
+        os.environ.get("KITSHOT_TEST_GPU") != "1", reason="set KITSHOT_TEST_GPU=1 to use the GPU"
     ),
 ]
 
@@ -33,11 +33,11 @@ NATION = 776  # Italy: a Southern European look, as run `realistic`'s fixed prom
 
 def _case(age: int) -> tuple[Any, Any, Any]:
     """A made-up man at `age`: his sheet, what he wears and the prompt RealVisXL is given."""
-    from facegen.core.kit_values import Kit
-    from facegen.core.man_traits import sample_man_sheet
-    from facegen.core.shoot import shoot_for
-    from facegen.core.style import portrait_prompt, shoot_hair
-    from facegen.core.traits import sample_sheet
+    from kitshot.core.kit_values import Kit
+    from kitshot.core.man_traits import sample_man_sheet
+    from kitshot.core.shoot import shoot_for
+    from kitshot.core.style import portrait_prompt, shoot_hair
+    from kitshot.core.traits import sample_sheet
 
     sheet = sample_sheet("gpu-test-realvis", 1, 1)
     man = sample_man_sheet("gpu-test-realvis", 1, 1, nation=NATION)
@@ -64,7 +64,7 @@ def _prompt(age: int) -> Any:
 
 def _men_check(tagger: Any, image: Any, age: int) -> Any:
     """The men's check (render/quality_checks.py) on one picture; prints what it saw."""
-    from facegen.render import quality_checks as qc
+    from kitshot.render import quality_checks as qc
 
     man, wear, _ = _case(age)
     tags = tagger([image])[0]
@@ -75,8 +75,8 @@ def _men_check(tagger: Any, image: Any, age: int) -> Any:
 
 @pytest.fixture(scope="module")
 def gpu() -> Iterator[tuple[Any, Any]]:
-    from facegen.render.renderer import REALVIS, SdxlRenderer
-    from facegen.render.tagger import Eva02Tagger
+    from kitshot.render.renderer import REALVIS, SdxlRenderer
+    from kitshot.render.tagger import Eva02Tagger
 
     renderer = SdxlRenderer(REALVIS)
     tagger = Eva02Tagger()
@@ -111,8 +111,8 @@ def test_the_vae_tiles_as_animagines(gpu: tuple[Any, Any]) -> None:
 def test_render_and_detail(gpu: tuple[Any, Any]) -> None:
     import torch
 
-    from facegen.render.picture import crop_to_aspect
-    from facegen.render.renderer import HEIGHT, REALVIS_REPO, WIDTH
+    from kitshot.render.picture import crop_to_aspect
+    from kitshot.render.renderer import HEIGHT, REALVIS_REPO, WIDTH
 
     renderer, tagger = gpu
     # Its own VAE (the fp16-fix weights) decodes in fp16, not upcast to fp32.
@@ -148,8 +148,8 @@ def test_render_and_detail(gpu: tuple[Any, Any]) -> None:
 def test_reference_picture(gpu: tuple[Any, Any]) -> None:
     """IP-Adapter plus-face loads into RealVisXL's UNet (SDXL's architecture), draws with a
     reference, and switches out again so a picture without one is the plain model's."""
-    from facegen.render.picture import crop_to_aspect, face_box
-    from facegen.render.renderer import Reference
+    from kitshot.render.picture import crop_to_aspect, face_box
+    from kitshot.render.renderer import Reference
 
     renderer, tagger = gpu
     prompt = _prompt(22)
@@ -181,8 +181,8 @@ def test_group_a_job_with_a_reference_keeps_peak_vram_under_8_gib(gpu: tuple[Any
     encoder are back in system memory afterwards."""
     import torch
 
-    from facegen.render.picture import face_box
-    from facegen.render.renderer import Reference
+    from kitshot.render.picture import face_box
+    from kitshot.render.renderer import Reference
 
     renderer, tagger = gpu
     prompt = _prompt(19)  # new prompts: the encoders must load

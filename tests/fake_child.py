@@ -1,4 +1,4 @@
-"""A stand-in for `facegen worker` that speaks the pipe protocol (worker_process) by a plan,
+"""A stand-in for `kitshot worker` that speaks the pipe protocol (worker_process) by a plan,
 so WorkerProxy can be tested without a worker loop.
 
     python fake_child.py STATE_DIR PLAN [--generate-now]
@@ -28,8 +28,8 @@ import threading
 import time
 from pathlib import Path
 
-from facegen.persistence.jobs import Job
-from facegen.runtime.worker_process import encode, job_to_json
+from kitshot.persistence.jobs import Job
+from kitshot.runtime.worker_process import encode, job_to_json
 
 
 def send(message: dict) -> None:

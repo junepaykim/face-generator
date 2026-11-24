@@ -1,5 +1,5 @@
 """Phase 7b: the GPU worker in a child process. The pipe protocol, WorkerProxy with a fake
-child that speaks the protocol by a plan (fake_child.py), and the exit test: `facegen serve`
+child that speaks the protocol by a plan (fake_child.py), and the exit test: `kitshot serve`
 with a worker process whose renderer fails on its third job (gpu_child.py)."""
 
 from __future__ import annotations
@@ -19,15 +19,15 @@ import pytest
 from factories import ABROAD, NEWGEN, RIVAL, player, snapshot
 from support.paths import TESTS
 
-from facegen.core.records import Personality
-from facegen.persistence import db
-from facegen.persistence.jobs import Job
-from facegen.persistence.settings import load_settings
-from facegen.pipeline.sync import run_sync
-from facegen.runtime import worker_process
-from facegen.runtime.contracts import LogLine
-from facegen.runtime.supervision import RestartPolicy
-from facegen.runtime.worker_process import (
+from kitshot.core.records import Personality
+from kitshot.persistence import db
+from kitshot.persistence.jobs import Job
+from kitshot.persistence.settings import load_settings
+from kitshot.pipeline.sync import run_sync
+from kitshot.runtime import worker_process
+from kitshot.runtime.contracts import LogLine
+from kitshot.runtime.supervision import RestartPolicy
+from kitshot.runtime.worker_process import (
     ChildLink,
     WorkerProxy,
     decode,
@@ -37,7 +37,7 @@ from facegen.runtime.worker_process import (
     status_to_json,
     worker_command,
 )
-from facegen.service import Exit, WorkerStatus
+from kitshot.service import Exit, WorkerStatus
 
 FAST = RestartPolicy(backoff=(0.05,))
 
@@ -178,7 +178,7 @@ def test_the_child_link_sends_each_change_once_and_survives_a_broken_pipe() -> N
 
 
 def test_the_command_line_and_exit_codes() -> None:
-    assert worker_command(None, None) == [sys.executable, "-m", "facegen.cli", "worker"]
+    assert worker_command(None, None) == [sys.executable, "-m", "kitshot.cli", "worker"]
     assert worker_command(("py", "x.py"), Path("c.toml")) == [
         "py", "x.py", "--config", "c.toml", "worker",
     ]  # fmt: skip
@@ -315,7 +315,7 @@ def test_a_child_that_dies_is_restarted_and_its_last_words_are_logged(fake: Fake
         def emit(self, record: logging.LogRecord) -> None:
             records.append(record.getMessage())
 
-    log = logging.getLogger("facegen")
+    log = logging.getLogger("kitshot")
     handler, level = Keep(), log.level
     log.addHandler(handler)
     log.setLevel(logging.INFO)
@@ -441,9 +441,9 @@ def test_quit_while_a_picture_is_drawn_ends_the_worker_at_once(
     """Quit does not wait for the picture being drawn (user, 2026-11-22): the worker process
     ends at once, nothing is stored for the job, and the job goes back to the queue when a
     worker starts again."""
-    from facegen.persistence import jobs
-    from facegen.runtime.composition import build_runtime
-    from facegen.runtime.dependencies import Gpu
+    from kitshot.persistence import jobs
+    from kitshot.runtime.composition import build_runtime
+    from kitshot.runtime.dependencies import Gpu
 
     settings = load_settings(defaults_path=config_file)
     conn = db.connect(settings.paths.db_path)
@@ -491,8 +491,8 @@ def test_skip_while_a_picture_is_drawn_draws_the_next_one_and_keeps_the_job(
     """Phase 17m (D8), with a real worker process and a slow fake renderer: Skip ends the
     process at once, nothing is stored for the job, which waits behind the rest of the queue
     with its sheet, and a new process draws the next job."""
-    from facegen.runtime.composition import build_runtime
-    from facegen.runtime.dependencies import Gpu
+    from kitshot.runtime.composition import build_runtime
+    from kitshot.runtime.dependencies import Gpu
 
     settings = load_settings(defaults_path=config_file)
     conn = db.connect(settings.paths.db_path)
@@ -547,11 +547,11 @@ def test_exit_test_a_fault_on_the_third_job_is_shown_once_and_drawn_after_a_rest
     tmp_path: Path, config_file: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Phase 7's exit test: with a renderer that raises a fake fatal error on its third job,
-    `facegen serve` shows the fault once, keeps the job queued, and draws it after an
+    `kitshot serve` shows the fault once, keeps the job queued, and draws it after an
     automatic restart; no AttributeError appears anywhere."""
     from fastapi.testclient import TestClient
 
-    from facegen.cli import Gpu, main
+    from kitshot.cli import Gpu, main
 
     monkeypatch.setattr(worker_process, "DEFAULT_POLICY", RestartPolicy(backoff=(0.2,)))
     settings = load_settings(defaults_path=config_file)
@@ -575,7 +575,7 @@ def test_exit_test_a_fault_on_the_third_job_is_shown_once_and_drawn_after_a_rest
             wait_for(all_drawn, timeout=60)
             seen["page"] = client.get("/log").text  # the worker's log has a page (Phase 12)
 
-    log = logging.getLogger("facegen")
+    log = logging.getLogger("kitshot")
     out = io.StringIO()
     try:
         code = main(
@@ -601,7 +601,7 @@ def test_exit_test_a_fault_on_the_third_job_is_shown_once_and_drawn_after_a_rest
         conn.close()
     assert {r["status"] for r in rows} == {"done"}  # the third job too, after the restart
     assert len(drawn) == 3
-    text = (settings.paths.data_dir / "logs" / "facegen.log").read_text(encoding="utf-8")
+    text = (settings.paths.data_dir / "logs" / "kitshot.log").read_text(encoding="utf-8")
     assert "Traceback" in text and "illegal memory access" in text  # the real stack is kept
     # Both worker processes ended by themselves: the one that faulted, and the one stopped.
     assert text.count("ended (exit code 0)") == 2 and "Fatal Python error" not in text

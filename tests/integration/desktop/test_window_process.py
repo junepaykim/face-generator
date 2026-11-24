@@ -13,8 +13,8 @@ from pathlib import Path
 import pytest
 from support.paths import TESTS
 
-from facegen.desktop import app_window
-from facegen.desktop.app_window import NO_WEBVIEW2, WindowProcess
+from kitshot.desktop import app_window
+from kitshot.desktop.app_window import NO_WEBVIEW2, WindowProcess
 
 URL = "http://127.0.0.1:8765/"
 
@@ -208,15 +208,15 @@ def test_the_window_command_runs_this_python() -> None:
     assert app_window.window_command(URL, True) == [
         sys.executable,
         "-m",
-        "facegen.app_window",
+        "kitshot.app_window",
         "--url",
         URL,
         "--hidden",
     ]
     assert "--hidden" not in app_window.window_command(URL, False)
-    assert app_window.window_command(URL, False, r"C:\facegen\data\app\facegen.ico")[-2:] == [
+    assert app_window.window_command(URL, False, r"C:\kitshot\data\app\facegen.ico")[-2:] == [
         "--icon",
-        r"C:\facegen\data\app\facegen.ico",
+        r"C:\kitshot\data\app\facegen.ico",
     ]
 
 

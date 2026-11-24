@@ -1,5 +1,5 @@
 [project]
-name = "facegen"
+name = "kitshot"
 version = "0.1.6"
 description = "Kitshot: anime or photo portraits for Football Manager 27 players."
 readme = "README.md"
@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-facegen = "facegen.cli:main"
+kitshot = "kitshot.cli:main"
 
 [dependency-groups]
 dev = [
@@ -40,12 +40,12 @@ gpu = [
 # The optional Rust extension (native/, built with maturin; needs a Rust toolchain). It
 # speeds up the figure scan and the published-picture encoder; every part of it has a
 # Python fallback. `uv sync --no-group native` leaves it out. Not built on Windows, where
-# few players have Rust and the MSVC build tools: `facegen native --install` installs the
+# few players have Rust and the MSVC build tools: `kitshot native --install` installs the
 # prebuilt wheel there (native_wheel.py), and `uv sync --inexact` keeps it.
-native = ["facegen-native; sys_platform != 'win32'"]
-# The desktop app (Phase 11, `facegen app` and `facegen tray`): the tray icon and the window
+native = ["kitshot-native; sys_platform != 'win32'"]
+# The desktop app (Phase 11, `kitshot app` and `kitshot tray`): the tray icon and the window
 # (pywebview on Microsoft Edge WebView2). Windows only, so Linux and WSL installs do not
-# change; there `facegen serve` and the browser remain the way in.
+# change; there `kitshot serve` and the browser remain the way in.
 desktop = [
     "pystray>=0.19.5; sys_platform == 'win32'",
     "pywebview>=6.2; sys_platform == 'win32'",
@@ -58,7 +58,7 @@ default-groups = ["dev", "gpu", "native", "desktop"]
 members = ["native"]
 
 [tool.uv.sources]
-facegen-native = { workspace = true, editable = false }
+kitshot-native = { workspace = true, editable = false }
 # PyPI's torch for Windows has no CUDA, so on Windows torch comes from PyTorch's own index,
 # built for CUDA 13.2 like Linux's torch from PyPI. Elsewhere: PyPI. (torchvision, which timm
 # needs, stays PyPI's: the tagger uses none of its CUDA parts.)
@@ -74,7 +74,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/facegen"]
+packages = ["src/kitshot", "src/facegen"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -86,8 +86,8 @@ markers = [
     "parity: native/Python and CPU tensor equivalence contracts",
     "di: architecture, dependency injection and public compatibility contracts",
     "opt_in: hardware or platform checks outside the portable default suite",
-    "gpu: requires FACEGEN_TEST_GPU=1 and already cached models on a CUDA GPU",
-    "real_save: requires FACEGEN_TEST_SAVE pointing at a local snapshot copy",
+    "gpu: requires KITSHOT_TEST_GPU=1 and already cached models on a CUDA GPU",
+    "real_save: requires KITSHOT_TEST_SAVE pointing at a local snapshot copy",
     "windows_only: requires native Windows; skipped on Linux and WSL",
 ]
 

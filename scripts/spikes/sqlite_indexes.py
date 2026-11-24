@@ -31,9 +31,9 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from facegen.persistence import db, player_queries
-from facegen.persistence.player_queries import PER_PAGE, PlayerFilter
-from facegen.web import queries
+from kitshot.persistence import db, player_queries
+from kitshot.persistence.player_queries import PER_PAGE, PlayerFilter
+from kitshot.web import queries
 
 REPEATS = 7
 
@@ -251,7 +251,7 @@ def index_sizes(conn: sqlite3.Connection, names: list[str]) -> dict[str, int]:
 def write_costs(conn: sqlite3.Connection, career_id: int) -> dict[str, float]:
     """A re-sync's player writes (the sync's own upsert, same values) and the classification's
     group update, each in a transaction that is rolled back."""
-    from facegen.pipeline.sync import _PLAYER_COLUMNS, _UPSERT_PLAYER
+    from kitshot.pipeline.sync import _PLAYER_COLUMNS, _UPSERT_PLAYER
 
     cols = ", ".join(_PLAYER_COLUMNS)
     rows = conn.execute(f"SELECT {cols} FROM players WHERE career_id = ?", (career_id,)).fetchall()

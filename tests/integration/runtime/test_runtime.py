@@ -11,10 +11,10 @@ from pathlib import Path
 import pytest
 from fakes import FakeRenderer, FakeTagger
 
-from facegen.cli import Gpu
-from facegen.persistence import db
-from facegen.persistence.settings import load_settings, set_override
-from facegen.runtime.composition import (
+from kitshot.cli import Gpu
+from kitshot.persistence import db
+from kitshot.persistence.settings import load_settings, set_override
+from kitshot.runtime.composition import (
     CannotStart,
     ServerStartError,
     ServerThread,
@@ -65,15 +65,15 @@ def test_the_parts_stop_in_order(config_file: Path) -> None:
 
 
 def test_the_real_save_reader_syncs_in_a_process_of_its_own(config_file: Path) -> None:
-    """Phase 14: with the real reader each sync runs in `facegen sync-process`; a test's fake
+    """Phase 14: with the real reader each sync runs in `kitshot sync-process`; a test's fake
     source syncs in the calling thread, as WorkerService stays beside WorkerProxy."""
-    from facegen.runtime.sync_process import sync_command
+    from kitshot.runtime.sync_process import sync_command
 
     settings = load_settings(defaults_path=config_file)
     real = build_runtime(settings, fake_gpu(), worker=False, browse=None)
     assert real.syncer.process is not None
     assert real.syncer.process.command == sync_command() == [
-        sys.executable, "-m", "facegen.cli", "sync-process",
+        sys.executable, "-m", "kitshot.cli", "sync-process",
     ]  # fmt: skip
     fake = build_runtime(settings, fake_gpu(), inline_source=NoSource, worker=False, browse=None)
     assert fake.syncer.process is None

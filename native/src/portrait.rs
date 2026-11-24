@@ -1,4 +1,4 @@
-//! The published picture (facegen/publish.py): a master cropped to 3:4, scaled with
+//! The published picture (kitshot/publish.py): a master cropped to 3:4, scaled with
 //! Lanczos-3 and saved as an optimised 8-bit RGB PNG.
 //!
 //! Python decides the crop box (`picture.aspect_box`) and the size

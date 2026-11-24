@@ -12,14 +12,14 @@ import pytest
 from factories import ABROAD, MANUAL, NEWGEN, RIVAL, WOMENS, manual_cutoffs, player, snapshot
 from fakes import FakeRenderer, FakeTagger
 
-from facegen.datasource.kits import load_kits
-from facegen.persistence.settings import Paths, Settings, set_overrides
-from facegen.pipeline import manual
-from facegen.pipeline.manual import ManualError
-from facegen.pipeline.reclassification import reclassify
-from facegen.pipeline.sync import run_sync
-from facegen.pipeline.worker import JobFilter, Worker, load_career
-from facegen.web import queries
+from kitshot.datasource.kits import load_kits
+from kitshot.persistence.settings import Paths, Settings, set_overrides
+from kitshot.pipeline import manual
+from kitshot.pipeline.manual import ManualError
+from kitshot.pipeline.reclassification import reclassify
+from kitshot.pipeline.sync import run_sync
+from kitshot.pipeline.worker import JobFilter, Worker, load_career
+from kitshot.web import queries
 
 MINE = 1001  # pre-existing at my club: A
 STAR = 1002  # pre-existing star at another club: in no group, picked by hand
@@ -261,7 +261,7 @@ def test_pin_to_never_cancels_and_clearing_the_pin_requeues(env: Env) -> None:
 
 def test_remove_picture_brings_back_the_games_photo(env: Env) -> None:
     env.draw(JobFilter(groups=frozenset({"a"})))
-    pack = env.settings.paths.fm_user_dir / "graphics" / "facegen" / env.key
+    pack = env.settings.paths.fm_user_dir / "graphics" / "kitshot" / env.key
     assert (pack / f"{MINE}.png").is_file()
     master = env.conn.execute(
         "SELECT master_path FROM images WHERE unique_id = ?", (MINE,)
@@ -582,7 +582,7 @@ def test_picking_again_finishes_a_publish_that_failed(
 ) -> None:
     """The pick is stored before the pack is written. When writing fails, the same pick again
     publishes it instead of saying it is already in use."""
-    from facegen.pipeline import publish
+    from kitshot.pipeline import publish
 
     v2 = _picked_draw(env)
     check = _check(v2)
@@ -748,7 +748,7 @@ def test_picking_another_candidate_takes_the_picture_off_review(env: Env) -> Non
 def test_a_skipped_job_waits_behind_the_rest_until_a_new_request(env: Env) -> None:
     """D8: the job being drawn goes behind every other queued job, keeping its sheet; a sync
     keeps that order, a new request for the player brings it forward."""
-    from facegen.persistence import jobs
+    from kitshot.persistence import jobs
 
     def order() -> list[int]:
         return [j.unique_id for j in jobs.queued_jobs(env.conn, env.cid, JobFilter())]

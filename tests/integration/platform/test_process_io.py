@@ -13,12 +13,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from facegen.desktop.app_window import WindowProcess
-from facegen.platform.pipes import JsonWriter
-from facegen.runtime.contracts import LogLine
-from facegen.runtime.worker_process import ChildLink, WorkerProxy
-from facegen.service import WorkerStatus
-from facegen.setup import models
+from kitshot.desktop.app_window import WindowProcess
+from kitshot.platform.pipes import JsonWriter
+from kitshot.runtime.contracts import LogLine
+from kitshot.runtime.worker_process import ChildLink, WorkerProxy
+from kitshot.service import WorkerStatus
+from kitshot.setup import models
 
 
 class FragmentedOutput:

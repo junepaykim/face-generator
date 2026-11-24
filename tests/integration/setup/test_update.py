@@ -1,4 +1,4 @@
-"""facegen's releases (Phase 13): the check, the release payload, and the update in place.
+"""kitshot's releases (Phase 13): the check, the release payload, and the update in place.
 
 Nothing here reaches the network: the root conftest refuses it, and each test gives its own
 releases list and archive. The folders updated are made-up trees under tmp_path.
@@ -21,8 +21,8 @@ from typing import Any
 import pytest
 from support.paths import ROOT
 
-from facegen.setup import update
-from facegen.setup.update import Release, UpdateError, Updater
+from kitshot.setup import update
+from kitshot.setup.update import Release, UpdateError, Updater
 
 
 def release(tag: str, **kw: Any) -> dict[str, Any]:
@@ -100,7 +100,7 @@ def test_tests_cannot_reach_github() -> None:
 def test_the_request_says_only_the_programs_name() -> None:
     request = update._request(update.RELEASES_API)
     headers = {k.lower(): v for k, v in request.header_items()}
-    assert headers == {"user-agent": "facegen", "accept": "application/vnd.github+json"}
+    assert headers == {"user-agent": "kitshot", "accept": "application/vnd.github+json"}
 
 
 def test_the_record_of_a_check_survives_a_restart(tmp_path: Path) -> None:
@@ -118,7 +118,7 @@ def test_the_record_of_a_check_survives_a_restart(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("path", "shipped"),
     [
-        ("src/facegen/cli.py", True),
+        ("src/kitshot/cli.py", True),
         ("native/src/lib.rs", True),
         ("native/wheels.sha256", True),
         ("config/default.toml", True),
@@ -136,13 +136,13 @@ def test_the_record_of_a_check_survives_a_restart(tmp_path: Path) -> None:
         ("tests/conftest.py", False),
         ("scripts/build_kit_catalog.py", False),
         ("docs/images/hero.jpg", False),
-        ("installer/facegen.iss", False),
+        ("installer/kitshot.iss", False),
         (".github/workflows/ci.yml", False),
         ("AGENTS.md", False),
-        ("src/facegen/web/AGENTS.md", False),
+        ("src/kitshot/web/AGENTS.md", False),
         ("native/AGENTS.md", False),
         ("future/runtime.dat", True),
-        ("src/facegen/__pycache__/cli.cpython-312.pyc", False),
+        ("src/kitshot/__pycache__/cli.cpython-312.pyc", False),
         ("native/target/release/x.dll", False),
     ],
 )
@@ -175,10 +175,10 @@ def test_the_repositorys_payload_has_what_a_start_needs(tmp_path: Path) -> None:
         "config/kits.toml",
         "native/pyproject.toml",
         "native/wheels.sha256",
-        "src/facegen/__init__.py",
-        "src/facegen/i18n/ko.toml",
-        "src/facegen/data/kit_catalog.json",
-        "src/facegen/web/templates/base.html",
+        "src/kitshot/__init__.py",
+        "src/kitshot/i18n/ko.toml",
+        "src/kitshot/data/kit_catalog.json",
+        "src/kitshot/web/templates/base.html",
     ):
         assert needed in shipped
     assert not any(p.startswith(("tests/", "docs/", "scripts/", "installer/")) for p in shipped)
@@ -193,15 +193,15 @@ def source_zip(path: Path, files: dict[str, str | bytes], top: str = "kitshot-1.
 
 
 SOURCE = {
-    "pyproject.toml": '[project]\nname = "facegen"\nversion = "1.0.0"\n',
+    "pyproject.toml": '[project]\nname = "kitshot"\nversion = "1.0.0"\n',
     "Start.bat": "@echo off\r\n",
     "uv.lock": "lock 1.0.0\n",
-    "src/facegen/__init__.py": "",
-    "src/facegen/new_module.py": "NEW = True\n",
+    "src/kitshot/__init__.py": "",
+    "src/kitshot/new_module.py": "NEW = True\n",
     "config/default.toml": "[ui]\n",
     "tests/test_x.py": "def test(): pass\n",
     "docs/images/a.jpg": b"\xff\xd8",
-    "README.md": "facegen 1.0.0\n",
+    "README.md": "kitshot 1.0.0\n",
 }
 
 
@@ -213,8 +213,8 @@ def test_an_archive_unpacks_to_its_payload(tmp_path: Path) -> None:
         "Start.bat",
         "config/default.toml",
         "pyproject.toml",
-        "src/facegen/__init__.py",
-        "src/facegen/new_module.py",
+        "src/kitshot/__init__.py",
+        "src/kitshot/new_module.py",
         "uv.lock",
     ]
     assert (tmp_path / "out" / "Start.bat").read_bytes() == b"@echo off\r\n"
@@ -232,7 +232,7 @@ def test_an_archive_unpacks_to_its_payload(tmp_path: Path) -> None:
         ({"src/x.py": "x"}, "f", "not Kitshot's source"),
     ],
 )
-def test_an_archive_that_is_not_facegens_source_is_refused(
+def test_an_archive_that_is_not_kitshots_source_is_refused(
     tmp_path: Path, files: dict[str, str], top: str, why: str
 ) -> None:
     with pytest.raises(UpdateError, match=why):
@@ -250,7 +250,7 @@ def test_an_archive_with_two_top_folders_or_a_link_is_refused(tmp_path: Path) ->
     with zipfile.ZipFile(link, "w") as zf:
         for name, data in SOURCE.items():
             zf.writestr(f"top/{name}", data)
-        info = zipfile.ZipInfo("top/src/facegen/link.py")
+        info = zipfile.ZipInfo("top/src/kitshot/link.py")
         info.external_attr = (stat.S_IFLNK | 0o777) << 16
         zf.writestr(info, "/etc/passwd")
     with pytest.raises(UpdateError, match="link"):
@@ -265,22 +265,22 @@ def test_an_archive_with_two_top_folders_or_a_link_is_refused(tmp_path: Path) ->
 
 
 def installed(root: Path) -> Path:
-    """An installed facegen 0.9.0 with this PC's own files beside the release's."""
+    """An installed Kitshot 0.9.0 with this PC's own files beside the release's."""
     files = {
-        "pyproject.toml": '[project]\nname = "facegen"\nversion = "0.9.0"\n',
+        "pyproject.toml": '[project]\nname = "kitshot"\nversion = "0.9.0"\n',
         "Start.bat": "@echo off\r\nrem old\r\n",
         "uv.lock": "lock 0.9.0\n",
-        "src/facegen/__init__.py": "",
-        "src/facegen/old_module.py": "OLD = True\n",
-        "src/facegen/gone/only.py": "x\n",
-        "src/facegen/__pycache__/old_module.cpython-312.pyc": "pyc",
+        "src/kitshot/__init__.py": "",
+        "src/kitshot/old_module.py": "OLD = True\n",
+        "src/kitshot/gone/only.py": "x\n",
+        "src/kitshot/__pycache__/old_module.cpython-312.pyc": "pyc",
         "config/default.toml": "[ui]\n",
         "config/local.toml": "[paths]\nfm_user_dir = 'C:\\\\FM'\n",
         "config/kits.toml": "# my own edits\n",
         "data/facegen.db": "the database",
         ".venv/Scripts/python.exe": "python",
         ".bin/uv.exe": "uv",
-        "README.md": "facegen 0.9.0\n",
+        "README.md": "kitshot 0.9.0\n",
     }
     for name, text in files.items():
         path = root / name
@@ -300,10 +300,10 @@ def test_a_payload_replaces_the_releases_files_and_keeps_this_pcs(tmp_path: Path
     applied = update.apply_payload(root, stage, files, tmp_path / "backup")
     text = {p: (root / p).read_text(encoding="utf-8") for p in ("pyproject.toml", "uv.lock")}
     assert 'version = "1.0.0"' in text["pyproject.toml"] and text["uv.lock"] == "lock 1.0.0\n"
-    assert (root / "src/facegen/new_module.py").is_file()
+    assert (root / "src/kitshot/new_module.py").is_file()
     # src/ files the new release lacks are gone, and so is the folder left empty.
-    assert not (root / "src/facegen/old_module.py").exists()
-    assert not (root / "src/facegen/gone").exists()
+    assert not (root / "src/kitshot/old_module.py").exists()
+    assert not (root / "src/kitshot/gone").exists()
     # This PC's own: untouched.
     assert (root / "config/local.toml").read_text(encoding="utf-8").startswith("[paths]")
     assert (root / "data/facegen.db").read_text(encoding="utf-8") == "the database"
@@ -312,7 +312,7 @@ def test_a_payload_replaces_the_releases_files_and_keeps_this_pcs(tmp_path: Path
     assert (root / "config/kits.toml").read_text(encoding="utf-8") == "# my own edits\n"
     # Everything replaced or removed is in the backup.
     backup = tmp_path / "backup"
-    assert (backup / "src/facegen/old_module.py").read_text(encoding="utf-8") == "OLD = True\n"
+    assert (backup / "src/kitshot/old_module.py").read_text(encoding="utf-8") == "OLD = True\n"
     assert 'version = "0.9.0"' in (backup / "pyproject.toml").read_text(encoding="utf-8")
     assert applied.removed == 2 and applied.unchanged == 2  # __init__.py, default.toml
 
@@ -343,7 +343,7 @@ def test_a_failure_while_replacing_puts_everything_back(
     assert after == before
 
 
-# --- `facegen update` ----------------------------------------------------------------------
+# --- `kitshot update` ----------------------------------------------------------------------
 
 
 class Archive:
@@ -351,7 +351,7 @@ class Archive:
 
     def __init__(self, tmp_path: Path, version: str = "1.0.0", **extra: str) -> None:
         files = {**SOURCE, **extra}
-        files["pyproject.toml"] = f'[project]\nname = "facegen"\nversion = "{version}"\n'
+        files["pyproject.toml"] = f'[project]\nname = "kitshot"\nversion = "{version}"\n'
         self.zip = source_zip(tmp_path / f"release-{version}.zip", files)
         self.urls: list[str] = []
 
@@ -406,7 +406,7 @@ def test_interrupted_replacement_is_recovered_before_version_comparison(
         if destination == root / "pyproject.toml":
             # Publishing the version must be the final file change.
             assert (root / "uv.lock").read_bytes() == b"lock 1.0.0\n"
-            assert not (root / "src/facegen/old_module.py").exists()
+            assert not (root / "src/kitshot/old_module.py").exists()
             raise KeyboardInterrupt
 
     with monkeypatch.context() as patch:
@@ -423,7 +423,7 @@ def test_interrupted_replacement_is_recovered_before_version_comparison(
 def test_another_installation_sharing_settings_cannot_overwrite_pending_recovery(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from facegen.setup.install_transaction import recover_update
+    from kitshot.setup.install_transaction import recover_update
 
     first, second = installed(tmp_path / "a"), installed(tmp_path / "b")
     (first / "README.md").write_bytes(b"first installation")
@@ -449,14 +449,14 @@ def test_another_installation_sharing_settings_cannot_overwrite_pending_recovery
 def test_bootstrap_can_undo_an_interruption_without_importing_the_installed_app(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from facegen.platform.procs import run_quiet
+    from kitshot.platform.procs import run_quiet
 
     root = installed(tmp_path / "app")
     stage, files = staged(tmp_path)
     original_replace = os.replace
 
     def interrupt_before_source(source: Path, destination: Path) -> None:
-        if destination == root / "src/facegen/new_module.py":
+        if destination == root / "src/kitshot/new_module.py":
             raise KeyboardInterrupt
         original_replace(source, destination)
 
@@ -474,7 +474,7 @@ def test_bootstrap_can_undo_an_interruption_without_importing_the_installed_app(
     )
     assert repaired.returncode == 0, repaired.stderr
     assert update.installed_version(root) == "0.9.0"
-    assert (root / "src/facegen/old_module.py").read_bytes() == b"OLD = True\n"
+    assert (root / "src/kitshot/old_module.py").read_bytes() == b"OLD = True\n"
     assert not helper.with_name("pending.json").exists()
 
 
@@ -482,14 +482,14 @@ def test_bootstrap_can_undo_an_interruption_without_importing_the_installed_app(
 def test_file_directory_transitions_can_be_rolled_back_and_retried(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, interrupt: str
 ) -> None:
-    from facegen.setup import install_transaction
+    from kitshot.setup import install_transaction
 
     root = installed(tmp_path / "app")
-    (root / "src/facegen/flat").write_bytes(b"old file")
-    (root / "src/facegen/tree").mkdir()
-    (root / "src/facegen/tree/old.py").write_bytes(b"old child")
+    (root / "src/kitshot/flat").write_bytes(b"old file")
+    (root / "src/kitshot/tree").mkdir()
+    (root / "src/kitshot/tree/old.py").write_bytes(b"old child")
     archive = Archive(
-        tmp_path, **{"src/facegen/flat/new.py": "new child", "src/facegen/tree": "new file"}
+        tmp_path, **{"src/kitshot/flat/new.py": "new child", "src/kitshot/tree": "new file"}
     )
     before = {p.relative_to(root): p.read_bytes() for p in (root / "src").rglob("*") if p.is_file()}
     original_replace, original_unlink = os.replace, Path.unlink
@@ -497,14 +497,14 @@ def test_file_directory_transitions_can_be_rolled_back_and_retried(
     def replace(source: Path, destination: Path) -> None:
         original_replace(source, destination)
         if destination == root / {
-            "writing": "src/facegen/flat/new.py",
+            "writing": "src/kitshot/flat/new.py",
             "version": "pyproject.toml",
         }.get(interrupt, "-"):
             raise KeyboardInterrupt
 
     def unlink(path: Path, *args: Any, **kwargs: Any) -> None:
         original_unlink(path, *args, **kwargs)
-        if interrupt == "removing" and path == root / "src/facegen/flat":
+        if interrupt == "removing" and path == root / "src/kitshot/flat":
             raise KeyboardInterrupt
 
     with monkeypatch.context() as patch:
@@ -516,27 +516,27 @@ def test_file_directory_transitions_can_be_rolled_back_and_retried(
     after = {p.relative_to(root): p.read_bytes() for p in (root / "src").rglob("*") if p.is_file()}
     assert after == before
     assert run(tmp_path, root, archive=archive)[0] == update.UPDATED
-    assert (root / "src/facegen/tree").read_bytes() == b"new file"
-    assert (root / "src/facegen/flat/new.py").read_bytes() == b"new child"
+    assert (root / "src/kitshot/tree").read_bytes() == b"new file"
+    assert (root / "src/kitshot/flat/new.py").read_bytes() == b"new child"
 
 
 def test_a_directory_with_unmanaged_contents_is_kept_on_failed_replacement(tmp_path: Path) -> None:
     root = installed(tmp_path / "app")
-    cache = root / "src/facegen/gone/__pycache__/cache.pyc"
+    cache = root / "src/kitshot/gone/__pycache__/cache.pyc"
     cache.parent.mkdir()
     cache.write_bytes(b"local")
-    archive = Archive(tmp_path, **{"src/facegen/gone": "new file"})
+    archive = Archive(tmp_path, **{"src/kitshot/gone": "new file"})
     code, message = run(tmp_path, root, archive=archive)
     assert code == update.FAILED and "nothing changed" in message
     assert cache.read_bytes() == b"local"
-    assert (root / "src/facegen/gone/only.py").read_bytes() == b"x\n"
+    assert (root / "src/kitshot/gone/only.py").read_bytes() == b"x\n"
 
 
 def test_apps_and_other_updates_cannot_enter_an_updating_installation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from facegen.desktop import shell
-    from facegen.platform.locking import installation_lock
+    from kitshot.desktop import shell
+    from kitshot.platform.locking import installation_lock
 
     root = installed(tmp_path / "app")
     monkeypatch.setattr(shell, "PROJECT_ROOT", root)
@@ -563,8 +563,8 @@ def test_apps_and_other_updates_cannot_enter_an_updating_installation(
 
 @pytest.mark.skipif(os.name != "nt", reason="native Windows batch startup")
 def test_start_bat_stops_before_setup_while_an_update_owns_the_installation(tmp_path: Path) -> None:
-    from facegen.platform.locking import installation_lock
-    from facegen.platform.procs import run_quiet
+    from kitshot.platform.locking import installation_lock
+    from kitshot.platform.procs import run_quiet
 
     root = installed(tmp_path / "app")
     shutil.copyfile(ROOT / "Start.bat", root / "Start.bat")
@@ -596,7 +596,7 @@ def test_a_git_checkout_is_not_updated_in_place(tmp_path: Path) -> None:
     assert update.installed_version(root) == "0.9.0"
 
 
-def test_the_update_waits_for_facegen_to_quit(tmp_path: Path) -> None:
+def test_the_update_waits_for_kitshot_to_quit(tmp_path: Path) -> None:
     root = installed(tmp_path / "app")
     answers = iter([True, True, True, False])
     code, said = run(tmp_path, root, running=lambda data: next(answers))
@@ -615,7 +615,7 @@ def test_a_failed_update_leaves_the_folder_as_it_was(tmp_path: Path) -> None:
     code, said = run(tmp_path, root, archive=Archive(tmp_path, version="2.0.0"))
     assert code == update.FAILED and "says it is version 2.0.0" in said
     assert update.installed_version(root) == "0.9.0"
-    assert (root / "src/facegen/old_module.py").is_file()
+    assert (root / "src/kitshot/old_module.py").is_file()
 
     def offline(url: str) -> Any:
         raise UpdateError("could not reach GitHub: [Errno -3] name resolution")
@@ -627,9 +627,9 @@ def test_a_failed_update_leaves_the_folder_as_it_was(tmp_path: Path) -> None:
     assert code == update.FAILED and "could not reach GitHub" in out.getvalue()
 
 
-def test_facegen_update_on_this_checkout_says_to_use_git(tmp_path: Path) -> None:
+def test_kitshot_update_on_this_checkout_says_to_use_git(tmp_path: Path) -> None:
     """The real command on this repository: a checkout, so it changes nothing."""
-    from facegen.cli import main
+    from kitshot.cli import main
 
     if not (ROOT / ".git").exists():
         pytest.skip("not a git checkout")
@@ -656,7 +656,7 @@ def test_the_installer_is_staged_from_the_same_payload(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     stage = load_stage()
-    archive = source_zip(tmp_path / "s.zip", SOURCE, top="facegen")
+    archive = source_zip(tmp_path / "s.zip", SOURCE, top="kitshot")
     uv_zip = tmp_path / "uv.zip"
     with zipfile.ZipFile(uv_zip, "w") as zf:
         zf.writestr("uv.exe", b"MZ fake uv")
@@ -689,17 +689,18 @@ def test_the_pinned_uv_is_the_one_start_bat_installs() -> None:
 
 
 def test_the_installer_script_agrees_with_the_app() -> None:
-    from facegen.cli import build_parser
-    from facegen.desktop import shell, shortcuts
+    from kitshot.cli import build_parser
+    from kitshot.desktop import shell, shortcuts
 
-    raw = (ROOT / "installer/facegen.iss").read_bytes()
+    raw = (ROOT / "installer/kitshot.iss").read_bytes()
     assert raw.startswith(b"\xef\xbb\xbf")  # UTF-8 with BOM, for the Korean texts
     text = raw.decode("utf-8-sig")
     assert "PrivilegesRequired=lowest" in text
-    assert r"DefaultDirName={localappdata}\facegen" in text
-    assert f"AppMutex={shell.APP_MUTEX}" in text
+    # New installs go to Kitshot; an upgrade keeps the folder it is in (facegen before 17o).
+    assert r"DefaultDirName={localappdata}\Kitshot" in text and "UsePreviousAppDir=yes" in text
+    assert f"AppMutex={','.join(shell.APP_MUTEXES)}" in text
     # The uninstaller's command exists, and the shortcut name is the one the app refreshes.
-    assert "-m facegen.cli remove-pack --yes" in text
+    assert "-m kitshot.cli remove-pack --yes" in text
     build_parser().parse_args(["remove-pack", "--yes"])
     assert shortcuts.LINK_NAME == "Kitshot.lnk" and r'Name: "{userprograms}\Kitshot";' in text
     # The Kitshot name and icon (Phase 17c); the folder and AppId stay for upgrades.
@@ -736,13 +737,13 @@ def test_start_bat_updates_from_a_block_it_has_read_in_full() -> None:
     block = block[block.index("(\r\n") : block.index("\r\n)\r\n")]
     lines = [line.strip() for line in block.splitlines()[1:]]
     assert lines == [
-        '"%PY%" -m facegen.cli update --log "%LOG%"',
+        '"%PY%" -m kitshot.cli update --log "%LOG%"',
         "if errorlevel 1 pause",
         "endlocal",
         'call "%~f0"',
         "exit /b",
     ]
-    # --update skips asking a running facegen for its window: the update waits for it to quit.
+    # --update skips asking a running Kitshot for its window: the update waits for it to quit.
     assert text.index("if defined UPDATE goto update") < text.index("launch --open-running")
 
 

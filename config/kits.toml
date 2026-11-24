@@ -1,8 +1,8 @@
-# Kit colours (docs/spec.md section 3), read by src/facegen/datasource/kits.py.
+# Kit colours (docs/spec.md section 3), read by src/kitshot/datasource/kits.py.
 #
 # Keyed by the game's unique club ID (the club names below are comments only). A club not
 # listed here is drawn in the colours estimated from FM27's own image of its home shirt when
-# there is one (the kit catalog bundled as src/facegen/data/kit_catalog.json, or a newer
+# there is one (the kit catalog bundled as src/kitshot/data/kit_catalog.json, or a newer
 # data/kit-colour-probe/report.json written on this PC by scripts/spikes/kit_colour_probe.py:
 # colours only, no pattern or shorts), else in the [fallback] kit. This table always comes
 # first. Goalkeepers wear the goalkeeper kit.

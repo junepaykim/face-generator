@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from facegen.render.renderer import _token_chunks
+from kitshot.render.renderer import _token_chunks
 
 
 def _encode(pipe: Any, text: str, n_chunks: int) -> tuple[Any, Any]:

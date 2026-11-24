@@ -52,23 +52,23 @@ def one_cap(
     model: str = "animagine",
     gender: str = "woman",
 ) -> list[dict[str, Any]]:
-    from facegen.render.gpu import prepare_environment
+    from kitshot.render.gpu import prepare_environment
 
     prepare_environment()
     import torch
 
-    from facegen.core.man_traits import sample_man_sheet
-    from facegen.core.settings_values import detail_size
-    from facegen.core.shoot import DEFAULT_BACKDROP
-    from facegen.core.style import portrait_prompt
-    from facegen.core.traits import sample_sheet
-    from facegen.datasource.kits import Kit
-    from facegen.pipeline.worker import Reference
-    from facegen.render import quality_checks as qc
-    from facegen.render.picture import crop_to_aspect, face_box
-    from facegen.render.tagger import Eva02Tagger
-    from facegen.runtime.dependencies import default_renderer
-    from facegen.setup import hardware
+    from kitshot.core.man_traits import sample_man_sheet
+    from kitshot.core.settings_values import detail_size
+    from kitshot.core.shoot import DEFAULT_BACKDROP
+    from kitshot.core.style import portrait_prompt
+    from kitshot.core.traits import sample_sheet
+    from kitshot.datasource.kits import Kit
+    from kitshot.pipeline.worker import Reference
+    from kitshot.render import quality_checks as qc
+    from kitshot.render.picture import crop_to_aspect, face_box
+    from kitshot.render.tagger import Eva02Tagger
+    from kitshot.runtime.dependencies import default_renderer
+    from kitshot.setup import hardware
 
     total = torch.cuda.get_device_properties(0).total_memory
     torch.cuda.set_per_process_memory_fraction(min(1.0, cap_gib * 2**30 / total), 0)
@@ -161,7 +161,7 @@ def one_cap(
 
 
 def main() -> int:
-    from facegen.core.settings_values import GENDER_CHOICES, IMAGE_MODELS, MODEL_CHOICES
+    from kitshot.core.settings_values import GENDER_CHOICES, IMAGE_MODELS, MODEL_CHOICES
 
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--cap", type=float, action="append", help="GiB (default: 8 and 12)")
@@ -185,8 +185,8 @@ def main() -> int:
     if args.child:
         one_cap(caps[0], presets, args.reference, models[0], genders[0])
         return 0
-    from facegen.pipeline.worker import fm_running
-    from facegen.platform import procs
+    from kitshot.pipeline.worker import fm_running
+    from kitshot.platform import procs
 
     running = fm_running()
     if running is not False and not args.allow_fm:

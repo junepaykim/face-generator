@@ -23,16 +23,16 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from facegen.core.prompt import build_prompt
-from facegen.core.shoot import LOOKS, Shoot, shoot_for
-from facegen.core.traits import picture_seed, sample_sheet
-from facegen.datasource.kits import load_kits
-from facegen.persistence.settings import load_settings
-from facegen.pipeline.worker import fm_running
-from facegen.render import quality_checks as qc
-from facegen.render.gpu import prepare_environment
-from facegen.render.picture import face_box
-from facegen.render.tagger import Eva02Tagger
+from kitshot.core.prompt import build_prompt
+from kitshot.core.shoot import LOOKS, Shoot, shoot_for
+from kitshot.core.traits import picture_seed, sample_sheet
+from kitshot.datasource.kits import load_kits
+from kitshot.persistence.settings import load_settings
+from kitshot.pipeline.worker import fm_running
+from kitshot.render import quality_checks as qc
+from kitshot.render.gpu import prepare_environment
+from kitshot.render.picture import face_box
+from kitshot.render.tagger import Eva02Tagger
 
 ROOT = Path(__file__).resolve().parents[2]
 RUN = ROOT / "data" / "shoot-test"
@@ -102,7 +102,7 @@ def main() -> None:
     prepare_environment()
     from PIL import Image, ImageDraw
 
-    from facegen.pipeline.worker import AnimagineRenderer
+    from kitshot.pipeline.worker import AnimagineRenderer
 
     RUN.mkdir(parents=True, exist_ok=True)
     settings = load_settings()

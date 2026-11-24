@@ -10,15 +10,15 @@ from dataclasses import replace
 
 import pytest
 
-from facegen.core.kit_values import Kit
-from facegen.core.man_prompt import PHOTO_NEGATIVE, anime_prompt, photo_prompt
-from facegen.core.man_traits import HAIR_COLOUR as MAN_HAIR_COLOUR
-from facegen.core.man_traits import ManSheet, drawn, sample_man_sheet
-from facegen.core.prompt import build_prompt
-from facegen.core.settings_values import IMAGE_MODELS, MODEL_CHOICES, MyClubSettings
-from facegen.core.shoot import DEFAULT_BACKDROP, HAIR_FAMILIES, Backdrop, Pose
-from facegen.core.style import portrait_prompt, shoot_hair
-from facegen.core.traits import CharacterSheet, sample_sheet
+from kitshot.core.kit_values import Kit
+from kitshot.core.man_prompt import PHOTO_NEGATIVE, anime_prompt, photo_prompt
+from kitshot.core.man_traits import HAIR_COLOUR as MAN_HAIR_COLOUR
+from kitshot.core.man_traits import ManSheet, drawn, sample_man_sheet
+from kitshot.core.prompt import build_prompt
+from kitshot.core.settings_values import IMAGE_MODELS, MODEL_CHOICES, MyClubSettings
+from kitshot.core.shoot import DEFAULT_BACKDROP, HAIR_FAMILIES, Backdrop, Pose
+from kitshot.core.style import portrait_prompt, shoot_hair
+from kitshot.core.traits import CharacterSheet, sample_sheet
 
 SHEET = sample_sheet("career", 7, 1, height_cm=180, strength=12)
 MAN = sample_man_sheet("career", 7, 1, nation=765)

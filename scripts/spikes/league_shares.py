@@ -33,15 +33,15 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from facegen.core.cutoffs import LEAGUE_CELLS, OTHER_CELLS
-from facegen.core.leagues import competition_name, league_ladder
-from facegen.core.records import Snapshot
-from facegen.datasource import photos
-from facegen.datasource.fmsave_source import FmsaveDataSource
-from facegen.persistence import db, league_stats, photo_index
-from facegen.persistence.settings import load_settings, set_overrides
-from facegen.pipeline import reclassification
-from facegen.pipeline.sync import run_sync
+from kitshot.core.cutoffs import LEAGUE_CELLS, OTHER_CELLS
+from kitshot.core.leagues import competition_name, league_ladder
+from kitshot.core.records import Snapshot
+from kitshot.datasource import photos
+from kitshot.datasource.fmsave_source import FmsaveDataSource
+from kitshot.persistence import db, league_stats, photo_index
+from kitshot.persistence.settings import load_settings, set_overrides
+from kitshot.pipeline import reclassification
+from kitshot.pipeline.sync import run_sync
 
 
 def load(path: Path, cache: Path | None) -> Snapshot:

@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from support.paths import ROOT
 
-from facegen.platform import procs
+from kitshot.platform import procs
 
 
 def test_runtime_boundaries_import_without_entrypoints_or_gpu(tmp_path: Path) -> None:
@@ -22,19 +22,19 @@ import sys
 class NoAdapters(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
         blocked = {
-            'facegen.cli', 'facegen.pipeline.worker', 'facegen.render.renderer', 'facegen.render.tagger',
-            'facegen.datasource.fmsave_source', 'facegen.persistence.db', 'sqlite3',
+            'kitshot.cli', 'kitshot.pipeline.worker', 'kitshot.render.renderer', 'kitshot.render.tagger',
+            'kitshot.datasource.fmsave_source', 'kitshot.persistence.db', 'sqlite3',
             'torch', 'timm', 'fmsave', 'webview', 'pystray',
         }
         if any(fullname == name or fullname.startswith(name + '.') for name in blocked):
             raise AssertionError('runtime boundary loaded adapter: ' + fullname)
 
 sys.meta_path.insert(0, NoAdapters())
-from facegen.desktop import shell as desktop
-from facegen.setup import launch
-from facegen.platform import output
-from facegen.runtime import contracts as service_contracts
-from facegen.runtime.dependencies import Gpu, default_source, default_renderer, default_tagger
+from kitshot.desktop import shell as desktop
+from kitshot.setup import launch
+from kitshot.platform import output
+from kitshot.runtime import contracts as service_contracts
+from kitshot.runtime.dependencies import Gpu, default_source, default_renderer, default_tagger
 
 gpu = Gpu()
 assert gpu.renderer is default_renderer
@@ -54,9 +54,9 @@ assert Gpu(renderer=lambda: None).models_check() is None
 
 def test_default_renderer_builds_the_selected_model(monkeypatch: pytest.MonkeyPatch) -> None:
     """Each `style.model` key names a renderer; the classes are stand-ins, so nothing loads."""
-    from facegen.core.settings_values import MODEL_CHOICES
-    from facegen.render import renderer, zimage
-    from facegen.runtime.dependencies import default_renderer
+    from kitshot.core.settings_values import MODEL_CHOICES
+    from kitshot.render import renderer, zimage
+    from kitshot.runtime.dependencies import default_renderer
 
     monkeypatch.setattr(renderer, "AnimagineRenderer", lambda: "animagine")
     monkeypatch.setattr(renderer, "SdxlRenderer", lambda spec: spec.repo)

@@ -7,7 +7,7 @@ from dataclasses import replace
 import pytest
 from factories import facts
 
-from facegen.core.classify import (
+from kitshot.core.classify import (
     Group,
     PlayerFacts,
     Rules,
@@ -17,7 +17,7 @@ from facegen.core.classify import (
     whys_from_json,
     whys_to_json,
 )
-from facegen.core.cutoffs import NO_CUT, Cut, Cutoffs, Met
+from kitshot.core.cutoffs import NO_CUT, Cut, Cutoffs, Met
 
 # My league's cells as shares with the values they gave, the other leagues' shares, and the
 # global numbers (the defaults: 155/170, 140/155, Light off).

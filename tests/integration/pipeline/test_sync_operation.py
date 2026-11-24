@@ -13,14 +13,14 @@ import pytest
 from factories import player, snapshot
 from support.logs import Lines
 
-from facegen.core.records import Snapshot
-from facegen.core.settings_values import Settings
-from facegen.persistence import db
-from facegen.persistence.settings import load_settings
-from facegen.pipeline import sync_operation
-from facegen.pipeline.publish import PublishError
-from facegen.runtime.contracts import FAILED, SYNCED, SyncRequest, SyncResult
-from facegen.runtime.sync_service import SyncService
+from kitshot.core.records import Snapshot
+from kitshot.core.settings_values import Settings
+from kitshot.persistence import db
+from kitshot.persistence.settings import load_settings
+from kitshot.pipeline import sync_operation
+from kitshot.pipeline.publish import PublishError
+from kitshot.runtime.contracts import FAILED, SYNCED, SyncRequest, SyncResult
+from kitshot.runtime.sync_service import SyncService
 
 
 def save_file(config_file: Path) -> Path:

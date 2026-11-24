@@ -21,15 +21,15 @@ from factories import player, snapshot
 from fakes import FakeRenderer, FakeTagger
 from fastapi.testclient import TestClient
 
-from facegen.core.records import Snapshot
-from facegen.datasource.kits import load_kits
-from facegen.persistence import db
-from facegen.persistence.settings import DEFAULTS_PATH, load_settings, set_overrides
-from facegen.service import SyncService, WorkerService
-from facegen.setup import models
-from facegen.setup.hardware import Hardware
-from facegen.setup.models import DownloadStatus, HubCache, files_for
-from facegen.web.app import AppContext, create_app
+from kitshot.core.records import Snapshot
+from kitshot.datasource.kits import load_kits
+from kitshot.persistence import db
+from kitshot.persistence.settings import DEFAULTS_PATH, load_settings, set_overrides
+from kitshot.service import SyncService, WorkerService
+from kitshot.setup import models
+from kitshot.setup.hardware import Hardware
+from kitshot.setup.models import DownloadStatus, HubCache, files_for
+from kitshot.web.app import AppContext, create_app
 
 BASE = "http://127.0.0.1:8765"
 GIB = 2**30
@@ -233,7 +233,7 @@ def test_with_the_folder_in_its_usual_place_nothing_asks(
 ) -> None:
     folder = fm27(tmp_path)
     monkeypatch.setattr(
-        "facegen.persistence.settings.detect_folder",
+        "kitshot.persistence.settings.detect_folder",
         lambda key: folder if key == "paths.fm_user_dir" else None,
     )
     env = make_env(tmp_path)

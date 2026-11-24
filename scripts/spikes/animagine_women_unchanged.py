@@ -44,21 +44,21 @@ def run(src: Path, out: Path) -> None:
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
     os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
     sys.path[:0] = [str(src / "src"), str(src / "tests")]
-    import facegen
+    import kitshot
 
-    assert Path(facegen.__file__).resolve().is_relative_to(src.resolve() / "src"), facegen.__file__
+    assert Path(kitshot.__file__).resolve().is_relative_to(src.resolve() / "src"), kitshot.__file__
     from factories import RIVAL, media_person, player, snapshot, staff_member
 
-    from facegen.datasource.kits import load_kits
-    from facegen.persistence import db
-    from facegen.persistence.settings import Paths, load_settings
-    from facegen.pipeline import manual
-    from facegen.pipeline.sync import run_sync
-    from facegen.pipeline.worker import JobFilter, Worker, load_career
-    from facegen.render.renderer import AnimagineRenderer
-    from facegen.render.tagger import Eva02Tagger
+    from kitshot.datasource.kits import load_kits
+    from kitshot.persistence import db
+    from kitshot.persistence.settings import Paths, load_settings
+    from kitshot.pipeline import manual
+    from kitshot.pipeline.sync import run_sync
+    from kitshot.pipeline.worker import JobFilter, Worker, load_career
+    from kitshot.render.renderer import AnimagineRenderer
+    from kitshot.render.tagger import Eva02Tagger
 
-    tmp = Path(tempfile.mkdtemp(prefix="facegen-women-"))
+    tmp = Path(tempfile.mkdtemp(prefix="kitshot-women-"))
     settings = load_settings()
     if hasattr(settings, "style"):
         assert (settings.style.model, settings.style.gender) == ("animagine", "woman")
@@ -104,7 +104,7 @@ def run(src: Path, out: Path) -> None:
         check = json.loads(row["check_result"] or "null")
         render = json.loads(row["render"] or "null")
         published = (
-            s.paths.fm_user_dir / "graphics" / "facegen" / career.key / f"{row['unique_id']}.png"
+            s.paths.fm_user_dir / "graphics" / "kitshot" / career.key / f"{row['unique_id']}.png"
         )
         pictures.append(
             {

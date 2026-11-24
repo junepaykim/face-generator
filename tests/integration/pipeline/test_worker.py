@@ -23,15 +23,15 @@ from factories import (
 from fakes import FakeRenderer, FakeTagger
 from PIL import Image
 
-from facegen.core.prompt import CONTENT_NEGATIVE, YOUNG_NEGATIVE
-from facegen.core.settings_values import IMAGE_MODELS, StyleSettings
-from facegen.core.traits import personality_to_json, sample_sheet
-from facegen.datasource.kits import load_kits
-from facegen.persistence.settings import Paths, PersonalitySettings, Settings, set_overrides
-from facegen.persistence.sheet_store import load_sheet
-from facegen.pipeline.gallery import write_gallery
-from facegen.pipeline.sync import run_sync
-from facegen.pipeline.worker import (
+from kitshot.core.prompt import CONTENT_NEGATIVE, YOUNG_NEGATIVE
+from kitshot.core.settings_values import IMAGE_MODELS, StyleSettings
+from kitshot.core.traits import personality_to_json, sample_sheet
+from kitshot.datasource.kits import load_kits
+from kitshot.persistence.settings import Paths, PersonalitySettings, Settings, set_overrides
+from kitshot.persistence.sheet_store import load_sheet
+from kitshot.pipeline.gallery import write_gallery
+from kitshot.pipeline.sync import run_sync
+from kitshot.pipeline.worker import (
     MAX_ATTEMPTS,
     JobFilter,
     Worker,
@@ -68,7 +68,7 @@ class Env:
     def pack(self) -> Path:
         career = load_career(self.conn)
         assert career is not None
-        return self.fm / "graphics" / "facegen" / career.key
+        return self.fm / "graphics" / "kitshot" / career.key
 
     def worker(
         self,
@@ -134,8 +134,8 @@ def env(conn: sqlite3.Connection, settings: Settings, tmp_path: Path) -> Env:
 
 
 def test_changed_selection_is_rejected_then_fresh_job_runs(env: Env) -> None:
-    from facegen.pipeline import manual
-    from facegen.pipeline.worker import JobGone
+    from kitshot.pipeline import manual
+    from kitshot.pipeline.worker import JobGone
 
     w, renderer, _ = env.worker()
     selected = next(j for j in w.runnable(MINE) if j.unique_id == OLD_HAND)
@@ -149,8 +149,8 @@ def test_changed_selection_is_rejected_then_fresh_job_runs(env: Env) -> None:
 
 
 def test_same_request_replaced_in_same_second_invalidates_selection(env: Env) -> None:
-    from facegen.pipeline import manual
-    from facegen.pipeline.worker import JobGone
+    from kitshot.pipeline import manual
+    from kitshot.pipeline.worker import JobGone
 
     w, renderer, _ = env.worker()
     manual.new_face(env.conn, w.career.id, OLD_HAND, env.settings, now=123)
@@ -163,7 +163,7 @@ def test_same_request_replaced_in_same_second_invalidates_selection(env: Env) ->
 
 @pytest.mark.parametrize("column,value", [("present", 0), ("in_scope", 0), ("pin", "never")])
 def test_claim_rechecks_player_eligibility(env: Env, column: str, value: object) -> None:
-    from facegen.pipeline.worker import JobGone
+    from kitshot.pipeline.worker import JobGone
 
     w, renderer, _ = env.worker()
     selected = w.runnable(MINE)[0]
@@ -177,9 +177,9 @@ def test_claim_rechecks_player_eligibility(env: Env, column: str, value: object)
 
 
 def test_interrupted_reroll_reuses_allocated_sheet_seed_and_preview(env: Env) -> None:
-    from facegen.core.traits import picture_seed
-    from facegen.persistence.sheet_store import load_sheet
-    from facegen.pipeline import manual
+    from kitshot.core.traits import picture_seed
+    from kitshot.persistence.sheet_store import load_sheet
+    from kitshot.pipeline import manual
 
     w, _, _ = env.worker()
     initial = next(j for j in w.runnable(MINE) if j.unique_id == OLD_HAND)
@@ -221,9 +221,9 @@ def test_interrupted_reroll_reuses_allocated_sheet_seed_and_preview(env: Env) ->
 
 
 def test_restore_sheet_controls_next_redraw_and_reroll_versions(env: Env) -> None:
-    from facegen.persistence.sheet_store import load_sheet
-    from facegen.pipeline import manual
-    from facegen.web.queries import player_detail
+    from kitshot.persistence.sheet_store import load_sheet
+    from kitshot.pipeline import manual
+    from kitshot.web.queries import player_detail
 
     w, _, _ = env.worker()
 
@@ -266,8 +266,8 @@ def test_fm_process_check_respects_command_result(
 ) -> None:
     import subprocess
 
-    from facegen.pipeline.worker import fm_running
-    from facegen.platform import platform_info, procs
+    from kitshot.pipeline.worker import fm_running
+    from kitshot.platform import platform_info, procs
 
     calls: list[tuple[list[str], dict]] = []
 
@@ -284,8 +284,8 @@ def test_fm_process_check_respects_command_result(
 
 
 def test_fm_process_check_without_tasklist_cannot_tell(monkeypatch: pytest.MonkeyPatch) -> None:
-    from facegen.pipeline.worker import fm_running
-    from facegen.platform import platform_info, procs
+    from kitshot.pipeline.worker import fm_running
+    from kitshot.platform import platform_info, procs
 
     monkeypatch.setattr(platform_info, "current", lambda: "wsl")
     monkeypatch.setattr(procs, "windows_tool", lambda name, k, env: None)
@@ -295,8 +295,8 @@ def test_fm_process_check_without_tasklist_cannot_tell(monkeypatch: pytest.Monke
 def test_fm_process_check_on_linux_looks_for_wine_processes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from facegen.pipeline import worker
-    from facegen.platform import platform_info
+    from kitshot.pipeline import worker
+    from kitshot.platform import platform_info
 
     monkeypatch.setattr(platform_info, "current", lambda: "linux")
     monkeypatch.setattr(worker, "_process_names", lambda: ["bash\n", "fm.exe\n"])
@@ -693,7 +693,7 @@ def test_gallery_lists_pictures_and_review(env: Env) -> None:
 
 
 def test_gallery_describes_the_detail_pass_of_the_current_pick(env: Env) -> None:
-    from facegen.pipeline.manual import pick_candidate
+    from kitshot.pipeline.manual import pick_candidate
 
     worker, _, _ = env.worker()
     worker.run(MINE, limit=1)
@@ -717,7 +717,7 @@ def test_gallery_describes_the_detail_pass_of_the_current_pick(env: Env) -> None
         assert ("picked by hand" in page) is manual
 
 
-# -- the prompts encoded ahead (facegen.prompt_cache) --
+# -- the prompts encoded ahead (kitshot.prompt_cache) --
 
 EVERY = JobFilter()
 
@@ -735,7 +735,7 @@ def test_one_trip_of_the_text_encoders_serves_the_whole_queue(env: Env) -> None:
 def test_the_trips_follow_the_window_and_the_run_limit(
     env: Env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import facegen.pipeline.worker as worker_module
+    import kitshot.pipeline.worker as worker_module
 
     monkeypatch.setattr(worker_module, "PRE_ENCODE_JOBS", 3)
     w, r, _ = env.worker()
@@ -756,7 +756,7 @@ def test_a_single_job_encodes_its_own_prompt_when_it_draws(env: Env) -> None:
 
 
 def test_a_job_queued_after_the_trip_gets_a_trip_of_its_own(env: Env) -> None:
-    from facegen.pipeline import manual
+    from kitshot.pipeline import manual
 
     w, r, _ = env.worker()
     first, *rest = w.runnable(MINE)
@@ -787,8 +787,8 @@ def test_a_job_that_cannot_be_previewed_does_not_stop_the_one_running(
 
 
 def test_the_renderers_cache_holds_a_whole_window_of_prompts() -> None:
-    from facegen.pipeline.worker import PRE_ENCODE_JOBS
-    from facegen.render.renderer import TEXT_CACHE_SIZE
+    from kitshot.pipeline.worker import PRE_ENCODE_JOBS
+    from kitshot.render.renderer import TEXT_CACHE_SIZE
 
     # A positive and a negative text per job, and the empty text that pads them.
     assert 2 * PRE_ENCODE_JOBS + 1 <= TEXT_CACHE_SIZE
@@ -799,9 +799,9 @@ def test_my_clubs_staff_are_drawn_at_a_quality_in_club_wear_for_their_job(
 ) -> None:
     from factories import staff_member
 
-    from facegen.core.age import WORDINGS
-    from facegen.core.prompt import STAFF_NEGATIVE, STAFF_POSITIVE
-    from facegen.core.wardrobe import ROLES
+    from kitshot.core.age import WORDINGS
+    from kitshot.core.prompt import STAFF_NEGATIVE, STAFF_POSITIVE
+    from kitshot.core.wardrobe import ROLES
 
     coach = NEWGEN + 100
     s = replace(
@@ -841,7 +841,7 @@ def test_my_clubs_staff_are_drawn_at_a_quality_in_club_wear_for_their_job(
 
 
 def test_a_players_picture_is_a_shoot_recorded_with_it(env: Env) -> None:
-    from facegen.core.shoot import BACKDROP_COLOURS, LOOKS, season_of
+    from kitshot.core.shoot import BACKDROP_COLOURS, LOOKS, season_of
 
     w, _r, _t = env.worker()
     assert w.career.game_date == GAME_DATE
@@ -896,7 +896,7 @@ def test_a_man_on_the_staff_is_drawn_and_checked_as_a_woman(
     """Everyone is drawn as a woman (user, 2026-11-14), whatever the save says."""
     from factories import staff_member
 
-    from facegen.core.prompt import COMPOSITION_NEGATIVE, SUBJECT
+    from kitshot.core.prompt import COMPOSITION_NEGATIVE, SUBJECT
 
     scout = NEWGEN + 100
     env, _ = _staff_env(
@@ -919,7 +919,7 @@ def test_a_journalist_is_dressed_for_work_on_the_grey_backdrop(
 ) -> None:
     from factories import media_person
 
-    from facegen.core.wardrobe import ROLES
+    from kitshot.core.wardrobe import ROLES
 
     reporter = 2_002_097_912
     env, s = _staff_env(
@@ -973,7 +973,7 @@ def test_detail_size_off_skips_the_pass(env: Env) -> None:
 
 
 def test_vae_tiling_follows_the_setting_for_each_job(env: Env) -> None:
-    from facegen.persistence.settings import RenderSettings
+    from kitshot.persistence.settings import RenderSettings
 
     tiled = replace(env.settings, render=RenderSettings(vae_tiling=True))
     w, r, _ = env.worker(settings=tiled)
@@ -995,8 +995,8 @@ def _style(settings: Settings, model: str = "animagine", gender: str = "woman") 
 def test_everyone_drawn_as_a_man_is_recorded_with_his_sheet_and_age(env: Env) -> None:
     """A man's sheet is stored with his sheet version before GPU work; the picture records
     its gender and its band, and the photo prompt states his age in years."""
-    from facegen.core.man_prompt import PHOTO_NEGATIVE
-    from facegen.core.man_traits import ManSheet, sample_man_sheet
+    from kitshot.core.man_prompt import PHOTO_NEGATIVE
+    from kitshot.core.man_traits import ManSheet, sample_man_sheet
 
     env.conn.execute("UPDATE players SET nation = 765 WHERE unique_id = ?", (OLD_HAND,))
     men = _style(env.settings, "realvis", "man")
@@ -1029,8 +1029,8 @@ def test_everyone_drawn_as_a_man_is_recorded_with_his_sheet_and_age(env: Env) ->
 def test_a_mans_details_show_the_mens_sheet_he_was_drawn_from(env: Env) -> None:
     """The player page and the gallery describe a man by his men's sheet, not the women's sheet
     stored with the same version."""
-    from facegen.core.man_traits import ManSheet
-    from facegen.web.queries import player_detail
+    from kitshot.core.man_traits import ManSheet
+    from kitshot.web.queries import player_detail
 
     men = _style(env.settings, "realvis", "man")
     w, _, _ = env.worker(renderer=FakeRenderer("realvis"), settings=men)
@@ -1050,7 +1050,7 @@ def test_a_mans_details_show_the_mens_sheet_he_was_drawn_from(env: Env) -> None:
 
 
 def test_a_mans_look_stays_when_his_nation_changes(env: Env) -> None:
-    from facegen.core.man_traits import ManSheet
+    from kitshot.core.man_traits import ManSheet
 
     men = _style(env.settings, "realvis", "man")
     w, _, _ = env.worker(renderer=FakeRenderer("realvis"), settings=men)
@@ -1088,7 +1088,7 @@ def test_an_interrupted_man_is_drawn_again_from_the_same_sheet(env: Env) -> None
 
 
 def test_animagine_draws_a_man_with_the_approved_negative(env: Env) -> None:
-    from facegen.core.man_prompt import BOY_NEGATIVE, MAN_CONTENT_NEGATIVE, MAN_SUBJECT
+    from kitshot.core.man_prompt import BOY_NEGATIVE, MAN_CONTENT_NEGATIVE, MAN_SUBJECT
 
     w, _, _ = env.worker(settings=_style(env.settings, "animagine", "man"))
     w.run(MINE, publish=False)
@@ -1198,7 +1198,7 @@ def test_z_image_turbo_draws_without_a_reference_and_says_why(env: Env) -> None:
     the prompt's length is recorded in tokens."""
     from fakes import FakeZImageRenderer
 
-    from facegen.web.presentation import uses_reference
+    from kitshot.web.presentation import uses_reference
 
     w, _, _ = env.worker()
     w.run(MINE)

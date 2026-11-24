@@ -19,7 +19,7 @@ from support.people import (
     u32,
 )
 
-from facegen.datasource.people import (
+from kitshot.datasource.people import (
     MISSING,
     PRESS_OFFICER_ROLE,
     display_name,

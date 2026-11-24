@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from facegen.runtime.supervision import DEFAULT_POLICY, FailureHistory, RestartPolicy
+from kitshot.runtime.supervision import DEFAULT_POLICY, FailureHistory, RestartPolicy
 
 MIN = 60.0
 

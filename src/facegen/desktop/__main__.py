@@ -1,5 +1,5 @@
-"""Run the desktop shell through its startup error-reporting boundary."""
+"""Run Kitshot's desktop shell, as `python -m kitshot.desktop` does."""
 
-from facegen.desktop.shell import main
+from kitshot.desktop.shell import main
 
 raise SystemExit(main())

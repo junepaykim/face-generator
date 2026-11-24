@@ -1,7 +1,7 @@
 # AGENT INVARIANT: Do not weaken or bypass these assertions to make implementation changes pass without explicit user approval.
 """Phase 15's exit test on the GPU: for every model and gender, a group A job as the worker runs
 it passes the check, peaks under 8.0 GiB reserved, records the model, prompt, seed and settings,
-and publishes. Opt-in: FACEGEN_TEST_GPU=1 uv run --no-sync pytest tests/opt_in/test_gpu_jobs.py
+and publishes. Opt-in: KITSHOT_TEST_GPU=1 uv run --no-sync pytest tests/opt_in/test_gpu_jobs.py
 
 Needs the GPU, every model's files and the EVA02 tagger in the Hugging Face cache (with
 h94/IP-Adapter for the SDXL models' re-draws), and FM27 closed. The real worker, prompts, checks
@@ -26,7 +26,7 @@ import pytest
 pytestmark = [
     pytest.mark.gpu,
     pytest.mark.skipif(
-        os.environ.get("FACEGEN_TEST_GPU") != "1", reason="set FACEGEN_TEST_GPU=1 to use the GPU"
+        os.environ.get("KITSHOT_TEST_GPU") != "1", reason="set KITSHOT_TEST_GPU=1 to use the GPU"
     ),
 ]
 
@@ -40,7 +40,7 @@ detail pass failed the check."""
 
 @pytest.fixture(scope="module")
 def tagger() -> Iterator[Any]:
-    from facegen.render.tagger import Eva02Tagger
+    from kitshot.render.tagger import Eva02Tagger
 
     tagger = Eva02Tagger()
     yield tagger
@@ -51,8 +51,8 @@ def tagger() -> Iterator[Any]:
 def loaded(request: pytest.FixtureRequest) -> Iterator[tuple[str, Any]]:
     """One model at a time, as the worker builds it from `style.model`; closed before the
     next is loaded, so each job's peak is its own model's."""
-    from facegen.platform.memory import release_free_memory
-    from facegen.runtime.dependencies import default_renderer
+    from kitshot.platform.memory import release_free_memory
+    from kitshot.runtime.dependencies import default_renderer
 
     renderer = default_renderer(request.param)
     yield request.param, renderer
@@ -64,9 +64,9 @@ def loaded(request: pytest.FixtureRequest) -> Iterator[tuple[str, Any]]:
 def _env(conn: sqlite3.Connection, settings: Any, tmp_path: Path, model: str, gender: str) -> Any:
     from factories import player, snapshot
 
-    from facegen.core.settings_values import StyleSettings
-    from facegen.persistence.settings import Paths
-    from facegen.pipeline.sync import run_sync
+    from kitshot.core.settings_values import StyleSettings
+    from kitshot.persistence.settings import Paths
+    from kitshot.pipeline.sync import run_sync
 
     s = replace(
         settings,
@@ -82,8 +82,8 @@ def _env(conn: sqlite3.Connection, settings: Any, tmp_path: Path, model: str, ge
 
 
 def _worker(conn: sqlite3.Connection, s: Any, model: str, renderer: Any, tagger: Any) -> Any:
-    from facegen.datasource.kits import load_kits
-    from facegen.pipeline.worker import Worker, load_career
+    from kitshot.datasource.kits import load_kits
+    from kitshot.pipeline.worker import Worker, load_career
 
     def built(key: str) -> Any:
         assert key == model  # the worker asks for the model the settings name
@@ -122,7 +122,7 @@ def _denoiser(renderer: Any) -> Any:
 
 def _run_one(w: Any, gender: str) -> tuple[Any, sqlite3.Row]:
     """Runs the queued job of UID; returns its preview and the picture it made current."""
-    from facegen.pipeline.worker import JobFilter
+    from kitshot.pipeline.worker import JobFilter
 
     mine = JobFilter(groups=frozenset({"a"}), my_club_only=True)
     (preview,) = [p for p in w.preview(mine) if p.job.unique_id == UID]
@@ -144,7 +144,7 @@ def _check_record(
     the master's own metadata; it passed the check."""
     from PIL import Image
 
-    from facegen.core.settings_values import IMAGE_MODELS
+    from kitshot.core.settings_values import IMAGE_MODELS
 
     assert image["model"] == renderer.model
     assert (image["prompt"], image["negative_prompt"]) == (
@@ -178,7 +178,7 @@ def _check_record(
 
 def _check_prompt(model: str, gender: str, positive: str) -> None:
     """The prompt branch the settings ask for (core/style.py)."""
-    from facegen.core.settings_values import IMAGE_MODELS
+    from kitshot.core.settings_values import IMAGE_MODELS
 
     if gender == "woman":
         assert "1girl" in positive  # the anime women's prompt, on every model for now
@@ -192,7 +192,7 @@ def _check_prompt(model: str, gender: str, positive: str) -> None:
 def _check_published(fm: Path, career_key: str) -> None:
     from PIL import Image
 
-    pack = fm / "graphics" / "facegen" / career_key
+    pack = fm / "graphics" / "kitshot" / career_key
     with Image.open(pack / f"{UID}.png") as published:
         assert published.size == (768, 1024)  # group A's published long edge
     xml = (pack / "config.xml").read_text()
@@ -210,8 +210,8 @@ def test_a_group_a_job_and_its_redraw(
 ) -> None:
     import torch
 
-    from facegen.core.settings_values import IMAGE_MODELS
-    from facegen.pipeline import manual
+    from kitshot.core.settings_values import IMAGE_MODELS
+    from kitshot.pipeline import manual
 
     model, renderer = loaded
     s = _env(conn, settings, tmp_path, model, gender)

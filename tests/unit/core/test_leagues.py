@@ -4,7 +4,7 @@ from datetime import date
 
 from factories import club
 
-from facegen.core.leagues import (
+from kitshot.core.leagues import (
     UEFA_CLUB_COMPETITIONS,
     Ladder,
     clubs_in_competitions,
@@ -16,8 +16,8 @@ from facegen.core.leagues import (
     pyramids,
     uefa_season,
 )
-from facegen.core.records import ClubRecord, CompetitionRules, DivisionList, Gender
-from facegen.core.records import LeagueTableRecord as T
+from kitshot.core.records import ClubRecord, CompetitionRules, DivisionList, Gender
+from kitshot.core.records import LeagueTableRecord as T
 
 HOME = {i: club(i, nation=1) for i in range(1, 30)}
 AWAY = {i: club(i, nation=2) for i in range(30, 60)}

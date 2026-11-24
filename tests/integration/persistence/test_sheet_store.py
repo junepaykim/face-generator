@@ -7,8 +7,8 @@ from dataclasses import replace
 
 from factories import PLAIN_PERSONALITY
 
-from facegen.core.traits import sample_sheet
-from facegen.persistence.sheet_store import load_sheet, sheet_for
+from kitshot.core.traits import sample_sheet
+from kitshot.persistence.sheet_store import load_sheet, sheet_for
 
 
 def test_sheet_for_samples_once_and_stores(conn: sqlite3.Connection) -> None:

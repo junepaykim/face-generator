@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from datetime import date
 
-from facegen.core.classify import PlayerFacts
-from facegen.core.records import (
+from kitshot.core.classify import PlayerFacts
+from kitshot.core.records import (
     ClubRecord,
     CompetitionRules,
     Gender,
@@ -253,7 +253,7 @@ show the defaults (Basic's presets among them)."""
 
 def manual_cutoffs(settings: object) -> object:
     """The settings with the MANUAL overrides laid over them."""
-    from facegen.persistence.settings import build_settings
+    from kitshot.persistence.settings import build_settings
 
     values = {**settings.values, **MANUAL}  # type: ignore[attr-defined]
     overridden = settings.overridden | set(MANUAL)  # type: ignore[attr-defined]

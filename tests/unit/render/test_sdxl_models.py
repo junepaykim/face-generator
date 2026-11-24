@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from facegen.render.renderer import ANIMAGINE, REALVIS
+from kitshot.render.renderer import ANIMAGINE, REALVIS
 
 
 def test_realvis_decodes_in_tiles_of_animagines_size() -> None:

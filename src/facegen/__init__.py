@@ -1,18 +1,7 @@
-"""FM27 Face Generator."""
+"""Kitshot's name before Phase 17o: only the entry points that older files still start.
 
-
-def __getattr__(name: str) -> str:
-    if name != "__version__":
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-    from .locations import PROJECT_ROOT
-
-    # A source install can be updated in place before its wheel metadata is refreshed.
-    if (PROJECT_ROOT / "pyproject.toml").is_file():
-        from .setup.update import installed_version
-
-        return installed_version(PROJECT_ROOT)
-
-    from importlib.metadata import version
-
-    return version("facegen")
+The package is `kitshot`. A copy updated in place keeps its older uninstaller, which runs
+`python -m facegen.cli remove-pack --yes`, and a taskbar pin made by an older version starts
+`facegen-app.exe -m facegen.desktop app`; both forward to `kitshot`. Nothing else lives
+here, and nothing in `kitshot` imports it. Standard library only, like `kitshot/__init__`.
+"""

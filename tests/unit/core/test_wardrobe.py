@@ -7,8 +7,8 @@ from collections import Counter
 
 import pytest
 
-from facegen.core.age import WORDINGS
-from facegen.core.prompt import (
+from kitshot.core.age import WORDINGS
+from kitshot.core.prompt import (
     CONTENT_NEGATIVE,
     CONTENT_POSITIVE,
     QUALITY,
@@ -17,8 +17,8 @@ from facegen.core.prompt import (
     YOUNG_NEGATIVE,
     build_prompt,
 )
-from facegen.core.traits import CharacterSheet
-from facegen.core.wardrobe import (
+from kitshot.core.traits import CharacterSheet
+from kitshot.core.wardrobe import (
     LOOKS,
     PROPS,
     ROLES,
@@ -29,8 +29,8 @@ from facegen.core.wardrobe import (
     seniority,
     track_jacket_words,
 )
-from facegen.datasource.kits import Kit, load_kits
-from facegen.qc import expectation
+from kitshot.datasource.kits import Kit, load_kits
+from kitshot.qc import expectation
 
 COLCHESTER = Kit(shirt=("blue", "white"), pattern="stripes", shorts="blue")
 RED = Kit(shirt=("red",), shorts="white")
@@ -250,8 +250,8 @@ def test_quality_check_ranks_on_the_outfit() -> None:
 
 # --- journalists and press officers (user, 2026-11-13) ----------------------------------------
 
-from facegen.core.traits import POSE
-from facegen.core.wardrobe import HELD_PROPS, MEDIA_POSES, media_pose
+from kitshot.core.traits import POSE
+from kitshot.core.wardrobe import HELD_PROPS, MEDIA_POSES, media_pose
 
 
 def test_media_roles_from_their_titles() -> None:

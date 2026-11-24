@@ -7,10 +7,10 @@ from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 
 import pytest
 
-from facegen.persistence.settings import load_local
-from facegen.platform import platform_info
-from facegen.setup import folder_setup
-from facegen.setup.folder_setup import (
+from kitshot.persistence.settings import load_local
+from kitshot.platform import platform_info
+from kitshot.setup import folder_setup
+from kitshot.setup.folder_setup import (
     LocalFileError,
     RealDisk,
     check_folder,

@@ -1,4 +1,4 @@
-"""Make the bundled kit catalog, src/facegen/data/kit_catalog.json, from a kit colour probe
+"""Make the bundled kit catalog, src/kitshot/data/kit_catalog.json, from a kit colour probe
 report (scripts/spikes/kit_colour_probe.py --all-home).
 
 Keeps only what `kits.estimated_kits` reads, as the worker would read the report: each club's
@@ -20,7 +20,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from facegen.datasource.kits import (
+from kitshot.datasource.kits import (
     BUNDLE_FORMAT,
     CATALOG_REPORT,
     KitError,
@@ -31,11 +31,11 @@ from facegen.datasource.kits import (
 
 ROOT = Path(__file__).resolve().parents[1]
 REPORT = ROOT / "data" / CATALOG_REPORT
-OUTPUT = ROOT / "src" / "facegen" / "data" / "kit_catalog.json"
+OUTPUT = ROOT / "src" / "kitshot" / "data" / "kit_catalog.json"
 ABOUT = (
-    "Home-shirt colours per FM27 club ID, estimated by facegen's kit colour probe from the"
-    " game's 2D kit images. Colour names from facegen's vocabulary only. Made by"
-    " scripts/build_kit_catalog.py; read by facegen.kits."
+    "Home-shirt colours per FM27 club ID, estimated by Kitshot's kit colour probe from the"
+    " game's 2D kit images. Colour names from Kitshot's vocabulary only. Made by"
+    " scripts/build_kit_catalog.py; read by kitshot.kits."
 )
 
 
@@ -94,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
         report = json.loads(args.report.read_text(encoding="utf-8"))
         bundle = reduce(report, args.report.stat().st_mtime)
         text = dumps(bundle)
-        parse_bundle(json.loads(text))  # what facegen will read back
+        parse_bundle(json.loads(text))  # what Kitshot will read back
     except (OSError, ValueError, KitError) as exc:
         print(f"{args.report}: {exc}", file=sys.stderr)
         return 1

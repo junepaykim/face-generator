@@ -12,11 +12,11 @@ from typing import cast
 
 import pytest
 
-from facegen.desktop.app_window import WindowProcess
-from facegen.platform import pipes, procs
-from facegen.runtime import worker_process
-from facegen.runtime.worker_process import WorkerProxy
-from facegen.setup.models import ModelDownload
+from kitshot.desktop.app_window import WindowProcess
+from kitshot.platform import pipes, procs
+from kitshot.runtime import worker_process
+from kitshot.runtime.worker_process import WorkerProxy
+from kitshot.setup.models import ModelDownload
 
 
 class ChildAfterEOF:

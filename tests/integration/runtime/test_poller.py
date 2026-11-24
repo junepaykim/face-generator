@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from facegen.datasource import snapshots
-from facegen.datasource.base import SaveReadError
-from facegen.runtime import poller
+from kitshot.datasource import snapshots
+from kitshot.datasource.base import SaveReadError
+from kitshot.runtime import poller
 
 
 def make(path: Path, data: bytes = b"save", mtime: int | None = None) -> Path:
@@ -187,7 +187,7 @@ def test_save_version_reads_the_file(tmp_path: Path) -> None:
 
 def test_copy_snapshot_reports_a_busy_save(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A save that keeps changing is a busy save: the watcher tries it again later."""
-    from facegen.datasource.base import SaveBusyError
+    from kitshot.datasource.base import SaveBusyError
 
     src = make(tmp_path / "games" / "c.fm")
     real_copy = shutil.copyfile

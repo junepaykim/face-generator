@@ -1,4 +1,4 @@
-"""Phase 7 on the GPU: draw the same made-up players again and again through `facegen serve`'s
+"""Phase 7 on the GPU: draw the same made-up players again and again through `kitshot serve`'s
 worker process (WorkerProxy and the real renderer), and record faults, restarts, stalls,
 time and memory.
 
@@ -19,7 +19,7 @@ the crash of 2026-11-13 happened. --fault-on-job N makes the worker cause a real
 N-th job (soak_child.py). --pause-after N pauses after N pictures and reads the card's
 memory with the worker process gone, then resumes.
 
-Writes data/soak/<name>/summary.json; the worker's log is data/soak/<name>/data/logs/facegen.log
+Writes data/soak/<name>/summary.json; the worker's log is data/soak/<name>/data/logs/kitshot.log
 and each render's time and memory data/soak/<name>/calls.jsonl.
 """
 
@@ -42,14 +42,14 @@ sys.path.insert(0, str(ROOT / "tests"))  # the made-up players' builders
 
 from factories import NEWGEN, RIVAL, player, snapshot
 
-from facegen.persistence import db
-from facegen.persistence.settings import DEFAULTS_PATH, load_settings
-from facegen.pipeline import manual
-from facegen.pipeline.manual import ManualError
-from facegen.pipeline.sync import run_sync
-from facegen.pipeline.worker import load_career
-from facegen.runtime.logging import log_to_file
-from facegen.runtime.worker_process import WorkerProxy, worker_command
+from kitshot.persistence import db
+from kitshot.persistence.settings import DEFAULTS_PATH, load_settings
+from kitshot.pipeline import manual
+from kitshot.pipeline.manual import ManualError
+from kitshot.pipeline.sync import run_sync
+from kitshot.pipeline.worker import load_career
+from kitshot.runtime.logging import log_to_file
+from kitshot.runtime.worker_process import WorkerProxy, worker_command
 
 CHILD = Path(__file__).resolve().parent / "soak_child.py"
 LINES = {

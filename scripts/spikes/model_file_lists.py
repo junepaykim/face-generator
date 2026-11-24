@@ -20,7 +20,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from facegen.setup import models
+from kitshot.setup import models
 
 
 def lay_out(root: Path, files: tuple[models.ModelFile, ...], drop: str | None) -> list[str]:
@@ -49,7 +49,7 @@ def lay_out(root: Path, files: tuple[models.ModelFile, ...], drop: str | None) -
 
 def load(model: str) -> None:
     """In the child: load what production loads for `model`, on the CPU."""
-    from facegen.render.gpu import prepare_environment
+    from kitshot.render.gpu import prepare_environment
 
     prepare_environment()
     import torch
@@ -59,7 +59,7 @@ def load(model: str) -> None:
     if model in ("animagine", "realvis"):
         from diffusers import StableDiffusionXLPipeline
 
-        from facegen.render import renderer as r
+        from kitshot.render import renderer as r
 
         spec = r.ANIMAGINE if model == "animagine" else r.REALVIS
         variant = {"variant": spec.variant} if spec.variant else {}
@@ -84,7 +84,7 @@ def load(model: str) -> None:
         from huggingface_hub import hf_hub_download
         from safetensors import safe_open
 
-        from facegen.render.zimage import ZIMAGE_REPO
+        from kitshot.render.zimage import ZIMAGE_REPO
 
         def fetch(name: str) -> str:
             return hf_hub_download(ZIMAGE_REPO, f"transformer/{name}", local_files_only=True)
@@ -124,7 +124,7 @@ def load(model: str) -> None:
         del vae
     else:
         raise SystemExit(f"no loader for {model!r}")
-    from facegen.render.tagger import Eva02Tagger
+    from kitshot.render.tagger import Eva02Tagger
 
     tagger = Eva02Tagger("cpu")
     print(f"  tagger: {len(tagger.names)} tags")
@@ -143,7 +143,7 @@ def main() -> int:
     for model in args.model:
         files = models.files_for(model)
         print(f"{model}: {len(files)} files, {models.gigabytes(models.total_size(files))}")
-        with tempfile.TemporaryDirectory(prefix="facegen-lists-") as tmp:
+        with tempfile.TemporaryDirectory(prefix="kitshot-lists-") as tmp:
             problems = lay_out(Path(tmp), files, args.drop)
             for p in problems:
                 print(f"  {p}")

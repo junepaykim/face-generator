@@ -28,14 +28,14 @@ from factories import (
     snapshot,
 )
 
-from facegen.core.planner import TIER_B, TIER_C
-from facegen.core.records import Gender, PlayerRecord, Snapshot
-from facegen.core.traits import personality_from_json
-from facegen.datasource.photos import PhotoIndex, PhotoScan
-from facegen.persistence.db import connect
-from facegen.persistence.settings import Settings, load_settings, set_override, set_overrides
-from facegen.pipeline.reclassification import ChangeReport, reclassify, reclassify_with_report
-from facegen.pipeline.sync import SyncReport, record_failed_sync, run_sync, sync_of_save
+from kitshot.core.planner import TIER_B, TIER_C
+from kitshot.core.records import Gender, PlayerRecord, Snapshot
+from kitshot.core.traits import personality_from_json
+from kitshot.datasource.photos import PhotoIndex, PhotoScan
+from kitshot.persistence.db import connect
+from kitshot.persistence.settings import Settings, load_settings, set_override, set_overrides
+from kitshot.pipeline.reclassification import ChangeReport, reclassify, reclassify_with_report
+from kitshot.pipeline.sync import SyncReport, record_failed_sync, run_sync, sync_of_save
 
 
 @pytest.fixture
@@ -131,8 +131,8 @@ def test_academy_membership_survives_managed_club_changes(
 def test_manual_jobs_refresh_current_targets_and_cancel_when_absent(
     conn: sqlite3.Connection, settings: Settings
 ) -> None:
-    from facegen.core.age import age_wording
-    from facegen.pipeline import manual
+    from kitshot.core.age import age_wording
+    from kitshot.pipeline import manual
 
     uid = 1001
     sync(conn, snapshot([player(uid, age=19)]), settings)
@@ -157,7 +157,7 @@ def test_manual_jobs_refresh_current_targets_and_cancel_when_absent(
 def test_manual_job_is_cancelled_on_transfer_out_of_mens_football(
     conn: sqlite3.Connection, settings: Settings
 ) -> None:
-    from facegen.pipeline import manual
+    from kitshot.pipeline import manual
 
     sync(conn, snapshot([player(1001)]), settings)
     manual.new_face(conn, 1, 1001, settings)
@@ -623,11 +623,11 @@ def test_sync_records_the_save_time_and_who_started_it(
 def test_the_active_career_is_the_one_with_the_newest_save(
     conn: sqlite3.Connection, settings: Settings
 ) -> None:
-    from facegen.persistence.db import active_career_id
-    from facegen.pipeline.worker import load_career
+    from kitshot.persistence.db import active_career_id
+    from kitshot.pipeline.worker import load_career
 
     one = sync(conn, snapshot(world(), career="one"), settings, save_mtime=2_000.0).career
-    # Career two is synced later, from an older save (say `facegen sync --save`).
+    # Career two is synced later, from an older save (say `kitshot sync --save`).
     two = sync(
         conn, snapshot(world(), career="two", file_name="two.fm"), settings, save_mtime=1_000.0
     )
@@ -679,8 +679,8 @@ def test_no_managed_club(conn: sqlite3.Connection, settings: Settings, managed: 
 def test_reclassify_with_report_says_what_moved(
     conn: sqlite3.Connection, settings: Settings
 ) -> None:
-    from facegen.persistence.db import transaction
-    from facegen.persistence.settings import set_overrides
+    from kitshot.persistence.db import transaction
+    from kitshot.persistence.settings import set_overrides
 
     report = sync(conn, snapshot(world()), settings)
     with transaction(conn):
@@ -703,8 +703,8 @@ def test_reclassify_with_report_says_what_moved(
 def test_reclassify_with_report_lists_newly_queued_players(
     conn: sqlite3.Connection, settings: Settings
 ) -> None:
-    from facegen.persistence.db import transaction
-    from facegen.persistence.settings import set_overrides
+    from kitshot.persistence.db import transaction
+    from kitshot.persistence.settings import set_overrides
 
     report = sync(conn, snapshot(world()), settings)
     with transaction(conn):
@@ -809,7 +809,7 @@ RIVAL_MANAGER = NEWGEN + 102  # the first-team manager of a club in my league
 
 def league_state(conn: sqlite3.Connection) -> tuple:
     """My league as stored: its clubs, its players and managers, and the scopes measured."""
-    from facegen.persistence import league_stats
+    from kitshot.persistence import league_stats
 
     clubs = {r[0] for r in conn.execute("SELECT club_id FROM clubs WHERE in_my_league = 1")}
     people = {

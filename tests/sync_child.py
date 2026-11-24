@@ -1,4 +1,4 @@
-"""`facegen sync-process` with a fake save reader, by a plan: the real child (the request on
+"""`kitshot sync-process` with a fake save reader, by a plan: the real child (the request on
 stdin, execute_sync, JSON lines out) for SyncService's process mode (Phase 14).
 
     python sync_child.py STATE_DIR PLAN sync-process
@@ -29,11 +29,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from factories import ABROAD, NEWGEN, RIVAL, player, snapshot
 
-from facegen.cli import main
-from facegen.core.records import Snapshot
-from facegen.datasource.base import UnsupportedSaveError
-from facegen.pipeline import reclassification, sync_operation
-from facegen.runtime import sync_process
+from kitshot.cli import main
+from kitshot.core.records import Snapshot
+from kitshot.datasource.base import UnsupportedSaveError
+from kitshot.pipeline import reclassification, sync_operation
+from kitshot.runtime import sync_process
 
 WAIT = 60.0
 

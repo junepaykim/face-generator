@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from facegen.core import presets
+from kitshot.core import presets
 
 DEFAULTS = {
     "cutoffs.share.a_ca": 6.0, "cutoffs.share.a_pa": 3.0, "cutoffs.share.b_ca": 40.0,

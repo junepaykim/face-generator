@@ -1,4 +1,4 @@
-"""The prompt embedding cache and the two-stage encoding (facegen.prompt_cache). Pure."""
+"""The prompt embedding cache and the two-stage encoding (kitshot.prompt_cache). Pure."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from facegen.render.prompt_cache import EmbeddingCache, prepare
+from kitshot.render.prompt_cache import EmbeddingCache, prepare
 
 
 class Encoders:

@@ -1,4 +1,4 @@
-"""facegen-app.exe made from this venv's real pythonw.exe launcher with the Win32 resource
+"""kitshot-app.exe made from this venv's real pythonw.exe launcher with the Win32 resource
 functions: Windows reads Kitshot's name and icon from it, and it starts Python in the venv."""
 
 from __future__ import annotations
@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from facegen.desktop import app_exe
-from facegen.desktop.app_icon import ICO_SIZES, write_ico
+from kitshot.desktop import app_exe
+from kitshot.desktop.app_icon import ICO_SIZES, write_ico
 
 pytestmark = pytest.mark.windows_only
 
