@@ -436,7 +436,7 @@ publishes the executable with a SHA-256 checksum. [Release workflow](.github/wor
 
 ## Install on Windows
 
-Download and run `Kitshot-setup-<version>.exe` from the [latest Windows release](https://github.com/junepaykim/face-generator/releases/latest).
+Download and run `Kitshot-setup-<version>.exe` from the [latest Windows release](https://github.com/junepaykim/kitshot/releases/latest).
 
 You’ll need 64-bit Windows 10 or 11, FM27, an NVIDIA GPU with about 8 GB of VRAM (10 GB for
 Z-Image-Turbo) and about 20 GB of free disk space (40 GB for Z-Image-Turbo). First launch

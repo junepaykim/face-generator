@@ -35,7 +35,7 @@ from facegen.platform.locking import LockBusy, installation_lock
 from facegen.setup.install_transaction import Applied, apply_payload, recover_update
 from facegen.setup.release_payload import UpdateError, in_payload, unpack_payload  # noqa: F401 (installer API)
 
-REPOSITORY = "junepaykim/face-generator"
+REPOSITORY = "junepaykim/kitshot"
 RELEASES_API = f"https://api.github.com/repos/{REPOSITORY}/releases?per_page=30"
 RELEASES_PAGE = f"https://github.com/{REPOSITORY}/releases"
 ARCHIVE_URL = "https://github.com/{repository}/archive/refs/tags/{tag}.zip"

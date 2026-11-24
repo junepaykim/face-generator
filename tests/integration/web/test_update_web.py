@@ -32,7 +32,7 @@ class Releases:
             raise update.UpdateError(self.error)
         return [
             {"tag_name": t, "draft": False, "prerelease": False,
-             "html_url": f"https://github.com/junepaykim/face-generator/releases/tag/{t}"}
+             "html_url": f"https://github.com/junepaykim/kitshot/releases/tag/{t}"}
             for t in self.tags
         ]  # fmt: skip
 
@@ -100,7 +100,7 @@ def test_the_dashboard_offers_a_newer_release(env: Env) -> None:
         shown = card(client)
         assert shown is not None
         assert "Kitshot 1.0.0 is out" in shown and "You have 0.9.0." in shown
-        assert 'href="https://github.com/junepaykim/face-generator/releases/tag/v1.0.0"' in shown
+        assert 'href="https://github.com/junepaykim/kitshot/releases/tag/v1.0.0"' in shown
         assert 'action="/update/install"' in shown and "Update now" in shown
         korean = card(client, headers=KOREAN_WINDOWS)
         assert korean is not None and "지금 업데이트" in korean and "나중에" in korean

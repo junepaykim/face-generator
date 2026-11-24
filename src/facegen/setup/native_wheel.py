@@ -30,7 +30,7 @@ from facegen.platform import procs
 PROJECT_ROOT = locations.PROJECT_ROOT
 NATIVE_DIR = locations.NATIVE_DIR
 SUMS_PATH = NATIVE_DIR / "wheels.sha256"
-RELEASES = "https://github.com/junepaykim/face-generator/releases/download"
+RELEASES = "https://github.com/junepaykim/kitshot/releases/download"
 TAG_PREFIX = "native-v"
 MAX_BYTES = 64 * 1024 * 1024
 """A wheel is a few megabytes; anything far larger is not ours."""

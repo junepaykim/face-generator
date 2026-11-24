@@ -33,9 +33,9 @@ AppName=Kitshot
 AppVersion={#Version}
 AppVerName=Kitshot {#Version}
 AppPublisher=Kitshot
-AppPublisherURL=https://github.com/junepaykim/face-generator
-AppSupportURL=https://github.com/junepaykim/face-generator/issues
-AppUpdatesURL=https://github.com/junepaykim/face-generator/releases
+AppPublisherURL=https://github.com/junepaykim/kitshot
+AppSupportURL=https://github.com/junepaykim/kitshot/issues
+AppUpdatesURL=https://github.com/junepaykim/kitshot/releases
 VersionInfoVersion={#Version}
 ; The folder, the mutex and the app's file names keep "facegen" until Phase 17o.
 DefaultDirName={localappdata}\facegen

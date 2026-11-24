@@ -30,7 +30,7 @@ def release(tag: str, **kw: Any) -> dict[str, Any]:
         "tag_name": tag,
         "draft": False,
         "prerelease": False,
-        "html_url": f"https://github.com/junepaykim/face-generator/releases/tag/{tag}",
+        "html_url": f"https://github.com/junepaykim/kitshot/releases/tag/{tag}",
         **kw,
     }
 
@@ -58,7 +58,7 @@ def test_the_newest_app_release_is_chosen() -> None:
     ]
     chosen = update.choose_release(items)
     assert chosen == Release(
-        "0.10.0", "v0.10.0", "https://github.com/junepaykim/face-generator/releases/tag/v0.10.0"
+        "0.10.0", "v0.10.0", "https://github.com/junepaykim/kitshot/releases/tag/v0.10.0"
     )
     assert update.choose_release([release("native-v0.1.0")]) is None
 
@@ -66,7 +66,7 @@ def test_the_newest_app_release_is_chosen() -> None:
 def test_a_page_elsewhere_is_replaced_by_the_release_page() -> None:
     chosen = update.choose_release([release("v1.0.0", html_url="https://example.com/x")])
     assert chosen is not None
-    assert chosen.page == "https://github.com/junepaykim/face-generator/releases/tag/v1.0.0"
+    assert chosen.page == "https://github.com/junepaykim/kitshot/releases/tag/v1.0.0"
 
 
 def test_newer_compares_versions() -> None:
@@ -87,7 +87,7 @@ def test_the_check_is_one_request_for_the_releases_list() -> None:
 
     found = update.latest_release(fetch)
     assert found is not None and found.version == "0.3.0"
-    assert asked == ["https://api.github.com/repos/junepaykim/face-generator/releases?per_page=30"]
+    assert asked == ["https://api.github.com/repos/junepaykim/kitshot/releases?per_page=30"]
     with pytest.raises(UpdateError, match="not a list"):
         update.latest_release(lambda url: {"message": "rate limited"})
 
@@ -184,9 +184,7 @@ def test_the_repositorys_payload_has_what_a_start_needs(tmp_path: Path) -> None:
     assert not any(p.startswith(("tests/", "docs/", "scripts/", "installer/")) for p in shipped)
 
 
-def source_zip(
-    path: Path, files: dict[str, str | bytes], top: str = "face-generator-1.0.0"
-) -> Path:
+def source_zip(path: Path, files: dict[str, str | bytes], top: str = "kitshot-1.0.0") -> Path:
     """A GitHub-style source archive: every file under one top folder."""
     with zipfile.ZipFile(path, "w") as zf:
         for name, data in files.items():
@@ -386,9 +384,7 @@ def test_an_update_puts_the_newest_release_over_the_folder(tmp_path: Path) -> No
     code, said = run(tmp_path, root, archive=archive)
     assert code == update.UPDATED, said
     assert "Updated Kitshot 0.9.0 to 1.0.0" in said
-    assert archive.urls == [
-        "https://github.com/junepaykim/face-generator/archive/refs/tags/v1.0.0.zip"
-    ]
+    assert archive.urls == ["https://github.com/junepaykim/kitshot/archive/refs/tags/v1.0.0.zip"]
     assert update.installed_version(root) == "1.0.0"
     assert (root / "data/facegen.db").is_file()  # the app's own data folder is not root/data
     # The work folder keeps only the backup; the check is recorded as up to date.
