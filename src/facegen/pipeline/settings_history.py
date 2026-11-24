@@ -20,7 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from facegen.core.age import WORDINGS
+from facegen.core.age import TABLES, WORDINGS, shift_table
 from facegen.core.cutoffs import convert_mode
 from facegen.core.settings_values import Settings
 from facegen.persistence import league_stats
@@ -47,8 +47,9 @@ class Entry:
     id: int
     at: str
     label: str
-    """'edit' (a field on the page), 'defaults' (every setting back to its default) or
-    'auto-configure' (the preset for the graphics card, hardware.py)."""
+    """'edit' (a field on the page), 'defaults' (every setting back to its default),
+    'auto-configure' (the preset for the graphics card, hardware.py), a preset's label
+    (core/presets.py) or a shift's (`shift_label`: every age of a table one year up or down)."""
     before: dict[str, Any]
     """Key to its stored override before the change; None for no override."""
     after: dict[str, Any]
@@ -132,6 +133,41 @@ def _reclassify(
     return reclassify_with_report(conn, career.id, settings)
 
 
+AGE_MODE_KEYS = tuple(f"age.{name}.mode" for name in TABLES)
+
+
+def shift_label(table: str, delta: int) -> str:
+    """How the history names a shift of a table's ages: "shift.b.-1"."""
+    return f"shift.{table}.{delta:+d}"
+
+
+def parse_shift_label(label: str) -> tuple[str, int] | None:
+    """(table, years) from a history label, or None for any other label."""
+    kind, _, rest = label.partition(".")
+    table, _, delta = rest.rpartition(".")
+    if kind != "shift" or table not in TABLES:
+        return None
+    try:
+        return table, int(delta)
+    except ValueError:
+        return None
+
+
+def shifted_ages(values: Mapping[str, Any], shifts: Mapping[str, int]) -> dict[str, Any]:
+    """Every used age of each custom table in `shifts` moved by its years (All -1 / All +1,
+    Phase 17l). A table in auto mode is left as it is: its ages are the spread's."""
+    out: dict[str, Any] = {}
+    for table, delta in shifts.items():
+        if table not in TABLES:
+            raise SettingsError(f"unknown age table {table!r}")
+        if not delta or values.get(f"age.{table}.mode") == "auto":
+            continue
+        keys = {look: f"age.{table}.{look}" for look in WORDINGS}
+        moved = shift_table({look: values[key] for look, key in keys.items()}, delta)
+        out |= {keys[look]: age for look, age in moved.items()}
+    return out
+
+
 def mode_changes(
     conn: sqlite3.Connection,
     changes: Mapping[str, Any],
@@ -140,15 +176,17 @@ def mode_changes(
 ) -> dict[str, Any]:
     """The changes with each mode switch carried out (Phase 16): my league's cutoffs switched
     between Auto and Manual convert each cell from the latest save (core/cutoffs.py
-    `convert_mode`); my club's staff ages switched from Auto to Manual copy the spread into the
-    looks. Values the changes set themselves are kept, and the other values they set count:
-    a share edited in the same save is the one converted, not the share before it."""
+    `convert_mode`); an age table switched from Auto to Custom ("manual") copies its spread
+    into the looks, so the switch alone moves nobody (my club's staff since Phase 16f, every
+    table since 17l). Values the changes set themselves are kept, and the other values they
+    set count: a share edited in the same save is the one converted, not the share before it."""
     out = dict(changes)
     mode = changes.get("cutoffs.mode")
     switching = mode is not None and mode != current.cutoffs.mode
-    if not switching and changes.get("age.staff.mode") != "manual":
+    to_custom = [key for key in AGE_MODE_KEYS if changes.get(key) == "manual"]
+    if not switching and not to_custom:
         return out
-    edits = {k: v for k, v in changes.items() if k not in ("cutoffs.mode", "age.staff.mode")}
+    edits = {k: v for k, v in changes.items() if k != "cutoffs.mode" and k not in AGE_MODE_KEYS}
     basis = current
     if edits:
         try:
@@ -160,10 +198,12 @@ def mode_changes(
         stats = league_stats.load(conn, career.id) if career is not None else {}
         converted = convert_mode(basis.cutoffs, mode, stats, no_photo=basis.no_photo.enabled)
         out = converted | out
-    spread = basis.age.staff_spread
-    if changes.get("age.staff.mode") == "manual" and spread is not None:
-        firsts = {wording: first for first, wording in basis.age.staff}
-        copied = {f"age.staff.{w}": firsts.get(w, "-") for w in WORDINGS}
+    for key in to_custom:
+        table = key.split(".")[1]
+        if table not in basis.age.spreads:
+            continue
+        firsts = {wording: first for first, wording in basis.age.table(table)}
+        copied = {f"age.{table}.{w}": firsts.get(w, "-") for w in WORDINGS}
         out = copied | out
     return out
 
@@ -175,6 +215,7 @@ def save(
     label: str = "edit",
     defaults_path: Path | None = None,
     convert: bool = False,
+    shifts: Mapping[str, int] | None = None,
 ) -> Outcome:
     """Store changes, re-classify, and record them as one undoable entry.
 
@@ -182,11 +223,18 @@ def save(
     are valid: SettingsError otherwise. Values equal to the current ones are left out; a value
     equal to its default removes the override. With `convert` (an edit on the page), a mode
     switch also converts the values it switches between (`mode_changes`), in the same entry.
+    `shifts` moves every used age of the named custom tables by its years (`shifted_ages`),
+    after the changes, in the same entry; one table's shift alone is named in the history.
     """
     with transaction(conn):
         current = load_settings(conn, defaults_path)
         if convert:
             changes = mode_changes(conn, changes, current, defaults_path)
+        shifts = {table: delta for table, delta in (shifts or {}).items() if delta}
+        if shifts:
+            if not changes and len(shifts) == 1:
+                label = shift_label(*next(iter(shifts.items())))
+            changes = dict(changes) | shifted_ages(dict(current.values) | dict(changes), shifts)
         # An unknown key is kept, so set_overrides refuses it by name.
         changes = {
             k: v for k, v in changes.items() if k not in current.values or v != current.values[k]

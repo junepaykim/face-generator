@@ -1080,7 +1080,8 @@ def test_journalists_and_press_officers_are_stored_and_drawn_once_at_b(
     assert (away["local_media"], away["group_name"]) == (0, None)
     assert (press["at_my_club"], press["local_media"], press["group_name"]) == (1, 1, "b")
     jobs = jobs_of(conn)
-    assert jobs[HOME_REPORTER] == ("initial", "b", "W07")  # a man of 55, drawn as a woman
+    # The media table spreads W04-W10 over 30-60 by default (user, 2026-11-22, Phase 17l).
+    assert jobs[HOME_REPORTER] == ("initial", "b", "W09")  # a man of 55, drawn as a woman
     assert jobs[MY_PRESS] == ("initial", "b", "W04")  # a woman of 29: band 4 at the least
     assert AWAY_REPORTER not in jobs
     assert report.counts["journalists"] == 2 and report.counts["local_journalists"] == 1
@@ -1101,7 +1102,7 @@ def test_a_journalist_from_abroad_can_be_hand_picked(
     report = sync(conn, snapshot(world(), media=media_world()), settings)
     conn.execute("UPDATE players SET pin = 'b' WHERE unique_id = ?", (AWAY_REPORTER,))
     reclassify(conn, report.career.id, settings)
-    assert jobs_of(conn)[AWAY_REPORTER] == ("initial", "b", "W05")  # a woman of 40
+    assert jobs_of(conn)[AWAY_REPORTER] == ("initial", "b", "W06")  # a woman of 40: 37-42
 
 
 def test_media_switches_and_reader_failures(conn: sqlite3.Connection, settings: Settings) -> None:
@@ -1130,13 +1131,13 @@ def test_a_regular_journalist_pinned_to_a_is_tracked(
     reclassify(conn, report.career.id, settings)
     row = player_row(conn, HOME_REPORTER)
     assert (row["group_name"], row["tracked"]) == ("a", 1)
-    assert jobs_of(conn)[HOME_REPORTER] == ("initial", "a", "W07")
+    assert jobs_of(conn)[HOME_REPORTER] == ("initial", "a", "W09")  # 55: 55-59
     # Drawn, then older: re-drawn for the new band though a journalist has no club.
     conn.execute("DELETE FROM jobs")
-    add_image(conn, HOME_REPORTER, "a", None, "W07")
+    add_image(conn, HOME_REPORTER, "a", None, "W09")
     conn.execute("UPDATE players SET age = 61 WHERE unique_id = ?", (HOME_REPORTER,))
     reclassify(conn, report.career.id, settings)
-    assert jobs_of(conn)[HOME_REPORTER] == ("age", "a", "W08")
+    assert jobs_of(conn)[HOME_REPORTER] == ("age", "a", "W10")  # 60 and over
 
 
 # --- everyone drawn as a woman (user, 2026-11-14) ---------------------------------------------
@@ -1169,7 +1170,7 @@ def test_a_picture_of_a_man_gets_a_new_face(conn: sqlite3.Connection, settings: 
     reclassify(conn, report.career.id, settings)
     jobs = jobs_of(conn)
     assert jobs[COACH] == ("reroll", "a", "W05")
-    assert jobs[HOME_REPORTER] == ("reroll", "b", "W07")
+    assert jobs[HOME_REPORTER] == ("reroll", "b", "W09")
 
 
 def test_stored_gender_stays_when_the_people_reader_failed(

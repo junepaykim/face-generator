@@ -2,8 +2,8 @@
 
 My-club players use the finest steps regardless of group. Other players use group tables;
 staff use working-age bands from W02, and media bands start at W04. Settings choose each
-wording's first age; ages below the first row use that row. Tracked players are redrawn
-when their wording changes.
+wording's first age, or spread a range of looks evenly over an age span (Auto); ages below
+the first row use that row. Tracked players are redrawn when their wording changes.
 
 The wording key is everyone's age band: a woman's prompt uses its words, a man's states his
 age in years (`style.gender`, core/style.py). Historical M1-M4 pictures show men and get a new
@@ -13,6 +13,7 @@ independent of table settings.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -45,6 +46,12 @@ MEN_BANDS = frozenset({"M1", "M2", "M3", "M4"})
 """Legacy men's wordings that stored pictures may still carry."""
 
 TABLES = ("a_my_club", "a_other_club", "b", "c", "staff", "media")
+PLAYER_TABLES = TABLES[:4]
+"""The tables of players, one per group (and my club's), shown side by side (Phase 17l)."""
+NOT_USED = "-"
+"""A table's first age for a look it does not use (Phase 12, user 2026-11-17)."""
+AGE_LIMITS = (0, 100)
+"""The ages a table's first age can take."""
 
 
 def table_name(
@@ -147,3 +154,15 @@ def band_ages(rows: tuple[tuple[int, str], ...]) -> list[tuple[str, int | None, 
         last = rows[n + 1][0] - 1 if n + 1 < len(rows) else None
         out.append((key, None if n == 0 else first, last))
     return out
+
+
+def shift_table(firsts: Mapping[str, Any], delta: int) -> dict[str, Any]:
+    """A table's first ages by look, each used one moved by `delta` years and kept within
+    AGE_LIMITS; looks left out stay NOT_USED (All -1 / All +1, Phase 17l). The result is not
+    checked: two ages pushed against a limit together no longer rise, and the settings refuse
+    that by name."""
+    low, high = AGE_LIMITS
+    return {
+        look: first if first == NOT_USED else min(high, max(low, int(first) + delta))
+        for look, first in firsts.items()
+    }

@@ -860,7 +860,11 @@ function localTimes(root) {
   steps.forEach((button) => { button.hidden = false; });
   // A preset (Basic page) is a radio group: the choice sent, then the one the values match.
   const chosen = new Map();
-  const unsaved = () => dirty().length > 0 || chosen.size > 0;
+  // All −1 / All +1 on a custom age table (Phase 17l): years to move it by, sent with the next
+  // save as "shift.age.<table>"; the server moves every used age, as one change to undo.
+  const shifts = new Map();
+  within("[data-age-shift]").forEach((group) => { group.hidden = false; });
+  const unsaved = () => dirty().length > 0 || chosen.size > 0 || shifts.size > 0;
   const radios = (kind) => within(`[data-preset][name="preset.${kind}"]`);
   const showPreset = (kind, name) => {
     radios(kind).forEach((r) => { r.checked = r.value === name; });
@@ -870,12 +874,19 @@ function localTimes(root) {
   async function saveDirty() {
     const fields = dirty();
     const picked = new Map(chosen);
-    if (!fields.length && !picked.size) return true;
+    const moved = new Map(shifts);
+    if (!fields.length && !picked.size && !moved.size) return true;
     say(text("js.saving"));
     const body = new FormData();
     const posted = new Map(fields.map((el) => [el.name, read(el)]));
     posted.forEach((value, name) => body.append(name, value));
     picked.forEach((value, name) => body.append(name, value));
+    moved.forEach((years, table) => body.append("shift.age." + table, String(years)));
+    // Sent once, whatever the answer: clicks made meanwhile go with the next save.
+    moved.forEach((years, table) => {
+      const left = (shifts.get(table) || 0) - years;
+      if (left) shifts.set(table, left); else shifts.delete(table);
+    });
     try {
       const res = await fetch("/settings/save", {
         method: "POST",
@@ -976,6 +987,14 @@ function localTimes(root) {
       if (e.key === "Enter" && e.target.matches("input")) { e.preventDefault(); save(); }
     });
     form.addEventListener("click", (e) => {
+      const shift = e.target.closest("[data-shift]");
+      if (shift) {
+        const table = shift.dataset.shift;
+        const years = (shifts.get(table) || 0) + Number(shift.dataset.step);
+        if (years) shifts.set(table, years); else shifts.delete(table);
+        save();
+        return;
+      }
       const step = e.target.closest("[data-step-of]");
       if (step) {
         // As if the number were typed: one up or down, kept within the limits, then saved.
@@ -1082,7 +1101,11 @@ function localTimes(root) {
   const target = () => {
     const id = decodeURIComponent(location.hash.slice(1));
     if (!id || id === "history") return null;
-    if (id.startsWith("tab-")) return { tab: id.slice(4), el: null };
+    // An old tab's name opens the tab that holds it now (#tab-ages: Appearance, Phase 17l).
+    if (id.startsWith("tab-")) {
+      const tab = id.slice(4);
+      return { tab: names.includes(tab) ? tab : (anchors[tab] || tab), el: null };
+    }
     const el = document.getElementById(id);
     const panel = el && el.closest("[data-tab-panel]");
     if (panel) return { tab: panel.dataset.tabPanel, el };

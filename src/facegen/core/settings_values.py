@@ -108,8 +108,9 @@ CUTOFF_MODES = ("auto", "manual")
 """`cutoffs.mode`: my league's cells as shares ("top 6%") or numbers set by hand (Phase 16)."""
 TIER_CHOICES = ("a", "b", "c")
 """`cutoffs.my_club.*`: the tier (group) a part of my club is drawn in."""
-STAFF_AGE_MODES = ("manual", "auto")
-"""`age.staff.mode`: the staff table set look by look, or spread over an age span (Phase 16f)."""
+AGE_MODES = ("manual", "auto")
+"""`age.<table>.mode`: a table set look by look ("manual", shown as Custom), or its looks spread
+over an age span (Auto): my club's staff since Phase 16f, every table since Phase 17l."""
 
 
 FOUND = "found on this PC"
@@ -230,8 +231,8 @@ class CutoffSettings:
 
 
 @dataclass(frozen=True, slots=True)
-class StaffSpread:
-    """`age.staff` in auto mode: looks `first` to `last` spread over the ages `start` to `end`."""
+class AgeSpread:
+    """An age table in auto mode: looks `first` to `last` spread over the ages `start` to `end`."""
 
     first: str
     last: str
@@ -258,12 +259,18 @@ class AgeSettings:
     staff: tuple[tuple[int, str], ...]
     """My club's staff, whatever their group: wide bands, W02 the youngest."""
     media: tuple[tuple[int, str], ...]
-    """Journalists and press officers: the staff bands from W04 up."""
-    staff_spread: StaffSpread | None = None
-    """In auto mode (`age.staff.mode`) the spread `staff` was made from; None in manual."""
+    """Journalists and press officers: looks from W04 up."""
+    spreads: Mapping[str, AgeSpread] = field(default_factory=dict)
+    """The spread each table in auto mode (`age.<table>.mode`) was made from, by table name; a
+    table in manual mode has none."""
 
     def table(self, name: str) -> tuple[tuple[int, str], ...]:
         return getattr(self, name)
+
+    @property
+    def staff_spread(self) -> AgeSpread | None:
+        """My club's staff table's spread (Phase 16f); None in manual mode."""
+        return self.spreads.get("staff")
 
 
 @dataclass(frozen=True, slots=True)

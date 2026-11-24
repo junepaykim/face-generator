@@ -1,6 +1,7 @@
-"""Read models for the Advanced settings page's live parts (Phase 16e, 16f): what each cutoff
-cell gives in the latest save, each group's count, the leagues found, and my club's staff per
-age look. Pure reads; the routes render them."""
+"""Read models for the Advanced settings page's live parts (Phase 16e, 16f, 17l): what each
+cutoff cell gives in the latest save, each group's count, the leagues found, and each age
+table's looks with their ages and, for staff and media, how many people have each. Pure reads;
+the routes render them."""
 
 from __future__ import annotations
 
@@ -8,7 +9,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from typing import Any
 
-from facegen.core.age import age_wording, band_ages
+from facegen.core.age import TABLES, WORDINGS, age_wording, band_ages
 from facegen.core.cutoffs import (
     CELL_SCOPE,
     LEAGUE_CELLS,
@@ -107,37 +108,113 @@ def cutoff_view(
     )
 
 
+COUNTED_TABLES = ("staff", "media")
+"""The tables whose looks show how many people have each now (staff since Phase 16f)."""
+
+
 @dataclass(frozen=True, slots=True)
-class LookRow:
+class LookCell:
+    """One look in one age table."""
+
     look: str
+    used: bool
     first: int | None
-    """The first age; None: "and under"."""
+    """The first age; None: "and under" (or not used)."""
     last: int | None
-    """The last age; None: "and over"."""
-    staff: int | None
-    """My club's staff in it now; None before any sync."""
+    """The last age; None: "and over" (or not used)."""
+    count: int | None
+    """People with this look now: staff and media only, None before any sync."""
 
 
-def staff_looks(
-    conn: sqlite3.Connection, settings: Settings, career_id: int | None
-) -> list[LookRow]:
-    """Each look of my club's staff table with its ages and how many staff have it now."""
-    table = settings.age.staff
-    counts: dict[str, int] | None = None
-    if career_id is not None:
-        counts = dict.fromkeys((key for _, key in table), 0)
-        for (age,) in conn.execute(
-            "SELECT age FROM players WHERE career_id = ? AND present = 1 AND is_staff = 1"
-            " AND at_my_club = 1",
+@dataclass(frozen=True, slots=True)
+class AgeColumn:
+    """An age table as the Appearance tab shows it: every look W01-W10, in order."""
+
+    table: str
+    auto: bool
+    """Its looks are the spread (Auto); greyed, with the spread's inputs above them."""
+    cells: dict[str, LookCell]
+    counted: bool
+
+
+def _counts(
+    conn: sqlite3.Connection, settings: Settings, career_id: int, table: str
+) -> dict[str, int]:
+    """How many people of a counted table have each look now: my club's staff, or the
+    journalists and press officers who get a picture (in a group)."""
+    if table == "staff":
+        rows = conn.execute(
+            "SELECT age, 'a' AS grp, 1 AS mine FROM players WHERE career_id = ? AND present = 1"
+            " AND is_staff = 1 AND at_my_club = 1",
             (career_id,),
-        ):
-            look = age_wording(age, "a", True, settings.age, staff=True)
-            if look is not None:
-                counts[look] = counts.get(look, 0) + 1
-    return [
-        LookRow(look, first, last, counts.get(look, 0) if counts is not None else None)
-        for look, first, last in band_ages(table)
-    ]
+        )
+    else:
+        rows = conn.execute(
+            "SELECT age, group_name AS grp, at_my_club AS mine FROM players WHERE career_id = ?"
+            " AND present = 1 AND media_role IS NOT NULL AND group_name IS NOT NULL",
+            (career_id,),
+        )
+    counts: dict[str, int] = {}
+    for age, group, mine in rows:
+        look = age_wording(
+            age, group, bool(mine), settings.age, staff=table == "staff", media=table == "media"
+        )
+        if look is not None:
+            counts[look] = counts.get(look, 0) + 1
+    return counts
+
+
+def age_columns(
+    conn: sqlite3.Connection, settings: Settings, career_id: int | None
+) -> dict[str, AgeColumn]:
+    """Every age table by name, each look with its ages; staff and media with their counts."""
+    out = {}
+    for table in TABLES:
+        counted = table in COUNTED_TABLES
+        counts = _counts(conn, settings, career_id, table) if counted and career_id else None
+        ages = {look: (first, last) for look, first, last in band_ages(settings.age.table(table))}
+        cells = {}
+        for look in WORDINGS:
+            first, last = ages.get(look, (None, None))
+            cells[look] = LookCell(
+                look,
+                look in ages,
+                first,
+                last,
+                None if counts is None else counts.get(look, 0),
+            )
+        out[table] = AgeColumn(table, table in settings.age.spreads, cells, counted)
+    return out
+
+
+def range_text(cell: LookCell, t: Translator) -> str:
+    """A look's ages for people: "29–33", "28 and under", "Not used"."""
+    if not cell.used:
+        return t("ages.not_used")
+    if cell.first is None and cell.last is None:
+        return t("ages.any")
+    if cell.first is None:
+        return t("ages.and_under", age=cell.last)
+    if cell.last is None:
+        return t("ages.and_over", age=cell.first)
+    if cell.first == cell.last:
+        return str(cell.first)
+    return f"{cell.first}–{cell.last}"
+
+
+def age_texts(columns: dict[str, AgeColumn], t: Translator) -> dict[str, str]:
+    """The live texts of the age tables, by the `data-effective` name the page gives them: each
+    look's ages ("ages.b.W04") and, for staff and media, its count ("ages.staff.W04.n")."""
+    out = {}
+    for table, column in columns.items():
+        for look, cell in column.cells.items():
+            out[f"ages.{table}.{look}"] = range_text(cell, t)
+            if column.counted:
+                count = cell.count
+                out[f"ages.{table}.{look}.n"] = (
+                    NONE if count is None else t("ages.count", count=count)
+                )
+    return out
 
 
 def live_parts(
@@ -148,9 +225,11 @@ def live_parts(
     before: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     """What the page's live parts show: the cutoff view, the counts before the change (None:
-    unchanged), and the staff looks."""
+    unchanged), and the age tables with their live texts."""
+    ages = age_columns(conn, settings, career_id)
     return {
         "cutoffs": cutoff_view(conn, settings, career_id, t),
         "counts_before": before,
-        "staff_looks": staff_looks(conn, settings, career_id),
+        "ages": ages,
+        "age_texts": age_texts(ages, t),
     }

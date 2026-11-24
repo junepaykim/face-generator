@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
 from facegen.core import presets
+from facegen.core.age import PLAYER_TABLES, TABLES
 from facegen.core.settings_values import FOUND
 from facegen.i18n import Translator
 from facegen.persistence import photo_index
@@ -27,6 +28,8 @@ from facegen.web.forms import (
     describe_key,
     form_of,
     input_text,
+    is_age_mode,
+    look_words,
     parse_settings_changes,
     parse_settings_form,
     settings_sections,
@@ -41,12 +44,46 @@ from facegen.web.settings_view import live_parts
 
 LIVE_PARTS = {
     "tier-summary": "_tier_summary.html",
-    "staff-looks": "_staff_looks.html",
     "everywhere-summary": "_everywhere_summary.html",
 }
-"""The Advanced page's parts drawn again after each save (Phase 16e), by `data-part` name."""
-RELOAD_PREFIXES = ("display.", "cutoffs.mode", "age.staff.mode")
-"""Settings whose change redraws the page: its language or theme, or which fields it shows."""
+"""The Advanced page's parts drawn again after each save (Phase 16e), by `data-part` name. The
+age tables hold fields, so only their texts change in place (`age_texts`, Phase 17l)."""
+RELOAD_PREFIXES = ("display.", "cutoffs.mode")
+"""Settings whose change redraws the page: its language or theme, or which fields it shows; an
+age table's mode too (`reloads`)."""
+SHIFT_PREFIX = "shift.age."
+"""A posted "shift.age.<table>" moves every used age of that table by its whole years (All -1 /
+All +1, Phase 17l)."""
+SHIFT_LIMIT = 100
+OTHER_TABLES = tuple(name for name in TABLES if name not in PLAYER_TABLES)
+"""Staff and media: the second age table, below the players' (Phase 17l)."""
+
+
+def reloads(key: str) -> bool:
+    """Whether saving this setting redraws the page."""
+    return key.startswith(RELOAD_PREFIXES) or is_age_mode(key)
+
+
+def posted_shifts(form: Any) -> tuple[dict[str, int], list[str]]:
+    """The age tables a form shifts ("shift.age.b" = "-1") with their years, and the field
+    names that are not a whole number of years."""
+    shifts: dict[str, int] = {}
+    bad: list[str] = []
+    for name in form:
+        if not name.startswith(SHIFT_PREFIX):
+            continue
+        text = str(form.get(name) or "").strip()
+        try:
+            years = int(text)
+        except ValueError:
+            bad.append(name)
+            continue
+        if abs(years) > SHIFT_LIMIT:
+            bad.append(name)
+            continue
+        shifts[name.removeprefix(SHIFT_PREFIX)] = years
+    return shifts, bad
+
 
 BASIC = "/settings/basic"
 ADVANCED = "/settings/advanced"
@@ -90,6 +127,10 @@ def entry_title(label: str, t: Translator) -> str:
         return t("history.defaults")
     if label == "auto-configure":
         return t("history.auto_configure")
+    shift = settings_history.parse_shift_label(label)
+    if shift is not None:
+        table, years = shift
+        return t("history.shift", table=t(f"ages.col.{table}"), years=f"{years:+d}")
     preset = presets.parse_label(label)
     if preset is not None:
         return preset_title(*preset, t)
@@ -154,7 +195,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
         defaults = load_defaults(ctx.defaults_path)
         parts: list[str] = []
         for e in outcome.entries:
-            if presets.parse_label(e.label):
+            if presets.parse_label(e.label) or settings_history.parse_shift_label(e.label):
                 parts.append(entry_title(e.label, t))
                 continue
             parts += [
@@ -247,6 +288,9 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             conn,
             tabs=settings_tabs(sections),
             tab_anchors=tab_anchors(),
+            look_words=look_words(),
+            player_tables=PLAYER_TABLES,
+            other_tables=OTHER_TABLES,
             fields=fields,
             # The bar's legend for the dot shows only while a setting differs (Phase 17j).
             changed_any=any(f.changed for f in fields.values()),
@@ -436,6 +480,8 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                 values, errors = parse_settings_changes(form, defaults, t)
                 chosen, labels, bad = posted_preset(form, defaults)
                 errors |= {k: t("msg.settings.check_field") for k in bad}
+                shifts, odd = posted_shifts(form)
+                errors |= {k: t("msg.settings.check_field") for k in odd}
                 if errors:
                     return JSONResponse(
                         {"ok": False, "errors": errors, "error": t("msg.settings.check_field")}
@@ -445,11 +491,18 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                 values = chosen | values
                 try:
                     outcome = settings_history.save(
-                        conn, values, label=label, defaults_path=ctx.defaults_path, convert=True
+                        conn,
+                        values,
+                        label=label,
+                        defaults_path=ctx.defaults_path,
+                        convert=True,
+                        shifts=shifts,
                     )
                 except SettingsError as exc:
                     message = str(exc)
-                    blamed = blamed_keys(message, list(values)) or list(values)
+                    # A shift's ages are not posted fields: its table's error goes to the table.
+                    keys = list(values) + [f"age.{table}" for table in shifts]
+                    blamed = blamed_keys(message, keys) or keys
                     said = settings_error_text(message, t)
                     return JSONResponse(
                         {
@@ -464,13 +517,13 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                 if outcome.changed:
                     wake()
                 # The values as stored (lists lower-cased, numbers tidied), for the page to show:
-                # those posted, and those a mode switch converted with them.
+                # those posted, and those a mode switch or a shift changed with them.
                 current = outcome.settings.values
                 touched = set(values) | {k for e in outcome.entries for k in e.after}
                 fields = {
                     key: {
                         "value": current[key],
-                        "text": input_text(current[key]),
+                        "text": input_text(current[key], key),
                         "changed": current[key] != defaults[key],
                     }
                     for key in sorted(touched)
@@ -501,13 +554,12 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                     {
                         "ok": True,
                         "changed": outcome.changed,
-                        "reload": any(k.startswith(RELOAD_PREFIXES) for k in values)
-                        and outcome.changed,
+                        "reload": any(reloads(k) for k in values) and outcome.changed,
                         "message": outcome_message("saved", outcome, t)
                         if outcome.changed
                         else t("msg.settings.nothing"),
                         "fields": fields,
-                        "effective": live["cutoffs"].effective,
+                        "effective": live["cutoffs"].effective | live["age_texts"],
                         "parts": parts,
                         "presets": chosen_now,
                         "history_html": history_html,

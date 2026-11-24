@@ -13,6 +13,7 @@ from starlette.datastructures import FormData
 from facegen.core.age import WORDINGS
 from facegen.core.cutoffs import OFF
 from facegen.core.settings_values import (
+    AGE_MODES,
     ASPECT_CHOICES,
     CANDIDATE_RANGE,
     CUTOFF_MODES,
@@ -33,24 +34,24 @@ from facegen.web.messages import band_name
 # is the catalog's "settings.title.<section>", its note "settings.note.<top section>" (most
 # sections have none: Phase 12 keeps the page short), its ⓘ tip "settings.tip.<top>". Quality
 # reads from what is drawn to how (Phase 17j): the style (with the picture's shape), the groups'
-# quality, rendering, the reference, then how players at my club look. Cutoffs opens with who
-# counts; System ends with the FM27 database IDs (Phase 17k).
+# quality, rendering and the reference. Appearance (Phase 17l) holds how people look: age looks,
+# then players at my club, height and build, personality. Cutoffs opens with who counts; System
+# ends with the FM27 database IDs (Phase 17k).
 SECTION_ORDER = (
-    "eligibility", "cutoffs", "style", "picture", "groups", "render", "reference", "my_club",
-    "body", "personality", "staff", "media", "no_photo", "age", "schedule", "display", "updates",
-    "database_ids",
+    "eligibility", "cutoffs", "style", "picture", "groups", "render", "reference", "age",
+    "my_club", "body", "personality", "staff", "media", "no_photo", "schedule", "display",
+    "updates", "database_ids",
 )  # fmt: skip
 TABS: dict[str, tuple[str, ...]] = {
     "cutoffs": ("eligibility", "cutoffs"),
-    "quality": ("groups", "picture", "render", "style", "reference", "my_club", "body",
-                "personality"),
+    "quality": ("groups", "picture", "render", "style", "reference"),
     "targets": ("staff", "media", "no_photo"),
-    "ages": ("age",),
+    "appearance": ("age", "my_club", "body", "personality"),
     "system": ("schedule", "display", "updates", "database_ids"),
 }  # fmt: skip
 """The Advanced page's tabs (Phase 16h, user 2026-11-20) and the top sections each holds:
-who is picked; how pictures are drawn; who else gets one; age looks; how Kitshot runs. Who
-counts ("eligibility") opens Cutoffs (Phase 17k)."""
+who is picked; how pictures are drawn; who else gets one; how people look (Appearance, D10,
+Phase 17l); how Kitshot runs. Who counts ("eligibility") opens Cutoffs (Phase 17k)."""
 KEY_SECTIONS: dict[str, str] = {
     "eligibility.loaned_out_at_my_club": "cutoffs.my_club",
     "notifications.new_pictures": "schedule",
@@ -62,6 +63,7 @@ loaned-out players beside "Players I loaned out", the notification with Running,
 FM27 database IDs in one folded card at the bottom of System. Only where a setting is shown:
 its key, its history line and its label stay."""
 TAB_ANCHORS = {
+    "ages": "appearance",
     "about": "system",
     "folders": "system",
     "graphics-card": "quality",
@@ -69,13 +71,13 @@ TAB_ANCHORS = {
     "newgen": "system",
 }
 """Anchors from before the tabs, or of sections whose settings moved (Phase 17k), and the tab each
-opens (sections: their top section's tab)."""
+opens (sections: their top section's tab). "ages" is the Age looks tab before Appearance
+(Phase 17l): `#tab-ages` opens Appearance."""
 LABELLED_IN_FULL = frozenset(
     {
         "cutoffs.mode",
         "cutoffs.light_above",
         "cutoffs.light_below",
-        "age.staff.mode",
         "staff.enabled",
         "no_photo.enabled",
         "media.journalists",
@@ -103,10 +105,11 @@ CHOICES: dict[str, tuple[str, ...]] = {
     "loans": TIER_CHOICES,
     "from": tuple(WORDINGS),
     "to": tuple(WORDINGS),
+    "age_mode": AGE_MODES,
 }
-"""Text settings with a fixed set of values, by the key's last part, shown as a drop-down list;
-each value's label is the catalog's "settings.choice.<name>.<value>", a group's name for a tier
-and a look's name for a look."""
+"""Text settings with a fixed set of values, by `choice_name` (mostly the key's last part), shown
+as a drop-down list; each value's label is the catalog's "settings.choice.<name>.<value>", a
+group's name for a tier and a look's name for a look."""
 TIER_KEYS = frozenset({"first_team", "youth", "loans"})
 LOOK_KEYS = frozenset({"from", "to"})
 
@@ -117,8 +120,9 @@ INT_CHOICES: dict[str, tuple[int, ...]] = {
 """Whole numbers offered as a short list, by the key's last part (Phase 17j). A value's label is
 the catalog's "settings.choice.<name>.<value>" if it has one, else the number. Any value the
 settings accept still is: a stored one outside the list stays selectable, marked as custom."""
-SEGMENTED = frozenset({"soften_skin"})
-"""Short lists shown as a row of buttons (a radio group) instead of a drop-down list."""
+SEGMENTED = frozenset({"soften_skin", "age_mode"})
+"""Short lists shown as a row of buttons (a radio group) instead of a drop-down list, by
+`choice_name`."""
 STEPPERS: dict[str, tuple[int, int]] = {"candidates": CANDIDATE_RANGE}
 """Small whole numbers shown with − and + buttons, with their limits, by the key's last part."""
 
@@ -137,10 +141,25 @@ BAND_TAGS = {
     "W09": "adult woman, mature face",
     "W10": "mature female",
 }
-"""One or two words of each age wording's prompt, shown after its name (core.age.WORDINGS)."""
-ADULT_WORDED_TABLES = frozenset({"age.staff", "age.media"})
-"""Staff and media prompts use adult professional wording in every band (decisions.md,
-2026-11-14), so their tables show the band names without the players' prompt words."""
+"""One or two words of each age wording's prompt, shown with its name (core.age.WORDINGS).
+Every table's looks draw these words, staff's and media's too (Phase 17l: they showed none)."""
+
+
+def look_words() -> dict[str, tuple[str, str]]:
+    """Each look's short prompt words and its whole wording, for the age tables' rows: shown
+    as they are drawn, never changed here (ground rule 2)."""
+    return {look: (BAND_TAGS[look], wording.text) for look, wording in WORDINGS.items()}
+
+
+def is_age_mode(key: str) -> bool:
+    """An age table's mode ("age.b.mode"): its looks set by hand, or spread (Phase 17l)."""
+    return key.startswith("age.") and key.endswith(".mode")
+
+
+def choice_name(key: str) -> str:
+    """The name a setting's choices and labels go by: an age table's mode is "age_mode", apart
+    from the cutoffs' "mode" (Phase 17l); any other setting, its key's last part."""
+    return "age_mode" if is_age_mode(key) else key.rpartition(".")[2]
 
 
 def choice_label(name: str, value: str, t: Translator = ENGLISH) -> str:
@@ -152,7 +171,7 @@ def choice_label(name: str, value: str, t: Translator = ENGLISH) -> str:
 
 
 def choices_of(key: str, t: Translator = ENGLISH) -> tuple[tuple[str, str], ...] | None:
-    name = key.rpartition(".")[2]
+    name = choice_name(key)
     values = CHOICES.get(name)
     if values is None:
         return None
@@ -176,7 +195,7 @@ def number_choices_of(key: str, t: Translator = ENGLISH) -> tuple[tuple[str, str
 def control_of(key: str) -> str:
     """How a setting is edited when not by its kind's usual field: "segmented", "stepper" or
     "select" (a list of whole numbers); "" for the usual field."""
-    name = key.rpartition(".")[2]
+    name = choice_name(key)
     if name in SEGMENTED:
         return "segmented"
     if name in STEPPERS:
@@ -207,18 +226,21 @@ class Field:
 
     @property
     def text(self) -> str:
-        return input_text(self.value)
+        return input_text(self.value, self.key)
 
     @property
     def default_input(self) -> str:
         """The default as the field holds it: what "use default" puts back."""
         if isinstance(self.default, bool):
             return "on" if self.default else ""
-        return input_text(self.default)
+        return input_text(self.default, self.key)
 
 
-def input_text(value: Any) -> str:
-    """A setting's value as its text field holds it; a whole share reads "6", not "6.0"."""
+def input_text(value: Any, key: str = "") -> str:
+    """A setting's value as its text field holds it; a whole share reads "6", not "6.0". A look
+    an age table leaves out is an empty cell, shown as "Not used" (Phase 17l)."""
+    if is_age_wording(key) and value == SKIP_WORDING:
+        return ""
     if isinstance(value, list):
         return ", ".join(str(v) for v in value)
     if isinstance(value, float):
@@ -242,7 +264,7 @@ def value_text(value: Any, t: Translator = ENGLISH, key: str = "") -> str:
         if key.startswith("cutoffs.share."):
             return t("settings.value.share", share=f"{float(value):g}")
         return t("settings.value.at_least", value=value)
-    name = key.rpartition(".")[2]
+    name = choice_name(key)
     if name in CHOICES and value in CHOICES[name]:
         return choice_label(name, value, t)
     if name in INT_CHOICES and value in INT_CHOICES[name]:
@@ -272,10 +294,10 @@ def label_parts(key: str, t: Translator = ENGLISH) -> tuple[str, dict[str, Any]]
     """A setting's label as a catalog key and its values; "" for a key the catalog lacks."""
     if key in LABELLED_IN_FULL:
         return f"settings.label_in.{key}", {}
-    section, _, name = key.rpartition(".")
+    if is_age_mode(key):
+        return "settings.label.age_mode", {}
+    name = key.rpartition(".")[2]
     if is_age_wording(key):
-        if section in ADULT_WORDED_TABLES:
-            return "settings.age_label_plain", {"band": band_name(name, t)}
         return "settings.age_label", {"band": band_name(name, t), "tags": BAND_TAGS[name]}
     label = f"settings.label.{name}"
     return (label, {}) if t.has(label) else ("", {})
@@ -364,7 +386,7 @@ def settings_sections(
                 default_text=value_text(defaults[key], t, key),
                 label_key=label_key,
                 label_values=label_values,
-                control=control_of(key) if kind == "int" else "",
+                control=control_of(key) if kind in ("int", "choice") else "",
                 limits=STEPPERS.get(name),
             )
         )

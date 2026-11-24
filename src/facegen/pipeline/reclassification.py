@@ -286,6 +286,11 @@ class ChangeReport:
     def empty(self) -> bool:
         return not (self.changed_total or self.enqueue or self.updated or self.cancelled)
 
+    @property
+    def age_queued(self) -> int:
+        """Pictures queued to re-draw people whose age look changed (an age table's edit)."""
+        return sum(n for (kind, _), n in self.enqueue.items() if kind == "age")
+
     def summary(self) -> str:
         """One line: the group counts that changed and what happened to the queue."""
         parts = []

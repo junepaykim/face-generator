@@ -793,7 +793,52 @@ details.everywhere summary { color: var(--fg); }
 /* System's FM27 database IDs, folded (Phase 17k): titled like a card's legend. */
 details.fold-card > summary { margin: 0; color: var(--fg); font-weight: 600; }
 details.fold-card[open] > summary { margin-bottom: 6px; }
-.staff-looks { margin-top: 8px; }
+/* Age looks (Phase 17l): a row per look (number, name, its prompt words in grey), a column per
+   table. A column's mode and its spread or All −1/+1 sit above the looks; an Auto column's ages
+   are greyed text, a Custom column's are fields ("Not used" when empty). */
+table.age-table { border-collapse: collapse; margin: 6px 0 14px; }
+.age-table th, .age-table td { text-align: left; padding: 5px 14px 5px 0; vertical-align: middle; }
+.age-table thead th { font-weight: 500; color: var(--muted); font-size: 12px; vertical-align: bottom;
+  border-bottom: 1px solid var(--line); }
+.age-table thead th:not(:first-child) { color: var(--fg); font-size: 13px; }
+.age-table .age-controls > tr > * { vertical-align: top; padding-top: 7px; }
+.age-table .age-controls > tr > th { font-weight: 500; color: var(--muted); font-size: 12px; }
+.age-table .age-controls > tr:last-child > * { border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+.age-table .age-looks > tr + tr > * { border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
+.age-table .age-looks th[scope=row] { font-weight: 400; min-width: 10.5rem; }
+.look-head { display: flex; align-items: baseline; gap: 6px; }
+.look-no { min-width: 1.3em; text-align: right; color: var(--muted); font-size: 12px;
+  font-variant-numeric: tabular-nums; }
+.look-name { font-weight: 500; }
+.look-words { display: block; padding-left: calc(1.3em + 6px); line-height: 1.3; }
+.age-cell { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.age-auto { color: var(--muted); font-variant-numeric: tabular-nums; }
+.age-auto.unused { font-size: 12px; opacity: .75; }
+.look-count { font-variant-numeric: tabular-nums; min-width: 1.5em; text-align: right; }
+.age-table input.band { width: 76px; text-align: right; font-variant-numeric: tabular-nums; }
+.age-table input.band::placeholder { color: var(--muted); font-size: 12px; opacity: .8; }
+.age-table .seg-field span { padding: 3px 10px; }
+.age-spread { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 6px; align-items: center; }
+.spread-pair { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
+.age-spread .cell-field select { max-width: 9.5rem; }
+.age-spread .cell-field input[type=number] { width: 4.2rem; }
+.age-shift { display: inline-flex; gap: 6px; }
+.age-shift[hidden] { display: none; }
+.age-shift button { padding: 2px 9px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.age-table .seg-field, .spread-pair.spread-ages { flex-wrap: nowrap; }
+/* Narrow: the players' table scrolls sideways in its box; the looks' names stay in view. */
+@media (max-width: 760px) {
+  .age-table th, .age-table td { padding-right: 8px; }
+  .age-table thead th:first-child, .age-table tbody th[scope=row] { position: sticky; left: 0; z-index: 1;
+    background: var(--card); }
+  .age-table .age-looks th[scope=row] { min-width: 7.5rem; max-width: 9.5rem; }
+  .age-table input.band { width: 66px; padding-left: 4px; padding-right: 4px; }
+  .age-shift button { padding: 2px 6px; }
+  .age-cell { flex-wrap: wrap; gap: 0 8px; }
+  .age-spread .cell-field input[type=number] { width: 3.6rem; }
+  .age-spread .cell-field select { max-width: 8.5rem; }
+  .age-auto, .look-count { white-space: nowrap; }
+}
 /* Narrow: each group's cutoffs one under the other, named by their column. */
 @media (max-width: 760px) {
   .cutoff-table thead { display: none; }

@@ -172,8 +172,17 @@ enabled = true
 # below a table's first used wording use that wording. First ages must rise from W01 to W10.
 # A tracked player is re-drawn when their wording changes. Chosen by the user, 2026-11-11;
 # W06 back in my club's table at 26, W05 from 24 (user, 2026-11-17).
+# Every table also has an auto mode (Phase 17l, user 2026-11-22): `mode = "auto"` spreads the
+# looks `from` to `to` over the ages `start` to `end` (as for staff, below) instead of the
+# looks; "manual" (shown as Custom) uses the looks. The players' tables stay manual with their
+# looks, so the update re-draws nobody; their spreads keep each table's first and last looks.
 
 [age.a_my_club]                     # group A at my club, the most visible players
+mode = "manual"
+from = "W01"
+to = "W10"
+start = 16
+end = 34
 W01 = 15                            # 15-16
 W02 = 17                            # 17-18
 W03 = 19                            # 19-21
@@ -186,6 +195,11 @@ W09 = 31                            # 31-33
 W10 = 34                            # 34 and older
 
 [age.a_other_club]                  # group A elsewhere
+mode = "manual"
+from = "W02"
+to = "W10"
+start = 18
+end = 34
 W01 = "-"
 W02 = 15                            # 15-18
 W03 = 19                            # 19-21
@@ -198,6 +212,11 @@ W09 = 29                            # 29-33
 W10 = 34                            # 34 and older
 
 [age.b]                             # group B
+mode = "manual"
+from = "W02"
+to = "W09"
+start = 18
+end = 29
 W01 = "-"
 W02 = 15                            # 15-18
 W03 = "-"
@@ -210,6 +229,11 @@ W09 = 29                            # 29 and older
 W10 = "-"
 
 [age.c]                             # group C
+mode = "manual"
+from = "W03"
+to = "W08"
+start = 21
+end = 28
 W01 = "-"
 W02 = "-"
 W03 = 15                            # 15-21
@@ -247,7 +271,15 @@ W09 = 68                            # 68-74
 W10 = 75                            # 75 and older
 
 [age.media]                         # journalists and press officers
-# The staff bands from W04 up (user, 2026-11-14; W05 up before).
+# Auto by default (user, 2026-11-22): W04 (media looks start there, user 2026-11-14) to W10
+# over 30-60: 30 and under, 31-36, 37-42, 43-48, 49-54, 55-59, 60 and over. Journalists in every
+# save seen are 27-63, the middle 90% about 29-61 (docs/research.md). The looks below are the
+# manual table: the staff bands from W04 up, as before.
+mode = "auto"
+from = "W04"
+to = "W10"
+start = 30
+end = 60
 W01 = "-"
 W02 = "-"
 W03 = "-"

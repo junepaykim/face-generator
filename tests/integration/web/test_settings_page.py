@@ -1,6 +1,6 @@
 """The settings page after the user's Phase 12 review (2026-11-17): plain words, group names
-as chips, age looks by name with "-" to leave one out, ⓘ tips instead of long notes, and
-the run's details in About this run."""
+as chips, age looks by name with an empty cell to leave one out ("-" before Phase 17l), ⓘ tips
+instead of long notes, and the run's details in About this run."""
 
 from __future__ import annotations
 
@@ -38,21 +38,38 @@ def test_each_band_tag_is_part_of_its_wording() -> None:
             assert tag in WORDINGS[wording].text, wording
 
 
-def test_age_looks_are_named_with_a_tag_or_two_and_a_dash_leaves_one_out(
+def test_age_looks_are_named_with_their_words_and_an_empty_cell_is_not_used(
     client: TestClient,
 ) -> None:
-    page = client.get("/settings/advanced").text
-    assert "Child face (child)" in page and "Late youthful (teenage girl)" in page
-    assert re.search(r'name="age.b.W03" data-key data-default="-" value="-"', page)
-    korean = client.get("/settings/advanced", headers=KOREAN_WINDOWS).text
-    assert "어린 얼굴 (child)" in korean and "앳된 얼굴 (young girl)" in korean
+    """Each look is a numbered row with its name and, in grey, the prompt words it draws (the
+    whole wording on hover); a look a table leaves out is an empty cell, "Not used", stored as
+    "-" (Phase 17l; "-" before)."""
+    page = unescape(client.get("/settings/advanced").text)
+    assert (
+        '<span class="look-no">1</span><span class="look-name">Child face</span></span>'
+        f'<span class="look-words muted small" title="{WORDINGS["W01"].text}">child</span>'
+    ) in page
+    assert '<span class="look-no">6</span><span class="look-name">Late youthful</span>' in page
+    assert re.search(
+        r'name="age.b.W03" data-key data-default="" value="" placeholder="Not used"', page
+    )
+    korean = unescape(client.get("/settings/advanced", headers=KOREAN_WINDOWS).text)
+    assert '<span class="look-name">어린 얼굴</span>' in korean
+    assert 'placeholder="사용 안 함"' in korean
     data = save(client, **{"age.b.W03": "17"})
     assert data["ok"] and data["fields"]["age.b.W03"]["text"] == "17"
     assert "Age looks: Standard · Late teens not used → 17" in data["message"]
-    back = save(client, **{"age.b.W03": "-"})
-    assert back["ok"] and back["fields"]["age.b.W03"]["text"] == "-"
+    back = save(client, **{"age.b.W03": ""})
+    assert back["ok"] and back["fields"]["age.b.W03"] == {
+        "value": "-", "text": "", "changed": False,
+    }  # fmt: skip
+    assert "Age looks: Standard · Late teens 17 → not used" in back["message"]
+    # "-" is still taken, and shown empty.
+    save(client, **{"age.b.W03": "17"})
+    dash = save(client, **{"age.b.W03": "-"})
+    assert dash["ok"] and dash["fields"]["age.b.W03"]["text"] == ""
     bad = save(client, **{"age.b.W03": "soon"})
-    assert not bad["ok"] and "- to leave it out" in bad["errors"]["age.b.W03"]
+    assert not bad["ok"] and "leave it empty if not used" in bad["errors"]["age.b.W03"]
 
 
 def test_group_names_show_as_chips_in_labels_and_titles(client: TestClient) -> None:

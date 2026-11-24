@@ -15,9 +15,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from facegen.core.age import TABLES, WORDINGS, spread_table
+from facegen.core.age import NOT_USED, TABLES, WORDINGS, spread_table
 from facegen.core.cutoffs import LEAGUE_CELLS, OFF, OTHER_CELLS
 from facegen.core.settings_values import (
+    AGE_MODES,
     ASPECT_CHOICES,
     CANDIDATE_RANGE,
     CUTOFF_MODES,
@@ -30,11 +31,11 @@ from facegen.core.settings_values import (
     MODEL_CHOICES,
     NOT_SET,
     SOFTEN_SKIN_STEPS,
-    STAFF_AGE_MODES,
     THEME_CHOICES,
     TIER_CHOICES,
     UI,
     AgeSettings,
+    AgeSpread,
     CutoffSettings,
     DisplaySettings,
     Eligibility,
@@ -54,7 +55,6 @@ from facegen.core.settings_values import (
     Schedule,
     Settings,
     StaffSettings,
-    StaffSpread,
     StyleSettings,
     UpdateSettings,
 )
@@ -73,10 +73,10 @@ LOCAL_NAME = "local.toml"
 # browser must not be able to open the tool to the network; AGENTS.md hard rule 6).
 _FIXED_PREFIXES = ("paths.", "ui.")
 
-SKIP_WORDING = "-"
+SKIP_WORDING = NOT_USED
 """An age table's value for a wording it does not use (Phase 12, user 2026-11-17)."""
 SPREAD_KEYS = frozenset({"mode", "from", "to", "start", "end"})
-"""`age.staff`'s keys for its auto mode, beside the looks (Phase 16f)."""
+"""Each age table's keys for its auto mode, beside the looks (staff Phase 16f, all Phase 17l)."""
 CELL_PREFIXES = ("cutoffs.share.", "cutoffs.manual.", "cutoffs.everywhere.")
 """Cutoff cells: a share or a number, or OFF ("-") to switch the cell off (Phase 16)."""
 
@@ -325,21 +325,26 @@ def build_settings(
             )
         return tuple((first_age, wording) for wording, first_age in rows)
 
+    # Every table keeps its looks (Custom) and, in auto mode, is the spread instead (Phase 17l).
     tables = {name: age_table(name) for name in TABLES}
-    spread = None
-    if one_of("age.staff.mode", STAFF_AGE_MODES) == "auto":
-        looks = tuple(WORDINGS)
-        spread = StaffSpread(
-            first=one_of("age.staff.from", looks),
-            last=one_of("age.staff.to", looks),
-            start=_range("age.staff.start", v["age.staff.start"], 0, 100),
-            end=_range("age.staff.end", v["age.staff.end"], 0, 100),
+    spreads: dict[str, AgeSpread] = {}
+    looks = tuple(WORDINGS)
+    for name in TABLES:
+        prefix = f"age.{name}."
+        if one_of(prefix + "mode", AGE_MODES) != "auto":
+            continue
+        spread = AgeSpread(
+            first=one_of(prefix + "from", looks),
+            last=one_of(prefix + "to", looks),
+            start=_range(prefix + "start", v[prefix + "start"], 0, 100),
+            end=_range(prefix + "end", v[prefix + "end"], 0, 100),
         )
         try:
-            tables["staff"] = spread_table(spread.first, spread.last, spread.start, spread.end)
+            tables[name] = spread_table(spread.first, spread.last, spread.start, spread.end)
         except ValueError as exc:
-            raise SettingsError(f"age.staff: {exc}") from exc
-    age = AgeSettings(**tables, staff_spread=spread)
+            raise SettingsError(f"age.{name}: {exc}") from exc
+        spreads[name] = spread
+    age = AgeSettings(**tables, spreads=spreads)
 
     scale = v["reference.scale"]
     if not 0 < scale <= 1:

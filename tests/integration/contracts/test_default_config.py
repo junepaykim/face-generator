@@ -77,7 +77,9 @@ def test_age_tables_match_spec():
     """Spec section 3: first real age per wording, per table (user, 2026-11-11). Every table
     offers all ten wordings, "-" for one it leaves out; W06 back at my club at 26, W05 from 24
     (user, 2026-11-17). My club's staff spread looks over an age span instead (Phase 16f): W02 to
-    W10 over 28 to 64, on by default (user, 2026-11-22); the manual table stays below it."""
+    W10 over 28 to 64, on by default (user, 2026-11-22); the manual table stays below it. Every
+    table can be spread (Phase 17l, D9): the players' tables stay Custom ("manual") with their
+    looks, the media table is Auto over the measured ages, 30 to 60 (user, 2026-11-22)."""
     looks = {f"W{n:02d}" for n in range(1, 11)}
     tables = load()["age"]
     age = {
@@ -85,10 +87,17 @@ def test_age_tables_match_spec():
         for table, rows in tables.items()
     }
     assert all(len([w for w in rows if w in looks]) == 10 for rows in tables.values())
-    assert {k: v for k, v in tables["staff"].items() if k not in looks} == {
-        "mode": "auto", "from": "W02", "to": "W10", "start": 28, "end": 64,
+    spreads = {
+        name: {k: v for k, v in rows.items() if k not in looks} for name, rows in tables.items()
+    }
+    assert spreads == {
+        "a_my_club": {"mode": "manual", "from": "W01", "to": "W10", "start": 16, "end": 34},
+        "a_other_club": {"mode": "manual", "from": "W02", "to": "W10", "start": 18, "end": 34},
+        "b": {"mode": "manual", "from": "W02", "to": "W09", "start": 18, "end": 29},
+        "c": {"mode": "manual", "from": "W03", "to": "W08", "start": 21, "end": 28},
+        "staff": {"mode": "auto", "from": "W02", "to": "W10", "start": 28, "end": 64},
+        "media": {"mode": "auto", "from": "W04", "to": "W10", "start": 30, "end": 60},
     }  # fmt: skip
-    assert all(set(rows) == looks for name, rows in tables.items() if name != "staff")
     assert age == {
         "a_my_club": {"W01": 15, "W02": 17, "W03": 19, "W04": 22, "W05": 24, "W06": 26,
                       "W07": 27, "W08": 29, "W09": 31, "W10": 34},

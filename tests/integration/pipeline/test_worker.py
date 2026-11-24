@@ -927,7 +927,7 @@ def test_a_journalist_is_dressed_for_work_on_the_grey_backdrop(
     )
     w, renderer, _ = env.worker()
     job = next(j for j in w.runnable(JobFilter()) if j.unique_id == reporter)
-    assert (job.media_role, job.group, job.target_band) == ("journalist", "b", "W07")
+    assert (job.media_role, job.group, job.target_band) == ("journalist", "b", "W09")  # 55-59
     w.run_job(job)
     image = env.current(reporter)
     render = json.loads(image["render"])

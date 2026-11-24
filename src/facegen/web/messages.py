@@ -50,10 +50,12 @@ def report_summary(report: ChangeReport, t: Translator) -> str:
     )
     if counts:
         parts.append(counts)
+    queued = sum(report.enqueue.values())
     queue = [
-        t(key, count=n)
+        t(key, count=n, age=report.age_queued)
         for n, key in (
-            (sum(report.enqueue.values()), "report.queued"),
+            # How many of them re-draw a new age look, when any do (Phase 17l).
+            (queued, "report.queued_age" if report.age_queued else "report.queued"),
             (report.updated, "report.updated"),
             (report.cancelled, "report.cancelled"),
         )

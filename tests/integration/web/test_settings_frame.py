@@ -59,7 +59,8 @@ def fields_of(page: str) -> list[str]:
 def test_every_row_is_label_control_and_default_on_one_grid(client: TestClient) -> None:
     page = client.get("/settings/advanced").text
     rows = fields_of(page)
-    assert len(rows) > 40
+    # Every card's settings; the age looks are cells of their tables since Phase 17l.
+    assert len(rows) > 30
     for _, row in rows:
         name = row.index('<span class="name">')
         control = row.index('<span class="control">')
@@ -80,7 +81,6 @@ def test_the_quality_tab_reads_style_quality_rendering_reference(client: TestCli
         'id="section-groups"',
         'id="section-render"',
         'id="section-reference"',
-        'id="section-my_club"',
     ]
     places = [quality.index(marker) for marker in order]
     assert places == sorted(places)
@@ -89,8 +89,9 @@ def test_the_quality_tab_reads_style_quality_rendering_reference(client: TestCli
     assert 'name="style.model"' in style and 'name="picture.aspect"' in style
     assert 'id="section-picture"' not in quality
     assert unescape(quality).count("Picture shape") == 1
-    # "Players at my club" says what it holds until the Appearance tab takes it (17l).
-    assert "<legend>Look at my club</legend>" in quality
+    # How people look moved to the Appearance tab (Phase 17l, D10).
+    for gone in ("section-my_club", "section-body", "section-personality"):
+        assert f'id="{gone}"' not in quality
     anchors = unescape(
         re.search(r'data-anchors="([^"]+)"', client.get("/settings/advanced").text)[1]
     )
@@ -269,10 +270,10 @@ def test_the_graphics_card_shows_its_memory(config_file: Path) -> None:
 
 
 def test_both_notes_say_the_same_applies_sentence(client: TestClient) -> None:
-    quality = unescape(panel(client.get("/settings/advanced").text, "quality"))
-    my_club = re.search(r'id="section-my_club".*?</fieldset>', quality, re.DOTALL)[0]
+    looks = unescape(panel(client.get("/settings/advanced").text, "appearance"))
+    my_club = re.search(r'id="section-my_club".*?</fieldset>', looks, re.DOTALL)[0]
     assert '<p class="muted small">Applies to pictures drawn from now on.</p>' in my_club
-    body = re.search(r'id="section-body".*?</fieldset>', quality, re.DOTALL)[0]
+    body = re.search(r'id="section-body".*?</fieldset>', looks, re.DOTALL)[0]
     assert "Applies to new characters." in body  # another thing: who is sampled anew
     korean = unescape(client.get("/settings/advanced", headers=KOREAN_WINDOWS).text)
     assert "<legend>내 구단 선수 외모</legend>" in korean

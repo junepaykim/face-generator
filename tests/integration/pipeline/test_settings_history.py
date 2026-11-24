@@ -347,3 +347,107 @@ def test_a_change_saved_before_phase_16_can_be_undone_after_it(conn: sqlite3.Con
     assert load_settings(conn).cutoffs.everywhere["a_ca"] == 165
     history.redo(conn)
     assert read_overrides(conn) == {"cutoffs.everywhere.a_ca": 151}
+
+
+# --- age tables: Auto for every table, All -1 / All +1 (Phase 17l) -----------------------------
+
+MINE = 1020  # at my club: my club's table, tracked
+
+
+def drawn_at(conn: sqlite3.Connection, age: int, band: str) -> None:
+    """A synced career with one player at my club of `age`, whose picture is at `band`."""
+    run_sync(conn, snapshot([player(MINE, age=age)]), load_settings(conn), save_file="career.fm")
+    conn.execute(
+        "INSERT INTO images (career_id, unique_id, version, reason, group_name, club_id, age_band,"
+        " model, prompt, negative_prompt, seed, is_current, created_at)"
+        " VALUES (1, ?, 1, 'initial', 'a', ?, ?, 'm', 'p', 'n', 1, 1, 'now')",
+        (MINE, MY_CLUB, band),
+    )
+    conn.execute("UPDATE jobs SET status = 'done' WHERE unique_id = ?", (MINE,))
+
+
+def queued_for(conn: sqlite3.Connection) -> list[tuple[str, str]]:
+    return [
+        tuple(row)
+        for row in conn.execute(
+            "SELECT kind, target_band FROM jobs WHERE unique_id = ? AND status = 'queued'", (MINE,)
+        )
+    ]
+
+
+def ages_of(conn: sqlite3.Connection, table: str) -> dict[str, object]:
+    values = load_settings(conn).values
+    return {k.rpartition(".")[2]: v for k, v in values.items() if k.startswith(f"age.{table}.W")}
+
+
+def test_a_shift_is_one_change_that_one_undo_takes_back(conn: sqlite3.Connection) -> None:
+    drawn_at(conn, 17, "W02")  # my club's W02 is 17-18
+    before = ages_of(conn, "a_my_club")
+    out = history.save(conn, {}, shifts={"a_my_club": 1})
+    (entry,) = out.entries
+    assert entry.label == "shift.a_my_club.+1"
+    assert history.parse_shift_label(entry.label) == ("a_my_club", 1)
+    assert sorted(entry.after) == [f"age.a_my_club.W{n:02d}" for n in range(1, 11)]
+    assert ages_of(conn, "a_my_club") == {look: age + 1 for look, age in before.items()}
+    # 17 is now the youngest look: re-drawn for it, and the report says so.
+    assert queued_for(conn) == [("age", "W01")]
+    assert out.report is not None and out.report.age_queued == 1
+    assert out.report.summary().endswith("queue: 1 queued")
+
+    undone = history.undo(conn)
+    assert len(undone.entries) == 1 and ages_of(conn, "a_my_club") == before
+    assert queued_for(conn) == []
+    assert history.redo(conn).changed and ages_of(conn, "a_my_club")["W01"] == 16
+
+
+def test_a_shift_keeps_unused_looks_and_leaves_an_auto_table_alone(
+    conn: sqlite3.Connection,
+) -> None:
+    out = history.save(conn, {}, shifts={"b": -1})
+    assert out.entries[0].label == "shift.b.-1"
+    assert ages_of(conn, "b") == {
+        "W01": "-", "W02": 14, "W03": "-", "W04": 18, "W05": "-", "W06": "-",
+        "W07": 24, "W08": "-", "W09": 28, "W10": "-",
+    }  # fmt: skip
+    # The media table is spread by default: its looks are the spread's, nothing to move.
+    assert not history.save(conn, {}, shifts={"media": 1}).changed
+    assert not history.save(conn, {}, shifts={"c": 0}).changed
+    with pytest.raises(SettingsError, match="unknown age table"):
+        history.save(conn, {}, shifts={"d": 1})
+    # With an edit in the same save: the shift moves the edited value too, as one edit.
+    out = history.save(conn, {"age.c.W04": 18}, shifts={"c": 1})
+    (entry,) = out.entries
+    assert entry.label == "edit"
+    assert ages_of(conn, "c") == {
+        "W01": "-", "W02": "-", "W03": 16, "W04": 19, "W05": "-", "W06": 23,
+        "W07": "-", "W08": 29, "W09": "-", "W10": "-",
+    }  # fmt: skip
+    # Pushed against 0, two ages stop rising: refused by the table's name, nothing stored.
+    history.save(conn, {"age.c.W03": 0, "age.c.W04": 1})
+    with pytest.raises(SettingsError, match=r"age\.c: "):
+        history.save(conn, {}, shifts={"c": -1})
+
+
+def test_switching_a_players_table_to_auto_and_back(conn: sqlite3.Connection) -> None:
+    """Auto (W01-W10 over 16-34 at my club) moves a player of 19 from W03 to W02: re-drawn,
+    said in the report. Custom again copies the spread, so the switch alone moves nobody."""
+    drawn_at(conn, 19, "W03")
+    out = history.save(conn, {"age.a_my_club.mode": "auto"}, convert=True)
+    assert out.report is not None and out.report.age_queued == 1
+    assert queued_for(conn) == [("age", "W02")]
+    assert load_settings(conn).age.spreads["a_my_club"].start == 16
+
+    out = history.save(conn, {"age.a_my_club.mode": "manual"}, convert=True)
+    assert len(out.entries) == 1  # the switch and the copied looks: one change
+    assert ages_of(conn, "a_my_club") == {
+        "W01": 0, "W02": 17, "W03": 20, "W04": 22, "W05": 24, "W06": 26,
+        "W07": 28, "W08": 30, "W09": 32, "W10": 34,
+    }  # fmt: skip
+    assert out.report is not None and out.report.age_queued == 0
+    assert queued_for(conn) == [("age", "W02")]
+    # Each switch is one change: two Undos give the table and the picture back.
+    history.undo(conn)
+    history.undo(conn)
+    assert load_settings(conn).values["age.a_my_club.W03"] == 19
+    assert "a_my_club" not in load_settings(conn).age.spreads
+    assert queued_for(conn) == []

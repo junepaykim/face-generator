@@ -764,7 +764,7 @@ def test_settings_are_saved_as_they_change(env: Env) -> None:
     # The Save button is there only for a browser with JavaScript off.
     assert re.search(r"<noscript>.*value=\"apply-some\".*</noscript>", page, re.DOTALL)
     # Five tabs, each with its own form; Undo and Recent changes stay outside them.
-    for tab in ("cutoffs", "quality", "targets", "ages", "system"):
+    for tab in ("cutoffs", "quality", "targets", "appearance", "system"):
         assert f'id="tab-{tab}" data-tab-panel="{tab}"' in page and f'href="#tab-{tab}"' in page
     assert page.count("data-autosave") == 5
     assert re.search(r"data-undo\s+disabled", page)  # nothing to undo yet

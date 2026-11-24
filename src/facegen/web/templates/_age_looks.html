@@ -1,0 +1,59 @@
+{# The age looks (Phase 17l): one table with a column per players' table, one more with staff and
+   media. Each row is a look: its number, name and, in small grey, the prompt words it draws (the
+   whole wording on hover). A column's mode is two buttons at its top. An Auto column shows its
+   spread's four inputs, then the ages it gives each look, greyed; a Custom column has All −1 and
+   All +1 (with the script), then each look's first age, empty for a look it does not use. Staff
+   and media also show how many people have each look now. The greyed ages and the counts change
+   in place after each save (`age_texts`); the fields stay. #}
+{% from "_icons.html" import info as tip %}
+{% from "_settings_field.html" import cell with context %}
+
+{% macro age_table(tables, id) %}
+<div class="table-scroll">
+<table class="age-table cols-{{ tables|length }}" id="{{ id }}">
+  <thead>
+    <tr><th scope="col">{{ t("ages.look") }}</th>{% for name in tables %}<th scope="col">{{ t("ages.col." ~ name) }}</th>{% endfor %}</tr>
+  </thead>
+  <tbody class="age-controls">
+    <tr>
+      <th scope="row">{{ t("ages.mode") }} {{ tip(t("ages.mode_tip")) }}</th>
+      {% for name in tables %}<td data-label="{{ tr('ages.col.' ~ name) }}">{{ cell(fields["age." ~ name ~ ".mode"], errors, tr("ages.col." ~ name) ~ " · " ~ tr("settings.label.age_mode")) }}</td>{% endfor %}
+    </tr>
+    <tr>
+      <th scope="row">{{ t("ages.adjust") }}</th>
+      {% for name in tables %}{% set column = tr("ages.col." ~ name) %}
+      <td data-label="{{ column }}">
+        {% if ages[name].auto %}
+        <div class="age-spread">
+          <span class="spread-label muted small">{{ t("ages.spread_looks") }}</span>
+          <span class="spread-pair">{{ cell(fields["age." ~ name ~ ".from"], errors, column ~ " · " ~ tr("settings.label.from")) }}{{ cell(fields["age." ~ name ~ ".to"], errors, column ~ " · " ~ tr("settings.label.to")) }}</span>
+          <span class="spread-label muted small">{{ t("ages.spread_ages") }}</span>
+          <span class="spread-pair spread-ages">{{ cell(fields["age." ~ name ~ ".start"], errors, column ~ " · " ~ tr("settings.label.start")) }}<span class="muted">–</span>{{ cell(fields["age." ~ name ~ ".end"], errors, column ~ " · " ~ tr("settings.label.end")) }}</span>
+        </div>
+        {% else %}
+        <span class="age-shift" data-age-shift hidden>
+          <button type="button" data-shift="{{ name }}" data-step="-1" title="{{ tr('ages.all_down_title') }}" aria-label="{{ column }} · {{ tr('ages.all_down_title') }}">{{ t("ages.all_down") }}</button>
+          <button type="button" data-shift="{{ name }}" data-step="1" title="{{ tr('ages.all_up_title') }}" aria-label="{{ column }} · {{ tr('ages.all_up_title') }}">{{ t("ages.all_up") }}</button>
+        </span>
+        {% endif %}
+      </td>
+      {% endfor %}
+    </tr>
+  </tbody>
+  <tbody class="age-looks">
+  {% for look, (tags, wording) in look_words.items() %}
+    <tr>
+      <th scope="row"><span class="look-head"><span class="look-no">{{ loop.index }}</span><span class="look-name">{{ band(look) }}</span></span><span class="look-words muted small" title="{{ wording }}">{{ tags }}</span></th>
+      {% for name in tables %}{% set col = ages[name] %}{% set key = "ages." ~ name ~ "." ~ look %}
+      <td data-label="{{ tr('ages.col.' ~ name) }}"><span class="age-cell">
+        {% if col.auto %}<span class="age-auto{{ ' unused' if not col.cells[look].used }}" data-effective="{{ key }}">{{ age_texts[key] }}</span>
+        {% else %}{{ cell(fields["age." ~ name ~ "." ~ look], errors, tr("ages.col." ~ name) ~ " · " ~ band(look)) }}{% endif %}
+        {% if col.counted %}<span class="look-count muted small" title="{{ tr('ages.count_title') }}" data-effective="{{ key }}.n">{{ age_texts[key ~ ".n"] }}</span>{% endif %}
+      </span></td>
+      {% endfor %}
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endmacro %}

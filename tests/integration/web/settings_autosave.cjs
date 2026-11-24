@@ -18,6 +18,7 @@ function page({ storage = new Map(), hash = "" } = {}) {
     querySelectorAll(selector) {
       if (selector === "[data-key]") return [mode, cutoff, theme, ...skin, candidates];
       if (selector === "[data-step-of]") return [minus, plus];
+      if (selector === "[data-age-shift]") return [shiftGroup];
       if (selector.includes('name="preset.quality"')) return [preset];
       return [];
     },
@@ -72,6 +73,15 @@ function page({ storage = new Map(), hash = "" } = {}) {
   };
   const minus = stepper("-1");
   const plus = stepper("1");
+  // All −1 / All +1 on a custom age table (Phase 17l): shown by the script.
+  const shiftGroup = { hidden: true };
+  const shifter = (step) => {
+    const b = { dataset: { shift: "b", step } };
+    b.closest = (s) => (s === "[data-shift]" ? b : null);
+    return b;
+  };
+  const allDown = shifter("-1");
+  const allUp = shifter("1");
   const click = (target) => { for (const fn of clicks) fn({ target, preventDefault() {} }); };
   const status = {};
   const buttons = {};
@@ -125,6 +135,7 @@ function page({ storage = new Map(), hash = "" } = {}) {
     mode, cutoff, preset, theme, requests, status, reloads: () => reloads,
     skin, pick, checked: () => skin.filter((r) => r.checked).map((r) => r.value).join(),
     reset: () => click(useDefault), candidates, minus, plus, step: click, legend, opener, closer, drawer,
+    shiftGroup, allDown, allUp,
     key: (key) => docListeners.keydown.forEach((fn) => fn({ key })),
     submit: (event) => docListeners.submit.forEach((fn) => fn(event)),
   };
@@ -265,6 +276,30 @@ async function main() {
   const u = page({ storage });
   assert.equal(u.drawer.hidden, false);
   assert.equal(u.opener["aria-expanded"], "true");
+
+  // Phase 17l. All −1 / All +1: each click is a year more to move the table by, sent with the
+  // next save as one value; clicks made while a save is on its way go with the next one.
+  const v = page();
+  assert.equal(v.shiftGroup.hidden, false);
+  v.step(v.allDown);
+  assert.deepEqual(v.requests[0].values, { "shift.age.b": "-1" });
+  v.step(v.allDown);
+  v.step(v.allDown);
+  v.requests[0].reply({});
+  await tick();
+  assert.deepEqual(v.requests[1].values, { "shift.age.b": "-2" });
+  v.step(v.allUp);
+  v.step(v.allDown);  // back where it was: nothing to send
+  v.requests[1].reply({});
+  await tick();
+  assert.equal(v.requests.length, 2);
+  // A refused shift is not sent again with the next edit.
+  v.step(v.allUp);
+  assert.deepEqual(v.requests[2].values, { "shift.age.b": "1" });
+  v.requests[2].reply({ ok: false, error: "refused" });
+  await tick();
+  v.cutoff.change("170");
+  assert.deepEqual(v.requests[3].values, { "cutoffs.everywhere.a_ca": "170" });
 }
 
 main().catch((err) => { console.error(err); process.exitCode = 1; });

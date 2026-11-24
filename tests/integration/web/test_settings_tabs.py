@@ -32,7 +32,7 @@ from facegen.pipeline.sync import run_sync
 from facegen.platform.procs import run_quiet
 from facegen.web.forms import describe_key, label_parts
 
-TABS = ("cutoffs", "quality", "targets", "ages", "system")
+TABS = ("cutoffs", "quality", "targets", "appearance", "system")
 
 
 def test_autosave_waits_for_edits_before_reload() -> None:
@@ -120,7 +120,9 @@ def test_each_section_is_in_its_tab_and_old_anchors_open_it(client: TestClient) 
     page = client.get("/settings/advanced").text
     anchors = json.loads(unescape(re.search(r'data-anchors="([^"]+)"', page)[1]))
     assert anchors["about"] == "system" and anchors["graphics-card"] == "quality"
-    assert anchors["age"] == "ages" and anchors["groups"] == "quality"
+    assert anchors["age"] == "appearance" and anchors["groups"] == "quality"
+    # The Age looks tab's old address and the looks' sections open Appearance (Phase 17l).
+    assert anchors["ages"] == anchors["my_club"] == anchors["body"] == "appearance"
     assert anchors["staff"] == "targets"
     # Who counts opens Cutoffs (Phase 17k); the sections whose settings moved open System.
     assert anchors["eligibility"] == "cutoffs"
@@ -135,12 +137,12 @@ def test_each_section_is_in_its_tab_and_old_anchors_open_it(client: TestClient) 
     assert tab_of('name="cutoffs.everywhere.b_pa"') == "cutoffs"
     assert tab_of('name="groups.b.candidates"') == "quality"
     assert tab_of('name="picture.aspect"') == "quality"
-    assert (
-        tab_of('name="style.model"') == "quality"
-        and tab_of('name="my_club.soften_skin"') == "quality"
-    )
+    assert tab_of('name="style.model"') == "quality"
+    assert tab_of('name="my_club.soften_skin"') == "appearance"
+    assert tab_of('name="body.tall_from_cm"') == tab_of('name="personality.weight"') == "appearance"
     assert tab_of('name="media.journalists"') == "targets"
-    assert tab_of('name="age.b.W04"') == "ages" and tab_of('name="age.staff.mode"') == "ages"
+    assert tab_of('name="age.b.W04"') == "appearance"
+    assert tab_of('name="age.staff.mode"') == "appearance"
     assert tab_of('id="about"') == "system"
     assert tab_of('name="eligibility.continental_competition_ids"') == "system"
     assert tab_of('name="newgen.fallback_min_unique_id"') == "system"
@@ -148,7 +150,7 @@ def test_each_section_is_in_its_tab_and_old_anchors_open_it(client: TestClient) 
     assert tab_of('name="eligibility.loaned_out_at_my_club"') == "cutoffs"
     assert tab_of('name="notifications.new_pictures"') == "system"
     # A tab's form comes back to its tab without the script.
-    assert 'name="next" value="/settings/advanced#tab-ages"' in page
+    assert 'name="next" value="/settings/advanced#tab-appearance"' in page
 
 
 def test_the_cutoffs_tab_shows_live_values_counts_and_the_leagues(client: TestClient) -> None:
@@ -257,31 +259,47 @@ def test_before_any_sync_the_live_values_are_dashes(config_file: Path) -> None:
     c.close()
 
 
+def shown(page: str, key: str) -> str:
+    """The text an age table shows for a look ("ages.staff.W03") or its count ("….n")."""
+    found = re.search(rf'data-effective="{re.escape(key)}">([^<]*)</span>', page)
+    assert found is not None, key
+    return found[1]
+
+
 def test_the_staff_looks_list_ages_and_counts_and_auto_spreads_them(client: TestClient) -> None:
     page = unescape(client.get("/settings/advanced").text)
-    looks = re.search(r'data-part="staff-looks".*?</table>', page, re.DOTALL)[0]
     # Auto by default (user, 2026-11-22): W02 to W10 over 28-64, staff aged 25, 30, 31, 45, 70.
-    assert re.search(r"Young face</td>\s*<td>28 and under</td>\s*<td class=\"num\">1", looks)
-    assert re.search(r"Late teens</td>\s*<td>29–33</td>\s*<td class=\"num\">2", looks)
-    assert re.search(r"Veteran look</td>\s*<td>64 and over</td>\s*<td class=\"num\">1", looks)
+    assert (shown(page, "ages.staff.W02"), shown(page, "ages.staff.W02.n")) == (
+        "28 and under", "1 now",
+    )  # fmt: skip
+    assert (shown(page, "ages.staff.W03"), shown(page, "ages.staff.W03.n")) == ("29–33", "2 now")
+    assert (shown(page, "ages.staff.W10"), shown(page, "ages.staff.W10.n")) == (
+        "64 and over", "1 now",
+    )  # fmt: skip
+    assert shown(page, "ages.staff.W01") == "Not used"
     assert 'name="age.staff.start"' in page and 'name="age.staff.W03"' not in page
     refused = save(client, **{"age.staff.end": "32"})  # 3 years for 7 looks between
     assert not refused["ok"] and "age.staff.end" in refused["errors"]
 
-    # Manual: the spread is copied into the looks, as one change.
+    # Custom: the spread is copied into the looks, as one change.
     data = save(client, **{"age.staff.mode": "manual"})
     assert data["ok"] and data["reload"]
     assert data["fields"]["age.staff.W03"]["value"] == 29
     assert data["fields"]["age.staff.W10"]["value"] == 64
     assert data["fields"]["age.staff.W02"]["value"] == 0  # the first look: any age up to 28
-    looks = unescape(data["parts"]["staff-looks"])
-    assert re.search(r"Late teens</td>\s*<td>29–33</td>\s*<td class=\"num\">2", looks)
-    page = client.get("/settings/advanced").text
+    assert (data["effective"]["ages.staff.W03"], data["effective"]["ages.staff.W03.n"]) == (
+        "29–33", "2 now",
+    )  # fmt: skip
+    page = unescape(client.get("/settings/advanced").text)
     assert 'name="age.staff.W03"' in page and 'name="age.staff.start"' not in page
+    assert shown(page, "ages.staff.W03.n") == "2 now"  # counted in Custom too
     data = save(client, **{"age.staff.W03": "25"})  # a look's first age, set by hand
-    looks = unescape(data["parts"]["staff-looks"])
-    assert re.search(r"Young face</td>\s*<td>24 and under</td>\s*<td class=\"num\">0", looks)
-    assert re.search(r"Late teens</td>\s*<td>25–33</td>\s*<td class=\"num\">3", looks)
+    assert (data["effective"]["ages.staff.W02"], data["effective"]["ages.staff.W02.n"]) == (
+        "24 and under", "0 now",
+    )  # fmt: skip
+    assert (data["effective"]["ages.staff.W03"], data["effective"]["ages.staff.W03.n"]) == (
+        "25–33", "3 now",
+    )  # fmt: skip
     client.post("/settings", data={"action": "undo"})
     client.post("/settings", data={"action": "undo"})  # one Undo per change: back to the spread
     assert 'name="age.staff.start"' in client.get("/settings/advanced").text
@@ -289,7 +307,16 @@ def test_the_staff_looks_list_ages_and_counts_and_auto_spreads_them(client: Test
 
 def test_the_tabs_in_korean(client: TestClient) -> None:
     page = unescape(client.get("/settings/advanced", headers=KOREAN_WINDOWS).text)
-    for word in ("선정 기준", "품질", "대상", "나이 표현", "시스템", "내 리그: CA", "상위 리그"):
+    for word in (
+        "선정 기준",
+        "품질",
+        "대상",
+        "외형",
+        "나이 표현",
+        "시스템",
+        "내 리그: CA",
+        "상위 리그",
+    ):
         assert word in page, word
     assert "≈ CA 150 이상" in page
 

@@ -34,7 +34,8 @@
   {% elif fd.kind == "float" %}
     <input type="number" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}" step="any"{% if label %} aria-label="{{ label }}"{% endif %}>
   {% elif fd.kind == "band" %}
-    <input type="text" class="band" inputmode="numeric" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}" aria-label="{{ label or fd.label }}">
+    {# A look the table does not use is an empty cell, saved as "-" (Phase 17l). #}
+    <input type="text" class="band" inputmode="numeric" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}" placeholder="{{ tr('ages.not_used') }}" aria-label="{{ label or fd.label }}">
   {% elif fd.kind == "cell" %}
     <input type="text" class="cell" inputmode="decimal" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}" aria-label="{{ label or fd.label }}"{{ " disabled" if off }}>
   {% elif fd.kind == "groups" %}

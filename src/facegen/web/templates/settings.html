@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "_icons.html" import info as tip %}
 {% from "_settings_field.html" import field, cell with context %}
+{% from "_age_looks.html" import age_table with context %}
 {% set level = "advanced" %}
 {% block title %}{{ t("nav.settings") }}{% endblock %}
 {% block head %}{% include "_settings_head.html" %}{% endblock %}
@@ -17,7 +18,7 @@
 {% macro section_box(section, title, note, fds, skip=()) %}
   {% set top = section.split(".")[0] %}
   <fieldset id="section-{{ section|replace('.', '-') }}">
-    <legend>{{ t("settings.title." ~ section) if tr.has("settings.title." ~ section) else title }}{% if tr.has("settings.tip." ~ top) and (section == top or section.endswith(".a_my_club")) %} {{ tip(t("settings.tip." ~ top)) }}{% endif %}</legend>
+    <legend>{{ t("settings.title." ~ section) if tr.has("settings.title." ~ section) else title }}{% if tr.has("settings.tip." ~ top) and section == top %} {{ tip(t("settings.tip." ~ top)) }}{% endif %}</legend>
     {% if note and (section == top) %}<p class="muted small">{{ t("settings.note." ~ top) }}</p>{% endif %}
     {% for fd in fds %}{% if fd.key not in skip %}{{ field(fd, errors) }}{% endif %}{% endfor %}
     {{ caller() if caller is defined }}
@@ -159,18 +160,22 @@
   </form>
 </section>
 
-{# --- Age looks ------------------------------------------------------------------------ #}
-<section class="tab-panel" id="tab-ages" data-tab-panel="ages">
-  <h2 class="tab-title">{{ t("settings.tab.ages") }}</h2>
-  <form method="post" action="/settings" class="settings" data-autosave>{{ form_head("ages") }}
-    {% for section, title, note, fds in tabs.ages %}
-      {% if section == "age.staff" %}
-        {% set spread = f["age.staff.mode"].value == "auto" %}
-        {% set spread_keys = ["age.staff.mode", "age.staff.from", "age.staff.to", "age.staff.start", "age.staff.end"] %}
-        {% if spread %}{% set skip = fds|map(attribute="key")|reject("in", spread_keys)|list %}{% else %}{% set skip = spread_keys[1:] %}{% endif %}
-        {% call section_box(section, title, note, fds, skip) %}
-          <div class="staff-looks" data-part="staff-looks">{% include "_staff_looks.html" %}</div>
-        {% endcall %}
+{# --- Appearance: how people look (Phase 17l) ------------------------------------------ #}
+{# Age looks as two tables (the players' groups side by side; staff and media), then players at
+   my club, height and build, and personality. #}
+<section class="tab-panel" id="tab-appearance" data-tab-panel="appearance">
+  <h2 class="tab-title">{{ t("settings.tab.appearance") }}</h2>
+  <form method="post" action="/settings" class="settings" data-autosave>{{ form_head("appearance") }}
+    {% set shown = namespace(ages=false) %}
+    {% for section, title, note, fds in tabs.appearance %}
+      {% if section.startswith("age.") %}
+        {% if not shown.ages %}{% set shown.ages = true %}
+        <fieldset id="section-age" class="age-looks">
+          <legend>{{ t("settings.title.age") }} {{ tip(t("settings.tip.age")) }}</legend>
+          {{ age_table(player_tables, "age-players") }}
+          {{ age_table(other_tables, "age-others") }}
+        </fieldset>
+        {% endif %}
       {% else %}
         {{ section_box(section, title, note, fds) }}
       {% endif %}
