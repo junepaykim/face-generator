@@ -755,7 +755,10 @@ def test_settings_are_saved_as_they_change(env: Env) -> None:
     assert 'name="paths.fm_user_dir"' not in page
     # FM27's folders are shown, with where each came from, but not as fields.
     assert "FM27&#39;s folders" in page or "FM27's folders" in page
-    assert f"{env.settings.paths.fm_user_dir} (from " in page
+    assert (
+        f'<span class="path">{env.settings.paths.fm_user_dir}</span> '
+        '<span class="muted small origin">from ' in page
+    )
     assert "Install</th><td>" in page
     assert "data-autosave" in page and 'value="preview"' not in page
     # The Save button is there only for a browser with JavaScript off.

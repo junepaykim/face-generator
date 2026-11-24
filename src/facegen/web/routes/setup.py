@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse, Response
@@ -26,13 +26,14 @@ def create_router(deps: AppDependencies) -> APIRouter:
     wake = deps.wake
 
     def folder_back(target: str, text: str, err: str) -> RedirectResponse:
-        """Back to the page with the error, and the folder as typed, so it can be corrected."""
-        base, _, query = target.partition("?")
+        """Back to the page with the error, and the folder as typed, so it can be corrected.
+        A tab named after `#` stays (Settings' System tab, Phase 17k)."""
+        parts = urlsplit(target)
         params = [
-            p for p in query.split("&") if p and not p.startswith(("msg=", "err=", "folder="))
+            p for p in parts.query.split("&") if p and not p.startswith(("msg=", "err=", "folder="))
         ]
         params += [f"err={quote(err)}", f"folder={quote(text)}"]
-        return RedirectResponse(f"{base}?{'&'.join(params)}", status_code=303)
+        return RedirectResponse(parts._replace(query="&".join(params)).geturl(), status_code=303)
 
     def use_folder(text: str, back: str, t: Translator) -> Response:
         """Check the folder, write it to the local file, and use it at once."""

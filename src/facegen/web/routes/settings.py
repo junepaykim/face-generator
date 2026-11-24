@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
 from facegen.core import presets
+from facegen.core.settings_values import FOUND
 from facegen.i18n import Translator
 from facegen.persistence import photo_index
 from facegen.persistence.jobs import load_career
@@ -173,13 +174,28 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             note += " " + t("msg.settings.eligibility")
         return note
 
-    def folders_of(request: Request, current: Any) -> dict[str, Any]:
+    def folder_row(name: str, current: Any, t: Translator) -> dict[str, str]:
+        """One of FM27's folders and where it came from, said apart so the path is not cut
+        (Phase 17k): found on this PC, from config/local.toml, or not set."""
+        key = f"paths.fm_{name}_dir"
+        path = getattr(current.paths, f"fm_{name}_dir")
+        origin = current.paths.origins.get(key)
+        if path is None:
+            said = t("settings.folders.none")
+        elif origin == FOUND:
+            said = t("settings.folders.found")
+        else:
+            said = t("settings.folders.from", file=origin) if origin else ""
+        return {"name": name, "path": str(path) if path is not None else "", "origin": said}
+
+    def folders_of(request: Request, current: Any, t: Translator) -> dict[str, Any]:
         return {
-            "user": current.paths.describe("paths.fm_user_dir"),
-            "install": current.paths.describe("paths.fm_install_dir"),
+            "rows": [folder_row(name, current, t) for name in ("user", "install")],
             "user_missing": current.paths.fm_user_dir is None,
             "not_set": folder_not_set_message(),
             "value": request.query_params.get("folder") or current.paths.fm_user_dir or "",
+            # Open FM27's folder and our pack folder (Phase 17k): Windows only.
+            "can_open": ctx.open_folder is not None and current.paths.fm_user_dir is not None,
         }
 
     def basic_page(request: Request, conn: sqlite3.Connection) -> Response:
@@ -197,7 +213,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             request,
             "settings_basic.html",
             conn,
-            folders=folders_of(request, current),
+            folders=folders_of(request, current, t),
             reach=presets.current("reach", values, defaults),
             reach_options=list(presets.REACH_STEPS),
             quality=presets.current("quality", values, defaults),
@@ -244,7 +260,7 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
                 "photos": photo_index.status(conn),
             },
             update=deps.update_offer(),
-            folders=folders_of(request, current),
+            folders=folders_of(request, current, t),
             sections=sections,
             errors=errors or {},
             error=error,

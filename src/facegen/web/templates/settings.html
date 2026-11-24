@@ -37,9 +37,11 @@
   <h2 class="tab-title">{{ t("settings.tab.cutoffs") }}</h2>
   <div class="card tier-summary" data-part="tier-summary" role="status" aria-live="polite">{% include "_tier_summary.html" %}</div>
   <form method="post" action="/settings" class="settings" data-autosave>{{ form_head("cutoffs") }}
+    {# Who counts at all, then my club, with loaned-out players beside their group (Phase 17k). #}
+    {% for section, title, note, fds in tabs.cutoffs if section == "eligibility" %}{{ section_box(section, title, note, fds) }}{% endfor %}
     <fieldset id="section-cutoffs-my_club">
       <legend>{{ t("settings.title.cutoffs.my_club") }} {{ tip(t("settings.tip.cutoffs_my_club")) }}</legend>
-      {% for key in ("first_team", "youth", "loans", "academy_alumni") %}{{ field(f["cutoffs.my_club." ~ key], errors) }}{% endfor %}
+      {% for key in ("cutoffs.my_club.first_team", "cutoffs.my_club.youth", "cutoffs.my_club.loans", "eligibility.loaned_out_at_my_club", "cutoffs.my_club.academy_alumni") %}{{ field(f[key], errors) }}{% endfor %}
     </fieldset>
 
     <fieldset id="section-cutoffs">
@@ -178,9 +180,10 @@
 </section>
 
 {# --- System: folders, this run, and how Kitshot runs --------------------------------- #}
+{# FM27's folders across the page, About this run under them; then the settings, the database IDs
+   folded at the bottom (Phase 17k). #}
 <section class="tab-panel" id="tab-system" data-tab-panel="system">
   <h2 class="tab-title">{{ t("settings.tab.system") }}</h2>
-  <div class="cards">
   {% include "_settings_folder.html" %}
 
   <div class="card" id="about">
@@ -211,9 +214,18 @@
     </table>
     {% if update %}<form method="post" action="/update/check" class="buttons"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="/settings/advanced#about"><button>{{ t("settings.info.update_check") }}</button></form>{% endif %}
   </div>
-  </div>
   <form method="post" action="/settings" class="settings" data-autosave>{{ form_head("system") }}
-    {% for section, title, note, fds in tabs.system %}{{ section_box(section, title, note, fds) }}{% endfor %}
+    {% for section, title, note, fds in tabs.system %}
+      {% if section == "database_ids" %}
+        {% set ids = namespace(bad=false) %}{% for fd in fds %}{% if fd.key in errors %}{% set ids.bad = true %}{% endif %}{% endfor %}
+        <details class="fold-card" id="section-database_ids"{% if ids.bad %} open{% endif %}>
+          <summary>{{ title }}</summary>
+          {% for fd in fds %}{{ field(fd, errors) }}{% endfor %}
+        </details>
+      {% else %}
+        {{ section_box(section, title, note, fds) }}
+      {% endif %}
+    {% endfor %}
     {{ save_button() }}
   </form>
 </section>

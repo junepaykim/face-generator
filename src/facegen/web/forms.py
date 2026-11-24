@@ -33,24 +33,43 @@ from facegen.web.messages import band_name
 # is the catalog's "settings.title.<section>", its note "settings.note.<top section>" (most
 # sections have none: Phase 12 keeps the page short), its ⓘ tip "settings.tip.<top>". Quality
 # reads from what is drawn to how (Phase 17j): the style (with the picture's shape), the groups'
-# quality, rendering, the reference, then how players at my club look.
+# quality, rendering, the reference, then how players at my club look. Cutoffs opens with who
+# counts; System ends with the FM27 database IDs (Phase 17k).
 SECTION_ORDER = (
-    "cutoffs", "style", "picture", "groups", "render", "reference", "my_club", "body",
-    "personality", "staff", "media", "no_photo", "age", "schedule", "display", "notifications",
-    "eligibility", "updates", "newgen",
+    "eligibility", "cutoffs", "style", "picture", "groups", "render", "reference", "my_club",
+    "body", "personality", "staff", "media", "no_photo", "age", "schedule", "display", "updates",
+    "database_ids",
 )  # fmt: skip
 TABS: dict[str, tuple[str, ...]] = {
-    "cutoffs": ("cutoffs",),
+    "cutoffs": ("eligibility", "cutoffs"),
     "quality": ("groups", "picture", "render", "style", "reference", "my_club", "body",
                 "personality"),
     "targets": ("staff", "media", "no_photo"),
     "ages": ("age",),
-    "system": ("schedule", "display", "notifications", "updates", "eligibility", "newgen"),
+    "system": ("schedule", "display", "updates", "database_ids"),
 }  # fmt: skip
 """The Advanced page's tabs (Phase 16h, user 2026-11-20) and the top sections each holds:
-who is picked; how pictures are drawn; who else gets one; age looks; how facegen runs."""
-TAB_ANCHORS = {"about": "system", "folders": "system", "graphics-card": "quality"}
-"""Anchors from before the tabs, and the tab each opens (sections: their top section's tab)."""
+who is picked; how pictures are drawn; who else gets one; age looks; how Kitshot runs. Who
+counts ("eligibility") opens Cutoffs (Phase 17k)."""
+KEY_SECTIONS: dict[str, str] = {
+    "eligibility.loaned_out_at_my_club": "cutoffs.my_club",
+    "notifications.new_pictures": "schedule",
+    "eligibility.continental_competition_ids": "database_ids",
+    "newgen.fallback_min_unique_id": "database_ids",
+}
+"""Settings shown in another section than their key's, and so maybe in another tab (Phase 17k):
+loaned-out players beside "Players I loaned out", the notification with Running, and the two
+FM27 database IDs in one folded card at the bottom of System. Only where a setting is shown:
+its key, its history line and its label stay."""
+TAB_ANCHORS = {
+    "about": "system",
+    "folders": "system",
+    "graphics-card": "quality",
+    "notifications": "system",
+    "newgen": "system",
+}
+"""Anchors from before the tabs, or of sections whose settings moved (Phase 17k), and the tab each
+opens (sections: their top section's tab)."""
 LABELLED_IN_FULL = frozenset(
     {
         "cutoffs.mode",
@@ -318,13 +337,19 @@ def editable_keys(defaults: dict[str, Any]) -> list[str]:
     return [k for k in defaults if not is_fixed(k)]
 
 
+def section_of(key: str) -> str:
+    """The section a setting is shown in: its key's, unless KEY_SECTIONS places it elsewhere."""
+    return KEY_SECTIONS.get(key) or key.rpartition(".")[0]
+
+
 def settings_sections(
     values: dict[str, Any], defaults: dict[str, Any], t: Translator = ENGLISH
 ) -> list[tuple[str, str, str, list[Field]]]:
-    """(section key, title, note, fields) in the order of the defaults file."""
+    """(section key, title, note, fields) in the order of the defaults file; each setting in
+    the section it is shown in (`section_of`)."""
     sections: dict[str, list[Field]] = {}
     for key in editable_keys(defaults):
-        section, _, name = key.rpartition(".")
+        section, name = section_of(key), key.rpartition(".")[2]
         label_key, label_values = label_parts(key, t)
         kind = _kind(defaults[key], key)
         sections.setdefault(section, []).append(

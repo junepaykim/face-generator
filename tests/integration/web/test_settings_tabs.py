@@ -121,7 +121,10 @@ def test_each_section_is_in_its_tab_and_old_anchors_open_it(client: TestClient) 
     anchors = json.loads(unescape(re.search(r'data-anchors="([^"]+)"', page)[1]))
     assert anchors["about"] == "system" and anchors["graphics-card"] == "quality"
     assert anchors["age"] == "ages" and anchors["groups"] == "quality"
-    assert anchors["eligibility"] == "system" and anchors["staff"] == "targets"
+    assert anchors["staff"] == "targets"
+    # Who counts opens Cutoffs (Phase 17k); the sections whose settings moved open System.
+    assert anchors["eligibility"] == "cutoffs"
+    assert anchors["newgen"] == anchors["notifications"] == anchors["database_ids"] == "system"
 
     def tab_of(marker: str) -> str:
         at = page.index(marker)
@@ -138,11 +141,12 @@ def test_each_section_is_in_its_tab_and_old_anchors_open_it(client: TestClient) 
     )
     assert tab_of('name="media.journalists"') == "targets"
     assert tab_of('name="age.b.W04"') == "ages" and tab_of('name="age.staff.mode"') == "ages"
-    assert (
-        tab_of('id="about"') == "system"
-        and tab_of('name="eligibility.continental_competition_ids"') == "system"
-    )
+    assert tab_of('id="about"') == "system"
+    assert tab_of('name="eligibility.continental_competition_ids"') == "system"
     assert tab_of('name="newgen.fallback_min_unique_id"') == "system"
+    assert tab_of('name="eligibility.mens_football_only"') == "cutoffs"
+    assert tab_of('name="eligibility.loaned_out_at_my_club"') == "cutoffs"
+    assert tab_of('name="notifications.new_pictures"') == "system"
     # A tab's form comes back to its tab without the script.
     assert 'name="next" value="/settings/advanced#tab-ages"' in page
 

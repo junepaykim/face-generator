@@ -408,9 +408,17 @@ form.settings legend { font-weight: 600; padding: 0 6px; }
 .field .control > select, .field .control > input[type=text]:not(.band) { width: 100%; box-sizing: border-box; }
 .field .control > input[type=number] { width: 8rem; box-sizing: border-box; }
 .field .control > input[type=checkbox] { margin: 0; }
+/* The group tick boxes on one line with their default, over the control and default columns,
+   a little apart from the row above (Phase 17k); a hint is a quiet line under the control. */
+.field.wide { padding-top: 8px; }
+.field.wide > .control { grid-column: 2 / -1; flex-wrap: wrap; gap: 4px 14px; }
+.field.wide .group-ticks { flex-wrap: nowrap; white-space: nowrap; }
+.field-hint { grid-column: 2 / -1; margin-top: -4px; }
 @media (max-width: 720px) {
   .field { grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 6px 0; }
   .field .control > select, .field .control > input[type=text]:not(.band) { max-width: 20rem; }
+  .field.wide > .control, .field-hint { grid-column: auto; }
+  .field-hint { margin-top: 0; }
 }
 .field-note { display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; min-width: 0; }
 .field-note [data-error]:empty { display: none; }
@@ -703,6 +711,11 @@ form.contents { display: contents; }
                    flex-wrap: wrap; }
 .card.folder-row h2 { margin: 0; }
 .card.folder-row .folder-form { flex: 1 1 420px; margin: 0; }
+/* FM27's folders across the page (Phase 17k): where a folder came from stays one piece after
+   the path, or goes whole to the next line. */
+.folder-paths .origin { display: inline-block; max-width: 100%; }
+.folder-open { align-items: center; margin-top: 4px; }
+.card.folder-row .folder-open { margin: 0; }
 .card.folder-row > p { flex-basis: 100%; margin: 0; }
 
 /* The picture wall (Phase 12h): bigger cards than the dashboard's, the club under the name. */
@@ -774,9 +787,12 @@ table.looks td.num, table.looks th.num { text-align: right; }
 .others .where { min-width: 8.5em; color: var(--muted); font-size: 12px; }
 .found-leagues ul { margin: 6px 0 0; padding-left: 18px; }
 .found-leagues p { margin: 6px 0 0; }
-details.everywhere { background: var(--card); border: 1px solid var(--line); border-radius: 8px;
-                     margin: 0 0 12px; padding: 10px 14px; }
+details.everywhere, details.fold-card { background: var(--card); border: 1px solid var(--line);
+  border-radius: 8px; margin: 0 0 12px; padding: 10px 14px; }
 details.everywhere summary { color: var(--fg); }
+/* System's FM27 database IDs, folded (Phase 17k): titled like a card's legend. */
+details.fold-card > summary { margin: 0; color: var(--fg); font-weight: 600; }
+details.fold-card[open] > summary { margin-bottom: 6px; }
 .staff-looks { margin-top: 8px; }
 /* Narrow: each group's cutoffs one under the other, named by their column. */
 @media (max-width: 760px) {

@@ -407,9 +407,8 @@ document.addEventListener("click", async (e) => {
   }, 1200);
 });
 
-// The Log page (Phase 17i). Copy report fetches the report and puts it on the clipboard; Open
-// log folder asks the server to show the folder in Explorer, without leaving the page. The log
-// reads oldest first and stays at the bottom while new lines come, unless it was scrolled up:
+// The Log page (Phase 17i). Copy report fetches the report and puts it on the clipboard (Open log
+// folder is below, with the other Open folder buttons). The log reads oldest first and stays at the bottom while new lines come, unless it was scrolled up:
 // then the line at the top stays where it was. "Errors and warnings" hides the other lines.
 (function logPage() {
   const head = document.querySelector(".page-head");
@@ -432,27 +431,6 @@ document.addEventListener("click", async (e) => {
       } catch (err) { done = false; }
       button.disabled = false;
       say(text(done ? "js.copied" : "js.copy_failed"));
-    });
-  });
-  document.querySelectorAll("form[data-open-folder]").forEach((form) => {
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      try {
-        const res = await fetch(form.action, {
-          method: "POST",
-          body: new URLSearchParams(new FormData(form)),
-          headers: {
-            "X-CSRF-Token": form.querySelector('input[name="csrf_token"]').value,
-            "Accept": "application/json",
-          },
-        });
-        let data = null;
-        try { data = await res.json(); } catch (err) { /* not an answer from the route */ }
-        if (data && !data.ok) say(data.error || text("js.quick_reload"));
-        else if (!data) say(text(res.status === 403 ? "js.quick_reload" : "js.quick_no_answer"));
-      } catch (err) {
-        say(text("js.quick_no_answer"));
-      }
     });
   });
 
@@ -1126,6 +1104,57 @@ function localTimes(root) {
   window.addEventListener("hashchange", apply);
   apply();
 })();
+
+// Open folder (Phase 17i, 17k): the server shows one of Kitshot's folders in Explorer, by name,
+// and the page stays. Why it could not is said in the note beside the button: the card's
+// ([data-notes]) or the page header's.
+document.querySelectorAll("form[data-open-folder]").forEach((form) => {
+  const scope = form.closest("[data-notes], .page-head");
+  const note = scope && scope.querySelector("[data-note]");
+  const say = (words) => {
+    if (!note) return;
+    note.textContent = words;
+    clearTimeout(note._clear);
+    note._clear = setTimeout(() => { note.textContent = ""; }, 4000);
+  };
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      const res = await fetch(form.action, {
+        method: "POST",
+        body: new URLSearchParams(new FormData(form)),
+        headers: {
+          "X-CSRF-Token": form.querySelector('input[name="csrf_token"]').value,
+          "Accept": "application/json",
+        },
+      });
+      let data = null;
+      try { data = await res.json(); } catch (err) { /* not an answer from the route */ }
+      if (data && !data.ok) say(data.error || text("js.quick_reload"));
+      else if (!data) say(text(res.status === 403 ? "js.quick_reload" : "js.quick_no_answer"));
+    } catch (err) {
+      say(text("js.quick_no_answer"));
+    }
+  });
+});
+
+// FM27's folder (Phase 17k): no Change button. A typed folder applies on Enter, or when the box
+// is left for something else on the page; Browse sends the box as where its window starts.
+document.querySelectorAll("form[data-folder-apply]").forEach((form) => {
+  const box = form.querySelector('input[name="folder"]');
+  if (!box) return;
+  box.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || e.isComposing) return;
+    e.preventDefault();  // not Browse, the form's first button
+    form.requestSubmit();
+  });
+  box.addEventListener("blur", (e) => {
+    if (!document.hasFocus()) return;  // another window: the box is not left yet
+    if (e.relatedTarget && form.contains(e.relatedTarget)) return;  // Browse
+    if (!box.value.trim() || box.value === box.defaultValue) return;
+    form.requestSubmit();
+  });
+});
 
 // A filter form that applies itself: a list choice at once, the search box on Enter (Gallery).
 // Fields left at their default (an empty box, a list's first choice) stay out of the address.

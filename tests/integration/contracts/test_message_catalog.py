@@ -193,7 +193,12 @@ def vocabulary_keys() -> list[str]:
     keys += [
         f"dur.{k}" for k in ("seconds", "minutes", "hours", "hours_minutes", "minutes_seconds")
     ]
-    keys += ["settings.field_tip.banned_traits"]
+    keys += ["settings.field_tip.banned_traits", "settings.field_tip.fallback_min_unique_id"]
+    keys += ["settings.field_tip.continental_competition_ids"]
+    # Phase 17k: a quiet line under a setting, a box's example and FM27's folders by name.
+    keys += ["settings.hint.generate_while_fm_running"]
+    keys += ["settings.placeholder.continental_competition_ids"]
+    keys += [f"settings.folders.{k}" for k in ("user", "install")]
     keys += [f"term.{k}" for k in ("a", "b", "c", "tracked", "pinned")]
     keys += [f"problem.{part}.{kind}" for kind in PROBLEM_KINDS for part in ("cause", "do")]
     keys += [f"manual.refusal.{code}" for code in REFUSALS]

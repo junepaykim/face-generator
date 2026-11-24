@@ -1,15 +1,26 @@
-<div class="card{{ ' folder-row' if level == 'basic' }}" id="folders">
+{# FM27's folders (Phase 17k): a typed folder applies on Enter or when the box is left, Browse
+   applies the folder it picks, and Open shows FM27's folder or our pack folder in Explorer
+   (Windows only). Without the script, "Use this folder" sends the box. #}
+{% set back = path if level == "basic" else path ~ "#tab-system" %}
+<div class="card{{ ' folder-row' if level == 'basic' }}" id="folders" data-notes>
   <h2>{{ t("settings.folders.title") }}</h2>
   {% if level != "basic" %}
-  <table class="kv">
-    <tr><th>{{ t("settings.folders.user") }}</th><td>{{ folders.user }}</td></tr>
-    <tr><th>{{ t("settings.folders.install") }}</th><td>{{ folders.install }}</td></tr>
+  <table class="kv folder-paths">
+    {% for row in folders.rows %}
+    <tr><th>{{ t("settings.folders." ~ row.name) }}</th><td>{% if row.path %}<span class="path">{{ row.path }}</span> {% endif %}<span class="muted small origin">{{ row.origin }}</span></td></tr>
+    {% endfor %}
   </table>
   {% endif %}
-  <form method="post" action="/setup/folder" class="folder-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="{{ path }}">
+  <form method="post" action="/setup/folder" class="folder-form" data-folder-apply><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="{{ back }}">
     <input type="text" name="folder" value="{{ folders.value }}" placeholder="C:\Users\you\Documents\Sports Interactive\Football Manager 27" aria-label="{{ t('setup.folder.aria') }}" required>
-    <button>{{ t("settings.folders.change") }}</button>
+    <noscript><button>{{ t("setup.folder.use") }}</button></noscript>
     {% if setup.browse %}<button formaction="/setup/browse" formnovalidate title="{{ t('setup.folder.browse_title') }}">{{ t("setup.folder.browse") }}</button>{% endif %}
   </form>
+  {% if folders.can_open %}
+  <div class="buttons folder-open">
+    {% for name, label in (("fm", t("settings.folders.open_fm")), ("pack", t("settings.folders.open_pack"))) %}<form method="post" action="/folders/open" data-open-folder><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="name" value="{{ name }}"><input type="hidden" name="next" value="{{ back }}"><button>{{ label }}</button></form>{% endfor %}
+    <span class="muted small" data-note role="status" aria-live="polite"></span>
+  </div>
+  {% endif %}
   {% if folders.user_missing %}<p class="bad small">{{ folders.not_set }}</p>{% endif %}
 </div>

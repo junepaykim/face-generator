@@ -43,7 +43,8 @@
       {% for g in ("a", "b", "c") %}<label class="tick"><input type="checkbox" data-group-of="{{ fd.key }}" value="{{ g }}" {{ "checked" if g in fd.value }}> {{ grp(g) }}</label>{% endfor %}
     </span>
   {% else %}
-    <input type="text" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}"{% if label %} aria-label="{{ label }}"{% endif %}>
+    {% set placeholder = "settings.placeholder." ~ fd.key.rsplit(".", 1)[-1] %}
+    <input type="text" name="{{ fd.key }}" data-key data-default="{{ fd.default_input }}" value="{{ fd.text }}"{% if tr.has(placeholder) %} placeholder="{{ tr(placeholder) }}"{% endif %}{% if label %} aria-label="{{ label }}"{% endif %}>
   {% endif %}
 {% endmacro %}
 
@@ -57,14 +58,18 @@
 
 {# Label | control | default and ↺, on one grid in every card (Phase 17j). A row with several
    controls (tick boxes, buttons, a stepper) is a div: a label would pass a click on its name
-   to the first of them. #}
+   to the first of them. The group tick boxes take the control and default columns, on one line
+   with their default (Phase 17k). A "settings.hint.<name>" is a quiet line under the control. #}
 {% macro field(fd, errors, off=False) %}
   {% set box = "div" if fd.kind == "groups" or fd.control in ("segmented", "stepper") else "label" %}
-  <{{ box }} class="field {{ 'changed' if fd.changed }} {{ 'error' if fd.key in errors }} {{ 'off' if off }}" data-field>
-    {% set field_tip = "settings.field_tip." ~ fd.key.rsplit(".", 1)[-1] %}
+  {% set wide = fd.kind == "groups" %}
+  {% set name = fd.key.rsplit(".", 1)[-1] %}
+  <{{ box }} class="field {{ 'changed' if fd.changed }} {{ 'error' if fd.key in errors }} {{ 'off' if off }}{{ ' wide' if wide }}" data-field>
+    {% set field_tip = "settings.field_tip." ~ name %}
     <span class="name">{% if fd.label_key %}{{ t(fd.label_key, **fd.label_values) }}{% else %}{{ fd.label }}{% endif %}{% if tr.has(field_tip) %} {{ tip(t(field_tip)) }}{% endif %} <span class="dot" data-dot title="{{ t('settings.default', value=fd.default_text) }}" {{ "hidden" if not fd.changed }}></span></span>
-    <span class="control">{{ input(fd, off=off) }}</span>
-    {{ note(fd, errors, off) }}
+    <span class="control">{{ input(fd, off=off) }}{% if wide %}{{ note(fd, errors, off) }}{% endif %}</span>
+    {% if not wide %}{{ note(fd, errors, off) }}{% endif %}
+    {% if tr.has("settings.hint." ~ name) %}<span class="field-hint muted small">{{ t("settings.hint." ~ name) }}</span>{% endif %}
   </{{ box }}>
 {% endmacro %}
 

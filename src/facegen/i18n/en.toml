@@ -706,7 +706,11 @@ update_check = "Check for updates now"
 title = "FM27's folders"
 user = "Saves and graphics"
 install = "Install"
-change = "Change"
+found = "found on this PC"
+from = "from {file}"
+none = "not set, and not found on this PC"
+open_fm = "Open FM27's folder"
+open_pack = "Open pack folder"
 
 [settings.gpu]
 title = "Graphics card"
@@ -767,6 +771,7 @@ style = "Picture style"
 display = "Language and look"
 notifications = "Notifications"
 updates = "Updates"
+database_ids = "FM27 database IDs"
 
 [settings.note]
 eligibility = "Applies from the next sync."
@@ -784,11 +789,17 @@ age = "The age each look starts at; it lasts until the next one used. - leaves a
 personality = "How much a new character's expression follows their personality. 0: not at all. 1: a fitting expression is twice as likely. 2: three times as likely."
 reference = "When a picture is drawn again (a new kit, an older look, a new picture), the current face guides the new one so the player still looks the same. A stronger reference keeps the face closer but can blur the kit."
 style = "Applies to pictures drawn from now on. Existing pictures stay as they are until they are drawn again."
-newgen = "Used only for a career's first sync, if Kitshot cannot tell newgens apart by their IDs."
 
 [settings.field_tip]
+fallback_min_unique_id = "Used only for a career's first sync, if Kitshot cannot tell newgens apart by their IDs."
 banned_traits = "Pictures with these words become much less likely."
 continental_competition_ids = "Leave empty to find them from my club's fixtures, UEFA competitions included."
+
+[settings.hint]
+generate_while_fm_running = "Off: drawing pauses while FM27 is open."
+
+[settings.placeholder]
+continental_competition_ids = "e.g. 1301394, 1301396"
 
 [settings.label]
 published_long_edge = "Picture height (px)"
