@@ -339,6 +339,8 @@ origin_newgen = "newgen"
 origin_existing = "pre-existing"
 no_picture_yet = "No picture yet"
 copy_id = "Copy unique ID"
+only_targets = "Showing picture targets only."
+show_everyone = "Show everyone in the save ({count:,})"
 
 [players.filter]
 name = "Name or unique ID"
@@ -360,6 +362,8 @@ sort = "Sort"
 apply = "Filter"
 clear = "Clear"
 more = "More filters"
+shown = "Shown"
+shown_title = "Picture targets: in a group, with a picture, queued, in review or pinned"
 
 [players.bulk]
 draw_title = "Pins them to this group. Anyone without a picture, or with one from a lower group, is drawn first."
@@ -415,12 +419,79 @@ none = "No photo or facepack"
 mens = "Men's football"
 all = "All players"
 
+[players.shown]
+targets = "Picture targets"
+everyone = "Everyone in the save"
+
 [players.sort]
 ca = "Sort by CA"
 pa = "Sort by PA"
 name = "Sort by name"
 age = "Sort by age"
 club = "Sort by club"
+
+# A player's reasons (Phase 17h): a short chip, and the sentence as its tooltip ([why.full]).
+[why]
+met = "{attr} {at}+"
+met_full = "{attr} {value} ({at}+)"
+met_share = "{attr} {value} (top {share}%: {at}+)"
+staff = "My club's staff"
+manager_no_photo = "Manager, no photo"
+journalist = "Local journalist"
+press_officer = "Press officer"
+academy = "Academy"
+not_mens = "Not men's football"
+pin = "Pinned"
+pin_never = "Never draw"
+staff_off = "Staff pictures off"
+left_staff = "Left my staff"
+gone = "Not in the save"
+
+[why.part]
+first_team = "First team"
+youth = "Youth team"
+loans = "Loaned out"
+
+[why.where]
+league = "My league"
+above = "League above"
+below = "League below"
+continental = "Continental"
+
+[why.who]
+newgen = "Newgen"
+no_photo = "Pre-existing, no photo"
+
+[why.full]
+staff = "On my club's staff"
+manager_no_photo = "A manager in my league without a photo"
+journalist = "A journalist from my club's country"
+press_officer = "My club's press officer"
+academy = "Came through my academy"
+not_mens = "Not in men's football"
+pin = "Pinned to {group}"
+pin_never = "Pinned to never draw"
+staff_off = "Staff pictures are off in Settings"
+left_staff = "No longer on my club's staff"
+gone = "Not in the latest save"
+tracked_regular = "Auto-update: a regular at my club"
+tracked_academy = "Auto-update: came through my academy"
+tracked_loan = "Auto-update while I hold the contract"
+tracked_at_club = "Auto-update while at my club"
+cut = "{who}, {where}: {met}"
+cut_everywhere = "{who}: {met}"
+part_cut = "{part}: {met}"
+
+[why.full.part]
+first_team = "In my club's first team"
+youth = "In my club's youth or reserve team"
+loans = "Loaned out by my club"
+
+[why.full.where]
+league = "in my league"
+above = "in the league above"
+below = "in the league below"
+continental = "in a continental competition"
 
 [player]
 current_alt = "Current picture of {name}"

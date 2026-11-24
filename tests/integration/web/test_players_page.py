@@ -1,11 +1,13 @@
 """The Players page's layout (Phase 17g): the main filters with the rest folded under "More
 filters", Clear, the bulk bar's two groups of actions, the unique ID under each name, the
-outline for no picture yet and the numbers' columns."""
+outline for no picture yet and the numbers' columns. Who is listed and why (Phase 17h): the
+picture targets by default, and the reasons as chips in the page's language."""
 
 from __future__ import annotations
 
 import json
 import re
+import sqlite3
 from collections.abc import Iterator
 from dataclasses import dataclass
 from html import unescape
@@ -28,13 +30,14 @@ WORLD = [
     player(KID, name="Rival Kid", ca=90, pa=152, club_id=RIVAL),
 ]
 MAIN = ("q", "club", "group", "picture", "photo", "sort")
-FOLDED = ("league", "ca_min", "ca_max", "pa_min", "pa_max", "origin", "role", "scope")
+FOLDED = ("shown", "league", "ca_min", "ca_max", "pa_min", "pa_max", "origin", "role", "scope")
 
 
 @dataclass
 class Env:
     client: TestClient
     worker: WorkerService
+    db_path: Path
 
 
 @pytest.fixture
@@ -42,7 +45,7 @@ def env(config_file: Path) -> Iterator[Env]:
     db_path = synced(config_file, WORLD)
     worker = fake_worker(config_file, db_path)
     client = client_for(config_file, db_path, worker)
-    yield Env(client, worker)
+    yield Env(client, worker, db_path)
     client.close()
 
 
@@ -82,6 +85,8 @@ def test_the_main_filters_come_first_and_the_rest_fold_away(env: Env) -> None:
         ("pa_max=150&role=staff", 2),
         ("league=continental&ca_max=120&pa_min=140&origin=newgen&role=media&scope=all", 6),
         ("league=mine&group=a&sort=name&page=2", 1),  # main filters, sort and page do not count
+        ("shown=everyone", 1),
+        ("shown=targets&scope=all", 1),  # the picture targets are the default
     ],
 )
 def test_more_filters_opens_while_one_is_set_and_counts_them(
@@ -203,7 +208,7 @@ def rows(page: str) -> dict[str, str]:
 
 
 def test_each_name_has_its_unique_id_to_copy(env: Env) -> None:
-    page = env.client.get("/players").text
+    page = env.client.get("/players?shown=everyone").text
     for uid, row in ((MINE, rows(page)["Mine Player"]), (STAR, rows(page)["Famous Striker"])):
         assert re.search(
             rf'<td class="col-name"><a href="/players/{uid}">[^<]+</a>.*?'
@@ -238,7 +243,7 @@ def test_no_picture_yet_shows_an_outline(env: Env) -> None:
 
 
 def test_age_ca_and_pa_line_up_on_the_right(env: Env) -> None:
-    page = env.client.get("/players").text
+    page = env.client.get("/players?shown=everyone").text
     head = page[page.index("<thead>") : page.index("</thead>")]
     assert re.findall(r'<th class="num">([^<]+)</th>', head) == ["Age", "CA", "PA"]
     row = rows(page)["Famous Striker"]
@@ -279,3 +284,94 @@ def test_the_player_page_says_draw_and_redraw_too(env: Env) -> None:
     r = post_player_action(env.client, f"/players/{STAR}/new-face", headers=KOREAN_WINDOWS)
     korean = unescape(env.client.get(r.headers["location"], headers=KOREAN_WINDOWS).text)
     assert "그룹이 없습니다. ‘그리기’로 그룹을 골라 주세요" in korean
+
+
+# --- who is listed and why (Phase 17h) -------------------------------------------------------
+
+
+def listed(page: str) -> set[str]:
+    return set(rows(page))
+
+
+def test_the_list_shows_the_picture_targets_and_everyone_is_one_choice_away(env: Env) -> None:
+    """D6: by default the people this app draws; a pre-existing star abroad with no group
+    (Famous Striker) only under "Everyone in the save", which a search offers with its count."""
+    page = env.client.get("/players").text
+    assert listed(page) == {"Mine Player", "Rival Kid"} and "2 players" in page
+    shown = re.search(r'<select name="shown"[^>]*>(.*?)</select>', filter_form(page))
+    assert shown is not None
+    assert re.findall(r'<option value="(\w+)" ?(selected)?>([^<]+)</option>', shown[1]) == [
+        ("targets", "selected", "Picture targets"),
+        ("everyone", "", "Everyone in the save"),
+    ]
+    assert (
+        'title="Picture targets: in a group, with a picture, queued, in review or pinned"' in page
+    )
+    assert "Showing picture targets only." not in page  # no search: nothing hidden to offer
+    everyone = env.client.get("/players?shown=everyone").text
+    assert listed(everyone) == {"Mine Player", "Famous Striker", "Rival Kid"}
+    assert "3 players" in everyone and "Showing picture targets only." not in everyone
+
+    # A search that finds someone who is not a target offers everyone, with the count.
+    searched = env.client.get("/players?q=famous").text
+    assert listed(searched) == set() and "No players match." in searched
+    offer = (
+        '<p class="muted small">Showing picture targets only. <a href="/players?q=famous'
+        '&amp;shown=everyone">Show everyone in the save (1)</a></p>'
+    )
+    assert offer in searched
+    assert "Show everyone" not in env.client.get("/players?q=mine").text  # nothing more there
+    club = env.client.get(f"/players?club_id={ABROAD}").text
+    assert "Show everyone in the save (1)" in club
+    korean = env.client.get("/players?q=famous", headers=KOREAN_WINDOWS).text
+    assert "그림 대상만 보고 있습니다." in korean and "세이브 전체 보기(1명)" in korean
+    korean = env.client.get("/players", headers=KOREAN_WINDOWS).text
+    assert '<option value="targets" selected>그림 대상</option>' in korean
+    assert '<option value="everyone" >세이브 전체</option>' in korean
+
+
+def why_cell(row: str) -> str:
+    found = re.search(r'<td class="why">(.*?)</td>', row, re.DOTALL)
+    assert found is not None
+    return found[1]
+
+
+def test_why_is_a_row_of_chips_with_the_sentence_as_tooltip(env: Env) -> None:
+    page = rows(env.client.get("/players?shown=everyone").text)
+    assert why_cell(page["Mine Player"]) == (
+        '<span class="why-chip" title="In my club&#39;s first team">First team</span>'
+    )
+    assert why_cell(page["Rival Kid"]) == (
+        '<span class="why-chip" title="Newgen, in my league: PA 152 (151+)">'
+        "My league · PA 151+</span>"
+    )
+    assert why_cell(page["Famous Striker"]) == ""  # no rule picks them
+    # Why they are kept up to date goes with the auto-update tag.
+    assert (
+        '<span class="tag" title="Drawn again when they change club or look older, so the picture'
+        ' stays up to date.">auto-update</span>' in page["Mine Player"]
+    )
+    korean = rows(env.client.get("/players", headers=KOREAN_WINDOWS).text)
+    assert (
+        why_cell(korean["Mine Player"]) == '<span class="why-chip" title="내 구단 1군">1군</span>'
+    )
+    assert why_cell(korean["Rival Kid"]) == (
+        '<span class="why-chip" title="생성 선수, 내 리그: PA 152 (151+)">내 리그 · PA 151+</span>'
+    )
+    detail = env.client.get(f"/players/{KID}", headers=KOREAN_WINDOWS).text
+    assert "생성 선수, 내 리그: PA 152 (151+)" in detail
+
+
+def test_a_row_not_classified_since_the_update_shows_its_stored_text(env: Env) -> None:
+    """Rows written before the reasons were stored as codes show the English text until the
+    next classification (a sync or a settings change) fills them in."""
+    with sqlite3.connect(env.db_path) as conn:
+        conn.execute("UPDATE players SET why = NULL WHERE unique_id = ?", (KID,))
+    stored = "newgen in my league, PA 152 (151+)"
+    korean = rows(env.client.get("/players", headers=KOREAN_WINDOWS).text)
+    assert why_cell(korean["Rival Kid"]) == stored
+    assert stored in env.client.get(f"/players/{KID}", headers=KOREAN_WINDOWS).text
+    with sqlite3.connect(env.db_path) as conn:
+        conn.execute('UPDATE players SET why = \'[{"code": "from a later version"}]\'')
+    page = rows(env.client.get("/players").text)
+    assert why_cell(page["Mine Player"]) == "in my club&#39;s first team"

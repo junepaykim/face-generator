@@ -22,7 +22,16 @@ from facegen.persistence.jobs import load_career
 from facegen.setup.models import REPOS, gigabytes
 from facegen.web import live
 from facegen.web.dependencies import AppDependencies, translator_for
-from facegen.web.messages import band_name, clock, drawing_key, duration, side_line
+from facegen.web.messages import (
+    band_name,
+    clock,
+    drawing_key,
+    duration,
+    side_line,
+    why_chips,
+    why_lines,
+    why_tracking,
+)
 
 HERE = Path(__file__).resolve().parent
 
@@ -110,6 +119,10 @@ def text_context(tr: Translator, settings: Settings) -> dict[str, Any]:
         "drawing_key": lambda kind: drawing_key(kind, tr, "dash.worker.drawing"),
         "grp": lambda group: group_chip(group, tr),
         "band": lambda wording: band_name(wording, tr),
+        # A player's reasons in the request's language (Phase 17h).
+        "why_chips": lambda row: why_chips(row, tr),
+        "why_lines": lambda row: why_lines(row, tr),
+        "why_tracking": lambda row: why_tracking(row, tr),
     }
 
 

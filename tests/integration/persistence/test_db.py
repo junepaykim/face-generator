@@ -9,8 +9,11 @@ from pathlib import Path
 
 import pytest
 
-from facegen.persistence import db
+from facegen.core.classify import Why
+from facegen.core.settings_values import Settings
+from facegen.persistence import db, player_queries
 from facegen.persistence.settings import load_settings
+from facegen.pipeline.reclassification import reclassify
 from facegen.platform.locking import file_lock
 
 TABLES = {"careers", "clubs", "players", "traits", "images", "jobs", "settings", "sync_runs"}
@@ -370,6 +373,49 @@ def test_migration_15_keeps_a_database_with_pictures_drawing_3_by_4() -> None:
     )
     db.migrate(chosen)
     assert load_settings(chosen).picture.aspect == "1:1"  # a choice already made stays
+
+
+def test_migration_16_keeps_the_reasons_text_until_the_next_classification(
+    settings: Settings,
+) -> None:
+    """Phase 17h: the reasons as codes (`players.why`) start empty, so the pages show the
+    stored English until a classification fills them; the pin index holds only the pinned."""
+    conn = _at_version(15)
+    conn.executemany(
+        "INSERT INTO players (career_id, unique_id, name, ca, pa, is_newgen, in_scope,"
+        " at_my_club, in_my_league, in_continental, academy, group_name, tracked, reasons, pin)"
+        " VALUES (1, ?, ?, 120, 150, 0, 1, ?, 0, 0, 0, ?, ?, ?, ?)",
+        [
+            (7, "Mine", 1, "a", 1, '["in my club\'s first team"]', None),
+            (8, "Pinned", 0, None, 0, '["pinned to never"]', "never"),
+        ],
+    )
+    conn.execute("UPDATE careers SET managed_club_id = NULL")
+    assert db.migrate(conn) == len(db.MIGRATIONS)
+    column = {r["name"]: r for r in conn.execute("PRAGMA table_info(players)")}["why"]
+    assert column["type"] == "TEXT" and not column["notnull"] and column["dflt_value"] is None
+    stored = player_queries.player_row(conn, 1, 7)
+    assert stored is not None and stored["why"] is None
+    assert stored["reasons"] == ["in my club's first team"]
+    index = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'players_pinned'"
+    ).fetchone()
+    assert index is not None and "WHERE pin IS NOT NULL" in index["sql"]
+    plan = " ".join(
+        r["detail"]
+        for r in conn.execute(
+            "EXPLAIN QUERY PLAN SELECT unique_id FROM players WHERE career_id = 1"
+            " AND pin IS NOT NULL"
+        )
+    )
+    assert "players_pinned" in plan
+
+    reclassify(conn, 1, settings)
+    mine = player_queries.player_row(conn, 1, 7)
+    assert mine is not None and mine["reasons"] == ["in my club's first team"]  # same text
+    assert mine["why"] == (Why("part", part="first_team"),)
+    pinned = player_queries.player_row(conn, 1, 8)
+    assert pinned is not None and pinned["why"] == (Why("pin_never"),)
 
 
 def _history(conn: sqlite3.Connection, before: dict, after: dict) -> None:

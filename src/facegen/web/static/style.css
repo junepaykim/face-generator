@@ -291,6 +291,10 @@ td.up { color: var(--ok); font-weight: 600; } td.down { color: var(--bad); font-
 .players td.col-name { min-width: 9em; }
 .players td.col-club { min-width: 7em; }
 .players td.why { min-width: 14em; max-width: none; }
+/* Why as one-line chips; the sentence is the tooltip (Phase 17h). */
+.why-chip { display: inline-block; white-space: nowrap; margin: 1px 4px 1px 0; padding: 0 6px;
+            border: 1px solid var(--line); border-radius: 9px; font-size: 11px; line-height: 1.5;
+            color: var(--fg); cursor: help; }
 /* The unique ID under the name: a click copies it. */
 .uid-copy { display: block; margin-top: 1px; padding: 0 2px 0 0; border: 0; border-radius: 3px;
             background: none; color: var(--muted); font-size: 11px; line-height: 1.3;

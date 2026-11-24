@@ -22,6 +22,7 @@
   <details class="filters-more"{{ " open" if f.folded }}>
     <summary class="button">{{ t("players.filter.more") }}{% if f.folded %} <span class="badge badge-count">{{ f.folded }}</span>{% endif %}</summary>
     <div class="filters-fold">
+      <select name="shown" aria-label="{{ t('players.filter.shown') }}" title="{{ t('players.filter.shown_title') }}">{% for k in shown_options %}<option value="{{ k }}" {{ "selected" if f.shown == k }}>{{ t("players.shown." ~ k) }}</option>{% endfor %}</select>
       <select name="league" aria-label="{{ t('players.filter.league') }}">{% for k in leagues %}<option value="{{ k }}" {{ "selected" if f.league == k }}>{{ t("players.league." ~ k) }}</option>{% endfor %}</select>
       <span class="range">CA <input type="number" name="ca_min" min="0" max="200" value="{{ f.ca_min if f.ca_min is not none }}" placeholder="{{ t('players.filter.min') }}" aria-label="{{ t('players.filter.ca_min') }}">–<input type="number" name="ca_max" min="0" max="200" value="{{ f.ca_max if f.ca_max is not none }}" placeholder="{{ t('players.filter.max') }}" aria-label="{{ t('players.filter.ca_max') }}"></span>
       <span class="range">PA <input type="number" name="pa_min" min="0" max="200" value="{{ f.pa_min if f.pa_min is not none }}" placeholder="{{ t('players.filter.min') }}" aria-label="{{ t('players.filter.pa_min') }}">–<input type="number" name="pa_max" min="0" max="200" value="{{ f.pa_max if f.pa_max is not none }}" placeholder="{{ t('players.filter.max') }}" aria-label="{{ t('players.filter.pa_max') }}"></span>
@@ -33,6 +34,9 @@
   <span class="filters-go"><button class="primary">{{ t("players.filter.apply") }}</button>
   {%- if f.active %}<a class="button filter-clear" href="/players{{ '?' ~ f.cleared() if f.cleared() }}">{{ t("players.filter.clear") }}</a>{% endif %}</span>
 </form>
+{% if everyone %}
+<p class="muted small">{{ t("players.only_targets") }} <a href="/players?{{ f.query(shown='everyone', page=1) }}">{{ t("players.show_everyone", count=everyone) }}</a></p>
+{% endif %}
 {% if f.photo != "any" and not photos_known %}
 <p class="muted small">{{ t("players.photos_unknown_sync" if photo_status else "players.photos_unknown_next") }}</p>
 {% endif %}
@@ -89,8 +93,10 @@
         <td class="col-origin"><span class="cell-main">{% if r.is_staff %}{{ t("players.origin_staff") }}{% elif r.media_role %}{{ t("players.origin_media") }}{% else %}{{ t("players.origin_newgen" if r.is_newgen else "players.origin_existing") }}{% endif %}</span>{% if r.academy %} <span class="tag">{{ t("tag.academy") }}</span>{% endif %}
           {% if r.photo_game %}<span class="tag" title="{{ t('tag.fm_photo_title') }}">{{ t("tag.fm_photo") }}</span>{% endif %}{% if r.photo_facepack %}<span class="tag" title="{{ t('tag.facepack_title') }}">{{ t("tag.facepack") }}</span>{% endif %}
           {% if photos_known and not r.is_newgen and not r.is_staff and not r.media_role and not r.photo_game and not r.photo_facepack %}<span class="tag" title="{{ t('tag.no_photo_title') }}">{{ t("tag.no_photo") }}</span>{% endif %}</td>
-        <td class="col-group">{% if r.group_name %}{{ grp(r.group_name) }}{% endif %}{% if r.pin %} <span class="tag">{{ t("tag.pin", pin=tr("group." ~ r.pin) if r.pin in ("a", "b", "c") else tr("player.pin_never")) }}</span>{% endif %}{% if r.tracked %} <span class="tag">{{ t("tag.tracked") }}</span>{% endif %}</td>
-        <td class="why">{{ r.reasons|join("; ") }}</td>
+        <td class="col-group">{% if r.group_name %}{{ grp(r.group_name) }}{% endif %}{% if r.pin %} <span class="tag">{{ t("tag.pin", pin=tr("group." ~ r.pin) if r.pin in ("a", "b", "c") else tr("player.pin_never")) }}</span>{% endif %}{% if r.tracked %} <span class="tag" title="{{ why_tracking(r) }}">{{ t("tag.tracked") }}</span>{% endif %}</td>
+        {# Why as chips, each with its sentence as the tooltip (Phase 17h); a row not classified
+           since then shows the stored English. #}
+        <td class="why">{% set chips = why_chips(r) %}{% if chips is none %}{{ r.reasons|join("; ") }}{% else %}{% for chip, full in chips %}<span class="why-chip" title="{{ full }}">{{ chip }}</span>{% endfor %}{% endif %}</td>
         <td class="col-state">{% if r.job_status == "running" %}<span class="st run">{{ t("status.drawing") }}</span>
           {% elif r.job_status == "queued" %}<span class="st q">{{ t("status.queued", kind=t("kind." ~ r.job_kind)) }}</span>
           {% elif r.latest_job == "failed" %}<a class="st bad" href="/review">{{ t("status.in_review") }}</a>

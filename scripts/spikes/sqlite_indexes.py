@@ -1,10 +1,10 @@
 """SQLite follow-up after Phase 12: measure the pages' queries before adding any index.
 
 Works on a copy only (implementation plan, "SQLite optimization"): the database given is
-copied with SQLite's backup API, opened read-only, and each variant runs on its own copy in
-`--work`. Nothing is written to the source. Optionally adds a made-up job history, since a
-young database has few jobs and no failed ones, while the Review filter's cost grows with
-them.
+copied with SQLite's backup API, opened read-only, the copy is migrated to this code's schema,
+and each variant runs on its own copy in `--work`. Nothing is written to the source.
+Optionally adds a made-up job history, since a young database has few jobs and no failed
+ones, while the Review filter's cost grows with them.
 
 For every variant (indexes added, or a query rewritten) and every query it records the
 median time of the count and of the page separately, their query plans, and a hash of the
@@ -31,7 +31,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from facegen.persistence import player_queries
+from facegen.persistence import db, player_queries
 from facegen.persistence.player_queries import PER_PAGE, PlayerFilter
 from facegen.web import queries
 
@@ -95,7 +95,13 @@ def filters(conn: sqlite3.Connection, career_id: int) -> dict[str, PlayerFilter]
         ).fetchone()
     )
     base = PlayerFilter()
+    targets = replace(base, shown="targets")
     return {
+        "targets (page default)": targets,
+        "targets, page 20": replace(targets, page=20),
+        "targets sort club": replace(targets, sort="club"),
+        "targets club link": replace(targets, club_id=club_id),
+        "targets name search": replace(targets, q="son"),
         "default (CA)": base,
         "default, page 50": replace(base, page=50),
         "sort PA": replace(base, sort="pa"),
@@ -131,10 +137,12 @@ REVIEW_IN = (
 SQLite builds the list once instead of asking the jobs for every player."""
 
 
-def player_sql(f: PlayerFilter, rewrite: bool, deferred: bool) -> tuple[str, str, list[Any]]:
-    """Build the count and page using the roster's filters and columns. The page's parameters
-    are the count's, then the window, then (deferred) the career again."""
-    where, args = player_queries._where(f)
+def player_sql(
+    f: PlayerFilter, career_id: int, rewrite: bool, deferred: bool
+) -> tuple[str, str, list[Any]]:
+    """Build the count and page using the roster's filters and columns. The count's parameters
+    (the career first); the page's are those, then the window, then (deferred) the career."""
+    where, args = player_queries._where(f, career_id)
     if rewrite:
         where = where.replace(f"{player_queries._LATEST_JOB} = 'failed'", REVIEW_IN)
     count = f"SELECT COUNT(*){player_queries._count_from(where)} WHERE {where}"
@@ -315,9 +323,11 @@ def run_variant(source: Path, work: Path, variant: Variant, career_id: int) -> d
         "other": {},
     }
     for label, f in filters(conn, career_id).items():
-        count_sql, page_sql, args = player_sql(f, variant.review_rewrite, variant.deferred_page)
-        count_args = [career_id, *args]
-        page_args = [career_id, *args, PER_PAGE, (f.page - 1) * PER_PAGE]
+        count_sql, page_sql, args = player_sql(
+            f, career_id, variant.review_rewrite, variant.deferred_page
+        )
+        count_args = args
+        page_args = [*args, PER_PAGE, (f.page - 1) * PER_PAGE]
         if variant.deferred_page:
             page_args.append(career_id)
         count_ms, total = timed(
@@ -354,6 +364,7 @@ def main() -> int:
 
     base = args.work / "base.db"
     copy_db(args.db, base)
+    db.connect(base).close()  # the copy in this code's schema: its queries read new columns
     conn = sqlite3.connect(base)
     career_id = (
         args.career

@@ -10,11 +10,13 @@ media. Eligible media are group B and untracked unless pinned to A.
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-from facegen.core.cutoffs import Cut, Cutoffs
+from facegen.core.cutoffs import Cut, Cutoffs, Met
 from facegen.core.records import is_first_team_manager
 
 if TYPE_CHECKING:
@@ -100,16 +102,160 @@ ALL_RULES = Rules()
 """Every rule on: the defaults."""
 
 
+WHO_TEXT = {"newgen": "newgen", "no_photo": "no photo"}
+WHERE_TEXT = {
+    "league": "in my league",
+    "above": "in the league above",
+    "below": "in the league below",
+    "continental": "in a continental competition",
+}
+_PART_REASON = {
+    "first_team": "in my club's first team",
+    "youth": "in my club's youth or reserve team",
+    "loans": "loaned out by my club",
+}
+_PART_SHORT = {"first_team": "first team", "youth": "youth team", "loans": "on loan"}
+MY_CLUB_PARTS = tuple(_PART_REASON)
+_TEXT = {
+    "staff": "on my club's staff",
+    "manager_no_photo": "manager in my league without a photo",
+    "journalist": "journalist from my club's country",
+    "press_officer": "my club's press officer",
+    "academy": "came through my academy",
+    "not_mens": "not in men's football",
+    "pin_never": "pinned to never",
+    "staff_off": "staff pictures are off (settings: staff)",
+    "tracked_regular": "tracked: a regular at my club",
+    "tracked_academy": "tracked: came through my academy",
+    "tracked_loan": "tracked while I hold the contract",
+    "tracked_at_club": "tracked while at my club",
+    "left_staff": "no longer on my club's staff",
+    "gone": "not in the latest save",
+}
+WHY_CODES = (*_TEXT, "part", "part_cut", "cut", "pin")
+"""Every reason's code: the pages word each as `why.<code>` (Phase 17h)."""
+
+
+@dataclass(frozen=True, slots=True)
+class Why:
+    """One reason as a code and the values it names (Phase 17h). The pages word it from the
+    catalogs; `text` is the English sentence the command line and exports print."""
+
+    code: str
+    met: Met | None = None
+    """The CA or PA condition that holds ("cut", "part_cut")."""
+    who: str | None = None
+    """Whom a cut picked ("cut"): "newgen" or "no_photo"."""
+    where: str | None = None
+    """Where the cut applies ("cut"): a WHERE_TEXT key, None for everywhere."""
+    part: str | None = None
+    """The part of my club ("part", "part_cut"): "first_team", "youth" or "loans"."""
+    group: str | None = None
+    """The group a person is pinned to ("pin")."""
+
+    @property
+    def text(self) -> str:
+        match self.code:
+            case "part":
+                return _PART_REASON[self.part or ""]
+            case "part_cut":
+                return f"{_PART_SHORT[self.part or '']}, {self.met.text if self.met else ''}"
+            case "cut":
+                who = WHO_TEXT[self.who or ""]
+                met = self.met.text if self.met else ""
+                if self.where is None:
+                    return f"{who}, {met}"
+                sep = " " if self.who == "newgen" else ", "
+                return f"{who}{sep}{WHERE_TEXT[self.where]}, {met}"
+            case "pin":
+                return f"pinned to {(self.group or '').upper()}"
+        return _TEXT[self.code]
+
+    @property
+    def complete(self) -> bool:
+        """Whether its code is known and has the values it names (a stored one may not)."""
+        if self.code in _TEXT:
+            return True
+        part = self.part in _PART_REASON
+        match self.code:
+            case "part":
+                return part
+            case "part_cut":
+                return part and self.met is not None
+            case "cut":
+                where = self.where is None or self.where in WHERE_TEXT
+                return self.who in WHO_TEXT and where and self.met is not None
+            case "pin":
+                return self.group in ("a", "b", "c")
+        return False
+
+    @property
+    def tracking(self) -> bool:
+        """Says why the person is tracked rather than why they are in their group."""
+        return self.code.startswith("tracked_")
+
+    def to_json(self) -> dict[str, Any]:
+        """The code and the values it has, flat: what `players.why` stores."""
+        out: dict[str, Any] = {"code": self.code}
+        if self.met is not None:
+            out.update(
+                attr=self.met.attr, value=self.met.value, at=self.met.at, share=self.met.share
+            )
+        for name in ("who", "where", "part", "group"):
+            if (value := getattr(self, name)) is not None:
+                out[name] = value
+        return out
+
+    @classmethod
+    def from_json(cls, data: Mapping[str, Any]) -> Why:
+        met = None
+        if "attr" in data:
+            met = Met(data["attr"], data["value"], data["at"], data.get("share"))
+        return cls(
+            data["code"],
+            met,
+            data.get("who"),
+            data.get("where"),
+            data.get("part"),
+            data.get("group"),
+        )
+
+
+def whys_from_json(text: str | None) -> tuple[Why, ...] | None:
+    """The stored `players.why` list; None for a row not classified since it was added (its
+    English `reasons` stand until then) or one this code cannot read."""
+    if not text:
+        return None
+    try:
+        whys = tuple(Why.from_json(item) for item in json.loads(text))
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return None
+    return whys if all(w.complete for w in whys) else None
+
+
+def whys_to_json(whys: tuple[Why, ...]) -> str:
+    return json.dumps([w.to_json() for w in whys])
+
+
 @dataclass(frozen=True, slots=True)
 class Classification:
     group: Group | None
     tracked: bool
     reasons: tuple[str, ...]
+    """In English, for the command line and exports: each `why`'s text."""
+    why: tuple[Why, ...] = ()
 
 
-def _either(f: PlayerFacts, ca: Cut, pa: Cut) -> str | None:
-    """The first of the CA and PA conditions that holds, as a reason, or None."""
-    return ca.why("CA", f.ca) or pa.why("PA", f.pa)
+def classified(
+    group: Group | None, tracked: bool, whys: list[Why] | tuple[Why, ...]
+) -> Classification:
+    """A classification with its reasons as records and as English text."""
+    return Classification(group, tracked, tuple(w.text for w in whys), tuple(whys))
+
+
+def _either(f: PlayerFacts, ca: Cut, pa: Cut) -> Met | None:
+    """The first of the CA and PA conditions that holds, or None."""
+    return ca.met("CA", f.ca) or pa.met("PA", f.pa)
 
 
 def without_photo(f: PlayerFacts) -> bool:
@@ -135,22 +281,14 @@ def my_club_part(f: PlayerFacts) -> str | None:
     return "youth" if f.youth else "first_team"
 
 
-_PART_REASON = {
-    "first_team": "in my club's first team",
-    "youth": "in my club's youth or reserve team",
-    "loans": "loaned out by my club",
-}
-_PART_SHORT = {"first_team": "first team", "youth": "youth team", "loans": "on loan"}
-
-
 def rule_matches(
     f: PlayerFacts, cuts: Cutoffs, rules: Rules = ALL_RULES
-) -> list[tuple[Group, str]]:
+) -> list[tuple[Group, Why]]:
     """Every group rule the person meets, with its reason, ignoring pins."""
-    matches: list[tuple[Group, str]] = []
+    matches: list[tuple[Group, Why]] = []
     if f.is_staff:
         if f.at_my_club and rules.staff:
-            matches.append((Group.A, "on my club's staff"))
+            matches.append((Group.A, Why("staff")))
         elif (
             not f.at_my_club
             and rules.staff
@@ -158,66 +296,65 @@ def rule_matches(
             and is_first_team_manager(f.staff_job)
             and f.photo is False
         ):
-            matches.append((Group.C, "manager in my league without a photo"))
+            matches.append((Group.C, Why("manager_no_photo")))
         return matches
     if f.media == "journalist":
         if f.local_media and rules.journalists:
-            matches.append((Group.B, "journalist from my club's country"))
+            matches.append((Group.B, Why("journalist")))
         return matches
     if f.media == "press officer":
         if f.local_media and rules.press_officers:
-            matches.append((Group.B, "my club's press officer"))
+            matches.append((Group.B, Why("press_officer")))
         return matches
 
     part = my_club_part(f)
     if part is not None:
         tier = Group(getattr(cuts, part))
-        matches.append((tier, _PART_REASON[part]))
+        matches.append((tier, Why("part", part=part)))
         if tier is not Group.A:
             # Youth, loanees (and a first team set lower) reach A by my league's or the global
             # A cut, whoever they are.
-            why = _either(f, cuts.league_cut("a_ca"), cuts.league_cut("a_pa")) or _either(
+            met = _either(f, cuts.league_cut("a_ca"), cuts.league_cut("a_pa")) or _either(
                 f, cuts.everywhere_cut("a_ca"), cuts.everywhere_cut("a_pa")
             )
-            if why:
-                matches.append((Group.A, f"{_PART_SHORT[part]}, {why}"))
+            if met:
+                matches.append((Group.A, Why("part_cut", met, part=part)))
 
     if f.is_newgen:
-        who, sep = "newgen", " "
+        who = "newgen"
     elif rules.no_photo and without_photo(f):
-        who, sep = "no photo", ", "
+        who = "no_photo"
     else:
         return matches
 
     def league(tier: Group, where: str, ca: Cut, pa: Cut) -> None:
-        if why := _either(f, ca, pa):
-            matches.append((tier, f"{who}{sep}{where}, {why}"))
+        if met := _either(f, ca, pa):
+            matches.append((tier, Why("cut", met, who=who, where=where)))
 
     def everywhere(tier: Group) -> None:
         g = tier.value
-        if why := _either(f, cuts.everywhere_cut(f"{g}_ca"), cuts.everywhere_cut(f"{g}_pa")):
-            matches.append((tier, f"{who}, {why}"))
+        if met := _either(f, cuts.everywhere_cut(f"{g}_ca"), cuts.everywhere_cut(f"{g}_pa")):
+            matches.append((tier, Why("cut", met, who=who)))
 
     everywhere(Group.A)
     if f.in_my_league:
-        league(Group.A, "in my league", cuts.league_cut("a_ca"), cuts.league_cut("a_pa"))
+        league(Group.A, "league", cuts.league_cut("a_ca"), cuts.league_cut("a_pa"))
     if f.is_newgen and cuts.academy_alumni and f.academy and part is None:
         # Once they leave (spec section 2): while at my club, my club's tier is theirs.
-        matches.append((Group.B, "came through my academy"))
+        matches.append((Group.B, Why("academy")))
     if f.in_my_league:
-        league(Group.B, "in my league", cuts.league_cut("b_ca"), cuts.league_cut("b_pa"))
+        league(Group.B, "league", cuts.league_cut("b_ca"), cuts.league_cut("b_pa"))
     if f.league_offset == 1:
-        league(Group.B, "in the league above", cuts.other_cut("above_b_ca"), Cut(None))
+        league(Group.B, "above", cuts.other_cut("above_b_ca"), Cut(None))
     if f.in_continental:
-        where = "in a continental competition"
-        league(Group.B, where, cuts.other_cut("continental_b_ca"), Cut(None))
+        league(Group.B, "continental", cuts.other_cut("continental_b_ca"), Cut(None))
     everywhere(Group.B)
     if f.in_my_league:
-        league(Group.C, "in my league", cuts.league_cut("c_ca"), cuts.league_cut("c_pa"))
+        league(Group.C, "league", cuts.league_cut("c_ca"), cuts.league_cut("c_pa"))
     if f.league_offset == 1:
-        league(Group.C, "in the league above", cuts.other_cut("above_c_ca"), Cut(None))
+        league(Group.C, "above", cuts.other_cut("above_c_ca"), Cut(None))
     if f.league_offset == -1:
-        league(Group.C, "in the league below", cuts.other_cut("below_c_ca"), Cut(None))
+        league(Group.C, "below", cuts.other_cut("below_c_ca"), Cut(None))
     everywhere(Group.C)
     return matches
 
@@ -236,38 +373,38 @@ def classify(f: PlayerFacts, cuts: Cutoffs, rules: Rules = ALL_RULES) -> Classif
       is tracked, as a regular at my club.
     """
     if not f.in_scope:
-        return Classification(None, False, ("not in men's football",))
+        return classified(None, False, [Why("not_mens")])
 
     player = not f.is_staff and not f.media
     academy_tracked = cuts.academy_alumni and f.academy and f.is_newgen and player
 
     if f.pin == "never":
-        return Classification(None, False, ("pinned to never",))
+        return classified(None, False, [Why("pin_never")])
 
     matches = rule_matches(f, cuts, rules)
     if f.pin is not None:
         group = Group(f.pin)
-        reasons = [f"pinned to {group.label}"]
+        whys = [Why("pin", group=group.value)]
     elif matches:
         group = min((m[0] for m in matches), key=GROUP_RANK.__getitem__)
-        reasons = [why for grp, why in matches if grp is group]
+        whys = [why for grp, why in matches if grp is group]
     elif f.is_staff and f.at_my_club:
-        return Classification(None, False, ("staff pictures are off (settings: staff)",))
+        return classified(None, False, [Why("staff_off")])
     else:
-        return Classification(None, False, ())
+        return classified(None, False, [])
 
     if f.media:
         regular = group is Group.A
         if regular:
-            reasons.append("tracked: a regular at my club")
-        return Classification(group, regular, tuple(reasons))
+            whys.append(Why("tracked_regular"))
+        return classified(group, regular, whys)
     part = my_club_part(f)
     tracked = group is Group.A or academy_tracked or part is not None
     if group is not Group.A:
         if academy_tracked:
-            reasons.append("tracked: came through my academy")
+            whys.append(Why("tracked_academy"))
         elif part == "loans":
-            reasons.append("tracked while I hold the contract")
+            whys.append(Why("tracked_loan"))
         elif part is not None:
-            reasons.append("tracked while at my club")
-    return Classification(group, tracked, tuple(reasons))
+            whys.append(Why("tracked_at_club"))
+    return classified(group, tracked, whys)

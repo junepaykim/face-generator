@@ -14,6 +14,7 @@ import pytest
 from support.paths import ROOT
 
 from facegen.core import presets
+from facegen.core.classify import MY_CLUB_PARTS, WHERE_TEXT, WHO_TEXT, WHY_CODES, Why
 from facegen.core.cutoffs import SCOPES as CUTOFF_SCOPES
 from facegen.core.domain import JOB_KINDS
 from facegen.core.problems import KINDS as PROBLEM_KINDS
@@ -44,6 +45,7 @@ from facegen.web.queries import (
     PICTURE_FILTERS,
     ROLES,
     SCOPES,
+    SHOWN,
     SORTS,
     WHERE_FILTERS,
 )
@@ -148,7 +150,16 @@ def vocabulary_keys() -> list[str]:
     keys += [f"players.role.{k}" for k in ROLES] + [f"players.group.{k}" for k in GROUP_FILTERS]
     keys += [f"players.picture.{k}" for k in PICTURE_FILTERS]
     keys += [f"players.photo.{k}" for k in PHOTO_FILTERS] + [f"players.scope.{k}" for k in SCOPES]
-    keys += [f"players.sort.{k}" for k in SORTS]
+    keys += [f"players.sort.{k}" for k in SORTS] + [f"players.shown.{k}" for k in SHOWN]
+    # A player's reasons (Phase 17h): web/messages.py words them by code.
+    built = {"part", "part_cut", "cut"}
+    keys += [f"why.{c}" for c in WHY_CODES if c not in built and not Why(c).tracking]
+    keys += [f"why.full.{c}" for c in WHY_CODES if c not in built]
+    keys += ["why.full.cut", "why.full.cut_everywhere", "why.full.part_cut"]
+    keys += [f"why.{kind}.{part}" for part in MY_CLUB_PARTS for kind in ("part", "full.part")]
+    keys += [f"why.{kind}.{where}" for where in WHERE_TEXT for kind in ("where", "full.where")]
+    keys += [f"why.who.{who}" for who in WHO_TEXT]
+    keys += ["why.met", "why.met_full", "why.met_share"]
     keys += [f"settings.choice.detail_size.{k}" for k in DETAIL_SIZES]
     keys += [f"settings.choice.mode.{k}" for k in CUTOFF_MODES]
     keys += [f"settings.choice.aspect.{k}" for k in ASPECT_CHOICES]

@@ -36,7 +36,7 @@
       <tr><th>{{ t("player.personality") }}</th><td>{% if p.personality %}{% for k, v in p.personality.items() %}{{ k|capitalize }} {{ v }}{{ " · " if not loop.last }}{% endfor %}{% else %}<span class="muted">{{ t("player.personality_unknown") }}</span>{% endif %}</td></tr>
       <tr><th>{{ t("col.group") }}</th><td>{% if p.group_name %}{{ grp(p.group_name) }}{% else %}{{ t("common.none") }}{% endif %}
         {% if p.tracked %}<span class="tag">{{ t("tag.tracked") }}</span>{% endif %}{% if p.pin %}<span class="tag">{{ t("tag.pinned_to", pin=tr("group." ~ p.pin) if p.pin in ("a", "b", "c") else tr("player.pin_never")) }}</span>{% endif %}</td></tr>
-      <tr><th>{{ t("col.why") }}</th><td>{{ p.reasons|join("; ") or t("player.no_rule") }}</td></tr>
+      <tr><th>{{ t("col.why") }}</th><td>{{ why_lines(p)|join("; ") or t("player.no_rule") }}</td></tr>
       <tr><th>{{ t("player.now") }}</th><td>
         {% if p.job_status == "running" %}<span class="st run">{{ t("player.drawing", kind=t("kind." ~ p.job_kind)) }}</span>
         {% elif p.job_status == "queued" %}<span class="st q">{{ t("status.queued", kind=t("kind." ~ p.job_kind)) }}{{ t("player.requested") if p.job_manual }}</span>

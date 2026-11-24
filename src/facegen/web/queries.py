@@ -56,7 +56,9 @@ PHOTO_FILTERS = {
     "none": "no photo or facepack",
 }
 SCOPES = {"mens": "men's football", "all": "all players"}
-FOLDED_FILTERS = ("league", "origin", "role", "scope")
+# Who the list shows (Phase 17h): the people this app draws, or everyone in the save.
+SHOWN = {"targets": "picture targets", "everyone": "everyone in the save"}
+FOLDED_FILTERS = ("league", "origin", "role", "scope", "shown")
 """The Players filters kept under "More filters" besides the CA and PA ranges (Phase 17g)."""
 
 
@@ -94,6 +96,9 @@ def page_count(total: int, per_page: int) -> int:
 class PlayerPageFilter(player_queries.PlayerFilter):
     """Roster filters with request parsing and URL generation for the Players page."""
 
+    shown: str = "targets"
+    """The page lists the picture targets unless asked for everyone (Phase 17h, spec 7)."""
+
     @classmethod
     def from_query(cls, params: Mapping[str, str]) -> PlayerPageFilter:
         """From the page's query string; anything malformed falls back to its default."""
@@ -113,6 +118,7 @@ class PlayerPageFilter(player_queries.PlayerFilter):
             picture=_choice(get("picture"), PICTURE_FILTERS, "any"),
             photo=_choice(get("photo"), PHOTO_FILTERS, "any"),
             scope=_choice(get("scope"), SCOPES, "mens"),
+            shown=_choice(get("shown"), SHOWN, "targets"),
             sort=_choice(get("sort"), SORTS, "ca"),
             page=_page(get("page")),
         )

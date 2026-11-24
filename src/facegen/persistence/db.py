@@ -401,8 +401,19 @@ WHERE EXISTS (SELECT 1 FROM images)
 """
 
 
+# Phase 17h: players.why, the reasons as codes and values (core/classify.py `Why`, JSON list),
+# which the pages word in their language. NULL until the next classification fills it; until
+# then the pages show the English `reasons`. players_pinned: the few pinned people, for the
+# Players page's picture targets (persistence/player_queries.py); being partial, no query that
+# does not ask for pins can take it.
+_V16 = """
+ALTER TABLE players ADD COLUMN why TEXT;
+CREATE INDEX players_pinned ON players (career_id, unique_id) WHERE pin IS NOT NULL;
+"""
+
+
 MIGRATIONS: tuple[str, ...] = (
-    _V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10, _V11, _V12, _V13, _V14, _V15
+    _V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10, _V11, _V12, _V13, _V14, _V15, _V16
 )  # fmt: skip
 
 # The active career: the one whose save was written last (spec section 8). A career synced

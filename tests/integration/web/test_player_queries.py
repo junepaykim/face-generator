@@ -189,10 +189,15 @@ def test_the_auto_update_filter_is_the_tracked_players(conn: sqlite3.Connection)
 
 
 def test_counting_joins_nothing_for_the_lookups() -> None:
-    for f in (PlayerFilter(picture="review"), PlayerFilter(club="tel")):
-        where, _ = player_queries._where(f)
+    lookups = (
+        PlayerFilter(picture="review"),
+        PlayerFilter(club="tel"),
+        PlayerFilter(shown="targets"),
+    )
+    for f in lookups:
+        where, _ = player_queries._where(f, CAREER)
         assert player_queries._count_from(where) == " FROM players p"
-    where, _ = player_queries._where(PlayerFilter(sort="club"))
+    where, _ = player_queries._where(PlayerFilter(sort="club"), CAREER)
     assert "JOIN clubs c" in player_queries._count_from(f"{where} {player_queries.SORTS['club']}")
 
 
@@ -206,3 +211,86 @@ def test_page_looks_up_selected_players_and_their_job_history_by_index(
     plan = [row["detail"] for row in conn.execute("EXPLAIN QUERY PLAN " + statements[-1])]
     assert any("SEARCH p " in step and "career_id=? AND unique_id=?" in step for step in plan)
     assert any("SEARCH jj " in step and "jobs_by_player" in step for step in plan)
+
+
+def picture(c: sqlite3.Connection, uid: int, *, current: bool, career: int = CAREER) -> None:
+    version = (
+        1
+        + c.execute(
+            "SELECT COUNT(*) FROM images WHERE career_id = ? AND unique_id = ?", (career, uid)
+        ).fetchone()[0]
+    )
+    c.execute(
+        "INSERT INTO images (career_id, unique_id, version, reason, group_name, model, prompt,"
+        " negative_prompt, seed, is_current, created_at)"
+        " VALUES (?, ?, ?, 'initial', 'b', 'm', 'p', 'n', 1, ?, 'now')",
+        (career, uid, version, int(current)),
+    )
+
+
+def test_the_picture_targets_are_the_people_this_app_draws(conn: sqlite3.Connection) -> None:
+    """Phase 17h (D6): in a group, pinned (to never as well), with a picture, a queued or
+    running job, or in review; everyone in the save is the other choice."""
+    targets = {}
+    targets["grouped"] = add(conn, 120, 150, 10)
+    conn.execute("UPDATE players SET group_name = 'c' WHERE unique_id = ?", (targets["grouped"],))
+    targets["never"] = add(conn, 100, 100, 10)
+    conn.execute("UPDATE players SET pin = 'never' WHERE unique_id = ?", (targets["never"],))
+    targets["picture"] = add(conn, 100, 100, 11)
+    picture(conn, targets["picture"], current=True)
+    targets["queued"] = add(conn, 90, 90, 12)
+    job(conn, targets["queued"], "queued")
+    targets["running"] = add(conn, 90, 90, 12)
+    job(conn, targets["running"], "running")
+    targets["review"] = add(conn, 80, 80, None)
+    job(conn, targets["review"], "failed")
+    targets["review, then cancelled"] = add(conn, 80, 80, None)
+    job(conn, targets["review, then cancelled"], "failed")
+    job(conn, targets["review, then cancelled"], "cancelled")
+    others = [add(conn, 150, 170, 10) for _ in range(3)]  # pre-existing stars, say
+    failed_then_done = add(conn, 70, 70, 10)
+    job(conn, failed_then_done, "failed")
+    job(conn, failed_then_done, "done")
+    old_picture = add(conn, 70, 70, 11)  # its picture was removed
+    picture(conn, old_picture, current=False)
+    others += [failed_then_done, old_picture]
+    gone = add(conn, 200, 200, 10, present=0)
+    conn.execute("UPDATE players SET group_name = 'a' WHERE unique_id = ?", (gone,))
+    elsewhere = add(conn, 200, 200, 10, career=2)
+    conn.execute("UPDATE players SET group_name = 'a' WHERE unique_id = ?", (elsewhere,))
+    picture(conn, others[0], current=True, career=2)  # the same ID drawn in another career
+    job(conn, others[1], "queued", career=2)
+
+    rows, total = players_page(conn, CAREER, PlayerFilter(shown="targets"))
+    assert total == len(targets) == 7
+    assert {r["unique_id"] for r in rows} == set(targets.values())
+    assert player_queries.player_count(conn, CAREER, PlayerFilter(shown="targets")) == 7
+    rows, total = players_page(conn, CAREER, PlayerFilter(shown="everyone"))
+    assert total == len(targets) + len(others) == 12
+    assert {r["unique_id"] for r in rows} == {*targets.values(), *others}
+    assert PlayerFilter().shown == "everyone"  # the query's own default narrows nothing
+    # With the other filters, and across pages in the same order.
+    rows, total = players_page(conn, CAREER, PlayerFilter(shown="targets", club_id=10))
+    assert total == 2 and {r["unique_id"] for r in rows} == {targets["grouped"], targets["never"]}
+    rows, total = players_page(conn, CAREER, PlayerFilter(shown="targets", picture="review"))
+    assert {r["unique_id"] for r in rows} == {targets["review"], targets["review, then cancelled"]}
+    in_order = [
+        r["unique_id"] for r in players_page(conn, CAREER, PlayerFilter(shown="targets"))[0]
+    ]
+    assert all_pages(conn, PlayerFilter(shown="targets"), per_page=2) == in_order
+
+
+def test_the_targets_are_found_by_the_players_key(conn: sqlite3.Connection) -> None:
+    """The list of targets drives the count (research.md section 15b): looked up by key, the
+    jobs by their status index and the pins by their partial index, never every player."""
+    where, args = player_queries._where(PlayerFilter(shown="targets"), CAREER)
+    plan = [
+        r["detail"]
+        for r in conn.execute(
+            f"EXPLAIN QUERY PLAN SELECT COUNT(*) FROM players p WHERE {where}", args
+        )
+    ]
+    assert any("SEARCH p " in step and "career_id=? AND unique_id=?" in step for step in plan)
+    assert any("players_pinned" in step for step in plan)
+    assert sum("jobs_queue (status=?)" in step for step in plan) == 2
+    assert not any(step.startswith("SCAN") for step in plan)

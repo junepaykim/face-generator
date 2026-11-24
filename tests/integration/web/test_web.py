@@ -184,9 +184,15 @@ def test_dashboard(env: Env) -> None:
 
 def test_players_list_filters(env: Env) -> None:
     def names(query: str) -> set[str]:
-        text = env.client.get(f"/players?{query}").text
+        text = env.client.get(f"/players?shown=everyone&{query}").text
         return set(re.findall(r'<a href="/players/\d+">([^<]+)</a>', text))
 
+    # By default only the picture targets (Phase 17h): in a group or queued here.
+    listed = env.client.get("/players").text
+    assert set(re.findall(r'<a href="/players/\d+">([^<]+)</a>', listed)) == {
+        "Mine Player",
+        "Rival Kid",
+    }
     assert names("") == {"Mine Player", "Famous Striker", "Rival Kid", "Abroad Kid"}
     assert names("scope=all") >= {"Womens Player"}
     assert names("q=striker") == {"Famous Striker"}
@@ -215,7 +221,7 @@ def test_players_pager_preserves_filter_and_sort(env: Env) -> None:
     finally:
         conn.close()
 
-    first_url = "/players?q=Trial+player&sort=name"
+    first_url = "/players?q=Trial+player&shown=everyone&sort=name"
     second_url = f"{first_url}&page=2"
     rows = r'<a href="/players/(\d+)">([^<]+)</a>'
     expected = [(str(p.unique_id), p.name) for p in people]
@@ -249,7 +255,9 @@ def test_players_pager_jumps_to_a_typed_page(env: Env) -> None:
         conn.close()
     rows = r'<a href="/players/(\d+)">([^<]+)</a>'
     expected = [(str(p.unique_id), p.name) for p in people]
-    page = unescape(env.client.get("/players?q=Trial+player&sort=name&group=any").text)
+    page = unescape(
+        env.client.get("/players?q=Trial+player&sort=name&group=any&shown=everyone").text
+    )
     forms = dict(
         re.findall(
             r'<form id="(jump-\w+)" method="get" action="/players" novalidate data-pager hidden>'
@@ -260,7 +268,11 @@ def test_players_pager_jumps_to_a_typed_page(env: Env) -> None:
     assert set(forms) == {"jump-top", "jump-bottom"}
     hidden = r'<input type="hidden" name="([^"]+)" value="([^"]*)">'
     for fields in forms.values():  # the filters as set, defaults left out, no page
-        assert re.findall(hidden, fields) == [("q", "Trial player"), ("sort", "name")]
+        assert re.findall(hidden, fields) == [
+            ("q", "Trial player"),
+            ("shown", "everyone"),
+            ("sort", "name"),
+        ]
     bulk = page.index('id="bulk"')
     assert page.index('<form id="jump-top"') < bulk < page.index('form="jump-top"')
     assert page.index("</form>", bulk) < page.index('<form id="jump-bottom"')
@@ -277,9 +289,9 @@ def test_players_pager_jumps_to_a_typed_page(env: Env) -> None:
     assert jump("0")[0] == expected[:100] and jump("-4")[0] == expected[:100]
     assert jump("x")[0] == expected[:100]
     # One page: no pager.
-    single = env.client.get("/players?q=Trial+player+000").text
+    single = env.client.get("/players?q=Trial+player+000&shown=everyone").text
     assert "1 players" in single and page_boxes(single) == [] and "data-pager" not in single
-    korean = env.client.get("/players?q=Trial+player", headers=KOREAN_WINDOWS).text
+    korean = env.client.get("/players?q=Trial+player&shown=everyone", headers=KOREAN_WINDOWS).text
     assert 'aria-label="다음 쪽"' in korean and 'aria-label="쪽 번호"' in korean
 
 
@@ -347,15 +359,22 @@ def test_only_outside_pages_open_in_the_web_browser() -> None:
 
 
 def test_find_tick_and_generate_a_pre_existing_player(env: Env) -> None:
-    """Phase 3 exit test: a pre-existing player from another club, found, ticked, drawn."""
-    found = env.client.get("/players?q=famous").text
+    """Phase 3 exit test: a pre-existing player from another club, found, ticked, drawn. Not a
+    picture target, so the search offers everyone in the save first (Phase 17h)."""
+    targets = env.client.get("/players?q=famous").text
+    assert f'name="uid" value="{STAR}"' not in targets
+    assert "Showing picture targets only." in targets
+    link = '<a href="/players?q=famous&amp;shown=everyone">Show everyone in the save (1)</a>'
+    assert link in targets
+    found = env.client.get("/players?q=famous&shown=everyone").text
     assert f'name="uid" value="{STAR}"' in found
+    back = "/players?q=famous&shown=everyone"
     r = post_player_action(
         env.client,
         "/players/action",
-        data={"uid": [str(STAR)], "action": "generate", "group": "b", "next": "/players?q=famous"},
+        data={"uid": [str(STAR)], "action": "generate", "group": "b", "next": back},
     )
-    assert r.headers["location"].startswith("/players?q=famous&msg=")
+    assert r.headers["location"].startswith(f"{back}&msg=")
     assert "Draw in the Standard group: 1 queued" in follow(env, r)
     env.worker.step()  # manual requests first
     image_id = env.one(
@@ -905,7 +924,7 @@ def test_youth_and_media_on_the_players_pages(env: Env) -> None:
 
 def test_photos_on_the_players_pages_and_the_dashboard(env: Env) -> None:
     def names(query: str) -> set[str]:
-        text = env.client.get(f"/players?{query}").text
+        text = env.client.get(f"/players?shown=everyone&{query}").text
         return set(re.findall(r'<a href="/players/\d+">([^<]+)</a>', text))
 
     assert "Who has a photo is not known yet" in env.client.get("/players?photo=none").text
@@ -922,7 +941,7 @@ def test_photos_on_the_players_pages_and_the_dashboard(env: Env) -> None:
     assert names("photo=facepack") == {"Abroad Kid"}
     assert names("photo=none") == {"Famous Striker", "Rival Kid"}
     assert names("origin=existing&photo=none") == {"Famous Striker"}
-    page = env.client.get("/players").text
+    page = env.client.get("/players?shown=everyone").text
     assert "FM27 photo</span>" in page and "facepack</span>" in page
     assert page.count("no photo</span>") == 1  # only pre-existing players are tagged
     assert "not known yet" not in env.client.get("/players?photo=none").text
@@ -930,7 +949,7 @@ def test_photos_on_the_players_pages_and_the_dashboard(env: Env) -> None:
     # Famous Striker (CA 185) has no photo, so the newgen thresholds now put them in A.
     detail = env.client.get(f"/players/{STAR}").text
     assert "none: FM27 shows a silhouette" in detail
-    assert "no photo, CA 185 (165+)" in detail
+    assert "Pre-existing, no photo: CA 185 (165+)" in detail  # worded from its codes
     assert re.search(r"Photo</th><td>\s*FM27's\s*</td>", env.client.get(f"/players/{MINE}").text)
 
     status = env.client.get("/status").text

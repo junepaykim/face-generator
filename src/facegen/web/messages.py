@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from facegen.core.classify import Why
+from facegen.core.cutoffs import Met, share_text
 from facegen.core.problems import UNKNOWN, diagnose
 from facegen.i18n import Translator
 from facegen.pipeline.manual import REFUSAL_CODES, REFUSALS, ActionResult, ManualError
@@ -289,3 +291,74 @@ def settings_error_text(message: str, t: Translator) -> str:
         if match := pattern.search(message):
             return t(key, **match.groupdict())
     return message
+
+
+def _met_chip(met: Met | None, t: Translator) -> str:
+    return t("why.met", attr=met.attr, at=met.at) if met else ""
+
+
+def _met_sentence(met: Met | None, t: Translator) -> str:
+    if met is None:
+        return ""
+    if met.share is not None:
+        share = share_text(met.share)
+        return t("why.met_share", attr=met.attr, value=met.value, at=met.at, share=share)
+    return t("why.met_full", attr=met.attr, value=met.value, at=met.at)
+
+
+def why_chip(why: Why, t: Translator) -> str:
+    """A reason as a short chip: "My league · CA 98+", "Academy" (Phase 17h)."""
+    match why.code:
+        case "cut":
+            met = _met_chip(why.met, t)
+            return f"{t(f'why.where.{why.where}')} · {met}" if why.where else met
+        case "part":
+            return t(f"why.part.{why.part}")
+        case "part_cut":
+            return f"{t(f'why.part.{why.part}')} · {_met_chip(why.met, t)}"
+    return t(f"why.{why.code}")
+
+
+def why_sentence(why: Why, t: Translator) -> str:
+    """A reason in full: a chip's tooltip, and a line on the player page."""
+    match why.code:
+        case "cut":
+            who, met = t(f"why.who.{why.who}"), _met_sentence(why.met, t)
+            if why.where is None:
+                return t("why.full.cut_everywhere", who=who, met=met)
+            return t("why.full.cut", who=who, where=t(f"why.full.where.{why.where}"), met=met)
+        case "part":
+            return t(f"why.full.part.{why.part}")
+        case "part_cut":
+            part = t(f"why.full.part.{why.part}")
+            return t("why.full.part_cut", part=part, met=_met_sentence(why.met, t))
+        case "pin":
+            return t("why.full.pin", group=t(f"group.{why.group}"))
+    return t(f"why.full.{why.code}")
+
+
+def why_chips(row: Mapping[str, Any], t: Translator) -> list[tuple[str, str]] | None:
+    """The Players list's Why: (chip, its sentence) for each reason for the group. Why someone
+    is tracked goes with the auto-update tag (`why_tracking`). None for a row not classified
+    since the reasons were stored as records: the page shows its English `reasons` then."""
+    whys = row.get("why")
+    if whys is None:
+        return None
+    return [(why_chip(w, t), why_sentence(w, t)) for w in whys if not w.tracking]
+
+
+def why_lines(row: Mapping[str, Any], t: Translator) -> list[str]:
+    """Every reason in full (the player page); the stored English ones for an older row."""
+    whys = row.get("why")
+    if whys is None:
+        return list(row.get("reasons") or ())
+    return [why_sentence(w, t) for w in whys]
+
+
+def why_tracking(row: Mapping[str, Any], t: Translator) -> str:
+    """Why someone is tracked, for the auto-update tag; the term's meaning when no reason
+    says (group A, or a row not classified since the records were stored)."""
+    for w in row.get("why") or ():
+        if w.tracking:
+            return why_sentence(w, t)
+    return t("term.tracked")

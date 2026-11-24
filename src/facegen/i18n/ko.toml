@@ -339,6 +339,8 @@ origin_newgen = "생성"
 origin_existing = "기존 선수"
 no_picture_yet = "아직 그림 없음"
 copy_id = "고유 ID 복사"
+only_targets = "그림 대상만 보고 있습니다."
+show_everyone = "세이브 전체 보기({count:,}명)"
 
 [players.filter]
 name = "이름 또는 고유 ID"
@@ -360,6 +362,8 @@ sort = "정렬"
 apply = "필터링"
 clear = "초기화"
 more = "상세 필터"
+shown = "표시"
+shown_title = "그림 대상: 그룹에 있거나, 그림이 있거나, 대기·검토 중이거나, 고정된 사람"
 
 [players.bulk]
 draw_title = "이 그룹에 고정합니다. 그림이 없거나 더 낮은 그룹의 그림이면 먼저 그립니다."
@@ -415,12 +419,79 @@ none = "사진·페이스팩 없음"
 mens = "남자 축구"
 all = "모든 선수"
 
+[players.shown]
+targets = "그림 대상"
+everyone = "세이브 전체"
+
 [players.sort]
 ca = "CA순"
 pa = "PA순"
 name = "이름순"
 age = "나이순"
 club = "구단순"
+
+# A player's reasons (Phase 17h): a short chip, and the sentence as its tooltip ([why.full]).
+[why]
+met = "{attr} {at}+"
+met_full = "{attr} {value} ({at}+)"
+met_share = "{attr} {value} (상위 {share}%: {at}+)"
+staff = "내 구단 스태프"
+manager_no_photo = "사진 없는 감독"
+journalist = "국내 기자"
+press_officer = "홍보 담당자"
+academy = "유스 출신"
+not_mens = "남자 축구 아님"
+pin = "고정"
+pin_never = "그리지 않음"
+staff_off = "스태프 그림 꺼짐"
+left_staff = "스태프에서 나감"
+gone = "세이브에 없음"
+
+[why.part]
+first_team = "1군"
+youth = "유스 팀"
+loans = "임대 보냄"
+
+[why.where]
+league = "내 리그"
+above = "상위 리그"
+below = "하위 리그"
+continental = "대륙 대회"
+
+[why.who]
+newgen = "생성 선수"
+no_photo = "사진 없는 기존 선수"
+
+[why.full]
+staff = "내 구단 스태프"
+manager_no_photo = "사진이 없는 내 리그 감독"
+journalist = "내 구단 나라의 기자"
+press_officer = "내 구단 홍보 담당자"
+academy = "내 구단 유스 출신"
+not_mens = "남자 축구 소속이 아님"
+pin = "{group} 그룹에 고정"
+pin_never = "그리지 않음으로 고정"
+staff_off = "설정에서 스태프 그림이 꺼져 있음"
+left_staff = "더 이상 내 구단 스태프가 아님"
+gone = "최근 세이브에 없음"
+tracked_regular = "연동: 내 구단 단골"
+tracked_academy = "연동: 내 구단 유스 출신"
+tracked_loan = "연동: 내 구단과 계약 중인 동안"
+tracked_at_club = "연동: 내 구단에 있는 동안"
+cut = "{who}, {where}: {met}"
+cut_everywhere = "{who}: {met}"
+part_cut = "{part}: {met}"
+
+[why.full.part]
+first_team = "내 구단 1군"
+youth = "내 구단 유스·리저브 팀"
+loans = "내 구단이 임대 보낸 선수"
+
+[why.full.where]
+league = "내 리그"
+above = "상위 리그"
+below = "하위 리그"
+continental = "대륙 대회"
 
 [player]
 current_alt = "{name}의 현재 그림"

@@ -13,6 +13,8 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
+from facegen.core.classify import whys_from_json
+
 PER_PAGE = 100
 
 # The player's latest job that was not cancelled: queued, running, done or failed. "failed"
@@ -30,6 +32,22 @@ _IN_REVIEW = (
     " AND rjj.status != 'cancelled'))"
 )
 """Its aliases are not the page's own (`j`), so `_count_from` joins nothing for it."""
+# Picture targets (Phase 17h, spec section 7): in a group, pinned (to "never" too), with a
+# current picture, a queued or running job, or in review. One list of the career's few targets,
+# looked up by the players' key, instead of testing every player; `+career_id` keeps the jobs'
+# status index in use, and `players_pinned` finds the pins (research.md section 15b).
+_TARGET = (
+    "p.unique_id IN ("
+    "SELECT unique_id FROM players WHERE career_id = ? AND group_name IS NOT NULL"
+    " UNION ALL SELECT unique_id FROM players WHERE career_id = ? AND pin IS NOT NULL"
+    " UNION ALL SELECT unique_id FROM images WHERE career_id = ? AND is_current = 1"
+    " UNION ALL SELECT unique_id FROM jobs WHERE +career_id = ? AND status IN ('queued', 'running')"
+    " UNION ALL SELECT rj.unique_id FROM jobs rj WHERE +rj.career_id = ? AND rj.status = 'failed'"
+    " AND rj.id = (SELECT MAX(rjj.id) FROM jobs rjj WHERE rjj.career_id = rj.career_id"
+    " AND rjj.unique_id = rj.unique_id AND rjj.status != 'cancelled'))"
+)
+"""Its parameters are the career, five times. No alias of the page's own, so `_count_from`
+joins nothing for it."""
 
 SORTS = {
     "ca": "p.ca DESC, p.pa DESC",
@@ -56,6 +74,8 @@ class PlayerFilter:
     picture: str = "any"
     photo: str = "any"
     scope: str = "mens"
+    shown: str = "everyone"
+    """"targets": only the picture targets (`_TARGET`); the Players page's default."""
     sort: str = "ca"
     page: int = 1
 
@@ -79,9 +99,10 @@ def name_or_id_match(q: str, *, person: str = "p") -> tuple[str, list[Any]]:
     return name_match, args
 
 
-def _where(f: PlayerFilter) -> tuple[str, list[Any]]:
+def _where(f: PlayerFilter, career_id: int) -> tuple[str, list[Any]]:
+    """The filter's condition and its arguments, the career's first."""
     clauses = ["p.career_id = ?", "p.present = 1"]
-    args: list[Any] = []
+    args: list[Any] = [career_id]
     if f.q:
         name_match, name_args = name_or_id_match(f.q)
         clauses.append(name_match)
@@ -154,6 +175,9 @@ def _where(f: PlayerFilter) -> tuple[str, list[Any]]:
             clauses.append("ph.unique_id IS NULL")
     if f.scope == "mens":
         clauses.append("p.in_scope = 1")
+    if f.shown == "targets":
+        clauses.append(_TARGET)
+        args += [career_id] * 5
     return " AND ".join(clauses), args
 
 
@@ -168,7 +192,7 @@ _JOINS = {
 _FROM = " FROM players p" + "".join(_JOINS.values())
 _COLUMNS = (
     "SELECT p.unique_id, p.name, p.age, p.ca, p.pa, p.is_newgen, p.academy, p.at_my_club,"
-    " p.in_my_league, p.in_continental, p.in_scope, p.group_name, p.tracked, p.reasons,"
+    " p.in_my_league, p.in_continental, p.in_scope, p.group_name, p.tracked, p.reasons, p.why,"
     " p.pin, p.club_id, p.is_goalkeeper, p.is_staff, p.staff_job, p.media_role,"
     " p.youth_team, p.local_media, c.name AS club,"
     " i.id AS image_id, ph.game AS photo_game, ph.facepack AS photo_facepack,"
@@ -187,9 +211,18 @@ def _count_from(where: str) -> str:
 
 
 def _decode_player(r: sqlite3.Row) -> dict[str, Any]:
+    """The row with its reasons read: `reasons` in English, `why` as records (None for a row
+    not classified since `why` was added: the pages show `reasons` then)."""
     row = dict(r)
     row["reasons"] = json.loads(row["reasons"] or "[]")
+    row["why"] = whys_from_json(row.get("why"))
     return row
+
+
+def player_count(conn: sqlite3.Connection, career_id: int, f: PlayerFilter) -> int:
+    """How many players match the filter."""
+    where, args = _where(f, career_id)
+    return conn.execute(f"SELECT COUNT(*){_count_from(where)} WHERE {where}", args).fetchone()[0]
 
 
 def players_page(
@@ -197,10 +230,8 @@ def players_page(
 ) -> tuple[list[dict[str, Any]], int]:
     """One page and the total number of matches. The unique ID breaks sort ties in both
     the page of IDs and the final result."""
-    where, args = _where(f)
-    total = conn.execute(
-        f"SELECT COUNT(*){_count_from(where)} WHERE {where}", (career_id, *args)
-    ).fetchone()[0]
+    where, args = _where(f, career_id)
+    total = player_count(conn, career_id, f)
     order = f"{SORTS[f.sort]}, p.unique_id"
     window = (
         f"SELECT p.unique_id{_count_from(f'{where} {order}')} WHERE {where}"
@@ -208,7 +239,7 @@ def players_page(
     )
     rows = conn.execute(
         f"{_COLUMNS}{_FROM} WHERE p.career_id = ? AND p.unique_id IN ({window}) ORDER BY {order}",
-        (career_id, career_id, *args, per_page, (f.page - 1) * per_page),
+        (career_id, *args, per_page, (f.page - 1) * per_page),
     ).fetchall()
     return [_decode_player(r) for r in rows], total
 

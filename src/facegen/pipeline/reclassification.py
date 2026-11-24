@@ -11,7 +11,16 @@ from datetime import date
 from typing import Any
 
 from facegen.core.age import age_wording
-from facegen.core.classify import Classification, Group, PlayerFacts, Rules, classify
+from facegen.core.classify import (
+    Classification,
+    Group,
+    PlayerFacts,
+    Rules,
+    Why,
+    classified,
+    classify,
+    whys_to_json,
+)
 from facegen.core.cutoffs import Cutoffs, effective_cutoffs
 from facegen.core.domain import ACTIVE_JOB_STATUSES
 from facegen.core.planner import ImageState, JobState, Plan, PlayerPlanState, plan
@@ -93,7 +102,8 @@ def _classify(
 ) -> tuple[PlanResult, list[tuple[Any, ...]]]:
     """Classify the stored players (`only` these, if given) and plan their jobs, reading only.
 
-    Returns the plan and the player rows whose group, tracking or reasons would change.
+    Returns the plan and the player rows whose group, tracking or reasons (as text or as
+    records, `players.why`) would change.
     """
     where, args = _selection(only, "unique_id")
     images = {
@@ -172,13 +182,14 @@ def _classify(
             )
             c = classify(facts, cuts, rules)
         else:
-            gone = "no longer on my club's staff" if staff else "not in the latest save"
-            c = Classification(None, False, (gone,))
+            c = classified(None, False, [Why("left_staff" if staff else "gone")])
         classifications[uid] = c
         group = c.group.value if c.group else None
         reasons = json.dumps(list(c.reasons))
-        if (group, int(c.tracked), reasons) != (r["group_name"], r["tracked"], r["reasons"]):
-            changed.append((group, int(c.tracked), reasons, career_id, uid))
+        why = whys_to_json(c.why)
+        stored = (r["group_name"], r["tracked"], r["reasons"], r["why"])
+        if (group, int(c.tracked), reasons, why) != stored:
+            changed.append((group, int(c.tracked), reasons, why, career_id, uid))
             if (group, c.tracked) != (r["group_name"], bool(r["tracked"])):
                 moved.append(Move(uid, r["group_name"], bool(r["tracked"]), group, c.tracked))
         if c.group is None and uid not in active:
@@ -225,7 +236,7 @@ def classify_and_plan(
     """
     result, changed = _classify(conn, career_id, settings, only)
     conn.executemany(
-        "UPDATE players SET group_name = ?, tracked = ?, reasons = ?"
+        "UPDATE players SET group_name = ?, tracked = ?, reasons = ?, why = ?"
         " WHERE career_id = ? AND unique_id = ?",
         changed,
     )

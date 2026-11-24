@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import replace
 from functools import partial
 
 from fastapi import APIRouter, HTTPException, Request
@@ -60,6 +61,12 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             club_name = player_queries.club_name(conn, career.id, f.club_id)
             if club_name is None:
                 club_name = str(f.club_id)
+        # A search, a club or an empty list among the picture targets: how many the same
+        # filters find in the whole save, so they are one click away (Phase 17h).
+        everyone = None
+        searched = f.q or f.club or f.club_id is not None or not total
+        if career is not None and f.shown == "targets" and searched:
+            everyone = player_queries.player_count(conn, career.id, replace(f, shown="everyone"))
         return page(
             request,
             "players.html",
@@ -78,6 +85,8 @@ def create_router(deps: AppDependencies, presentation: Presentation) -> APIRoute
             photo_filters=queries.PHOTO_FILTERS,
             photo_status=photo_index.status(conn),
             scopes=queries.SCOPES,
+            shown_options=queries.SHOWN,
+            everyone=everyone if everyone and everyone > total else None,
             sorts=list(queries.SORTS),
             here=str(request.url.path) + ("?" + request.url.query if request.url.query else ""),
         )

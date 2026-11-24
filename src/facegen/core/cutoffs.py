@@ -139,13 +139,36 @@ class Cut:
     def holds(self, value: int | None) -> bool:
         return self.value is not None and value is not None and value >= self.value
 
+    def met(self, name: str, value: int | None) -> Met | None:
+        """The condition as a record when the value qualifies, else None."""
+        if self.value is None or value is None or value < self.value:
+            return None
+        return Met(name, value, self.value, self.share)
+
     def why(self, name: str, value: int | None) -> str | None:
         """ "CA 98 (top 6%: 98+)" when the value qualifies, else None."""
-        if not self.holds(value):
-            return None
+        met = self.met(name, value)
+        return met.text if met is not None else None
+
+
+@dataclass(frozen=True, slots=True)
+class Met:
+    """A CA or PA condition that holds (Phase 17h): the pages word it from these fields."""
+
+    attr: str
+    """"CA" or "PA"."""
+    value: int
+    at: int
+    """The cut: at least this many."""
+    share: float | None = None
+    """The share the cut came from, in Auto."""
+
+    @property
+    def text(self) -> str:
+        """ "CA 98 (top 6%: 98+)", or "CA 98 (98+)" for a number set by hand."""
         if self.share is not None:
-            return f"{name} {value} (top {share_text(self.share)}%: {self.value}+)"
-        return f"{name} {value} ({self.value}+)"
+            return f"{self.attr} {self.value} (top {share_text(self.share)}%: {self.at}+)"
+        return f"{self.attr} {self.value} ({self.at}+)"
 
 
 NO_CUT = Cut(None)

@@ -7,8 +7,17 @@ from dataclasses import replace
 import pytest
 from factories import facts
 
-from facegen.core.classify import Group, PlayerFacts, Rules, classify, rule_matches
-from facegen.core.cutoffs import NO_CUT, Cut, Cutoffs
+from facegen.core.classify import (
+    Group,
+    PlayerFacts,
+    Rules,
+    Why,
+    classify,
+    rule_matches,
+    whys_from_json,
+    whys_to_json,
+)
+from facegen.core.cutoffs import NO_CUT, Cut, Cutoffs, Met
 
 # My league's cells as shares with the values they gave, the other leagues' shares, and the
 # global numbers (the defaults: 155/170, 140/155, Light off).
@@ -454,3 +463,75 @@ def test_media_switches(cuts: Cutoffs) -> None:
     assert classify(j, cuts, Rules(journalists=False)).group is None
     assert classify(p, cuts, Rules(journalists=False)).group is Group.B
     assert classify(p, cuts, Rules(press_officers=False)).group is None
+
+
+# --- reasons as codes (Phase 17h) ------------------------------------------------------------
+
+CASES = {
+    "league share": {"ca": 100, "pa": 90, "in_my_league": True},
+    "global": {"ca": 60, "pa": 160},
+    "above": {"ca": 110, "pa": 90, "league_offset": 1},
+    "below": {"ca": 45, "pa": 60, "league_offset": -1, "academy": False},
+    "continental": {"ca": 125, "pa": 90, "in_continental": True},
+    "no photo": {"is_newgen": False, "photo": False, "ca": 160, "pa": 160},
+    "academy": {"academy": True, "ca": 40, "pa": 60},
+    "youth reaching A": {"at_my_club": True, "youth": True, "ca": 60, "pa": 150},
+    "loaned out": {"at_my_club": True, "loaned_out": True, "ca": 60, "pa": 60},
+    "first team": {"at_my_club": True, "ca": 60, "pa": 60},
+    "staff": {"is_staff": True, "at_my_club": True, "is_newgen": False, "ca": 30},
+    "manager": {"is_staff": True, "is_newgen": False, "in_my_league": True, "photo": False,
+                "staff_job": "Manager"},
+    "journalist": {"media": "journalist", "local_media": True, "is_newgen": False},
+    "press officer pinned": {"media": "press officer", "local_media": True, "pin": "a"},
+    "pinned": {"pin": "b"},
+    "never": {"pin": "never"},
+    "not men's": {"in_scope": False},
+    "nothing": {"ca": 10, "pa": 20},
+}  # fmt: skip
+
+
+@pytest.mark.parametrize("case", CASES)
+def test_each_reason_is_a_code_whose_text_is_the_sentence_stored_before(
+    cuts: Cutoffs, case: str
+) -> None:
+    c = classify(facts(**CASES[case]), cuts)
+    assert c.reasons == tuple(w.text for w in c.why)
+    assert len(c.why) == len(c.reasons) and (case == "nothing") == (not c.why)
+    assert all(w.complete for w in c.why)
+    assert whys_from_json(whys_to_json(c.why)) == c.why
+
+
+def test_a_cut_names_who_where_and_the_condition(cuts: Cutoffs) -> None:
+    c = classify(facts(ca=100, pa=90, in_my_league=True), cuts)
+    assert c.why == (Why("cut", Met("CA", 100, 100, 6.0), who="newgen", where="league"),)
+    no_photo = classify(facts(is_newgen=False, photo=False, ca=160, pa=160), cuts)
+    assert no_photo.why == (Why("cut", Met("CA", 160, 155), who="no_photo"),)
+    youth = classify(facts(at_my_club=True, youth=True, ca=60, pa=150), cuts)
+    assert youth.why == (Why("part_cut", Met("PA", 150, 150, 3.0), part="youth"),)
+    kid = classify(facts(at_my_club=True, youth=True, ca=60, pa=60), cuts)
+    assert kid.why == (Why("part", part="youth"), Why("tracked_at_club"))
+    assert [w.tracking for w in kid.why] == [False, True]
+    assert classify(facts(pin="b"), cuts).why == (Why("pin", group="b"),)
+
+
+@pytest.mark.parametrize(
+    "stored",
+    [
+        None,
+        "",
+        "not json",
+        '{"code": "staff"}',  # not a list
+        '[{"code": "made up"}]',
+        '[{"code": "cut", "who": "newgen"}]',  # no condition
+        '[{"code": "part", "part": "bench"}]',
+        '[{"code": "pin", "group": "d"}]',
+        '[{"value": 3}]',
+    ],
+)
+def test_stored_codes_this_version_cannot_word_are_not_read(stored: str | None) -> None:
+    """The pages then show the stored English text instead (turn off, don't guess)."""
+    assert whys_from_json(stored) is None
+
+
+def test_no_reason_at_all_reads_as_none_given() -> None:
+    assert whys_from_json("[]") == ()
