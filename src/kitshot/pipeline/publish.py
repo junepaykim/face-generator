@@ -10,8 +10,11 @@ then removes that old folder of ours (`remove_legacy_packs`).
 
 Newgen IDs repeat across careers, so only the career with the newest save maps pictures.
 Other packs keep their PNGs with empty mappings. `publish_pack` and `publish_active` hold
-`publish_lock` to serialize worker/sync writes. Every path is checked before writing or
-deleting; atomic replacement and skipping unchanged files make publishing idempotent.
+`publish_lock` to serialize worker/sync writes. Under it they write the pictures that are due
+first (`stage_pictures`, each chunk recorded in a short transaction), then bring the pack in
+line in one transaction that holds SQLite's write lock only for checks and mappings. Every path
+is checked before writing or deleting; atomic replacement and skipping unchanged files make
+publishing idempotent.
 """
 
 from __future__ import annotations
@@ -20,7 +23,7 @@ import logging
 import os
 import shutil
 import sqlite3
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -231,36 +234,52 @@ class PublishReport:
         return bool(self.written or self.config_changed or self.deactivated or self.legacy_removed)
 
 
-def publish_career(
+@dataclass(frozen=True, slots=True)
+class _Outstanding:
+    """A current picture whose published copy is missing or out of date, with what its row
+    said it is drawn from."""
+
+    image_id: int
+    master: Path
+    dest: Path
+    size: int
+    aspect: str
+    master_path: str
+    group: str
+
+
+@dataclass(frozen=True, slots=True)
+class _Plan:
+    """What a career's pack needs, from one read of its current pictures."""
+
+    in_place: tuple[int, ...]
+    """Image IDs whose published copy is in place."""
+    missing: tuple[int, ...]
+    mapped: tuple[int, ...]
+    outstanding: tuple[_Outstanding, ...]
+
+
+def _plan(
     conn: sqlite3.Connection,
     career_id: int,
-    career_key: str,
+    folder: Path,
     fm_user_dir: Path,
     sizes: dict[str, int],
-    *,
     data_dir: Path,
-    active: bool = True,
-) -> PublishReport:
-    """Bring the career's pack in line with its current pictures.
-
-    `sizes` maps group to published size (the picture's height) in pixels. A picture already
-    published to its place is left alone; config.xml is rewritten only if the mapping changes.
-    A pack that is not `active` gets its pictures but a config.xml that maps nothing.
-    """
-    folder = pack_dir(fm_user_dir, career_key)
+) -> _Plan:
     rows = conn.execute(
         "SELECT id, unique_id, group_name, master_path, published_path, aspect FROM images"
         " WHERE career_id = ? AND is_current = 1 ORDER BY unique_id",
         (career_id,),
     ).fetchall()
-    unchanged = 0
+    in_place: list[int] = []
     missing: list[int] = []
     mapped: list[int] = []
-    todo: list[tuple[int, Path, Path, int, str]] = []  # image id, master, destination, size, shape
+    outstanding: list[_Outstanding] = []
     for r in rows:
         dest = folder / f"{r['unique_id']}.png"
         if r["published_path"] == str(dest) and dest.is_file():
-            unchanged += 1
+            in_place.append(r["id"])
             mapped.append(r["unique_id"])
             continue
         master = Path(r["master_path"]) if r["master_path"] else None
@@ -270,24 +289,122 @@ def publish_career(
             missing.append(r["unique_id"])
             continue
         _guard(dest, fm_user_dir)
-        todo.append((r["id"], master, dest, sizes[r["group_name"]], r["aspect"]))
+        size = sizes[r["group_name"]]
+        outstanding.append(
+            _Outstanding(
+                r["id"], master, dest, size, r["aspect"], r["master_path"], r["group_name"]
+            )
+        )
         mapped.append(r["unique_id"])
-    # Encoded together, so the Rust encoder can work on several pictures at once.
-    if todo:
+    return _Plan(tuple(in_place), tuple(missing), tuple(mapped), tuple(outstanding))
+
+
+def _encoded(items: Sequence[_Outstanding]) -> Iterator[tuple[_Outstanding, bytes]]:
+    """Each picture with its published bytes, encoded together so the Rust encoder can work on
+    several at once."""
+    pictures = published_pictures([(i.master, i.size, i.aspect) for i in items])
+    return zip(items, pictures, strict=True)
+
+
+def stage_pictures(
+    conn: sqlite3.Connection,
+    career_id: int,
+    career_key: str,
+    fm_user_dir: Path,
+    sizes: dict[str, int],
+    *,
+    data_dir: Path,
+) -> frozenset[int]:
+    """Write the career's pictures that are not in place yet, outside any long transaction;
+    returns the IDs of the images written and recorded.
+
+    The caller holds `publish_lock` and no transaction. Encoding takes up to 0.4 s a picture
+    without the Rust encoder, and a whole pack can be due at once (1490 pictures after the
+    Phase 17o move): inside the publish transaction that held SQLite's write lock for ten
+    minutes, and syncs waiting behind it failed after their busy timeout (2026-11-25). Each
+    chunk is recorded in a short transaction of its own, and only while its row still asks for
+    the picture that was written: one picked or restored meanwhile stays due, and
+    `publish_career` puts it in place. Files written but not recorded (an error in the chunk)
+    are written again by the next publish.
+    """
+    assert not conn.in_transaction, "staging records each chunk in a transaction of its own"
+    folder = pack_dir(fm_user_dir, career_key)
+    plan = _plan(conn, career_id, folder, fm_user_dir, sizes, data_dir)
+    if not plan.outstanding:
+        return frozenset()
+    folder.mkdir(parents=True, exist_ok=True)
+    recorded: set[int] = set()
+    chunk: list[_Outstanding] = []
+
+    def record() -> None:
+        with transaction(conn):
+            now = {
+                item.image_id
+                for item in chunk
+                if conn.execute(
+                    "UPDATE images SET published_path = ? WHERE id = ? AND is_current = 1"
+                    " AND master_path IS ? AND group_name IS ? AND aspect IS ?",
+                    (str(item.dest), item.image_id, item.master_path, item.group, item.aspect),
+                ).rowcount
+            }
+            if now:
+                mark_pictures_changed(conn, career_id)
+        recorded.update(now)
+        chunk.clear()
+
+    for item, data in _encoded(plan.outstanding):
+        _write_atomic(item.dest, data)
+        chunk.append(item)
+        if len(chunk) == _CHUNK:
+            record()
+    if chunk:
+        record()
+    return frozenset(recorded)
+
+
+def publish_career(
+    conn: sqlite3.Connection,
+    career_id: int,
+    career_key: str,
+    fm_user_dir: Path,
+    sizes: dict[str, int],
+    *,
+    data_dir: Path,
+    active: bool = True,
+    staged: Collection[int] = (),
+) -> PublishReport:
+    """Bring the career's pack in line with its current pictures.
+
+    `sizes` maps group to published size (the picture's height) in pixels. A picture already
+    published to its place is left alone; config.xml is rewritten only if the mapping changes.
+    A pack that is not `active` gets its pictures but a config.xml that maps nothing.
+    `staged` are images `stage_pictures` wrote for this publish: in place now, counted as
+    written.
+    """
+    folder = pack_dir(fm_user_dir, career_key)
+    plan = _plan(conn, career_id, folder, fm_user_dir, sizes, data_dir)
+    if plan.outstanding:
         folder.mkdir(parents=True, exist_ok=True)
-    pictures = published_pictures([(master, size, shape) for _, master, _, size, shape in todo])
-    for (image_id, _, dest, _, _), data in zip(todo, pictures, strict=True):
-        _write_atomic(dest, data)
-        conn.execute("UPDATE images SET published_path = ? WHERE id = ?", (str(dest), image_id))
-    written = len(todo)
-    if written:
+    for item, data in _encoded(plan.outstanding):
+        _write_atomic(item.dest, data)
+        conn.execute(
+            "UPDATE images SET published_path = ? WHERE id = ?", (str(item.dest), item.image_id)
+        )
+    if plan.outstanding:
         mark_pictures_changed(conn, career_id)
-    shown = mapped if active else []
+    restaged = len(set(plan.in_place).intersection(staged))
+    shown = plan.mapped if active else ()
     config_changed = (
-        write_config(folder, shown, fm_user_dir) if mapped or folder.exists() else False
+        write_config(folder, shown, fm_user_dir) if plan.mapped or folder.exists() else False
     )
     return PublishReport(
-        folder, written, unchanged, tuple(missing), config_changed, len(shown), active
+        folder,
+        len(plan.outstanding) + restaged,
+        len(plan.in_place) - restaged,
+        plan.missing,
+        config_changed,
+        len(shown),
+        active,
     )
 
 
@@ -360,12 +477,40 @@ def publish_lock(data_dir: Path) -> Iterator[None]:
         yield
 
 
-def _publish_locked(
-    conn: sqlite3.Connection, settings: Settings, career_id: int, career_key: str, *, active: bool
-) -> PublishReport:
+def _fm_user_dir(settings: Settings) -> Path:
     fm_user_dir = settings.paths.fm_user_dir
     if fm_user_dir is None:
         raise FolderNotSetError()
+    return fm_user_dir
+
+
+def _stage(
+    conn: sqlite3.Connection, settings: Settings, career_id: int, career_key: str
+) -> frozenset[int]:
+    """`stage_pictures` for a career with these settings, before the publish transaction."""
+    return stage_pictures(
+        conn,
+        career_id,
+        career_key,
+        _fm_user_dir(settings),
+        settings.groups.published_sizes(),
+        data_dir=settings.paths.data_dir,
+    )
+
+
+def _publish_locked(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    career_id: int,
+    career_key: str,
+    *,
+    active: bool,
+    staged: Collection[int] = (),
+) -> PublishReport:
+    """The pack brought in line inside the publish transaction: pictures staged before it are
+    already in place, so it reads, checks and writes mappings, and writes only pictures that
+    became due since."""
+    fm_user_dir = _fm_user_dir(settings)
     report = publish_career(
         conn,
         career_id,
@@ -374,36 +519,45 @@ def _publish_locked(
         settings.groups.published_sizes(),
         data_dir=settings.paths.data_dir,
         active=active,
+        staged=staged,
     )
     if active:
-        report = replace(
-            report,
-            deactivated=deactivate_packs(fm_user_dir, career_key),
-            legacy_removed=_remove_legacy_after_publish(fm_user_dir),
-        )
+        report = replace(report, deactivated=deactivate_packs(fm_user_dir, career_key))
     return report
 
 
-def _remove_legacy_after_publish(fm_user_dir: Path) -> bool:
-    """`remove_legacy_packs` once the active pack is in place. A failure is only logged:
-    the new pack is published, and the next publish tries again."""
+def _remove_legacy_after_publish(report: PublishReport, settings: Settings) -> PublishReport:
+    """`remove_legacy_packs` once the active pack is in place and committed, still under the
+    publish lock but outside the transaction: removing a whole old pack takes a while. A
+    failure is only logged: the new pack is published, and the next publish tries again."""
+    if not report.active:
+        return report
+    fm_user_dir = _fm_user_dir(settings)
     try:
-        return remove_legacy_packs(fm_user_dir)
+        removed = remove_legacy_packs(fm_user_dir)
     except (OSError, PublishError) as exc:
         logging.getLogger("kitshot").warning(
             "the old pack folder %s could not be removed: %s", legacy_packs_root(fm_user_dir), exc
         )
-        return False
+        return report
+    return replace(report, legacy_removed=removed)
 
 
 def publish_pack(
     conn: sqlite3.Connection, settings: Settings, career_id: int, career_key: str
 ) -> PublishReport:
-    """Publish one career's pictures. If it is active, unmap every other career's pack."""
-    with publish_lock(settings.paths.data_dir), transaction(conn):
-        return _publish_locked(
-            conn, settings, career_id, career_key, active=active_career_id(conn) == career_id
-        )
+    """Publish one career's pictures. If it is active, unmap every other career's pack.
+
+    The pictures are written first, outside the transaction (`stage_pictures`); the
+    transaction then holds SQLite's write lock only to check them and write the mappings."""
+    with publish_lock(settings.paths.data_dir):
+        staged = _stage(conn, settings, career_id, career_key)
+        with transaction(conn):
+            active = active_career_id(conn) == career_id
+            report = _publish_locked(
+                conn, settings, career_id, career_key, active=active, staged=staged
+            )
+        return _remove_legacy_after_publish(report, settings)
 
 
 def publish_active(
@@ -414,22 +568,38 @@ def publish_active(
 ) -> PublishReport | None:
     """Show FM27 the active career's pack and no other; None if there is no career yet.
 
-    Run after every sync: a save from another career switches the pack.
+    Run after every sync: a save from another career switches the pack. Its pictures are
+    written first, outside the transaction, as in `publish_pack`.
     """
-    with publish_lock(settings.paths.data_dir), transaction(conn):
-        row = conn.execute(
+
+    def active_career() -> sqlite3.Row | None:
+        return conn.execute(
             "SELECT id, key FROM careers WHERE id = ?", (active_career_id(conn),)
         ).fetchone()
-        if row is None:
-            return None
-        # Settings edits and career changes cannot race the writer while it applies and
-        # acknowledges the committed sync. An ordinary worker publishing an older job
-        # does not acknowledge this marker with its own snapshot of the settings.
-        if read_settings is not None:
-            settings = read_settings()
-        report = _publish_locked(conn, settings, row["id"], row["key"], active=True)
-        publication.finish(conn)
-        return report
+
+    with publish_lock(settings.paths.data_dir):
+        before = active_career()
+        staged: frozenset[int] = frozenset()
+        if before is not None:
+            current = read_settings() if read_settings is not None else settings
+            staged = _stage(conn, current, before["id"], before["key"])
+        with transaction(conn):
+            row = active_career()
+            if row is None:
+                return None
+            # Settings edits and career changes cannot race the writer while it applies and
+            # acknowledges the committed sync. An ordinary worker publishing an older job
+            # does not acknowledge this marker with its own snapshot of the settings. A
+            # career that became active while pictures were staged has its own written here.
+            if read_settings is not None:
+                settings = read_settings()
+            if before is None or row["id"] != before["id"]:
+                staged = frozenset()
+            report = _publish_locked(
+                conn, settings, row["id"], row["key"], active=True, staged=staged
+            )
+            publication.finish(conn)
+        return _remove_legacy_after_publish(report, settings)
 
 
 def unpublish(

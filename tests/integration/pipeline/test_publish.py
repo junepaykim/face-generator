@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import io
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 import pytest
@@ -547,6 +547,121 @@ def test_publish_lock_lets_one_writer_in_at_a_time(tmp_path: Path) -> None:
         assert not entered.wait(0.2)  # blocked while this thread holds it
     t.join(5)
     assert entered.is_set()
+
+
+# --- the pictures are written outside the publish transaction (2026-11-25) ------------------
+
+
+def _masters(data: Path, uids: Iterable[int]) -> None:
+    (data / "masters").mkdir(parents=True, exist_ok=True)
+    for uid in uids:
+        Image.new("RGB", (48, 64), (uid, 0, 0)).save(data / "masters" / f"{uid}.png")
+
+
+def _published(conn: sqlite3.Connection) -> int:
+    return conn.execute("SELECT COUNT(*) FROM images WHERE published_path IS NOT NULL").fetchone()[
+        0
+    ]
+
+
+def test_pictures_are_written_without_holding_the_database_write_lock(
+    pack_settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """On 2026-11-24 a publish of 1490 pictures held SQLite's write lock for ten minutes, and
+    three syncs failed behind it ("database is locked"). While pictures are encoded and
+    written, another process can write at once; the mapping follows in a short transaction."""
+    from kitshot.persistence import db
+    from kitshot.pipeline import publish
+
+    conn = db.connect(tmp_path / "state.db")
+    other = db.connect(tmp_path / "state.db", busy_timeout_ms=0)  # no waiting for the lock
+    uids = range(1, 12)  # more than one chunk
+    _masters(pack_settings.paths.data_dir, uids)
+    _career(conn)
+    for uid in uids:
+        _image(conn, uid, "c", f"masters/{uid}.png")
+    real, writes = publish._write_atomic, []
+
+    def write(path: Path, data: bytes) -> None:
+        if path.suffix == ".png":
+            with db.transaction(other):  # raises at once while the publish holds the lock
+                other.execute("UPDATE careers SET updated_at = ?", (path.name,))
+            writes.append(path.name)
+        real(path, data)
+
+    monkeypatch.setattr(publish, "_write_atomic", write)
+    report = publish_pack(conn, pack_settings, 1, "k")
+    fm = pack_settings.paths.fm_user_dir
+    assert fm is not None and len(writes) == 11
+    assert (report.written, report.unchanged, report.mapped) == (11, 0, 11)
+    assert _mapped(fm, "k") == set(uids) and _published(conn) == 11
+    again = publish_pack(conn, pack_settings, 1, "k")
+    assert (again.written, again.unchanged, again.changed) == (0, 11, False)
+    conn.close()
+    other.close()
+
+
+def test_a_picture_picked_while_the_pack_is_written_is_published_as_picked(
+    pack_settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pick and Restore change a picture without the publish lock. A picture changed while it
+    is written is not recorded as published, and the same publish writes it as it is now."""
+    from kitshot.persistence import db
+    from kitshot.pipeline import publish
+
+    conn = db.connect(tmp_path / "state.db")
+    other = db.connect(tmp_path / "state.db")
+    data = pack_settings.paths.data_dir
+    _masters(data, (7,))
+    Image.new("RGB", (48, 64), (0, 0, 255)).save(data / "masters" / "picked.png")
+    _career(conn)
+    _image(conn, 7, "c", "masters/7.png")
+    real, picked = publish._write_atomic, []
+
+    def write(path: Path, data: bytes) -> None:
+        if path.name == "7.png" and not picked:
+            other.execute(
+                "UPDATE images SET master_path = 'masters/picked.png', published_path = NULL"
+            )
+            picked.append(path)
+        real(path, data)
+
+    monkeypatch.setattr(publish, "_write_atomic", write)
+    report = publish_pack(conn, pack_settings, 1, "k")
+    assert picked and report.written == 1 and _published(conn) == 1
+    with Image.open(report.folder / "7.png") as im:
+        assert im.convert("RGB").getpixel((0, 0)) == (0, 0, 255)
+    conn.close()
+    other.close()
+
+
+def test_pictures_written_before_a_failure_stay_recorded(
+    conn: sqlite3.Connection,
+    pack_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each chunk is recorded as it is written: a failure later on (a full disk) does not
+    leave the pictures already in place to be written again."""
+    from kitshot.pipeline import publish
+
+    uids = range(1, 11)
+    _masters(pack_settings.paths.data_dir, uids)
+    _career(conn)
+    for uid in uids:
+        _image(conn, uid, "c", f"masters/{uid}.png")
+    real = publish._write_atomic
+
+    def write(path: Path, data: bytes) -> None:
+        if path.name == "10.png":
+            raise OSError("no space left on the device")
+        real(path, data)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(publish, "_write_atomic", write)
+        with pytest.raises(OSError, match="no space"):
+            publish_pack(conn, pack_settings, 1, "k")
+    assert _published(conn) == publish._CHUNK == 8  # the first chunk; 9.png waits
+    assert publish_pack(conn, pack_settings, 1, "k").written == 2
 
 
 def test_square_pictures_are_published_square_next_to_portraits(

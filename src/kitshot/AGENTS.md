@@ -57,7 +57,9 @@ Use the web/datasource guides for HTTP, adapters and bundled kit data; use
 - Commit the pending publication with the sync. In `pipeline/publish.py`,
   `publish_active` clears that marker only after publishing the active pack succeeds.
   The CLI publish command, worker and restore action call `publish_pack` for a selected career.
-- When holding both locks, take the publish lock before the database transaction.
+- When holding both locks, take the publish lock before the database transaction. Encode
+  and write pictures outside long transactions (`stage_pictures`); the publish transaction
+  holds SQLite's write lock only for checks and mappings, or syncs time out behind it.
   Restore commits its sheet/image selection before publishing. Keep both numeric and
   `r-` FM portrait mappings for each published person.
 - `datasource/photos.py` scans FM files. Read stored photo counts and scan status from
