@@ -78,7 +78,8 @@ Use the web/datasource guides for HTTP, adapters and bundled kit data; use
   Windows pipe reads must poll, not block during DLL loads.
 - Keep torch/diffusers/tagger imports lazy. `render.gpu.prepare_environment` runs before
   torch imports; `render/quality_checks.py` must remain usable without model libraries.
-- Prompt embeddings wait in CPU memory; text encoders and the IP-Adapter encoder leave
-  the GPU between uses. Do not keep them resident alongside the UNet.
+- Prompt embeddings wait in CPU memory. Text encoders are read from disk for each
+  encoding trip and let go of after it; the IP-Adapter encoder waits in CPU memory. Do not
+  keep any of them resident alongside the UNet, nor text encoders between trips.
 - `render/picture.py` owns 3:4 geometry. The worker checks the detail pass too; a failed
   detail pass falls back to the passing candidate. Renderer/tagger interfaces accept fakes.

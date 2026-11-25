@@ -3,8 +3,9 @@
 Everything comes from one repository, `Tongyi-MAI/Z-Image-Turbo`. The transformer is
 published in FP32; it is built on the GPU tensor by tensor, its 238 block Linear layers as NF4
 (render/quantise.py) and the rest as BF16, so system memory never holds it whole. Qwen3-4B's
-decoder layers become INT8 on the GPU one by one; the text encoder then waits in system
-memory and visits the GPU only to encode prompts.
+decoder layers become INT8 on the GPU one by one, for each trip that encodes prompts; between
+trips it is not kept (user, 2026-11-24: 4.2 GiB of system memory otherwise), only the
+embeddings are.
 The encoder (4.5 GiB on the card) and the transformer (3.4 GiB) together would pass 8 GiB, so
 the transformer leaves the card for the encoder's trip.
 
@@ -28,7 +29,14 @@ from kitshot.platform.memory import release_free_memory
 from kitshot.render.gpu import on_gpu
 from kitshot.render.prompt_cache import EmbeddingCache
 from kitshot.render.prompt_cache import prepare as prepare_texts
-from kitshot.render.renderer import DETAIL_STRENGTH, HEIGHT, TEXT_CACHE_SIZE, WIDTH, Reference
+from kitshot.render.renderer import (
+    DETAIL_STRENGTH,
+    HEIGHT,
+    TEXT_CACHE_SIZE,
+    WIDTH,
+    Reference,
+    collect_freed,
+)
 
 if TYPE_CHECKING:
     from PIL.Image import Image
@@ -106,6 +114,10 @@ class ZImageRenderer:
     `prepare` encodes upcoming prompts in one trip of the text encoder; the embeddings (one
     variable-length tensor per text) wait in system memory, up to TEXT_CACHE_SIZE texts.
     The detail pass always decodes in tiles: untiled, 1344x1728 passes 9 GiB.
+
+    With `release_text_encoder` (the default), each trip reads the text encoder from disk and
+    makes it INT8 on the card, and lets go of it afterwards; off, the INT8 encoder waits in
+    system memory (`offload_text_encoder`) or on the card. Its weights are the same either way.
     """
 
     model = ZIMAGE_REPO
@@ -119,6 +131,7 @@ class ZImageRenderer:
         detail_strength: float = DETAIL_STRENGTH,
         *,
         offload_text_encoder: bool = True,
+        release_text_encoder: bool = True,
         transformer_off_for_encoding: bool = True,
         detail_vae_tiling: bool = True,
     ) -> None:
@@ -133,24 +146,31 @@ class ZImageRenderer:
             ZImagePipeline,
         )
 
-        from kitshot.render.quantise import quantise_linears
-
         self._torch = torch
         bf16 = torch.bfloat16
-        # The text encoder, its tokenizer and the scheduler, without a transformer or VAE.
+        # The tokenizer and the scheduler, without a transformer, VAE or text encoder.
         # local_files_only: sharded weights look up the Hub otherwise, even with HF_HUB_OFFLINE.
-        # The encoder becomes INT8 on the card before the transformer arrives there.
-        encoder = ZImagePipeline.from_pretrained(
-            ZIMAGE_REPO, transformer=None, vae=None, dtype=bf16, local_files_only=True
+        self.encoder = ZImagePipeline.from_pretrained(
+            ZIMAGE_REPO,
+            transformer=None,
+            vae=None,
+            text_encoder=None,
+            dtype=bf16,
+            local_files_only=True,
         )
-        text_encoder = encoder.text_encoder.eval()
-        self.int8_text_layers = quantise_linears(text_encoder, TEXT_SCOPE, "cuda")
+        self.encoder.set_progress_bar_config(disable=True)
         self.offload_text_encoder = offload_text_encoder
-        text_encoder.to("cpu" if offload_text_encoder else "cuda")
-        gc.collect()
-        torch.cuda.empty_cache()
-        encoder.set_progress_bar_config(disable=True)
-        self.encoder = encoder
+        self.release_text_encoder = release_text_encoder and offload_text_encoder
+        self.int8_text_layers = 0
+        """Counted as the text encoder loads. A released one first loads for the first prompt's
+        trip, before anything is drawn, so a picture's settings always have the count."""
+        if not self.release_text_encoder:
+            # INT8 on the card before the transformer arrives there; then it waits.
+            text_encoder = self._load_text_encoder()
+            text_encoder.to("cpu" if offload_text_encoder else "cuda")
+            self.encoder.text_encoder = text_encoder
+            gc.collect()
+            torch.cuda.empty_cache()
 
         transformer, self.nf4_layers = load_transformer_nf4("cuda")
         gc.collect()
@@ -159,10 +179,10 @@ class ZImageRenderer:
             ZIMAGE_REPO, subfolder="vae", dtype=bf16, local_files_only=True
         ).to("cuda")
         parts = {"vae": vae, "text_encoder": None, "tokenizer": None, "transformer": transformer}
-        self.pipe = ZImagePipeline(scheduler=encoder.scheduler, **parts)
+        self.pipe = ZImagePipeline(scheduler=self.encoder.scheduler, **parts)
         self.pipe.set_progress_bar_config(disable=True)
         # A scheduler of its own: the detail pass sets its timesteps from the strength.
-        scheduler = FlowMatchEulerDiscreteScheduler.from_config(encoder.scheduler.config)
+        scheduler = FlowMatchEulerDiscreteScheduler.from_config(self.encoder.scheduler.config)
         self.img2img = ZImageImg2ImgPipeline(scheduler=scheduler, **parts)
         self.img2img.set_progress_bar_config(disable=True)
         if transformer.dtype != bf16 or vae.dtype != bf16:
@@ -176,6 +196,37 @@ class ZImageRenderer:
         # The current job's embedding on the GPU, so its renders do not copy it again.
         self._embeds: dict[str, Any] = {}
 
+    def _load_text_encoder(self) -> Any:
+        """Qwen3-4B read from disk as the whole repository is read (memory-mapped, so it costs
+        little private memory), its decoder layers made INT8 on the card one by one; the rest
+        stays in system memory. Only the encoder loads: the tokenizer and scheduler are passed."""
+        from diffusers import ZImagePipeline
+
+        from kitshot.render.quantise import quantise_linears
+
+        part = ZImagePipeline.from_pretrained(
+            ZIMAGE_REPO,
+            transformer=None,
+            vae=None,
+            tokenizer=self.encoder.tokenizer,
+            scheduler=self.encoder.scheduler,
+            dtype=self._torch.bfloat16,
+            local_files_only=True,
+        )
+        text_encoder = part.text_encoder.eval()
+        self.int8_text_layers = quantise_linears(text_encoder, TEXT_SCOPE, "cuda")
+        return text_encoder
+
+    @contextmanager
+    def _text_encoder_loaded(self) -> Iterator[None]:
+        """A released text encoder, read for one trip onto the card and let go of after."""
+        try:
+            self.encoder.text_encoder = self._load_text_encoder().to("cuda")
+            yield
+        finally:
+            self.encoder.text_encoder = None
+            collect_freed(self._torch)
+
     @contextmanager
     def _encoder_on_gpu(self) -> Iterator[None]:
         """The text encoder on the card for one trip; the transformer waits in system memory
@@ -185,8 +236,12 @@ class ZImageRenderer:
             if self.transformer_off_for_encoding:
                 transformer.to("cpu")
             try:
-                with on_gpu(self.encoder.text_encoder, enabled=self.offload_text_encoder):
-                    yield
+                if self.release_text_encoder:
+                    with self._text_encoder_loaded():
+                        yield
+                else:
+                    with on_gpu(self.encoder.text_encoder, enabled=self.offload_text_encoder):
+                        yield
             finally:
                 if self.transformer_off_for_encoding:
                     transformer.to("cuda")

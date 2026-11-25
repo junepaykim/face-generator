@@ -154,8 +154,9 @@ def test_no_reference_and_no_overlong_prompt(gpu: tuple[Any, Any]) -> None:
 
 def test_group_a_job_keeps_peak_vram_under_8_gib(gpu: tuple[Any, Any]) -> None:
     """A group A job as the worker runs it, with the encode trip for the next jobs: PyTorch's
-    peak reserved memory stays under 8 GiB (user, 2026-11-11). The text encoder and the
-    tagger are back in system memory afterwards, the transformer on the card."""
+    peak reserved memory stays under 8 GiB (user, 2026-11-11). Afterwards the tagger is back
+    in system memory, the transformer on the card, and the text encoder is not kept at all
+    (user, 2026-11-24)."""
     import torch
 
     renderer, tagger = gpu
@@ -171,8 +172,8 @@ def test_group_a_job_keeps_peak_vram_under_8_gib(gpu: tuple[Any, Any]) -> None:
     allocated = torch.cuda.max_memory_allocated() / 2**30
     print(f"Z-Image-Turbo group A job: peak reserved {reserved:.2f} GiB, allocated {allocated:.2f}")
     assert reserved < 8.0
-    for model in (renderer.encoder.text_encoder, tagger.model):
-        assert next(model.parameters()).device.type == "cpu"
+    assert renderer.encoder.text_encoder is None
+    assert next(tagger.model.parameters()).device.type == "cpu"
     assert renderer.pipe.transformer.device.type == "cuda"
 
 
@@ -180,21 +181,36 @@ def test_cached_prompts_draw_bit_for_bit_what_direct_encoding_draws(
     gpu: tuple[Any, Any],
 ) -> None:
     """The prompt cache changes no pixel: an embedding prepared in one trip, kept in system
-    memory and copied back equals the pipeline's own encoding, and draws the same bytes."""
+    memory and copied back equals the pipeline's own encoding, and draws the same bytes. The
+    trip's text encoder, read from disk for it and let go of after (user, 2026-11-24), is the
+    INT8 encoder the renderer kept before: the whole encoder pipeline's load."""
     import torch
+    from diffusers import ZImagePipeline
 
-    from kitshot.render.gpu import on_gpu
+    from kitshot.render.quantise import quantise_linears
     from kitshot.render.renderer import HEIGHT, WIDTH
-    from kitshot.render.zimage import GUIDANCE, MAX_TOKENS, STEPS
+    from kitshot.render.zimage import GUIDANCE, MAX_TOKENS, STEPS, TEXT_SCOPE, ZIMAGE_REPO
 
     renderer, _ = gpu
     prompt = _prompt(31)
     renderer.prepare([prompt])
-    assert renderer.encoded(prompt)
-    with torch.no_grad(), on_gpu(renderer.encoder.text_encoder):
-        (expected,) = renderer.encoder._encode_prompt(
-            [prompt.positive], device=torch.device("cuda"), max_sequence_length=MAX_TOKENS
+    assert renderer.encoded(prompt) and renderer.encoder.text_encoder is None
+    transformer = renderer.pipe.transformer
+    transformer.to("cpu")  # the two together would pass 8 GiB
+    try:
+        kept = ZImagePipeline.from_pretrained(
+            ZIMAGE_REPO, transformer=None, vae=None, dtype=torch.bfloat16, local_files_only=True
         )
+        quantise_linears(kept.text_encoder.eval(), TEXT_SCOPE, "cuda")
+        kept.text_encoder.to("cuda")
+        with torch.no_grad():
+            (expected,) = kept._encode_prompt(
+                [prompt.positive], device=torch.device("cuda"), max_sequence_length=MAX_TOKENS
+            )
+        del kept
+        torch.cuda.empty_cache()
+    finally:
+        transformer.to("cuda")
     (got,) = renderer._embeddings(prompt)
     assert got.device == expected.device and got.dtype == expected.dtype
     assert torch.equal(got, expected)

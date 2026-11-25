@@ -295,7 +295,9 @@ def render(name: str) -> None:
 
     # The baseline: production as it drew before fp16 accumulation and INT8 weights. The
     # variant's settings are applied by this script, per call.
-    renderer = AnimagineRenderer(fp16_accumulation=False, int8_weights=False)
+    renderer = AnimagineRenderer(
+        fp16_accumulation=False, int8_weights=False, release_text_encoders=False
+    )
     cases = make_cases()
     # Every prompt encoded up front; the text encoders then wait in system memory so the
     # second UNet fits beside the first. Production keeps them on the card (1.6 GiB).

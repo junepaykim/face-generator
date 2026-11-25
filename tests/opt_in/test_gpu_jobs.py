@@ -64,7 +64,7 @@ def loaded(request: pytest.FixtureRequest) -> Iterator[tuple[str, Any]]:
 def _env(conn: sqlite3.Connection, settings: Any, tmp_path: Path, model: str, gender: str) -> Any:
     from factories import player, snapshot
 
-    from kitshot.core.settings_values import StyleSettings
+    from kitshot.core.settings_values import PictureSettings, StyleSettings
     from kitshot.persistence.settings import Paths
     from kitshot.pipeline.sync import run_sync
 
@@ -76,6 +76,9 @@ def _env(conn: sqlite3.Connection, settings: Any, tmp_path: Path, model: str, ge
             fm_install_dir=tmp_path / "fm-install",
         ),
         style=StyleSettings(model=model, gender=gender),
+        # The 3:4 sizes this file checks; square pictures (the default since 2026-11-22) are
+        # test_gpu_square.py's.
+        picture=PictureSettings(aspect="3:4"),
     )
     run_sync(conn, snapshot([player(UID, name="Test Player", age=27)]), s, save_file="career.fm")
     return s
@@ -103,16 +106,16 @@ def _worker(conn: sqlite3.Connection, s: Any, model: str, renderer: Any, tagger:
     )
 
 
-def _encoders(renderer: Any) -> list[Any]:
-    """The models that wait in system memory between trips."""
-    if hasattr(renderer, "encoder"):  # Z-Image-Turbo: its INT8 text encoder
-        return [renderer.encoder.text_encoder]
+def _waiting(renderer: Any) -> list[Any]:
+    """The models that wait in system memory between jobs: the IP-Adapter's image encoder,
+    once loaded. The text encoders must not be kept between trips (user, 2026-11-24)."""
+    if hasattr(renderer, "encoder"):  # Z-Image-Turbo: no image encoder
+        assert renderer.encoder.text_encoder is None
+        return []
     pipe = renderer.pipe
-    return [
-        m
-        for m in (pipe.text_encoder, pipe.text_encoder_2, getattr(pipe, "image_encoder", None))
-        if m is not None
-    ]
+    assert pipe.text_encoder is None and pipe.text_encoder_2 is None
+    image_encoder = getattr(pipe, "image_encoder", None)
+    return [image_encoder] if image_encoder is not None else []
 
 
 def _denoiser(renderer: Any) -> Any:
@@ -250,6 +253,6 @@ def test_a_group_a_job_and_its_redraw(
         f" allocated {allocated:.2f}"
     )
     assert reserved < 8.0
-    for part in (*_encoders(renderer), tagger.model):
+    for part in (*_waiting(renderer), tagger.model):
         assert next(part.parameters()).device.type == "cpu"
     assert _denoiser(renderer).device.type == "cuda"

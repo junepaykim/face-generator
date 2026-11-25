@@ -65,7 +65,10 @@ def main(args: list[str]) -> None:
         sys.exit(__doc__)
     RUN.mkdir(parents=True, exist_ok=True)
     t0 = time.perf_counter()
-    renderer = AnimagineRenderer(offload_text_encoders=mode != "resident")
+    # The encoders kept, as when this was measured (2026-11-12): the trips below time them.
+    renderer = AnimagineRenderer(
+        offload_text_encoders=mode != "resident", release_text_encoders=False
+    )
     tagger = Eva02Tagger()
     load_s = time.perf_counter() - t0
     prepare = getattr(renderer, "prepare", None)

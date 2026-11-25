@@ -177,8 +177,8 @@ def test_reference_picture(gpu: tuple[Any, Any]) -> None:
 
 def test_group_a_job_with_a_reference_keeps_peak_vram_under_8_gib(gpu: tuple[Any, Any]) -> None:
     """A group A job with a reference, as the worker runs it: PyTorch's peak reserved memory
-    stays under 8 GiB (user, 2026-11-11), and the text encoders, the tagger and the image
-    encoder are back in system memory afterwards."""
+    stays under 8 GiB (user, 2026-11-11); afterwards the tagger and the image encoder are back
+    in system memory, and the text encoders are not kept at all (user, 2026-11-24)."""
     import torch
 
     from kitshot.render.picture import face_box
@@ -204,6 +204,7 @@ def test_group_a_job_with_a_reference_keeps_peak_vram_under_8_gib(gpu: tuple[Any
     )
     assert reserved < 8.0
     pipe = renderer.pipe
-    for model in (pipe.text_encoder, pipe.text_encoder_2, pipe.image_encoder, tagger.model):
+    assert pipe.text_encoder is None and pipe.text_encoder_2 is None
+    for model in (pipe.image_encoder, tagger.model):
         assert next(model.parameters()).device.type == "cpu"
     assert pipe.unet.device.type == "cuda"

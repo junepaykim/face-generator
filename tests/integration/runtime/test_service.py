@@ -6,9 +6,10 @@ import os
 import re
 import sqlite3
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import pytest
 from factories import ABROAD, MANUAL, NEWGEN, RIVAL, player, snapshot
@@ -70,10 +71,20 @@ class Gpu:
     renderers: list[FakeRenderer] = field(default_factory=list)
     taggers: list[FakeTagger] = field(default_factory=list)
     fail_first_render: BaseException | None = None
+    on_render: Callable[[], object] | None = None
+    """Called as each picture is drawn, as a click while it is being drawn."""
 
     def renderer(self, model: str = "animagine") -> FakeRenderer:
         fail = self.fail_first_render if not self.renderers else None
         r = FakeRenderer(model, fail_on_call=1, exc=fail) if fail else FakeRenderer(model)
+        if self.on_render is not None:
+            hook, render = self.on_render, r.render
+
+            def render_with_hook(*args: Any, **kwargs: Any) -> Any:
+                hook()
+                return render(*args, **kwargs)
+
+            r.render = render_with_hook  # type: ignore[method-assign]
         self.renderers.append(r)
         return r
 
@@ -621,6 +632,38 @@ def test_in_a_worker_process_pause_publishes_and_ends_the_loop(env: Env) -> None
     svc.step()
     assert svc.exit is not None and svc.exit.reason == "paused"
     assert not svc.status().models_loaded
+    pack = env.settings.paths.fm_user_dir / "graphics" / "kitshot"
+    assert len(list(pack.glob("*/*.png"))) == 1
+
+
+def test_in_a_worker_process_pause_while_drawing_finishes_the_picture_then_frees_the_models(
+    env: Env,
+) -> None:
+    """Pause pressed while a picture is drawn (user, 2026-11-24): that picture is finished,
+    stored and published; then the models are let go of and the worker process ends, so no
+    model stays in memory and the next job is not started."""
+    svc = env.service(link=RecordingLink())
+    clicks: list[None] = []
+
+    def click() -> None:
+        if not clicks:
+            clicks.append(None)
+            svc.pause()
+
+    env.gpu.on_render = click
+    waiting = len(env.queued())
+    assert svc.step() == 0.0  # the picture under way is drawn to the end
+    assert clicks and svc.status().paused and svc.exit is None
+    assert len(env.drawn()) == 1 and len(env.queued()) == waiting - 1
+    renderer, tagger = env.gpu.renderers[0], env.gpu.taggers[0]
+    assert renderer.closed == 0  # still loaded: the next pass lets go of it
+
+    svc.step()
+    assert svc.exit is not None and svc.exit.reason == "paused"
+    assert renderer.closed == 1 and tagger.closed == 1
+    assert not svc.status().models_loaded
+    assert len(env.drawn()) == 1 and len(env.queued()) == waiting - 1
+    assert len(env.gpu.renderers) == 1  # nothing loaded again
     pack = env.settings.paths.fm_user_dir / "graphics" / "kitshot"
     assert len(list(pack.glob("*/*.png"))) == 1
 

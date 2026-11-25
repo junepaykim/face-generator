@@ -155,8 +155,8 @@ def test_offloaded_models_keep_peak_vram_under_8_gib(
     gpu: tuple[Any, Any], case: tuple[Any, Any, Any]
 ) -> None:
     """A group A job, with a reference, as the worker runs it: PyTorch's peak reserved memory
-    stays under 8 GiB (user, 2026-11-11), and the text encoders, the tagger and the image
-    encoder are back in system memory afterwards."""
+    stays under 8 GiB (user, 2026-11-11); afterwards the tagger and the image encoder are back
+    in system memory, and the text encoders are not kept at all (user, 2026-11-24)."""
     import torch
 
     from kitshot.core.prompt import build_prompt
@@ -183,7 +183,9 @@ def test_offloaded_models_keep_peak_vram_under_8_gib(
     )
     assert reserved < 8.0
     pipe = renderer.pipe
-    for model in (pipe.text_encoder, pipe.text_encoder_2, pipe.image_encoder, tagger.model):
+    assert pipe.text_encoder is None and pipe.text_encoder_2 is None
+    assert renderer.img2img.text_encoder is None and renderer.img2img.text_encoder_2 is None
+    for model in (pipe.image_encoder, tagger.model):
         assert next(model.parameters()).device.type == "cpu"
     assert pipe.unet.device.type == "cuda"
 
@@ -193,8 +195,13 @@ def test_pre_encoded_prompts_draw_bit_for_bit_what_encoding_per_job_drew(
 ) -> None:
     """The prompt cache changes no pixel (user, 2026-11-12). Prompts prepared in one trip,
     kept in system memory and copied back give the very embeddings the renderer encoded per
-    job before the cache, and the same picture to the byte."""
+    job before the cache, and the same picture to the byte. The trip's text encoders, read
+    from disk for it and let go of after (user, 2026-11-24), are the ones the whole
+    checkpoint's load gives, which the renderer kept before."""
+    from types import SimpleNamespace
+
     import torch
+    from diffusers import StableDiffusionXLPipeline
     from encoding_reference import encode_pair_before_cache
 
     from kitshot.core.prompt import build_prompt
@@ -208,9 +215,18 @@ def test_pre_encoded_prompts_draw_bit_for_bit_what_encoding_per_job_drew(
     renderer.prepare(prompts)
     assert all(renderer.encoded(p) for p in prompts)
     pipe = renderer.pipe
+    assert pipe.text_encoder is None  # let go of after the trip
+    whole = StableDiffusionXLPipeline.from_pretrained(renderer.spec.repo, **renderer._load_options)
+    kept = SimpleNamespace(
+        tokenizer=pipe.tokenizer,
+        tokenizer_2=pipe.tokenizer_2,
+        text_encoder=whole.text_encoder,
+        text_encoder_2=whole.text_encoder_2,
+    )
+    del whole
     for prompt in prompts:
-        with torch.no_grad(), on_gpu(pipe.text_encoder, pipe.text_encoder_2):
-            expected = encode_pair_before_cache(pipe, prompt.positive, prompt.negative)
+        with torch.no_grad(), on_gpu(kept.text_encoder, kept.text_encoder_2):
+            expected = encode_pair_before_cache(kept, prompt.positive, prompt.negative)
         got = renderer._embeddings(prompt)
         assert got[4] == expected[4] >= 2
         for a, b in zip(got[:4], expected[:4], strict=True):

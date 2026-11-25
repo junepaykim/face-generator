@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from kitshot.core.prompt import Prompt
 from kitshot.core.settings_values import IMAGE_MODELS
+from kitshot.platform.memory import release_free_memory
 from kitshot.render import quality_checks as qc
 from kitshot.render.gpu import on_gpu
 from kitshot.render.prompt_cache import EmbeddingCache
@@ -205,6 +206,16 @@ def pair_embeddings(
     return padded(positive), positive.pooled, padded(negative), negative.pooled, n
 
 
+def collect_freed(torch: Any) -> None:
+    """Free the memory of models just let go of: their card memory goes back to the driver
+    and, on Linux, the heap's free pages back to the OS. Never raises: after a CUDA fault
+    even `empty_cache` fails, and this runs in `finally` blocks."""
+    gc.collect()
+    with contextlib.suppress(Exception):
+        torch.cuda.empty_cache()
+    release_free_memory()
+
+
 INT8_SCOPE = "transformer_blocks"
 """The UNet's Linear layers stored as INT8: the 700 in its transformer blocks (attention and
 feed-forward), 4.1 of its 4.8 GiB in fp16."""
@@ -219,12 +230,17 @@ class SdxlRenderer:
     """An SDXL model (`SdxlModel`) in fp16 with the fp16-fix VAE; no compile warm-up.
 
     Optional fp16 accumulation and INT8 transformer weights change pictures slightly;
-    disabling both gives the fp16 baseline. INT8 weights are rebuilt per layer. Text
-    encoders can wait in CPU memory between encoding sessions without changing output.
+    disabling both gives the fp16 baseline. INT8 weights are rebuilt per layer. Where the
+    text encoders are between encoding sessions does not change output.
 
     `prepare` batches upcoming prompts into one GPU visit. Up to TEXT_CACHE_SIZE texts
     stay cached in CPU memory; unprepared prompts are encoded on first use. Cached and
     uncached paths supply identical embeddings to the pipeline.
+
+    With `release_text_encoders` (the default), the text encoders are not kept at all: each
+    trip loads them from disk straight onto the card and lets go of them afterwards, so only
+    the embeddings stay in system memory while pictures are drawn (user, 2026-11-24). Off,
+    they wait in system memory (`offload_text_encoders`) or on the card.
     """
 
     def __init__(
@@ -235,6 +251,7 @@ class SdxlRenderer:
         fp16_accumulation: bool = True,
         int8_weights: bool = True,
         offload_text_encoders: bool = True,
+        release_text_encoders: bool = True,
     ) -> None:
         from kitshot.render.gpu import prepare_environment
 
@@ -247,8 +264,18 @@ class SdxlRenderer:
         self.model = spec.repo
         self.fp16_accumulation = fp16_accumulation
         variant = {"variant": spec.variant} if spec.variant else {}
+        self._load_options: dict[str, Any] = {
+            "dtype": torch.float16,
+            "use_safetensors": True,
+            **variant,
+        }
+        """How the checkpoint's parts are read, the same for a trip's text encoders."""
+        self.release_text_encoders = release_text_encoders and offload_text_encoders
+        released = {"text_encoder": None, "text_encoder_2": None}
         pipe = StableDiffusionXLPipeline.from_pretrained(
-            spec.repo, dtype=torch.float16, use_safetensors=True, **variant
+            spec.repo,
+            **self._load_options,
+            **(released if self.release_text_encoders else {}),
         )
         if spec.vae_upcast_off:
             pipe.vae.register_to_config(force_upcast=False)
@@ -301,9 +328,39 @@ class SdxlRenderer:
 
     @contextmanager
     def _encoders_on_gpu(self) -> Iterator[None]:
-        encoders = (self.pipe.text_encoder, self.pipe.text_encoder_2)
-        with self._torch.no_grad(), on_gpu(*encoders, enabled=self.offload_text_encoders):
-            yield
+        """The text encoders on the card for one trip, as `pipe.text_encoder` and
+        `pipe.text_encoder_2`. Released ones are read from disk for it and let go of after."""
+        if not self.release_text_encoders:
+            encoders = (self.pipe.text_encoder, self.pipe.text_encoder_2)
+            with self._torch.no_grad(), on_gpu(*encoders, enabled=self.offload_text_encoders):
+                yield
+            return
+        pipe = self.pipe
+        try:
+            pipe.text_encoder, pipe.text_encoder_2 = self._load_text_encoders()
+            with self._torch.no_grad():
+                yield
+        finally:
+            pipe.text_encoder = pipe.text_encoder_2 = None
+            collect_freed(self._torch)
+
+    def _load_text_encoders(self) -> tuple[Any, Any]:
+        """Both text encoders read from disk as the whole checkpoint is read, so they are the
+        same to the bit, and moved onto the card. Only they load: the pipeline's other parts
+        are passed in or left out."""
+        from diffusers import StableDiffusionXLPipeline
+
+        pipe = self.pipe
+        part = StableDiffusionXLPipeline.from_pretrained(
+            self.spec.repo,
+            unet=None,
+            vae=None,
+            tokenizer=pipe.tokenizer,
+            tokenizer_2=pipe.tokenizer_2,
+            scheduler=pipe.scheduler,
+            **self._load_options,
+        )
+        return part.text_encoder.to("cuda"), part.text_encoder_2.to("cuda")
 
     def prepare(self, prompts: Iterable[Prompt]) -> int:
         """Encode every text of these prompts not cached yet, in one trip of the text encoders.
@@ -559,6 +616,7 @@ class AnimagineRenderer(SdxlRenderer):
         fp16_accumulation: bool = True,
         int8_weights: bool = True,
         offload_text_encoders: bool = True,
+        release_text_encoders: bool = True,
     ) -> None:
         super().__init__(
             ANIMAGINE,
@@ -566,4 +624,5 @@ class AnimagineRenderer(SdxlRenderer):
             fp16_accumulation=fp16_accumulation,
             int8_weights=int8_weights,
             offload_text_encoders=offload_text_encoders,
+            release_text_encoders=release_text_encoders,
         )
