@@ -32,7 +32,7 @@ def test_resource_loaders_ignore_the_working_directory(
     assert settings.local_path(config) == tmp_path / "local.toml"
     assert desktop.FALLBACK_LOG == locations.PROJECT_ROOT / "data" / "logs" / "kitshot.log"
     table = kits.load_kits(data_dir=tmp_path)
-    assert table.kit_for(636, goalkeeper=False)[1] == "table"
+    assert table.kit_for(688, goalkeeper=False)[1] == "table"
     assert table.kit_for(679, goalkeeper=False)[1] == "bundled"
     planned = native_wheel.plan(native_wheel.Host("win32", "AMD64", "cpython", (3, 12)))
     assert planned.version == native.VERSION  # native/ read from the checkout, not from here

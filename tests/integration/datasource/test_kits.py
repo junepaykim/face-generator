@@ -122,14 +122,16 @@ def test_colour_words_are_plain_colours() -> None:
         assert colour.words not in CONTENT_NEGATIVE
 
 
-def test_the_shipped_table_loads_and_covers_my_league() -> None:
+def test_the_shipped_table_holds_the_kits_checked_by_eye() -> None:
+    """Arsenal, Newcastle and Celtic, checked on FM27's images; the League Two drafts from memory
+    were removed (user, 2026-11-24) so FM27's own kits apply to those clubs."""
     kits = load_kits(ROOT / "config" / "kits.toml")
-    league_two = {636, 109210, 605, 620, 631, 634, 640, 641, 651, 5103834, 656, 658, 581, 689,
-                  694, 698, 703, 704, 5103842, 710, 725, 729, 731, 744}  # fmt: skip
-    assert league_two <= set(kits.clubs)
-    colchester, source = kits.kit_for(636, goalkeeper=False)
+    assert set(kits.clubs) == {602, 688, 1569}
+    newcastle, source = kits.kit_for(688, goalkeeper=False)
     assert source == "table"
-    assert colchester.pattern == "stripes" and set(colchester.shirt) == {"blue", "white"}
+    assert newcastle.pattern == "stripes" and set(newcastle.shirt) == {"black", "white"}
+    _, source = kits.kit_for(636, goalkeeper=False)  # Colchester: no longer in the table
+    assert source == "bundled"
     for club in kits.clubs.values():
         assert club.goalkeeper.goalkeeper and not club.home.goalkeeper
         assert club.home.words() and club.goalkeeper.words()
@@ -216,10 +218,10 @@ def write_report(data_dir: Path, *rows: dict, generated: str | None = None) -> P
 
 
 def test_the_table_comes_before_the_catalog(tmp_path: Path) -> None:
-    write_report(tmp_path, estimate(636, "red"), estimate(602, "red"))
+    write_report(tmp_path, estimate(688, "red"), estimate(602, "red"))
     kits = load_kits(ROOT / "config" / "kits.toml", data_dir=tmp_path, bundled=False)
-    colchester, source = kits.kit_for(636, goalkeeper=False)
-    assert source == "table" and colchester.pattern == "stripes"
+    newcastle, source = kits.kit_for(688, goalkeeper=False)
+    assert source == "table" and newcastle.pattern == "stripes"
     _, source = kits.kit_for(602, goalkeeper=False)
     assert source == "table"  # hand-written: verified against FM27's image
     other = tmp_path / "other"
@@ -250,9 +252,9 @@ def test_no_catalog_file_means_the_bundle_alone(tmp_path: Path) -> None:
 def test_a_club_in_the_table_in_the_bundle_or_in_neither(tmp_path: Path) -> None:
     """On a PC that never ran the probe: the table first, then the bundle, then the fallback."""
     kits = load_kits(data_dir=tmp_path)
-    colchester, source = kits.kit_for(636, goalkeeper=False)  # in both: the table wins
-    assert source == "table" and colchester.pattern == "stripes"
-    assert 636 in kits.bundled
+    newcastle, source = kits.kit_for(688, goalkeeper=False)  # in both: the table wins
+    assert source == "table" and newcastle.pattern == "stripes"
+    assert 688 in kits.bundled
     city, source = kits.kit_for(679, goalkeeper=False)  # Manchester City: the bundle only
     assert source == "bundled" and city.shirt == ("sky",) and city.shorts is None
     keeper, source = kits.kit_for(679, goalkeeper=True)

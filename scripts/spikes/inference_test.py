@@ -68,18 +68,22 @@ ROOT = Path(__file__).resolve().parents[2]
 RUN = ROOT / "data" / "bakeoff" / "inference"
 BASE = "fp16"
 FLAGS = {"fp16", "fp16acc", "compile", "fp8", "int8", "bf16", "sage", "w8"}
-# (made-up unique ID, age wording, club ID, goalkeeper, at my club)
+# (made-up unique ID, age wording, kit, at my club). The kits are fixed here, as the kit
+# table's League Two drafts were when these runs were recorded (removed from config/kits.toml
+# on 2026-11-24), so the prompts stay the same whatever the kit sources hold. None: the
+# fallback kit.
+STRIPES = Kit(shirt=("blue", "white"), pattern="stripes", shorts="blue")
 CASES = [
-    (910001, "W01", 636, False, True),  # Colchester stripes, youngest wording
-    (910002, "W03", 636, True, True),  # Colchester goalkeeper
-    (910003, "W05", 658, False, False),  # Grimsby black and white stripes
-    (910004, "W07", 620, False, False),  # Bristol Rovers quarters
-    (910005, "W09", 605, False, False),  # Barnet amber, black collar
-    (910006, "W10", None, False, False),  # fallback kit
-    (910007, "W02", 109210, False, False),  # Accrington red
-    (910008, "W04", 631, False, False),  # Cheltenham
-    (910009, "W06", 641, True, False),  # Crewe goalkeeper
-    (910010, "W08", 651, False, False),  # Exeter
+    (910001, "W01", STRIPES, True),  # Colchester stripes, youngest wording
+    (910002, "W03", Kit(shirt=("yellow",), goalkeeper=True), True),  # Colchester goalkeeper
+    (910003, "W05", Kit(shirt=("black", "white"), pattern="stripes", shorts="black"), False),
+    (910004, "W07", Kit(shirt=("blue", "white"), pattern="two-tone", shorts="white"), False),
+    (910005, "W09", Kit(shirt=("amber",), trim="black", shorts="black"), False),  # Barnet
+    (910006, "W10", None, False),  # fallback kit
+    (910007, "W02", Kit(shirt=("red",), shorts="white"), False),  # Accrington red
+    (910008, "W04", Kit(shirt=("red", "white"), pattern="stripes", shorts="black"), False),
+    (910009, "W06", Kit(shirt=("green",), goalkeeper=True), False),  # Crewe goalkeeper
+    (910010, "W08", Kit(shirt=("red", "white"), pattern="stripes", shorts="black"), False),
 ]
 FP8_MAX = 448.0
 
@@ -99,9 +103,9 @@ def make_cases() -> list[Case]:
     settings = load_settings()
     kits = load_kits()
     out = []
-    for uid, wording, club, gk, mine in CASES:
+    for uid, wording, fixed, mine in CASES:
         sheet = sample_sheet("inference-test", uid, 1, height_cm=180, strength=10)
-        kit, _ = kits.kit_for(club, gk)
+        kit = fixed or kits.fallback.home
         pose = pick_pose(sheet.base_seed, 1)
         my_club = settings.my_club if mine else None
         prompt = build_prompt(sheet, wording, kit, pose, my_club)

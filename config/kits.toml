@@ -24,117 +24,17 @@
 #
 # Logos, badges and sponsors are never asked for. Stripes and hoops are drawn as well as
 # the model manages (decisions.md, 2026-11-10).
-#
-# DRAFT, 2026-11-11: League Two 2026/27 as loaded in the Colchester career, home colours from
-# memory of each club's traditional kit. Goalkeeper colours are placeholders that contrast with
-# the home kit (red home: green; blue home: yellow; black and white: orange); real
-# goalkeeper kits change every season. Entries marked "check" are the least certain.
 
 [fallback]
 home = { shirt = ["white"], shorts = "black" }
 goalkeeper = { shirt = ["green"] }
 
-# --- League Two ------------------------------------------------------------------------
-
-[clubs.636]                                   # Colchester United (my club)
-home = { shirt = ["blue", "white"], pattern = "stripes", shorts = "blue" }
-goalkeeper = { shirt = ["yellow"] }
-
-[clubs.109210]                                # Accrington Stanley
-home = { shirt = ["red"], shorts = "white" }
-goalkeeper = { shirt = ["green"] }
-
-[clubs.605]                                   # Barnet
-home = { shirt = ["amber"], trim = "black", shorts = "black" }
-goalkeeper = { shirt = ["green"] }
-
-[clubs.620]                                   # Bristol Rovers: blue and white quarters
-home = { shirt = ["blue", "white"], pattern = "two-tone", shorts = "white" }
-goalkeeper = { shirt = ["yellow"] }
-
-[clubs.631]                                   # Cheltenham Town (check)
-home = { shirt = ["red", "white"], pattern = "stripes", shorts = "black" }
-goalkeeper = { shirt = ["green"] }
-
-[clubs.634]                                   # Chesterfield
-home = { shirt = ["blue"], shorts = "white" }
-goalkeeper = { shirt = ["yellow"] }
-
-[clubs.640]                                   # Crawley Town
-home = { shirt = ["red"], shorts = "red" }
-goalkeeper = { shirt = ["green"] }
-
-[clubs.641]                                   # Crewe Alexandra
-home = { shirt = ["red"], shorts = "white" }
-goalkeeper = { shirt = ["green"] }
-
-[clubs.651]                                   # Exeter City
-home = { shirt = ["red", "white"], pattern = "stripes", shorts = "black" }
-goalkeeper = { shirt = ["green"] }
-
-[clubs.5103834]                               # Fleetwood Town
-home = { shirt = ["red", "white"], pattern = "sleeves", shorts = "white" }
-goalkeeper = { shirt = ["green"] }
-
-[clubs.656]                                   # Gillingham (check)
-home = { shirt = ["blue"], shorts = "white" }
-goalkeeper = { shirt = ["yellow"] }
-
-[clubs.658]                                   # Grimsby Town
-home = { shirt = ["black", "white"], pattern = "stripes", shorts = "black" }
-goalkeeper = { shirt = ["orange"] }
-
-[clubs.581]                                   # Newport County
-home = { shirt = ["amber"], shorts = "black" }
-goalkeeper = { shirt = ["green"] }
-
-[clubs.689]                                   # Northampton Town
-home = { shirt = ["claret"], shorts = "white" }
-goalkeeper = { shirt = ["yellow"] }
-
-[clubs.694]                                   # Oldham Athletic
-home = { shirt = ["blue"], shorts = "blue" }
-goalkeeper = { shirt = ["yellow"] }
-
-[clubs.698]                                   # Port Vale
-home = { shirt = ["white"], trim = "black", shorts = "black" }
-goalkeeper = { shirt = ["green"] }
-
-[clubs.703]                                   # Rochdale (check)
-home = { shirt = ["blue"], shorts = "white" }
-goalkeeper = { shirt = ["yellow"] }
-
-[clubs.704]                                   # Rotherham United
-home = { shirt = ["red"], trim = "white", shorts = "white" }
-goalkeeper = { shirt = ["green"] }
-
-[clubs.5103842]                               # Salford City
-home = { shirt = ["red"], shorts = "white" }
-goalkeeper = { shirt = ["green"] }
-
-[clubs.710]                                   # Shrewsbury Town: blue and amber
-home = { shirt = ["blue"], trim = "amber", shorts = "blue" }
-goalkeeper = { shirt = ["green"] }
-
-[clubs.725]                                   # Swindon Town
-home = { shirt = ["red"], shorts = "white" }
-goalkeeper = { shirt = ["green"] }
-
-[clubs.729]                                   # Tranmere Rovers
-home = { shirt = ["white"], trim = "blue", shorts = "white" }
-goalkeeper = { shirt = ["green"] }
-
-[clubs.731]                                   # Walsall (check)
-home = { shirt = ["red"], shorts = "white" }
-goalkeeper = { shirt = ["green"] }
-
-[clubs.744]                                   # York City: red and navy
-home = { shirt = ["red"], shorts = "navy" }
-goalkeeper = { shirt = ["green"] }
-
 # --- Patterns checked by eye on FM27's own kit images (2026-11-12) ------------------------
 # The kit catalog gives these clubs' colours but not their patterns, so they are written
-# here. Shorts from each club's usual kit; goalkeepers are placeholders, as above.
+# here. Shorts from each club's usual kit; goalkeepers are placeholders that contrast with
+# the home kit. FM27's own database now gives the same patterns; these stay for their shorts.
+# The League Two drafts from memory (2026-11-11) were removed on 2026-11-24 (user), so FM27's
+# own kits apply to those clubs.
 
 [clubs.602]                                   # Arsenal: red body, white sleeves
 home = { shirt = ["red", "white"], pattern = "sleeves", shorts = "white" }

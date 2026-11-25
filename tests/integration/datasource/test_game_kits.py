@@ -13,6 +13,7 @@ from support import game_db
 from support.game_db import CLUBS, Club, Entry
 from support.paths import ROOT
 
+from kitshot.core.kit_values import Kit
 from kitshot.datasource.game_kits import (
     CACHE_NAME,
     READER_VERSION,
@@ -116,16 +117,18 @@ def test_barcelona_and_real_madrid_get_fm27s_kits(tmp_path: Path) -> None:
 
 def test_the_table_comes_before_fm27s_kits_and_the_bundle_after(tmp_path: Path) -> None:
     install = tmp_path / "fm"
-    clubs = [
-        Club(636, kits=(Entry(("FFFFFF", "C50021", "FFFFFF")),)),  # Colchester, in the table
-        Club(679, kits=(Entry(("FFFFFF", "C50021", "FFFFFF")),)),
-    ]  # Man City, in the bundle
-    game_db.install(install, clubs)  # fmt: skip
+    red = (Entry(("FFFFFF", "C50021", "FFFFFF")),)
+    stripes = (Entry(("FFFFFF", "214284", "E6C521"), style=3),)
+    # Newcastle is in the table; Manchester City and Colchester in the bundle as well.
+    clubs = [Club(688, kits=red), Club(679, kits=red), Club(636, kits=stripes)]
+    game_db.install(install, clubs)
     kits = load_kits(ROOT / "config" / "kits.toml", data_dir=tmp_path, install_dir=install)
-    colchester, source = kits.kit_for(636, goalkeeper=False)
-    assert source == "table" and colchester.pattern == "stripes"
+    newcastle, source = kits.kit_for(688, goalkeeper=False)
+    assert source == "table" and newcastle.pattern == "stripes"
     city, source = kits.kit_for(679, goalkeeper=False)
     assert source == "game" and city.shirt == ("red",) and city.trim == "white"
+    colchester, source = kits.kit_for(636, goalkeeper=False)  # its draft left the table
+    assert source == "game" and colchester == Kit(shirt=("blue", "white"), pattern="stripes")
     _, source = kits.kit_for(728, goalkeeper=False)  # Tottenham: the bundle alone
     assert source == "bundled"
     assert kits.kit_for(UNKNOWN_CLUB, goalkeeper=False) == (kits.fallback.home, "fallback")
