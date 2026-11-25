@@ -30,7 +30,7 @@ def note(text: str) -> None:
 
 
 class FakeWindow:
-    def __init__(self, url: str, *, hidden: bool, on_hide, icon: str | None) -> None:  # type: ignore[no-untyped-def]
+    def __init__(self, url: str, *, hidden: bool, on_hide, icon: str | None, theme: str) -> None:  # type: ignore[no-untyped-def]
         self.closed = threading.Event()
         self.on_hide = on_hide
         note(f"window {url} hidden={hidden}")

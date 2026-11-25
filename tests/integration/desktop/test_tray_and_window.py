@@ -195,7 +195,7 @@ class FakeEvent:
 class FakeWindow:
     def __init__(self, **kw: Any) -> None:
         self.kw = kw
-        self.events = SimpleNamespace(closing=FakeEvent())
+        self.events = SimpleNamespace(closing=FakeEvent(), before_show=FakeEvent())
         self.calls: list[str] = []
         self.dialog_answer: Any = None
         self.closed = threading.Event()
@@ -241,11 +241,12 @@ class FakeWebview:
 
 def test_the_window_shows_the_dashboard() -> None:
     webview = FakeWebview()
-    AppWindow("http://127.0.0.1:8765/", webview=webview)
+    AppWindow("http://127.0.0.1:8765/", theme="dark", webview=webview)
     assert webview.window is not None
     kw = webview.window.kw
     assert (kw["title"], kw["url"]) == ("Kitshot", "http://127.0.0.1:8765/")
     assert kw["text_select"] is True and kw["hidden"] is False
+    assert kw["background_color"] == "#13161b"
     assert kw["min_size"][0] <= kw["width"]
 
 

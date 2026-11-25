@@ -118,6 +118,7 @@ class Record:
         self.trays: list[FakeTray] = []
         self.windows: list[FakeWindow] = []
         self.icons: list[str | None] = []
+        self.themes: list[str] = []
         self.browser: list[str] = []
         self.errors: list[tuple[str, str]] = []
         self.webview2 = webview2
@@ -137,8 +138,10 @@ class Record:
         on_hide: Callable[[], None],
         on_unavailable: Callable[[str], None],
         icon: str | None,
+        theme: str,
     ) -> FakeWindow:
         self.icons.append(icon)
+        self.themes.append(theme)
         window = FakeWindow(url, hidden, on_hide, on_unavailable)
         self.windows.append(window)
         if not self.webview2:  # the window process says so and ends
@@ -218,12 +221,22 @@ def post(url: str, path: str, fields: dict[str, str]) -> str:
         return response.read().decode("utf-8")
 
 
-def test_the_app_from_start_to_quit(config_file: Path, tmp_path: Path) -> None:
+def test_the_app_from_start_to_quit(
+    config_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The window on the dashboard, Browse through the window's own dialog, a second start
     showing the first one's window, and Quit: the worker process ends, then the server, the
     tray and the window; the lock is given back."""
     marker = tmp_path / "faulted"
     marker.write_text("no fault this time", encoding="utf-8")  # gpu_child.py draws normally
+    config_file.write_text(
+        config_file.read_text(encoding="utf-8").replace('theme = "auto"', 'theme = "dark"'),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "kitshot.runtime.composition.port_answers",
+        lambda *args: pytest.fail("a successful startup should bind without a port probe"),
+    )
     gpu = Gpu(program=(sys.executable, str(TESTS / "gpu_child.py"), str(marker)))
     record = Record()
     port = free_port()
@@ -233,6 +246,7 @@ def test_the_app_from_start_to_quit(config_file: Path, tmp_path: Path) -> None:
     (tray,) = record.trays
     url = f"http://127.0.0.1:{port}/"
     assert window.url == url and not window.hidden
+    assert record.themes == ["dark"]
     (icon,) = record.icons  # Kitshot's .ico for the taskbar, on Windows
     assert (icon or "").endswith(".ico") if os.name == "nt" else icon is None
     wait_for(lambda: tray.mode == "run")  # the tray has the main thread; the window its process
@@ -367,18 +381,22 @@ def test_quit_during_a_sync_ends_its_process_at_once(
         assert list(conn.iterdump()) == before
 
 
-def test_without_webview2_the_dashboard_opens_in_the_browser(config_file: Path) -> None:
+@pytest.mark.parametrize("minimized", [False, True])
+def test_without_webview2_the_dashboard_opens_in_the_browser(
+    config_file: Path, minimized: bool
+) -> None:
     record = Record(webview2=False)
     port = free_port()
-    app = Running("app", args_for(config_file, port), record, fake_gpu())
+    app = Running("app", args_for(config_file, port, minimized=minimized), record, fake_gpu())
     url = f"http://127.0.0.1:{port}/"
-    assert record.browser == [url]  # once, at start
+    at_start = [] if minimized else [url]
+    assert record.browser == at_start
     (tray,) = record.trays
     wait_for(lambda: any(n.title == "Dashboard in the browser" for n in tray.notices))
     notice = next(n for n in tray.notices if n.title == "Dashboard in the browser")
     assert "WebView2" in notice.message and desktop.WEBVIEW2_URL in notice.message
     app.controller.open()  # Open Dashboard: the browser, not the window that cannot be
-    assert record.browser == [url, url] and record.windows[0].shown == 0
+    assert record.browser == [*at_start, url] and record.windows[0].shown == 0
     app.quit()
 
 
@@ -406,11 +424,33 @@ def test_a_port_in_use_stops_before_anything_starts(config_file: Path) -> None:
     assert not instance.held_elsewhere(config_file.parent / "data")
 
 
+def test_a_runtime_start_failure_closes_the_early_window(
+    config_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    record = Record(webview2=False)
+    port = free_port()
+
+    def fail_start(runtime: Any) -> None:
+        assert port_answers(runtime.host, port)
+        assert len(record.windows) == 1
+        raise RuntimeError("could not start the worker")
+
+    monkeypatch.setattr("kitshot.runtime.composition.Runtime.start", fail_start)
+    with pytest.raises(RuntimeError, match="could not start the worker"):
+        desktop.run("app", args_for(config_file, port), gpu=fake_gpu(), shell=record.shell())
+    assert record.windows[0].closed.is_set() and record.browser == [] and record.trays == []
+    assert not port_answers("127.0.0.1", port)
+    assert not instance.held_elsewhere(config_file.parent / "data")
+
+
 def test_a_failure_after_the_server_started_leaves_nothing_running(config_file: Path) -> None:
-    record = Record(tray_error=ModuleNotFoundError("No module named 'pystray'", name="pystray"))
+    record = Record(
+        webview2=False, tray_error=ModuleNotFoundError("No module named 'pystray'", name="pystray")
+    )
     port = free_port()
     with pytest.raises(ModuleNotFoundError):
-        desktop.run("tray", args_for(config_file, port), gpu=fake_gpu(), shell=record.shell())
+        desktop.run("app", args_for(config_file, port), gpu=fake_gpu(), shell=record.shell())
+    assert record.windows[0].closed.is_set() and record.browser == []
     assert not port_answers("127.0.0.1", port)
     assert not instance.held_elsewhere(config_file.parent / "data")
 

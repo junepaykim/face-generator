@@ -39,6 +39,7 @@ import time
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any, TextIO
 
+from kitshot.desktop import startup_screen
 from kitshot.platform import procs
 from kitshot.platform.pipes import JsonWriter, decode, drain_lines
 
@@ -99,6 +100,7 @@ class AppWindow:
         hidden: bool = False,
         on_hide: Callable[[], None] | None = None,
         icon: str | None = None,
+        theme: str = "auto",
         webview: Any = None,
     ) -> None:
         if webview is None:
@@ -115,10 +117,13 @@ class AppWindow:
             height=SIZE[1],
             min_size=MIN_SIZE,
             hidden=hidden,
+            background_color=startup_screen.background(theme),
             text_select=True,
             zoomable=True,
         )
         self.window.events.closing += self._on_closing
+        if os.name == "nt" and not hidden:
+            self.window.events.before_show += startup_screen.cover_until_loaded
 
     def _on_closing(self) -> bool:
         """The window's close button: hide it (False keeps it), unless quitting."""
@@ -177,6 +182,7 @@ def child_main(
     out: TextIO,
     *,
     icon: str | None = None,
+    theme: str = "auto",
     missing: Callable[[], bool] = webview2_missing,
     make: Callable[..., AppWindow] = AppWindow,
 ) -> int:
@@ -192,7 +198,9 @@ def child_main(
     if missing():
         send({"type": "unavailable", "reason": NO_WEBVIEW2})
         return 3
-    window = make(url, hidden=hidden, on_hide=lambda: send({"type": "hidden"}), icon=icon)
+    window = make(
+        url, hidden=hidden, on_hide=lambda: send({"type": "hidden"}), icon=icon, theme=theme
+    )
 
     def browse(message: dict[str, Any]) -> None:
         start = message.get("start")
@@ -226,13 +234,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--url", required=True)
     parser.add_argument("--hidden", action="store_true")
     parser.add_argument("--icon", help="the window's .ico file")
+    parser.add_argument("--theme", choices=("auto", "light", "dark"), default="auto")
     args = parser.parse_args(argv)
     use_app_id()
     commands, out = protocol_streams(sys.stdin, sys.stdout)
-    return child_main(args.url, args.hidden, commands, out, icon=args.icon)
+    return child_main(args.url, args.hidden, commands, out, icon=args.icon, theme=args.theme)
 
 
-def window_command(url: str, hidden: bool, icon: str | None = None) -> list[str]:
+def window_command(
+    url: str, hidden: bool, icon: str | None = None, *, theme: str = "auto"
+) -> list[str]:
     return [
         sys.executable,
         "-m",
@@ -241,6 +252,7 @@ def window_command(url: str, hidden: bool, icon: str | None = None) -> list[str]
         url,
         *(["--hidden"] if hidden else []),
         *(["--icon", icon] if icon else []),
+        *(["--theme", theme] if theme != "auto" else []),
     ]
 
 

@@ -214,6 +214,7 @@ def test_the_window_command_runs_this_python() -> None:
         "--hidden",
     ]
     assert "--hidden" not in app_window.window_command(URL, False)
+    assert app_window.window_command(URL, False, theme="dark")[-2:] == ["--theme", "dark"]
     assert app_window.window_command(URL, False, r"C:\kitshot\data\app\facegen.ico")[-2:] == [
         "--icon",
         r"C:\kitshot\data\app\facegen.ico",
@@ -229,9 +230,12 @@ def test_child_main_in_this_process(missing: bool) -> None:
     made: list[object] = []
 
     class Win:
-        def __init__(self, url: str, *, hidden: bool, on_hide, icon: str | None) -> None:  # type: ignore[no-untyped-def]
+        def __init__(
+            self, url: str, *, hidden: bool, on_hide, icon: str | None, theme: str
+        ) -> None:  # type: ignore[no-untyped-def]
             self.closed = threading.Event()
             self.icon = icon
+            self.theme = theme
             made.append(self)
 
         def run(self) -> None:
@@ -251,6 +255,7 @@ def test_child_main_in_this_process(missing: bool) -> None:
         iter(['{"cmd": "close"}\n']),
         out,
         icon="facegen.ico",
+        theme="dark",
         missing=lambda: missing,
         make=Win,
     )
@@ -260,4 +265,5 @@ def test_child_main_in_this_process(missing: bool) -> None:
     else:
         assert code == 0 and len(made) == 1
         assert made[0].icon == "facegen.ico"  # type: ignore[attr-defined]
+        assert made[0].theme == "dark"  # type: ignore[attr-defined]
         assert out.getvalue().splitlines() == ['{"type":"ready"}']

@@ -22,6 +22,7 @@ import threading
 import time
 import traceback
 from collections.abc import Callable, Sequence
+from concurrent.futures import Future
 from contextlib import ExitStack
 from dataclasses import dataclass, field
 from pathlib import Path, PureWindowsPath
@@ -71,9 +72,9 @@ class WindowLike(Protocol):
 
 
 MakeWindow = Callable[
-    [str, bool, Callable[[], None], Callable[[str], None], str | None], WindowLike
+    [str, bool, Callable[[], None], Callable[[str], None], str | None, str], WindowLike
 ]
-"""(url, hidden, on_hide, on_unavailable, icon file)"""
+"""(url, hidden, on_hide, on_unavailable, icon file, display theme)"""
 
 
 def _make_tray(controller: AppController) -> TrayLike:
@@ -88,6 +89,7 @@ def _make_window(
     on_hide: Callable[[], None],
     on_unavailable: Callable[[str], None],
     icon: str | None,
+    theme: str,
 ) -> WindowLike:
     from functools import partial
 
@@ -98,7 +100,7 @@ def _make_window(
         hidden=hidden,
         on_hide=on_hide,
         on_unavailable=on_unavailable,
-        command=partial(window_command, icon=icon),
+        command=partial(window_command, icon=icon, theme=theme),
     )
     window.start()
     return window
@@ -392,6 +394,7 @@ def _run(
     from kitshot.runtime.composition import (
         DEFAULT_BROWSE,
         CannotStart,
+        ServerStartError,
         ServerThread,
         build_runtime,
         pictures_notice_enabled,
@@ -428,6 +431,7 @@ def _run(
     refresher: Refresher | None = None
     server: ServerThread | None = None
     controller: AppController | None = None
+    tray_ready: Future[Refresher] = Future()
     try:
         conn = db.connect(paths.db_path)
         try:
@@ -436,15 +440,13 @@ def _run(
             conn.close()
         want_window = mode == "app"
         notices: list[Notice] = []
-        holder: dict[str, WindowLike] = {}
         window_gone = threading.Event()
 
         def browse_in_window(start: str | None) -> str | None:
             from kitshot.setup import folder_setup
 
-            win = holder.get("window")
-            if win is not None and not window_gone.is_set():
-                return win.browse(start)
+            if window is not None and not window_gone.is_set():
+                return window.browse(start)
             return folder_setup.browse(start) if folder_setup.dialog_available() else None
 
         rt = build_runtime(
@@ -457,13 +459,68 @@ def _run(
             browse=browse_in_window if want_window else DEFAULT_BROWSE,
             echo_stderr=console,
         )
-        if port_answers(rt.host, rt.port):
-            raise CannotStart(
-                f"Another program already answers at {rt.url} (kitshot serve, perhaps). Close"
-                " it and start Kitshot again."
-            )
         server = ServerThread(rt.app, rt.host, rt.port)
-        server.start()
+        try:
+            server.start()
+        except ServerStartError as exc:
+            # A connect to an unused loopback port waits for its timeout on Windows.
+            # Binding the server already checks the port; probe only to explain a failure.
+            if port_answers(rt.host, rt.port):
+                raise CannotStart(
+                    f"Another program already answers at {rt.url} (kitshot serve, perhaps). Close"
+                    " it and start Kitshot again."
+                ) from exc
+            raise
+
+        def announce(notice: Notice, *, browser: bool = False) -> None:
+            # The child may report a missing WebView2 or be closed while the parent is
+            # still starting. Deliver each event once the tray is ready, even if the
+            # child reported it synchronously inside make_window.
+            def deliver(ready: Future[Refresher]) -> None:
+                if ready.cancelled() or controller is None or controller.quitting:
+                    return
+                ready.result().announce(notice)
+                if browser and not args.minimized:
+                    shell.open_browser(rt.url)
+
+            tray_ready.add_done_callback(deliver)
+
+        said_hidden = False
+
+        def on_hide() -> None:
+            nonlocal said_hidden
+            if not said_hidden:
+                said_hidden = True
+                announce(
+                    Notice(
+                        "hidden",
+                        "Kitshot is still running",
+                        "It goes on drawing in the background. Open the dashboard or Quit from"
+                        " the tray icon.",
+                    )
+                )
+
+        def on_unavailable(reason: str) -> None:
+            if window_gone.is_set():
+                return
+            window_gone.set()
+            text = f"{reason}, so Kitshot has no window of its own: the dashboard opens in your"
+            text += " browser."
+            if reason == NO_WEBVIEW2:
+                text += f" Install WebView2 from {WEBVIEW2_URL}."
+            notice = Notice("setup", "Dashboard in the browser", text)
+            notices.append(notice)
+            announce(notice, browser=True)
+
+        if want_window:
+            window = shell.make_window(
+                rt.url,
+                bool(args.minimized),
+                on_hide,
+                on_unavailable,
+                _window_icon(paths.data_dir),
+                settings.display.theme,
+            )
         rt.start()
         print(f"Log: {log_path}", flush=True)
         print(f"Kitshot UI at {rt.url}  (Quit is in the tray icon's menu)", flush=True)
@@ -504,46 +561,10 @@ def _run(
 
             rt.context.install_update = install_update
             started.install_update = install_update
-        said_hidden: list[bool] = []
-
-        def on_hide() -> None:
-            if refresher is not None and not said_hidden:
-                said_hidden.append(True)
-                refresher.announce(
-                    Notice(
-                        "hidden",
-                        "Kitshot is still running",
-                        "It goes on drawing in the background. Open the dashboard or Quit from"
-                        " the tray icon.",
-                    )
-                )
-
-        def on_unavailable(reason: str) -> None:
-            """No window after all (no WebView2): the browser instead, said once."""
-            if window_gone.is_set():
-                return
-            window_gone.set()
-            text = f"{reason}, so Kitshot has no window of its own: the dashboard opens in your"
-            text += " browser."
-            if reason == NO_WEBVIEW2:
-                text += f" Install WebView2 from {WEBVIEW2_URL}."
-            notice = Notice("setup", "Dashboard in the browser", text)
-            notices.append(notice)
-            if refresher is not None:
-                refresher.announce(notice)
-            if not args.minimized and not controller_quitting():
-                shell.open_browser(rt.url)
-
-        def controller_quitting() -> bool:
-            return controller is not None and controller.quitting
-
         tray = shell.make_tray(controller)
         refresher = Refresher(controller, tray, paths.data_dir)
-        if want_window:
-            window = shell.make_window(
-                rt.url, bool(args.minimized), on_hide, on_unavailable, _window_icon(paths.data_dir)
-            )
-            holder["window"] = window
+        refresher.start()
+        tray_ready.set_result(refresher)
         started.controller, started.window, started.tray, started.url = (
             controller,
             window,
@@ -551,7 +572,6 @@ def _run(
             rt.url,
         )
         started.notices = notices
-        refresher.start()
         # The tray has this process's main thread; the window runs in a process of its own.
         tray.run()
         # The loop also ends without Quit (Windows logging off): stop everything the same way.
@@ -561,12 +581,13 @@ def _run(
         logger.info("Kitshot %s quit", mode)
         return 0
     except BaseException:
+        tray_ready.cancel()
         # Started parts must not outlive a failure: the worker process holds the card.
         if controller is not None:
             controller.quit()
             controller.wait_quit(QUIT_WAIT_SECONDS)
         else:
-            _stop_quietly(rt, server)
+            _stop_quietly(rt, server, window)
         raise
     finally:
         if refresher is not None:
@@ -577,17 +598,17 @@ def _run(
         lock.release()
 
 
-def _stop_quietly(rt: Any, server: Any) -> None:
-    for name, step in rt.stop_steps() if rt is not None else []:
+def _stop_quietly(rt: Any, server: Any, window: WindowLike | None) -> None:
+    steps = rt.stop_steps() if rt is not None else []
+    if server is not None:
+        steps.append(("web server", server.stop))
+    if window is not None:
+        steps.append(("window", window.destroy))
+    for name, step in steps:
         try:
             step()
         except Exception as exc:
             logger.error("stopping the %s failed", name, exc_info=exc)
-    if server is not None:
-        try:
-            server.stop()
-        except Exception as exc:
-            logger.error("stopping the web server failed", exc_info=exc)
 
 
 def _log_file() -> Path | None:

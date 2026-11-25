@@ -248,16 +248,7 @@ def _image(row: sqlite3.Row) -> dict[str, Any]:
 
 
 def counts(conn: sqlite3.Connection, career_id: int) -> dict[str, int]:
-    row = conn.execute(
-        "SELECT SUM(group_name = 'a') AS a, SUM(group_name = 'a' AND at_my_club) AS a_my_club,"
-        " SUM(group_name = 'b') AS b, SUM(group_name = 'c') AS c, SUM(tracked) AS tracked,"
-        " SUM(pin IS NOT NULL) AS pinned, SUM(group_name = 'a' AND is_staff) AS a_staff,"
-        " SUM(youth_team) AS youth, SUM(group_name IS NOT NULL AND media_role IS NOT NULL)"
-        " AS media"
-        " FROM players WHERE career_id = ? AND present = 1",
-        (career_id,),
-    ).fetchone()
-    out = {k: v or 0 for k, v in dict(row).items()}
+    out = photo_index.player_counts(conn, career_id, include_groups=True)
     pics = conn.execute(
         "SELECT COUNT(*) AS current, COUNT(published_path) AS published FROM images"
         " WHERE career_id = ? AND is_current = 1",
@@ -265,7 +256,6 @@ def counts(conn: sqlite3.Connection, career_id: int) -> dict[str, int]:
     ).fetchone()
     out.update(pictures=pics["current"], published=pics["published"])
     out["review"] = review_count(conn, career_id)
-    out.update(photo_index.player_counts(conn, career_id))
     return out
 
 

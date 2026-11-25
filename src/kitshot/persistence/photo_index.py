@@ -98,21 +98,46 @@ def status(conn: sqlite3.Connection) -> PhotoStatus | None:
     )
 
 
-def player_counts(conn: sqlite3.Connection, career_id: int) -> dict[str, int]:
+_GROUP_COUNTS = """
+    COUNT(*) FILTER (WHERE group_name = 'a') AS a,
+    COUNT(*) FILTER (WHERE group_name = 'a' AND at_my_club) AS a_my_club,
+    COUNT(*) FILTER (WHERE group_name = 'b') AS b,
+    COUNT(*) FILTER (WHERE group_name = 'c') AS c,
+    SUM(tracked) AS tracked, COUNT(pin) AS pinned,
+    COUNT(*) FILTER (WHERE group_name = 'a' AND is_staff) AS a_staff,
+    SUM(youth_team) AS youth,
+    COUNT(*) FILTER (WHERE group_name IS NOT NULL AND media_role IS NOT NULL) AS media,
+"""
+
+
+def player_counts(
+    conn: sqlite3.Connection, career_id: int, *, include_groups: bool = False
+) -> dict[str, int]:
     """A career's pre-existing players in scope, staff left out: with a photo, without one,
     and those without one that the rules put in a group outside my club (unpinned). All 0
-    until FM27's photo list has been read."""
+    until FM27's photo list has been read. The dashboard also counts groups across the whole
+    present roster, sharing the roster scan with the photo counts."""
     s = status(conn)
-    if s is None or not s.game_known:
+    known = s is not None and s.game_known
+    if not known and not include_groups:
         return {"with_photo": 0, "without_photo": 0, "without_photo_picked": 0}
     row = conn.execute(
-        "SELECT SUM(ph.unique_id IS NOT NULL) AS with_photo,"
-        " SUM(ph.unique_id IS NULL) AS without_photo,"
-        " SUM(ph.unique_id IS NULL AND p.group_name IS NOT NULL AND p.at_my_club = 0"
-        "     AND p.pin IS NULL) AS without_photo_picked"
-        " FROM players p LEFT JOIN photos ph ON ph.unique_id = p.unique_id"
-        " WHERE p.career_id = ? AND p.present = 1 AND p.in_scope = 1 AND p.is_newgen = 0"
-        " AND p.is_staff = 0 AND p.media_role IS NULL",
-        (career_id,),
+        f"""
+        WITH roster AS (
+            SELECT group_name, at_my_club, is_staff, tracked, pin, youth_team, media_role,
+                   CASE WHEN :known AND in_scope = 1 AND is_newgen = 0
+                             AND is_staff = 0 AND media_role IS NULL THEN unique_id END AS photo_id
+            FROM players WHERE career_id = :career AND present = 1
+        )
+        SELECT {_GROUP_COUNTS if include_groups else ""}
+               COUNT(ph.unique_id) AS with_photo,
+               COUNT(p.photo_id) - COUNT(ph.unique_id) AS without_photo,
+               COUNT(*) FILTER (WHERE p.group_name IS NOT NULL AND p.at_my_club = 0
+                                AND p.pin IS NULL AND p.photo_id IS NOT NULL
+                                AND ph.unique_id IS NULL) AS without_photo_picked
+        FROM roster p LEFT JOIN photos ph ON ph.unique_id = p.photo_id
+        {"" if include_groups else "WHERE p.photo_id IS NOT NULL"}
+        """,
+        {"known": known, "career": career_id},
     ).fetchone()
     return {k: v or 0 for k, v in dict(row).items()}
