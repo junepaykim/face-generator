@@ -17,7 +17,7 @@ def default_source() -> DataSource:
     return FmsaveDataSource()
 
 
-def default_renderer(model: str = "animagine") -> Renderer:
+def default_renderer(model: str = "realvis") -> Renderer:
     """The renderer for a `style.model` key, loaded now (seconds, and the GPU)."""
     if model == "animagine":
         from kitshot.render.renderer import AnimagineRenderer

@@ -908,9 +908,9 @@ light = "Light"
 dark = "Dark"
 
 [settings.choice.model]
+realvis = "Photo · Standard (RealVisXL)"
+zimage_turbo = "Photo · High quality (Z-Image-Turbo)"
 animagine = "Anime (Animagine XL)"
-realvis = "Photo (RealVisXL)"
-zimage_turbo = "Photo (Z-Image-Turbo)"
 
 [settings.choice.gender]
 woman = "Woman"

@@ -427,8 +427,25 @@ CREATE INDEX jobs_queue ON jobs (status, skipped, tier, rank, id);
 """
 
 
+# 0.1.8: RealVisXL and men by default (`style.model`, `style.gender`, user 2026-11-25). A database
+# that already holds pictures keeps drawing Animagine women, so a career's pictures keep one style
+# and an update downloads no other model: it gets each old default as its own setting, unless it
+# has one.
+_V18 = """
+INSERT INTO settings (key, value, updated_at)
+SELECT 'style.model', '"animagine"', strftime('%Y-%m-%dT%H:%M:%S+00:00', 'now')
+WHERE EXISTS (SELECT 1 FROM images)
+  AND NOT EXISTS (SELECT 1 FROM settings WHERE key = 'style.model');
+INSERT INTO settings (key, value, updated_at)
+SELECT 'style.gender', '"woman"', strftime('%Y-%m-%dT%H:%M:%S+00:00', 'now')
+WHERE EXISTS (SELECT 1 FROM images)
+  AND NOT EXISTS (SELECT 1 FROM settings WHERE key = 'style.gender');
+"""
+
+
 MIGRATIONS: tuple[str, ...] = (
-    _V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10, _V11, _V12, _V13, _V14, _V15, _V16, _V17
+    _V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10, _V11, _V12, _V13, _V14, _V15, _V16, _V17,
+    _V18,
 )  # fmt: skip
 
 # The active career: the one whose save was written last (spec section 8). A career synced

@@ -507,10 +507,11 @@ def test_a_table_needs_one_wording(conn: sqlite3.Connection) -> None:
 # --- Phase 15: one model and one gender for everyone (user, 2026-11-20) -------------------------
 
 
-def test_the_style_defaults_draw_anime_women() -> None:
-    """Animagine and women until the user chooses otherwise, so nothing changes on update."""
+def test_the_style_defaults_draw_photos_of_men() -> None:
+    """RealVisXL and men since 0.1.8 (user, 2026-11-25); a database that already held pictures
+    keeps Animagine and women (migration 18, test_db.py)."""
     s = load_settings()
-    assert (s.style.model, s.style.gender) == ("animagine", "woman")
+    assert (s.style.model, s.style.gender) == ("realvis", "man")
     assert {"style.model", "style.gender"} <= set(s.values)
 
 
@@ -523,8 +524,8 @@ def test_each_model_and_gender_can_be_chosen(
     assert (s.style.model, s.style.gender) == (model, gender)
     assert load_settings(conn).style == s.style  # stored, read back the same
     # Only what differs from the defaults is stored as an override.
-    changed = {"style.model"} if model != "animagine" else set()
-    changed |= {"style.gender"} if gender != "woman" else set()
+    changed = {"style.model"} if model != "realvis" else set()
+    changed |= {"style.gender"} if gender != "man" else set()
     assert s.overridden == frozenset(changed)
 
 
@@ -554,6 +555,6 @@ def test_a_style_outside_the_choices_is_refused(
 def test_a_style_change_is_one_transaction(conn: sqlite3.Connection) -> None:
     """Model and gender are saved together or not at all: a bad gender keeps the model."""
     with pytest.raises(SettingsError):
-        set_overrides(conn, {"style.model": "realvis", "style.gender": "other"})
-    assert load_settings(conn).style.model == "animagine"
+        set_overrides(conn, {"style.model": "animagine", "style.gender": "other"})
+    assert load_settings(conn).style.model == "realvis"
     assert conn.execute("SELECT COUNT(*) FROM settings").fetchone()[0] == 0

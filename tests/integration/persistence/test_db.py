@@ -363,7 +363,8 @@ def test_migration_15_keeps_a_database_with_pictures_drawing_3_by_4() -> None:
     )
     assert db.migrate(drawn) == len(db.MIGRATIONS)
     s = load_settings(drawn)
-    assert s.picture.aspect == "3:4" and s.overridden == {"picture.aspect"}
+    assert s.picture.aspect == "3:4"
+    assert s.overridden - {"style.model", "style.gender"} == {"picture.aspect"}  # + migration 18
 
     chosen = _at_version(14)
     chosen.execute(
@@ -376,6 +377,40 @@ def test_migration_15_keeps_a_database_with_pictures_drawing_3_by_4() -> None:
     )
     db.migrate(chosen)
     assert load_settings(chosen).picture.aspect == "1:1"  # a choice already made stays
+
+
+def test_migration_18_keeps_a_database_with_pictures_drawing_anime_women() -> None:
+    """RealVisXL and men by default since 0.1.8 (user, 2026-11-25); a database that already
+    holds pictures keeps the old defaults as its own settings, each unless it has one."""
+    fresh = _at_version(17)
+    assert db.migrate(fresh) == len(db.MIGRATIONS)
+    s = load_settings(fresh)
+    assert (s.style.model, s.style.gender) == ("realvis", "man")
+    assert fresh.execute("SELECT COUNT(*) FROM settings").fetchone()[0] == 0
+
+    drawn = _at_version(17)
+    drawn.execute(
+        "INSERT INTO images (career_id, unique_id, version, reason, group_name, model,"
+        " prompt, negative_prompt, seed, created_at)"
+        " VALUES (1, 7, 1, 'initial', 'a', 'm', 'p', 'n', 1, 'now')"
+    )
+    assert db.migrate(drawn) == len(db.MIGRATIONS)
+    s = load_settings(drawn)
+    assert (s.style.model, s.style.gender) == ("animagine", "woman")
+    assert s.overridden == {"style.model", "style.gender"}
+
+    chosen = _at_version(17)
+    chosen.execute(
+        "INSERT INTO images (career_id, unique_id, version, reason, group_name, model,"
+        " prompt, negative_prompt, seed, created_at)"
+        " VALUES (1, 7, 1, 'initial', 'a', 'm', 'p', 'n', 1, 'now')"
+    )
+    chosen.execute(
+        "INSERT INTO settings (key, value, updated_at) VALUES ('style.model', '\"zimage_turbo\"', 'x')"
+    )
+    db.migrate(chosen)
+    s = load_settings(chosen)
+    assert (s.style.model, s.style.gender) == ("zimage_turbo", "woman")  # a choice stays
 
 
 def test_migration_16_keeps_the_reasons_text_until_the_next_classification(

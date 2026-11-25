@@ -129,6 +129,12 @@ def test_pictures_are_1_by_1_by_default():
     assert load()["picture"] == {"aspect": "1:1"}
 
 
+def test_photos_of_men_are_drawn_by_default():
+    """RealVisXL and men since 0.1.8 (user, 2026-11-25); a database that already holds
+    pictures keeps Animagine and women (migration 18)."""
+    assert load()["style"] == {"model": "realvis", "gender": "man"}
+
+
 def test_paths_name_no_windows_user():
     """This PC's real folder goes in config/local.toml, which is not in git (user, 2026-11-12),
     or is found on the PC (Phase 8): the defaults name no folder of FM27's."""

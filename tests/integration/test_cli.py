@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from factories import ABROAD, MY_CLUB, NEWGEN, player, snapshot
+from support.config import old_style
 
 from kitshot.cli import main
 from kitshot.core.records import Snapshot
@@ -38,7 +39,7 @@ def env(tmp_path: Path) -> dict[str, Path]:
     save = games / "Career.fm"
     save.write_bytes(b"not really a save")
     os.utime(save, (1_700_000_000, 1_700_000_000))
-    text = DEFAULTS_PATH.read_text(encoding="utf-8")
+    text = old_style(DEFAULTS_PATH.read_text(encoding="utf-8"))
     assert FM_USER_LINE in text and FM_INSTALL_LINE in text
     text = text.replace(FM_USER_LINE, f'fm_user_dir = "{fm.as_posix()}"')
     install = tmp_path / "fm-install"

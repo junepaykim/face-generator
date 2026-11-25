@@ -134,7 +134,7 @@ def test_each_model_downloads_the_files_it_loads() -> None:
             "SmilingWolf/wd-eva02-large-tagger-v3": TAGGER,
         },
     }
-    assert list(models.MODELS) == list(expected)
+    assert list(models.MODELS) == list(MODEL_CHOICES) and set(models.MODELS) == set(expected)
     for model, repos in expected.items():
         files = files_for(model)
         assert [f.label for f in files] == list(dict.fromkeys(f.label for f in files))
@@ -149,7 +149,7 @@ def test_each_model_downloads_the_files_it_loads() -> None:
 
 def test_every_model_the_settings_offer_has_a_list() -> None:
     assert set(MODEL_CHOICES) <= set(models.MODELS)
-    assert models.DEFAULT_MODEL == load_settings().style.model == "animagine"
+    assert models.DEFAULT_MODEL == load_settings().style.model == "realvis"
 
 
 def test_the_files_are_those_the_code_loads() -> None:

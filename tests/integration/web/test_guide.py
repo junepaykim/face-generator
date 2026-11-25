@@ -15,6 +15,7 @@ import pytest
 from factories import player, snapshot
 from fakes import FakeRenderer, FakeTagger
 from fastapi.testclient import TestClient
+from support.config import old_style
 from support.web import BASE, KOREAN_WINDOWS
 
 from kitshot.core.records import Snapshot
@@ -133,7 +134,7 @@ class Source:
 def make_client(
     tmp: Path, detect: Callable[[], Hardware] | None
 ) -> tuple[TestClient, Path, WorkerService]:
-    text = DEFAULTS_PATH.read_text(encoding="utf-8")
+    text = old_style(DEFAULTS_PATH.read_text(encoding="utf-8"))
     text = text.replace('data_dir = "data"', f'data_dir = "{(tmp / "data").as_posix()}"')
     config = tmp / "config" / "test.toml"
     config.parent.mkdir()

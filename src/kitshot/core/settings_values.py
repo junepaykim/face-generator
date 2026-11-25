@@ -38,14 +38,6 @@ class ImageModel:
 SDXL_WEIGHTS = "fp16, INT8 UNet blocks"
 
 IMAGE_MODELS: dict[str, ImageModel] = {
-    "animagine": ImageModel(
-        "Animagine XL 4.0",
-        "cagliostrolab/animagine-xl-4.0",
-        photo=False,
-        reference=True,
-        negative=True,
-        weights=SDXL_WEIGHTS,
-    ),
     "realvis": ImageModel(
         "RealVisXL V5.0",
         "SG161222/RealVisXL_V5.0",
@@ -62,9 +54,18 @@ IMAGE_MODELS: dict[str, ImageModel] = {
         negative=False,
         weights="BF16, NF4 transformer blocks, INT8 text encoder",
     ),
+    "animagine": ImageModel(
+        "Animagine XL 4.0",
+        "cagliostrolab/animagine-xl-4.0",
+        photo=False,
+        reference=True,
+        negative=True,
+        weights=SDXL_WEIGHTS,
+    ),
 }
 MODEL_CHOICES = tuple(IMAGE_MODELS)
-"""`style.model`: the image model everyone is drawn with (user, 2026-11-20)."""
+"""`style.model`: the image model everyone is drawn with (user, 2026-11-20), in the order Settings
+lists them: RealVisXL, Z-Image-Turbo, then Animagine (user, 2026-11-25)."""
 WOMAN, MAN = "woman", "man"
 GENDER_CHOICES = (WOMAN, MAN)
 """`style.gender`: everyone is drawn as a woman or as a man (user, 2026-11-20)."""

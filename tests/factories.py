@@ -237,11 +237,13 @@ MANUAL: dict[str, object] = {
     "cutoffs.everywhere.b_pa": 155,
     "age.staff.mode": "manual",
     "picture.aspect": "3:4",
+    "style.model": "animagine",
+    "style.gender": "woman",
 }
 """The overrides this small made-up world was written for: my league's cutoffs as numbers set
 by hand (Manual, Phase 16), the old thresholds as "at least" N+1 (my league B CA 131 or PA 151,
 C CA 116 or PA 141; everywhere A 155/170, B 140/155), my club's staff aged by the manual table
-and 3:4 pictures: the defaults before 2026-11-22. For tests about something other than league
+and 3:4 pictures: the defaults before 2026-11-22; Animagine women, the defaults before 0.1.8. For tests about something other than league
 shares and those defaults, whose small world's leagues hold too few candidates for shares to
 read like numbers."""
 

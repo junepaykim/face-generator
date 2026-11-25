@@ -357,15 +357,17 @@ aspect = "1:1"
 
 [style]
 # How pictures look, for everyone drawn: players, staff and media (user, 2026-11-20). The model
-# draws: "animagine" (anime, Animagine XL 4.0), "realvis" (photos, RealVisXL V5.0 with INT8
-# weights) or "zimage_turbo" (photos, Z-Image-Turbo with NF4 weights; it keeps no face from the
-# current picture on a re-draw). Only the chosen model's files are downloaded. A change applies
-# to pictures drawn from then on; existing pictures stay as they are until they are drawn again
-# for another reason, and a re-draw keeps the face only from a picture of the same model.
-model = "animagine"
+# draws: "realvis" (photos, RealVisXL V5.0 with INT8 weights), "zimage_turbo" (photos,
+# Z-Image-Turbo with NF4 weights; it keeps no face from the current picture on a re-draw) or
+# "animagine" (anime, Animagine XL 4.0). Only the chosen model's files are downloaded. A change
+# applies to pictures drawn from then on; existing pictures stay as they are until they are drawn
+# again for another reason, and a re-draw keeps the face only from a picture of the same model.
+# RealVisXL and men by default since 0.1.8 (user, 2026-11-25); a database that already held
+# pictures keeps Animagine and women as its own settings (persistence/db.py, migration 18).
+model = "realvis"
 # "woman" or "man": everyone is drawn as one or the other. The same applies on a change, and a
 # re-draw keeps the face only from a picture of the same gender.
-gender = "woman"
+gender = "man"
 
 [display]
 # How the window looks (Phase 12). "auto" follows Windows: the display language the window

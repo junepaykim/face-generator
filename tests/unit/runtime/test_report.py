@@ -105,7 +105,8 @@ def test_the_report_says_what_helps_and_hides_the_home_folder(settings: Settings
         "Version: 0.1.6 (installed)",
         "System: Windows 11 (10.0.26100); Python 3.12.8",
         "Graphics card: NVIDIA GeForce RTX 4080, 16.0 GiB (torch 2.9.0, CUDA 13.2)",
-        "Image model: Animagine XL 4.0 (fp16, INT8 UNet blocks); files on this PC",
+        "Image model: RealVisXL V5.0 (fp16, INT8 UNet blocks); files on this PC",
+        "Drawn as: man",
         "Picture shape: 1:1, rendered at 1024x1024",
         "  Detailed (A): published 1024 px, 3 candidate(s), detail pass x1.5 (1536x1536)",
         "Drawn automatically: A, B, C",
@@ -155,7 +156,7 @@ def test_the_report_without_a_worker_card_or_sync(settings: Settings) -> None:
     )
     for expected in (
         "Graphics card: not asked in this process",
-        "Image model: Animagine XL 4.0 (fp16, INT8 UNet blocks); files not checked in this process",
+        "Image model: RealVisXL V5.0 (fp16, INT8 UNet blocks); files not checked in this process",
         "Worker: not in this process",
         "Save watcher: off",
         "Last sync: none yet",

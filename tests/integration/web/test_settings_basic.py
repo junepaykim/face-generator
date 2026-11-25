@@ -12,6 +12,7 @@ from urllib.parse import unquote, urlencode
 import pytest
 from factories import NEWGEN, RIVAL, player
 from fastapi.testclient import TestClient
+from support.config import write_config
 from support.web import BASE, KOREAN_WINDOWS, client_for, fake_worker, synced
 
 from kitshot.core import presets
@@ -126,30 +127,37 @@ def test_basic_switches_and_quality_save_like_advanced_fields(
     assert labels == ["preset.quality.low", "edit", "edit"]
 
 
-def test_the_picture_style_is_one_model_and_one_gender_for_everyone(
-    client: TestClient, config_file: Path
-) -> None:
+def test_the_picture_style_is_one_model_and_one_gender_for_everyone(tmp_path: Path) -> None:
     """User, 2026-11-20: one model and one gender, on Basic and Advanced alike. Z-Image-Turbo
-    is offered since the worker draws its re-draws without a reference (Phase 15g)."""
+    is offered since the worker draws its re-draws without a reference (Phase 15g). RealVisXL
+    and men by default, the models listed RealVisXL, Z-Image-Turbo, Animagine (user,
+    2026-11-25)."""
+    config_file = write_config(tmp_path, style=True)
+    db_path = synced(config_file, [player(1001, name="Mine")])
+    client = client_for(config_file, db_path, fake_worker(config_file, db_path))
     page = unescape(client.get("/settings").text)
     assert "Picture style" in page
-    assert '<option value="animagine" selected>Anime (Animagine XL)</option>' in page
-    assert re.search(r'<option value="realvis"\s*>Photo \(RealVisXL\)</option>', page)
-    assert '<option value="woman" selected>Woman</option>' in page
-    assert re.search(r'<option value="man"\s*>Man</option>', page)
-    assert re.search(r'<option value="zimage_turbo"\s*>Photo \(Z-Image-Turbo\)</option>', page)
+    assert '<option value="realvis" selected>Photo · Standard (RealVisXL)</option>' in page
+    assert re.search(
+        r'<option value="zimage_turbo"\s*>Photo · High quality \(Z-Image-Turbo\)</option>', page
+    )
+    assert re.search(r'<option value="animagine"\s*>Anime \(Animagine XL\)</option>', page)
+    assert '<option value="man" selected>Man</option>' in page
+    assert re.search(r'<option value="woman"\s*>Woman</option>', page)
+    order = [page.index(f'<option value="{m}"') for m in ("realvis", "zimage_turbo", "animagine")]
+    assert order == sorted(order)
     for key in ("style.model", "style.gender"):
         assert f'<select name="{key}" data-key>' in page, key
         assert (
             f'<select name="{key}" data-key data-default=' in client.get("/settings/advanced").text
         )
 
-    data = client.post("/settings/save", data={"style.model": "realvis", "style.gender": "man"})
+    data = client.post("/settings/save", data={"style.model": "animagine", "style.gender": "woman"})
     assert data.json()["ok"]
     now = values(config_file)
-    assert (now["style.model"], now["style.gender"]) == ("realvis", "man")
+    assert (now["style.model"], now["style.gender"]) == ("animagine", "woman")
     page = unescape(client.get("/settings").text)
-    assert '<option value="realvis" selected>Photo (RealVisXL)</option>' in page
+    assert '<option value="animagine" selected>Anime (Animagine XL)</option>' in page
     for key, value in (("style.model", "flux"), ("style.gender", "other")):
         bad = client.post("/settings/save", data={key: value}).json()
         assert not bad["ok"] and key in bad["errors"], key
@@ -157,7 +165,7 @@ def test_the_picture_style_is_one_model_and_one_gender_for_everyone(
     assert values(config_file)["style.model"] == "zimage_turbo"
     korean = unescape(client.get("/settings/basic", headers=KOREAN_WINDOWS).text)
     for text in (
-        "그림 스타일", "실사 (RealVisXL)", "실사 (Z-Image-Turbo)", "애니메이션 (Animagine XL)",
+        "그림 스타일", "실사·표준 (RealVisXL)", "실사·고퀄 (Z-Image-Turbo)", "애니 (Animagine XL)",
         "남성", "여성",
     ):  # fmt: skip
         assert text in korean, text

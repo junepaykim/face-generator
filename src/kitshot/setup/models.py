@@ -158,11 +158,11 @@ TAGGER_FILES = _files(  # main at b25b82a0
     },
 )
 
-DEFAULT_MODEL = "animagine"
+DEFAULT_MODEL = "realvis"
 MODELS: dict[str, tuple[ModelFile, ...]] = {
-    "animagine": (*ANIMAGINE_FILES, *IP_ADAPTER_FILES, *TAGGER_FILES),
     "realvis": (*REALVIS_FILES, *IP_ADAPTER_FILES, *TAGGER_FILES),
     "zimage_turbo": (*ZIMAGE_TURBO_FILES, *TAGGER_FILES),
+    "animagine": (*ANIMAGINE_FILES, *IP_ADAPTER_FILES, *TAGGER_FILES),
 }
 """The files each `style.model` loads (sizes from the Hub API, 2026-11-20). Z-Image-Turbo takes
 no reference picture, so it needs no IP-Adapter."""

@@ -3,7 +3,7 @@
 # Kitshot
 
 Kitshot is a Windows desktop app that gives Football Manager 27 players,
-staff and journalists portraits, as anime illustrations or as photos. It reads a copy of
+staff and journalists portraits, as photos or as anime illustrations. It reads a copy of
 the save, draws on a local GPU and publishes a graphics pack the game can load.
 
 ## Engineering Highlights
@@ -41,16 +41,16 @@ So this tool does the chore:
    your league rivals and the stars. The tool finds your league in the save, picks the
    best players in it and in the leagues around it, and skips everyone else. The picks
    follow your club up and down the divisions, so there are no numbers to retune.
-3. **It draws on your GPU.** Each player gets a portrait in their club's kit, anime or
-   photo, made on your own graphics card.
+3. **It draws on your GPU.** Each player gets a portrait in their club's kit, photo or
+   anime, made on your own graphics card.
 4. **It publishes.** It writes the pictures and a `config.xml` into FM27's graphics
    folder. Press *Reload Skin* in FM27 and the faces appear.
 
 ## Portrait features
 
-- **Anime or photo, women or men.** One setting picks the model: Animagine XL 4.0 for
-  anime, or RealVisXL V5.0 or Z-Image-Turbo for photos. Another draws everyone, players,
-  staff and press alike, as women or as men.
+- **Photo or anime, men or women.** One setting picks the model: RealVisXL V5.0 (the
+  default) or Z-Image-Turbo for photos, or Animagine XL 4.0 for anime. Another draws
+  everyone, players, staff and press alike, as men (the default) or as women.
 - **A queue instead of brute force.** The GPU is shared with the game, so the tool spends
   it where you'll look. Detailed pictures (your club and the very best) get the best of 3
   tries plus a detail pass. Light pictures (the rest of your league) get one try.
@@ -450,7 +450,7 @@ Download and run `Kitshot-setup-<version>.exe` from the [latest Windows release]
 You’ll need 64-bit Windows 10 or 11, FM27, an NVIDIA GPU with about 8 GB of VRAM (10 GB for
 Z-Image-Turbo) and about 20 GB of free disk space (40 GB for Z-Image-Turbo). First launch
 sets up Python and PyTorch (~3 GB), then asks before downloading the chosen model's files:
-11.6 GB for Animagine or RealVisXL, 34.1 GB for Z-Image-Turbo. After the first portraits are published, choose **Reload
+11.6 GB for RealVisXL (the default) or Animagine, 34.1 GB for Z-Image-Turbo. After the first portraits are published, choose **Reload
 Skin** in FM27 to see them.
 
 ### Updates

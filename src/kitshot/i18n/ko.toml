@@ -908,9 +908,9 @@ light = "밝게"
 dark = "어둡게"
 
 [settings.choice.model]
-animagine = "애니메이션 (Animagine XL)"
-realvis = "실사 (RealVisXL)"
-zimage_turbo = "실사 (Z-Image-Turbo)"
+realvis = "실사·표준 (RealVisXL)"
+zimage_turbo = "실사·고퀄 (Z-Image-Turbo)"
+animagine = "애니 (Animagine XL)"
 
 [settings.choice.gender]
 woman = "여성"

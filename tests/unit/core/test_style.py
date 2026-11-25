@@ -44,7 +44,7 @@ def prompt(model: str, gender: str, **kw: object):
 
 
 def test_the_choices_are_the_models() -> None:
-    assert MODEL_CHOICES == ("animagine", "realvis", "zimage_turbo")
+    assert MODEL_CHOICES == ("realvis", "zimage_turbo", "animagine")  # Settings' order
     assert [m for m in MODEL_CHOICES if IMAGE_MODELS[m].photo] == ["realvis", "zimage_turbo"]
     assert [m for m in MODEL_CHOICES if not IMAGE_MODELS[m].reference] == ["zimage_turbo"]
     assert [m for m in MODEL_CHOICES if not IMAGE_MODELS[m].negative] == ["zimage_turbo"]
