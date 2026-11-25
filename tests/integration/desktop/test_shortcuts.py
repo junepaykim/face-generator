@@ -164,7 +164,8 @@ def test_the_earlier_name_is_beside_the_shortcut() -> None:
     link = shortcuts.startup_shortcut(FOLDERS["startup"], program=PYW, root=ROOT, icon=ICON)
     assert shortcuts.legacy_paths(link.path) == [FOLDERS["startup"] + r"\facegen.lnk"]
     assert shortcuts.legacy_paths(r"C:\x\FACEGEN.lnk") == []  # it is the earlier name itself
-    assert shortcuts.legacy_paths("/tmp/links/Kitshot.lnk") == ["/tmp/links/facegen.lnk"]
+    # Not a drive path, so it is this OS's own: Windows writes it with backslashes.
+    assert shortcuts.legacy_paths("/tmp/links/Kitshot.lnk") == [str(Path("/tmp/links/facegen.lnk"))]
 
 
 def test_the_shortcuts_command_is_for_windows(config_file: Path) -> None:
