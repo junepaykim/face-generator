@@ -3,6 +3,7 @@
 # .github/workflows/wheels.yml attaches the wheels and SHA256SUMS.txt to that GitHub
 # Release: check the release, then copy its SHA256SUMS.txt lines in below.
 # Format: `sha256sum` output, "<sha256>  <wheel file name>"; the version is in the name.
-# Phase 17o renamed the extension kitshot-native 0.2.0: its sums go here after the
-# native-v0.2.0 release. Until then `kitshot launch` finds no wheel and Kitshot uses the
-# Python versions. (facegen-native 0.1.0's wheels are in the native-v0.1.0 release.)
+# native-v0.2.0 (2026-11-25): hashed after download; matches SHA256SUMS.txt and GitHub's
+# asset digests. (facegen-native 0.1.0's wheels are in the native-v0.1.0 release.)
+560e8d0fe788ec151f63671bf7d163deff86863f66d4e1077dd31729dc2b66c1  kitshot_native-0.2.0-cp312-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+c2a27dedb23ea9d011ad713a3f4cf2bad6f267cb145d89ec3a4238c53a56b7b6  kitshot_native-0.2.0-cp312-abi3-win_amd64.whl
