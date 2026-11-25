@@ -86,6 +86,15 @@ class PlayerFilter:
     page: int = 1
 
 
+# A current picture drawn before FM27's own kits were read (or for a club they lack): the
+# fallback kit, or the colours estimated from FM27's kit image, which carry no pattern. A
+# picture's render records where its kit came from (`kit_source`); the oldest only `kit_known`.
+_OLD_KIT = (
+    "i.id IS NOT NULL AND (json_extract(i.render, '$.kit_source') IN"
+    " ('fallback', 'catalog', 'bundled') OR json_extract(i.render, '$.kit_known') = 0)"
+)
+
+
 def _substring_pattern(term: str) -> str:
     escaped = term.replace("!", "!!").replace("%", "!%").replace("_", "!_")
     return f"%{escaped}%"
@@ -172,6 +181,8 @@ def _where(f: PlayerFilter, career_id: int) -> tuple[str, list[Any]]:
             clauses.append("j.id IS NOT NULL")
         case "review":
             clauses.append(_IN_REVIEW)
+        case "old_kit":  # drawn without FM27's kit: the fallback, or colours from its image
+            clauses.append(_OLD_KIT)
     match f.photo:
         case "game":
             clauses.append("ph.game = 1")

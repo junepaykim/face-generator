@@ -14,6 +14,7 @@ the save, draws on a local GPU and publishes a graphics pack the game can load.
 | [Load a 6B photo model on a 16 GB PC](src/kitshot/render/zimage.py) | Build Z-Image-Turbo’s transformer tensor by tensor from its fp32 files straight onto the GPU, storing block layers in 4-bit NF4. Convert the text encoder to INT8 before the transformer loads. | Peak system RAM while loading fell from **12.2 to 4.3 GiB**, and load time from **20.3 to about 13.5 s**, with byte-identical pictures. |
 | [Keep the UI responsive during save reads](src/kitshot/runtime/sync_process.py) | Move save parsing and database sync from a thread in the desktop app to a child process with its own Python interpreter. | During a 320 MB save sync under WSL2, 90th-percentile latency fell on both the Players page (**1,272 → 77 ms**) and the status endpoint (**2,021 → 153 ms**). |
 | [Speed up portrait publishing with Rust](native/src/portrait.rs) | A PyO3 extension releases Python’s GIL and uses Rayon to resize and encode multiple PNGs in parallel. | Republishing a 58-portrait pack took **6.4 s**, down from **57.0 s** (**8.9× faster**), with identical FM portrait mappings. |
+| [Read club kits from FM27's own database](src/kitshot/datasource/game_kits.py) | Walk the game's 100,432-row club table and its kit table to their last byte, join rows by position, and turn each home shirt's template and colours into kit words; any byte out of place turns the source off. | Clubs of the four big leagues drawn in their own kit rose from **58 to 89 of 89**, with a pattern from **2 to 46**. LaLiga's 23 had only the neutral fallback before. |
 | [Query a SQLite catalogue of 181,315 people](src/kitshot/persistence/player_queries.py) | Select the 100 IDs for the requested page before joining their details. For the Review filter, find matching jobs once. | Median time for the first page including its count fell from **136 to 52 ms**. With the Review filter, it fell from **155 to 23 ms**. |
 
 <p align="center">
@@ -298,9 +299,15 @@ portraits; the published size is the height. With these defaults my test saves h
   10–11 GB preset and 4.5 GiB with the under-10 GB one (7.7, 6.7 and 5.0 GiB for a re-draw
   with a reference picture); Z-Image-Turbo stays near 6 GiB in every preset, so it is for
   10 GB cards and up. The presets are not yet tried on smaller cards.
-- **Club colours.** A hand-tuned kit table takes priority. For 832 clubs, the app also
-  ships colour estimates from FM27’s home shirt images. Clubs missing from both sources
-  get a neutral kit. [Kit catalogue](src/kitshot/data/kit_catalog.json)
+- **Club kits from the game itself.** Kitshot reads FM27's own database in your install
+  folder: each club's home shirt template and colours, and the goalkeeper's shirt. That is
+  64,953 clubs, every club in the Premier League, LaLiga, Serie A and Bundesliga included.
+  Thirty of the game's shirt templates become words: stripes, hoops, sleeves, halves, a sash,
+  a chest band, a cross and so on, so Juventus gets its stripes and Parma its cross. The read
+  is cached and repeated only after a game update; nothing of the game ships with Kitshot.
+  [Reader](src/kitshot/datasource/game_kits.py) A hand-tuned kit table still comes first;
+  colour estimates from FM27's shirt images cover what the database does not, and the rest
+  get a neutral kit. Players finds pictures drawn with older kit info, to draw them again.
 - **A new photo shoot each time.** The character sheet keeps a player's face, hair and
   eyes; each picture draws the rest. The kit is worn with short, long or layered sleeves,
   a collar, or as club training wear: a track jacket, open over the shirt or zipped to a
@@ -425,7 +432,9 @@ publishes the executable with a SHA-256 checksum. [Release workflow](.github/wor
 - **Save compatibility.** Game patches can change the save format. The dashboard identifies
   unreadable builds and keeps existing portraits. The reader is pinned to
   [fmsave 0.12.6](https://github.com/rhiever/fmsave).
-- **Portrait fidelity.** Kits approximate club colours and patterns. A reference face helps
+- **Portrait fidelity.** Kits approximate club colours and patterns: 27 of the game's 57
+  shirt templates are drawn as colours without a layout, shorts are left to the model, and
+  kits edited in a save are not read. A reference face helps
   preserve a player’s identity across redraws, but the save reader exposes no newgen hair
   or skin data to match the in-game 3D face. In the photo styles, women are drawn from the
   anime prompt for now; a photo prompt and check of their own are not done yet.

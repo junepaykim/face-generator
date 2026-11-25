@@ -70,6 +70,7 @@ from kitshot.setup import operations as setup_operations
 _TIER_NAMES = {0: "manual", 1: "A, my club", 2: "A", 3: "B", 4: "C"}
 KIT_SOURCE_NOTES = {
     "table": "",
+    "game": "",
     "catalog": " (colours from FM27's kit image)",
     "bundled": " (bundled colours from FM27's kit image)",
     "fallback": " (fallback kit)",
@@ -384,7 +385,11 @@ def cmd_run(
     if career is None:
         return 2
     try:
-        kits = load_kits(args.kits, data_dir=settings.paths.data_dir)
+        kits = load_kits(
+            args.kits,
+            data_dir=settings.paths.data_dir,
+            install_dir=settings.paths.fm_install_dir,
+        )
     except KitError as exc:
         print(f"kits: {exc}", file=out)
         return 2

@@ -263,7 +263,10 @@ def serve_child(
     try:
         if kits is None:
             try:
-                kits = load_kits(data_dir=settings.paths.data_dir)
+                kits = load_kits(
+                    data_dir=settings.paths.data_dir,
+                    install_dir=settings.paths.fm_install_dir,
+                )
             except KitError as exc:
                 ex = Exit("crashed", f"kits: {exc}")
                 link.exit(ex)

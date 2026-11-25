@@ -48,6 +48,7 @@ PICTURE_FILTERS = {
     "no": "no picture",
     "queued": "queued or drawing",
     "review": "in review",
+    "old_kit": "drawn with older kit info",
 }
 # Whether FM27 shows a photo other than ours: its own, or a facepack's (photos.py).
 PHOTO_FILTERS = {

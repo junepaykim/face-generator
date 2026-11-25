@@ -176,6 +176,37 @@ def test_the_review_filter_is_the_players_whose_latest_job_failed(
     assert [r["unique_id"] for r in rows] == [queued_again] and rows[0]["job_status"] == "queued"
 
 
+def drawn(c: sqlite3.Connection, uid: int, render: str | None, *, current: int = 1) -> None:
+    c.execute(
+        "INSERT INTO images (career_id, unique_id, version, reason, group_name, model, prompt,"
+        " negative_prompt, seed, is_current, created_at, render)"
+        " VALUES (?, ?, ?, 'initial', 'b', 'm', 'p', 'n', 1, ?, '2026-11-17T00:00:00', ?)",
+        (CAREER, uid, 2 if current else 1, current, render),
+    )
+
+
+def test_the_older_kit_filter_finds_pictures_drawn_without_fm27s_kit(
+    conn: sqlite3.Connection,
+) -> None:
+    """Pictures drawn in the fallback kit or in colours from FM27's kit image, which FM27's own
+    kits may now draw better: picked out to be drawn again (FM-Face kit coverage, item 4)."""
+    older = {}
+    for source in ("fallback", "catalog", "bundled"):
+        older[source] = add(conn, 100, 100, 10)
+        drawn(conn, older[source], f'{{"kit_source": "{source}"}}')
+    oldest = add(conn, 100, 100, 10)  # from before kit_source was stored
+    drawn(conn, oldest, '{"kit_known": false}')
+    for source in ("table", "game"):
+        drawn(conn, add(conn, 100, 100, 10), f'{{"kit_source": "{source}"}}')
+    drawn(conn, add(conn, 100, 100, 10), None)  # no render recorded: not known to be old
+    redrawn = add(conn, 100, 100, 10)  # an older picture in the fallback, the current one not
+    drawn(conn, redrawn, '{"kit_source": "fallback"}', current=0)
+    drawn(conn, redrawn, '{"kit_source": "game"}')
+    add(conn, 100, 100, 10)  # no picture
+    rows, total = players_page(conn, CAREER, PlayerFilter(picture="old_kit"))
+    assert {r["unique_id"] for r in rows} == {*older.values(), oldest} and total == 4
+
+
 def test_the_auto_update_filter_is_the_tracked_players(conn: sqlite3.Connection) -> None:
     """The dashboard's Auto-update count links to this list (Phase 17e)."""
     tracked = [add(conn, 100, 100, 10), add(conn, 90, 90, None)]

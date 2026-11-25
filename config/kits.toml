@@ -1,18 +1,24 @@
 # Kit colours (docs/spec.md section 3), read by src/kitshot/datasource/kits.py.
 #
-# Keyed by the game's unique club ID (the club names below are comments only). A club not
-# listed here is drawn in the colours estimated from FM27's own image of its home shirt when
-# there is one (the kit catalog bundled as src/kitshot/data/kit_catalog.json, or a newer
+# Keyed by the game's unique club ID (the club names below are comments only). This table
+# always comes first. A club not listed here is drawn in its home shirt from FM27's own
+# database, read on this PC from the game's install folder (src/kitshot/datasource/
+# game_kits.py: the shirt's colours and pattern and the goalkeeper's shirt colour, no
+# shorts); failing that, in the colours estimated from FM27's own image of its home shirt
+# when there is one (the kit catalog bundled as src/kitshot/data/kit_catalog.json, or a newer
 # data/kit-colour-probe/report.json written on this PC by scripts/spikes/kit_colour_probe.py:
-# colours only, no pattern or shorts), else in the [fallback] kit. This table always comes
-# first. Goalkeepers wear the goalkeeper kit.
+# colours only, no pattern or shorts); else in the [fallback] kit. Goalkeepers wear the
+# goalkeeper kit.
 #
 # Vocabulary (anything else is refused, so the table cannot add other words to a prompt):
 #   colours   red, claret, white, black, blue, sky, navy, yellow, amber, orange, green,
 #             purple, grey, pink
-#   patterns  plain (one shirt colour); stripes (vertical), hoops (horizontal), sleeves
-#             (body, then sleeves), two-tone (halves or quarters), mixed (two colours, layout
-#             not known): two shirt colours
+#   patterns  plain (one shirt colour); with the body's colour first, then the pattern's:
+#             stripes (vertical; two or three colours), hoops (horizontal), sleeves, two-tone
+#             (halves or quarters), mixed (two colours, layout not known), pinstripes,
+#             thin-hoops, checks, centre-stripe (one wide stripe down the middle), sash
+#             (diagonal; two or three colours), band (across the chest; two or three colours),
+#             chevron (a V across the chest), cross
 #   home        shirt = [..], pattern, shorts (required), trim (collar colour)
 #   goalkeeper  shirt = [..], pattern, trim, gloves (default black)
 #

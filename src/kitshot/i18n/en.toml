@@ -448,6 +448,7 @@ yes = "Has a picture"
 no = "No picture"
 queued = "Queued or generating"
 review = "In review"
+old_kit = "Drawn with older kit info"
 
 [players.photo]
 any = "Any photo"

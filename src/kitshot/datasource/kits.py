@@ -1,15 +1,16 @@
-"""Load fixed kit colours from configuration and local/bundled catalogs.
+"""Load fixed kit colours from configuration, FM27's database and local/bundled catalogs.
 
-config/kits.toml wins; then the newer catalog estimate, the older catalog for missing
-clubs, and the neutral fallback. Unknown report dates put the bundle first. Probe reports
-come from scripts/spikes/kit_colour_probe.py; scripts/build_kit_catalog.py bundles only
-club IDs and colour names, never game images or asset names.
+config/kits.toml wins; then FM27's own kits, read from the game's database on this PC
+(game_kits.py); then the newer catalog estimate, the older catalog for missing clubs, and the
+neutral fallback. Unknown report dates put the bundle first. Probe reports come from
+scripts/spikes/kit_colour_probe.py; scripts/build_kit_catalog.py bundles only club IDs and
+colour names, never game images or asset names. Nothing of FM27's database is bundled.
 
 The vocabulary prevents free-text prompt injection and keeps player clothes football kit.
-Estimates contain shirt colours only: no known pattern or shorts. Goalkeeper colours
-contrast with the home shirt because the game's goalkeeper colours are unavailable.
-Staff use home colours through the wardrobe. Shirt-colour tags rank candidates only;
-they cannot fail QC.
+FM27's kits give the home shirt's colours and pattern and the goalkeeper's shirt colour, not
+the shorts. Estimates contain shirt colours only: no known pattern or shorts, and goalkeeper
+colours that contrast with the home shirt. Staff use home colours through the wardrobe.
+Shirt-colour tags rank candidates only; they cannot fail QC.
 """
 
 from __future__ import annotations
@@ -40,6 +41,7 @@ from kitshot.core.kit_values import (  # noqa: F401 - compatibility exports
     parse_kit,
     parse_kits,
 )
+from kitshot.datasource.game_kits import load_game_kits
 from kitshot.locations import CONFIG_DIR
 
 KITS_PATH = CONFIG_DIR / "kits.toml"
@@ -181,15 +183,25 @@ def with_estimates(
 
 
 def load_kits(
-    path: Path | None = None, *, data_dir: Path | None = None, bundled: bool = True
+    path: Path | None = None,
+    *,
+    data_dir: Path | None = None,
+    install_dir: Path | None = None,
+    bundled: bool = True,
 ) -> KitTable:
-    """config/kits.toml (or `path`), the kit catalog if the colour probe has written one in
-    `data_dir`, and the bundled catalog (unless `bundled` is false).
+    """config/kits.toml (or `path`), FM27's own kits when `install_dir` holds a database this
+    version reads (cached in `data_dir`), the kit catalog if the colour probe has written one
+    in `data_dir`, and the bundled catalog (unless `bundled` is false).
 
-    No probe report means the bundle alone; a club in neither gets the fallback kit.
+    No probe report means the bundle alone; a club in none of them gets the fallback kit. An
+    unreadable database is left out with a warning in the log, never an error: the other
+    sources still apply.
     """
     with (path or KITS_PATH).open("rb") as f:
         table = parse_kits(tomllib.load(f))
+    game = load_game_kits(install_dir, data_dir) if install_dir is not None else None
+    if game is not None:
+        table = replace(table, game=game.kits())
     bundle = load_bundle() if bundled else None
     catalog = catalog_path(data_dir) if data_dir is not None else None
     if catalog is None or not catalog.is_file():

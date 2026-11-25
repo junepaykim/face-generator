@@ -9,6 +9,7 @@ uv run --no-sync pytest tests/integration/datasource tests/unit/datasource -q
 uv run --no-sync pytest tests/integration/datasource/test_fmsave_source.py -q
 uv run --no-sync ruff check src/kitshot/datasource
 uv run --no-sync python scripts/spikes/kit_colour_probe.py --help
+uv run --no-sync python scripts/spikes/kit_coverage.py --help
 ```
 
 ## Boundaries
@@ -41,6 +42,15 @@ uv run --no-sync python scripts/spikes/kit_colour_probe.py --help
   rescanning hundreds of thousands of unchanged picture files.
 - Kit values belong in `core.kit_values`; this layer loads config/catalogs.
   A local report overrides the bundle only when newer.
+- `game_kits.py` reads FM27's own kits from the install folder's database (read only):
+  both club tables are walked to their exact end, rows joined by position and checked by
+  the club ID; anything unexpected drops the whole source with a log warning, never a guess
+  or an error that stops the app. Its cache (`data/game-kits.json`) is keyed by the file's
+  path, size and time and `READER_VERSION`; raise that when what it reads changes. Never
+  bundle what it reads (decisions 2026-11-13: nothing of the game's in the repository).
+  Import zstd inside functions: `kitshot.cli --help` runs without site-packages.
+  Shirt styles and colour names are `core.kit_values` (`SHIRT_STYLES`, `colour_name`);
+  `scripts/spikes/kit_coverage.py` reports what a database covers.
 - Do not hand-edit `src/kitshot/data/kit_catalog.json`. After an FM update, refresh it
   with `scripts/spikes/kit_colour_probe.py` using `--install-dir` and `--all-home`, then
   `scripts/build_kit_catalog.py`. The probe needs UnityPy, numpy and Pillow (or `--deps`).

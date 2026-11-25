@@ -448,6 +448,7 @@ yes = "그림 있음"
 no = "그림 없음"
 queued = "대기 중 또는 생성 중"
 review = "검토 대기"
+old_kit = "예전 유니폼 정보로 그린 그림"
 
 [players.photo]
 any = "사진 전체"

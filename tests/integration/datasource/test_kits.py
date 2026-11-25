@@ -32,6 +32,9 @@ from kitshot.datasource.kits import (
     with_estimates,
 )
 
+UNKNOWN_CLUB = 987654321
+"""An ID in no kit source: not in the table or the bundle."""
+
 
 def table(**clubs: dict) -> dict:
     return {
@@ -226,7 +229,7 @@ def test_the_table_comes_before_the_catalog(tmp_path: Path) -> None:
     assert source == "catalog" and city.shirt == ("sky",)
     keeper, source = kits.kit_for(679, goalkeeper=True)
     assert source == "catalog" and keeper.goalkeeper and keeper.shirt == ("green",)
-    _, source = kits.kit_for(1708, goalkeeper=False)
+    _, source = kits.kit_for(UNKNOWN_CLUB, goalkeeper=False)
     assert source == "fallback"
 
 
@@ -254,8 +257,11 @@ def test_a_club_in_the_table_in_the_bundle_or_in_neither(tmp_path: Path) -> None
     assert source == "bundled" and city.shirt == ("sky",) and city.shorts is None
     keeper, source = kits.kit_for(679, goalkeeper=True)
     assert source == "bundled" and keeper.goalkeeper and keeper.shirt == ("green",)
-    _, source = kits.kit_for(1708, goalkeeper=False)  # FM27 ships no kit image for it
+    _, source = kits.kit_for(UNKNOWN_CLUB, goalkeeper=False)  # in no source
     assert source == "fallback"
+    # FM27 ships no kit image for Barcelona: without the game's database (test_game_kits.py),
+    # it has no kit either.
+    assert kits.kit_for(1708, goalkeeper=False)[1] == "fallback"
     assert kits.kit_for(None, goalkeeper=False) == (kits.fallback.home, "fallback")
 
 

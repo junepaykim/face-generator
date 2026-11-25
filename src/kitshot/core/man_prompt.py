@@ -18,7 +18,7 @@ round-eye rules are the women's and do not apply to men (user, 2026-11-20).
 
 from __future__ import annotations
 
-from kitshot.core.kit_values import COLOURS, Kit
+from kitshot.core.kit_values import COLOURS, Kit, join_and
 from kitshot.core.man_traits import (
     EXPRESSION,
     EYE_COLOUR,
@@ -184,17 +184,34 @@ def shirt_sentence(kit: Kit, sleeves: str = "") -> str:
     collar". `sleeves` ("long-sleeved", "short-sleeved", "collared") goes before the garment."""
     c = [_colour(x) for x in kit.shirt]
     garment = _join_words(sleeves, "goalkeeper jersey" if kit.goalkeeper else "football shirt")
+    body = _a(f"{c[0]} {garment}")
     match kit.pattern:
         case "plain":
-            text, extras = _a(f"{c[0]} {garment}"), []
+            text, extras = body, []
         case "stripes":
-            text, extras = _a(garment), [f"{c[0]} and {c[1]} vertical stripes"]
+            text, extras = _a(garment), [f"{join_and(c)} vertical stripes"]
         case "hoops":
             text, extras = _a(garment), [f"{c[0]} and {c[1]} horizontal hoops"]
         case "sleeves":
-            text, extras = _a(f"{c[0]} {garment}"), [f"{c[1]} sleeves"]
+            text, extras = body, [f"{c[1]} sleeves"]
         case "two-tone":
             text, extras = _a(f"{c[0]} and {c[1]} two-tone {garment}"), []
+        case "pinstripes":
+            text, extras = body, [f"thin {c[1]} pinstripes"]
+        case "thin-hoops":
+            text, extras = body, [f"thin {c[1]} horizontal stripes"]
+        case "checks":
+            text, extras = _a(garment), [_a(f"{c[0]} and {c[1]} checkered pattern")]
+        case "centre-stripe":
+            text, extras = body, [_a(f"wide {c[1]} vertical stripe down the middle")]
+        case "sash":
+            text, extras = body, [_a(f"{join_and(c[1:])} diagonal sash")]
+        case "band":
+            text, extras = body, [_a(f"{join_and(c[1:])} band across the chest")]
+        case "chevron":
+            text, extras = body, [_a(f"{c[1]} V-shaped band across the chest")]
+        case "cross":
+            text, extras = body, [_a(f"{c[1]} cross on the chest")]
         case _:  # "mixed": two colours, layout not known
             text, extras = _a(f"{c[0]} and {c[1]} {garment}"), []
     if kit.trim:
@@ -208,7 +225,7 @@ def jacket_sentence(kit: Kit) -> str:
     if kit.pattern == "sleeves":
         text = _a(f"{c[0]} club track jacket with {c[1]} sleeves")
     else:
-        text = _a(f"{' and '.join(c)} club track jacket")
+        text = _a(f"{join_and(c)} club track jacket")
     if kit.trim:
         text += f"{' and' if ' with ' in text else ' with'} {_a(_colour(kit.trim) + ' collar')}"
     return text

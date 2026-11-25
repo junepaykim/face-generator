@@ -377,7 +377,11 @@ class WorkerService:
             self._worker = Worker(
                 conn,
                 settings,
-                self._kits or load_kits(data_dir=settings.paths.data_dir),
+                self._kits
+                or load_kits(
+                    data_dir=settings.paths.data_dir,
+                    install_dir=settings.paths.fm_install_dir,
+                ),
                 career,
                 renderer_factory=self._renderer_factory,
                 tagger_factory=self._tagger_factory,

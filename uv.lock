@@ -640,6 +640,7 @@ name = "kitshot"
 version = "0.1.6"
 source = { editable = "." }
 dependencies = [
+    { name = "backports-zstd", marker = "python_full_version < '3.14'" },
     { name = "fastapi" },
     { name = "fmsave" },
     { name = "jinja2" },
@@ -673,6 +674,7 @@ native = [
 
 [package.metadata]
 requires-dist = [
+    { name = "backports-zstd", marker = "python_full_version < '3.14'", specifier = ">=1.8" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "fmsave", specifier = "==0.12.6" },
     { name = "jinja2", specifier = ">=3.1" },

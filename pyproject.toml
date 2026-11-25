@@ -7,6 +7,8 @@ license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
+    # FM27's database (its kits) is Zstandard frames; fmsave already needs this before 3.14.
+    "backports-zstd>=1.8; python_version < '3.14'",
     "fastapi>=0.115",
     # Alpha library that tracks game patches. Keep the exact pin; see AGENTS.md.
     "fmsave==0.12.6",
