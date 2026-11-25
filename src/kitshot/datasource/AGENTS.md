@@ -30,6 +30,11 @@ uv run --no-sync python scripts/spikes/kit_coverage.py --help
   competitions or fixtures read sets `competitions_read` false and carries no competition
   records, so sync keeps the stored leagues and managers; a tables failure alone does not.
   Optional competition/people failures warn without aborting player syncs.
+- fmsave keeps every table it reads until the save is closed, so `FmsaveDataSource` reads in
+  two openings: `read_leagues` (clubs, competitions, fixtures, league tables) keeps only sums,
+  then a second opening reads the people. Do not move a large table into the other pass;
+  fmsave's `staff()` reads `players()` itself, so those two stay together. Readers that
+  decompress `game_db` share one `game_db_borrowed` per pass; keep `fixtures()` outside it.
 - `people.py` parses synthetic-testable bytes, not fmsave objects. Reject chance byte
   matches with the existing ID/name/date/personality checks.
 - `league_rules.py` (the save's division lists, levels and regional groups) parses the same

@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import warnings
 from collections import Counter, defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from contextlib import ExitStack, suppress
-from dataclasses import fields, replace
+from dataclasses import dataclass, field, fields, replace
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -343,8 +343,77 @@ def unknown_build_note(build: str, reader: str) -> str:
     )
 
 
+@dataclass(frozen=True)
+class Leagues:
+    """What the first pass over a save keeps: the clubs, and what its competitions, fixtures
+    and league tables add up to. Nothing else of theirs outlives that pass."""
+
+    clubs: dict[int, ClubRecord]
+    uid_map: dict[int, int]
+    """Save-local club uid to stable ID; the same for every opening of one file."""
+    tables: tuple[LeagueTableRecord, ...] = ()
+    fixture_counts: dict[int, dict[int, int]] = field(default_factory=dict)
+    fixture_seasons: dict[int, int] = field(default_factory=dict)
+    competitions_read: bool = False
+    notes: tuple[str, ...] = ()
+
+
+def game_db_borrowed(save: Any) -> ExitStack:
+    """The game database decompressed once for the readers run inside this block; each would
+    otherwise decompress it on its own (456 MiB for a 378 MiB save). Readers inside borrow it
+    anyway, so this costs no more memory while they run. A failure to borrow is left to the
+    readers to report. Borrows fmsave's section loans: an internal of the pinned version."""
+    stack = ExitStack()
+    with suppress(Exception):
+        stack.enter_context(save._context.section("game_db"))
+    return stack
+
+
+def read_leagues(save: Any, fmsave: Any) -> Leagues:
+    """The first pass over a save: its clubs, and the competitions' clubs from the fixtures and
+    league tables, added up.
+
+    These only decide "my league", the leagues around it, continental membership and the
+    managers read; a reader failure here should not stop a sync, so each reader is tried on
+    its own. A competition's clubs come from its fixtures (a table counts only for a
+    competition with none), so without the fixtures nothing is known: the sync then keeps the
+    leagues and managers stored before. Only the clubs are required.
+    """
+    notes: list[str] = []
+    kept = "so my league and its managers stay as the last sync read them"
+    comp_keys: dict[int, int] | None = None
+    with game_db_borrowed(save):
+        clubs, uid_map = convert_clubs(save.clubs())
+        try:
+            comp_keys = {c.id: competition_key(c.database_id, c.id) for c in save.competitions()}
+        except fmsave.FmsaveError as exc:
+            notes.append(f"competition data unavailable, {kept}: {exc}")
+    leagues = Leagues(clubs, uid_map)
+    if comp_keys is None:
+        return replace(leagues, notes=tuple(notes))
+    # Outside the borrow: the fixtures stream the span once the game database is let go of,
+    # so the two are never held at once.
+    try:
+        counts, seasons = convert_fixtures(save.fixtures(), uid_map, comp_keys, save.info.game_date)
+    except fmsave.FmsaveError as exc:
+        notes.append(f"fixtures unavailable, {kept}: {exc}")
+        return replace(leagues, notes=tuple(notes))
+    tables: tuple[LeagueTableRecord, ...] = ()
+    try:
+        tables = convert_league_tables(save.league_tables(), uid_map, comp_keys)
+    except fmsave.FmsaveError as exc:
+        notes.append(f"league tables unavailable, so leagues come from fixtures: {exc}")
+    return Leagues(clubs, uid_map, tables, counts, seasons, True, tuple(notes))
+
+
 class FmsaveDataSource:
-    """Reads a save copy with fmsave. Never point it at the game's own saves folder."""
+    """Reads a save copy with fmsave. Never point it at the game's own saves folder.
+
+    The save is read in two passes, each opening it anew (user, 2026-11-24: save reading used
+    too much memory). fmsave keeps every table it reads until the save is closed, so in one
+    pass the fixtures and the span they come from were still held while the players and staff
+    were read. The first pass keeps only `Leagues`; the second reads the people.
+    """
 
     def load(self, path: Path) -> Snapshot:
         import fmsave
@@ -352,34 +421,10 @@ class FmsaveDataSource:
         reader = f"fmsave {fmsave.__version__}"
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            try:
-                save = fmsave.open(path)
-            except fmsave.UnsupportedGameError as exc:
-                raise UnsupportedSaveError(str(exc), reader=reader) from exc
-            except fmsave.FmsaveError as exc:
-                raise SaveReadError(str(exc)) from exc
-            # fmsave reads an FM27 build it has no layouts for with a known build's layouts
-            # where the sections match, and raises UnsupportedGameError from any reader whose
-            # section does not. On such a build a reader's failed layout check means the same
-            # (FM27 27.1.0 and fmsave 0.11.0: "the save layout differs from what fmsave
-            # expects"). Either way the build is unsupported; say which one. On a build fmsave
-            # knows, a failed check is a damaged save: a read error.
-            try:
-                info = save.info
-                try:
-                    snapshot = self._read(save, fmsave)
-                except (fmsave.UnsupportedGameError, fmsave.ReaderCheckError) as exc:
-                    if isinstance(exc, fmsave.ReaderCheckError) and info.known_build:
-                        raise SaveReadError(str(exc)) from exc
-                    raise UnsupportedSaveError(
-                        f"{info.game} build {info.build} cannot be read by {reader}: {exc}",
-                        build=info.build,
-                        reader=reader,
-                    ) from exc
-                except fmsave.FmsaveError as exc:
-                    raise SaveReadError(str(exc)) from exc
-            finally:
-                save.close()
+            leagues = self._pass(path, fmsave, reader, lambda save: read_leagues(save, fmsave))
+            snapshot = self._pass(
+                path, fmsave, reader, lambda save: self._read(save, fmsave, leagues)
+            )
         notes: tuple[str, ...] = ()
         if not snapshot.meta.known_build:
             notes = (unknown_build_note(snapshot.meta.build, reader),)
@@ -387,53 +432,57 @@ class FmsaveDataSource:
         meta = replace(snapshot.meta, warnings=notes + snapshot.meta.warnings + messages)
         return replace(snapshot, meta=meta, read_domestic=snapshot.domestic)
 
-    def _read(self, save: Any, fmsave: Any) -> Snapshot:
+    def _pass[T](self, path: Path, fmsave: Any, reader: str, read: Callable[[Any], T]) -> T:
+        """Open the save, read it with `read`, and close it, which drops all fmsave holds of it.
+        fmsave's errors become the DataSource's."""
+        try:
+            save = fmsave.open(path)
+        except fmsave.UnsupportedGameError as exc:
+            raise UnsupportedSaveError(str(exc), reader=reader) from exc
+        except fmsave.FmsaveError as exc:
+            raise SaveReadError(str(exc)) from exc
+        # fmsave reads an FM27 build it has no layouts for with a known build's layouts
+        # where the sections match, and raises UnsupportedGameError from any reader whose
+        # section does not. On such a build a reader's failed layout check means the same
+        # (FM27 27.1.0 and fmsave 0.11.0: "the save layout differs from what fmsave
+        # expects"). Either way the build is unsupported; say which one. On a build fmsave
+        # knows, a failed check is a damaged save: a read error.
+        try:
+            info = save.info
+            try:
+                return read(save)
+            except (fmsave.UnsupportedGameError, fmsave.ReaderCheckError) as exc:
+                if isinstance(exc, fmsave.ReaderCheckError) and info.known_build:
+                    raise SaveReadError(str(exc)) from exc
+                raise UnsupportedSaveError(
+                    f"{info.game} build {info.build} cannot be read by {reader}: {exc}",
+                    build=info.build,
+                    reader=reader,
+                ) from exc
+            except fmsave.FmsaveError as exc:
+                raise SaveReadError(str(exc)) from exc
+        finally:
+            save.close()
+
+    def _read(self, save: Any, fmsave: Any, leagues: Leagues) -> Snapshot:
+        """The second pass: the people, and what the first pass's `leagues` decide about them."""
         info = save.info
         notes: list[str] = []
-        # Nations only choose a man's look; without them the world's mix is drawn from.
-        nations: dict[int, int] = {}
-        try:
-            nations = {n.nation_id: n.database_id for n in save.nations()}
-        except fmsave.FmsaveError as exc:
-            notes.append(f"nations unavailable, so men's looks ignore nationality: {exc}")
-        clubs, uid_map = convert_clubs(save.clubs())
-        players, skipped = convert_players(save.players(), uid_map, info.game_date, nations)
-        managed = list(save.managed_clubs())
-        managed_id = uid_map.get(managed[0].club_uid) if managed else None
-
-        if len(managed) > 1:
-            notes.append(f"{len(managed)} managed clubs; using the first")
-        # League and fixture data only decide "my league", the leagues around it, continental
-        # membership and the managers read; a reader failure there should not stop a sync.
-        # Each reader is tried on its own. A competition's clubs come from its fixtures (a
-        # table counts only for a competition with none), so without the fixtures nothing is
-        # known: the sync then keeps the leagues and managers stored before.
-        tables: tuple[LeagueTableRecord, ...] = ()
-        fixture_counts: dict[int, dict[int, int]] = {}
-        fixture_seasons: dict[int, int] = {}
-        competitions_read = False
-        kept = "so my league and its managers stay as the last sync read them"
-        try:
-            comp_keys = {c.id: competition_key(c.database_id, c.id) for c in save.competitions()}
-        except fmsave.FmsaveError as exc:
-            notes.append(f"competition data unavailable, {kept}: {exc}")
-        else:
+        clubs, uid_map = leagues.clubs, leagues.uid_map
+        with game_db_borrowed(save):
+            # Nations only choose a man's look; without them the world's mix is drawn from.
+            nations: dict[int, int] = {}
             try:
-                fixture_counts, fixture_seasons = convert_fixtures(
-                    save.fixtures(), uid_map, comp_keys, info.game_date
-                )
-                competitions_read = True
+                nations = {n.nation_id: n.database_id for n in save.nations()}
             except fmsave.FmsaveError as exc:
-                notes.append(f"fixtures unavailable, {kept}: {exc}")
-            if competitions_read:
-                try:
-                    tables = convert_league_tables(save.league_tables(), uid_map, comp_keys)
-                except fmsave.FmsaveError as exc:
-                    notes.append(f"league tables unavailable, so leagues come from fixtures: {exc}")
-        with ExitStack() as section:
-            # Both byte readers below read the game database: borrow it once, not twice.
-            with suppress(Exception):  # each reader reports its own failure below
-                section.enter_context(save._context.section("game_db"))
+                notes.append(f"nations unavailable, so men's looks ignore nationality: {exc}")
+            players, skipped = convert_players(save.players(), uid_map, info.game_date, nations)
+            managed = list(save.managed_clubs())
+            managed_id = uid_map.get(managed[0].club_uid) if managed else None
+
+            if len(managed) > 1:
+                notes.append(f"{len(managed)} managed clubs; using the first")
+            notes += leagues.notes
             rules: CompetitionRules | None = None
             try:
                 rules = read_league_rules(save)
@@ -443,7 +492,12 @@ class FmsaveDataSource:
                     f"({type(exc).__name__}: {exc})"
                 )
             domestic = domestic_membership(
-                managed_id, clubs, tables, fixture_counts, fixture_seasons, rules
+                managed_id,
+                clubs,
+                leagues.tables,
+                leagues.fixture_counts,
+                leagues.fixture_seasons,
+                rules,
             )
             # Staff-reader failures must not prevent player syncs.
             staff: tuple[StaffRecord, ...] = ()
@@ -503,14 +557,14 @@ class FmsaveDataSource:
             managed_club_id=managed_id,
             clubs=clubs,
             players=players,
-            league_tables=tables,
-            fixture_counts=fixture_counts,
-            fixture_seasons=fixture_seasons,
+            league_tables=leagues.tables,
+            fixture_counts=leagues.fixture_counts,
+            fixture_seasons=leagues.fixture_seasons,
             competition_rules=rules,
             read_domestic=domestic,
             staff=staff,
             staff_read=staff_read,
             media=media,
             media_read=media_read,
-            competitions_read=competitions_read,
+            competitions_read=leagues.competitions_read,
         )

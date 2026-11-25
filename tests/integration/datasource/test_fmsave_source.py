@@ -5,12 +5,13 @@ The real-save check lives in tests/opt_in/test_real_save.py.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace as NS
+from typing import Any
 
 import pytest
 from support.fmsave import UID_MAP, coded, fm_staff
@@ -440,6 +441,44 @@ def _league_save(monkeypatch: pytest.MonkeyPatch) -> FakeSave:
         lambda: [fm_staff(uid, club_uid=uid, job=coded("MANAGER"), team_slot=0) for uid in UID_MAP],
     )
     return save
+
+
+def test_the_leagues_are_let_go_of_before_the_people_are_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """fmsave keeps every table it reads until the save closes, so one opening held the
+    fixtures while the players and staff were read (user, 2026-11-24: 2.54 GiB at most for a
+    378 MiB save, 1.86 GiB in two). A first opening reads the leagues and is closed before a
+    second reads the people; each reader runs once, and both halves reach the snapshot."""
+    import fmsave
+
+    events: list[str] = []
+    readers = ("nations", "clubs", "players", "managed_clubs")
+    readers += ("competitions", "fixtures", "league_tables", "staff", "close")
+
+    def logged(name: str, n: int, real: Callable[[], Any]) -> Callable[[], Any]:
+        def reader() -> Any:
+            events.append(f"{name} {n}")
+            return real()
+
+        return reader
+
+    def fake_open(path: Path) -> FakeSave:
+        n = sum(e.startswith("open") for e in events) + 1
+        events.append(f"open {n}")
+        save = _league_save(monkeypatch)
+        for name in readers:
+            setattr(save, name, logged(name, n, getattr(save, name)))
+        return save
+
+    monkeypatch.setattr(fmsave, "open", fake_open)
+    snap = FmsaveDataSource().load(Path("Career.fm"))
+    first = ["open 1", "clubs 1", "competitions 1", "fixtures 1", "league_tables 1", "close 1"]
+    second = ["open 2", "nations 2", "players 2", "managed_clubs 2", "staff 2", "close 2"]
+    assert events == first + second
+    assert snap.fixture_counts == {11: {1010: 1, 1011: 1}} and snap.league_tables
+    assert snap.domestic.club_ids == {1010, 1011} == {s.club_id for s in snap.staff}
+    assert [p.unique_id for p in snap.players] == [2_002_100_000]
 
 
 def _fail(message: str):  # type: ignore[no-untyped-def]
