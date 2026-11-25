@@ -85,7 +85,9 @@ def test_desktop_startup_cleanup_attempts_every_step_after_failures(
     ]
     rt = SimpleNamespace(stop_steps=lambda: steps)
     server = SimpleNamespace(stop=lambda: fail("server"))
-    desktop._stop_quietly(rt, server)
-    assert calls == ["download", "watcher", "worker", "server"]
-    for name in ("model download", "worker", "web server"):
+    # The window opens before the runtime starts, so a failed start closes it too.
+    window = SimpleNamespace(destroy=lambda: fail("window"))
+    desktop._stop_quietly(rt, server, window)
+    assert calls == ["download", "watcher", "worker", "server", "window"]
+    for name in ("model download", "worker", "web server", "window"):
         assert f"stopping the {name} failed" in caplog.text
