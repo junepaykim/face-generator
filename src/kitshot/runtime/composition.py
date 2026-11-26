@@ -71,6 +71,14 @@ class Runtime:
 
     def start(self) -> None:
         """Start the save watcher, the GPU worker process and the update check."""
+        from contextlib import closing
+
+        from kitshot.persistence import db
+        from kitshot.persistence.settings import load_settings
+        from kitshot.pipeline.reclassification import reconcile_human_managers
+
+        with closing(db.connect(self.context.db_path)) as conn, db.transaction(conn):
+            reconcile_human_managers(conn, load_settings(conn, self.context.defaults_path))
         if self.poller is not None:
             self.poller.start()
         else:

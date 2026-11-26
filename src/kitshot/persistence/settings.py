@@ -30,7 +30,6 @@ from kitshot.core.settings_values import (
     LANGUAGE_CHOICES,
     MODEL_CHOICES,
     NOT_SET,
-    SOFTEN_SKIN_STEPS,
     THEME_CHOICES,
     TIER_CHOICES,
     UI,
@@ -149,6 +148,8 @@ def _load_defaults(path: Path | None) -> tuple[dict[str, Any], dict[str, str]]:
     source = path or DEFAULTS_PATH
     with source.open("rb") as f:
         values = flatten(tomllib.load(f))
+    # Custom defaults from older installations predate the manager switch.
+    values.setdefault("staff.include_human_manager", False)
     named = f"config/{source.name}" if path is None else str(source)
     origins = {k: named for k in values if k.startswith("paths.") and values[k]}
     local = load_local(values, local_path(path))
@@ -412,7 +413,9 @@ def build_settings(
             manual={c: number(f"cutoffs.manual.{c}") for c in LEAGUE_CELLS},
             everywhere={c: number(f"cutoffs.everywhere.{c}") for c in LEAGUE_CELLS},
         ),
-        staff=StaffSettings(enabled=v["staff.enabled"]),
+        staff=StaffSettings(
+            enabled=v["staff.enabled"], include_human_manager=v["staff.include_human_manager"]
+        ),
         no_photo=NoPhotoSettings(enabled=v["no_photo.enabled"]),
         media=MediaSettings(
             journalists=v["media.journalists"], press_officers=v["media.press_officers"]
@@ -425,12 +428,6 @@ def build_settings(
         ),
         my_club=MyClubSettings(
             banned_traits=frozenset(banned),
-            soften_skin=_range(
-                "my_club.soften_skin",
-                v["my_club.soften_skin"],
-                SOFTEN_SKIN_STEPS[0],
-                SOFTEN_SKIN_STEPS[-1],
-            ),
             round_eyes=float(round_eyes),
         ),
         body=body,

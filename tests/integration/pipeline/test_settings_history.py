@@ -159,15 +159,15 @@ def test_only_the_latest_entries_are_kept(conn: sqlite3.Connection) -> None:
 
 def test_reset_to_defaults_is_one_undoable_change(conn: sqlite3.Connection) -> None:
     history.save(conn, {"cutoffs.everywhere.a_ca": 150})
-    history.save(conn, {"my_club.soften_skin": 1, "staff.enabled": False})
+    history.save(conn, {"personality.weight": 1, "staff.enabled": False})
     out = history.save_defaults(conn)
     (entry,) = out.entries
     assert entry.label == "defaults" and read_overrides(conn) == {}
-    assert set(entry.keys) == {"cutoffs.everywhere.a_ca", "my_club.soften_skin", "staff.enabled"}
+    assert set(entry.keys) == {"cutoffs.everywhere.a_ca", "personality.weight", "staff.enabled"}
     history.undo(conn)
     assert read_overrides(conn) == {
         "cutoffs.everywhere.a_ca": 150,
-        "my_club.soften_skin": 1,
+        "personality.weight": 1,
         "staff.enabled": False,
     }
     history.redo(conn)
@@ -224,6 +224,7 @@ def test_settings_the_rules_do_not_read_are_saved_without_reclassifying(
     out = history.save(conn, {"schedule.poll_seconds": 30})
     assert out.changed and out.report is None
     assert history.save(conn, {"staff.enabled": False}).report is not None
+    assert history.save(conn, {"staff.include_human_manager": True}).report is not None
     assert history.save(conn, {"no_photo.enabled": False}).report is not None
 
 

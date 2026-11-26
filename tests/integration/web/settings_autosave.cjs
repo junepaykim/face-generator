@@ -16,7 +16,7 @@ function page({ storage = new Map(), hash = "" } = {}) {
     },
     querySelector() { return { value: "token" }; },
     querySelectorAll(selector) {
-      if (selector === "[data-key]") return [mode, cutoff, theme, ...skin, candidates];
+      if (selector === "[data-key]") return [mode, cutoff, theme, ...seg, candidates];
       if (selector === "[data-step-of]") return [minus, plus];
       if (selector === "[data-age-shift]") return [shiftGroup];
       if (selector.includes('name="preset.quality"')) return [preset];
@@ -51,16 +51,16 @@ function page({ storage = new Map(), hash = "" } = {}) {
   const preset = input("preset.quality", "medium", true);
   const theme = input("display.theme", "auto");  // Settings' field; the sidebar has none (17d)
   // A row of buttons (Phase 17j): one radio per value, all named as the setting.
-  const skinField = fieldBox(() => skin[0]);
-  const skin = ["0", "1", "2"].map((value) => ({
-    name: "my_club.soften_skin", value, type: "radio", checked: value === "2", dataset: { default: "2" },
-    closest: (s) => s === "[data-field]" ? skinField : null, matches: () => false,
+  const segField = fieldBox(() => seg[0]);
+  const seg = ["0", "1", "2"].map((value) => ({
+    name: "personality.weight", value, type: "radio", checked: value === "2", dataset: { default: "2" },
+    closest: (s) => s === "[data-field]" ? segField : null, matches: () => false,
   }));
   const pick = (value) => {
-    skin.forEach((r) => { r.checked = r.value === value; });
-    for (const fn of listeners) fn({ target: skin.find((r) => r.value === value) });
+    seg.forEach((r) => { r.checked = r.value === value; });
+    for (const fn of listeners) fn({ target: seg.find((r) => r.value === value) });
   };
-  const useDefault = { closest: (s) => (s === "[data-use-default]" ? useDefault : s === "[data-field]" ? skinField : null) };
+  const useDefault = { closest: (s) => (s === "[data-use-default]" ? useDefault : s === "[data-field]" ? segField : null) };
   // A stepper: − and + beside a number with its limits.
   const candidates = {
     name: "groups.a.candidates", value: "3", type: "number", min: "1", max: "8", dataset: { default: "3" },
@@ -133,7 +133,7 @@ function page({ storage = new Map(), hash = "" } = {}) {
   });
   return {
     mode, cutoff, preset, theme, requests, status, reloads: () => reloads,
-    skin, pick, checked: () => skin.filter((r) => r.checked).map((r) => r.value).join(),
+    seg, pick, checked: () => seg.filter((r) => r.checked).map((r) => r.value).join(),
     reset: () => click(useDefault), candidates, minus, plus, step: click, legend, opener, closer, drawer,
     shiftGroup, allDown, allUp,
     key: (key) => docListeners.keydown.forEach((fn) => fn({ key })),
@@ -210,22 +210,22 @@ async function main() {
 
   // A row of buttons saves the value picked; one picked while that save is on its way wins.
   s.pick("0");
-  assert.deepEqual(s.requests[0].values, { "my_club.soften_skin": "0" });
+  assert.deepEqual(s.requests[0].values, { "personality.weight": "0" });
   s.pick("1");
-  s.requests[0].reply({ history_count: 3, fields: { "my_club.soften_skin": { value: 0, text: "0", changed: true } } });
+  s.requests[0].reply({ history_count: 3, fields: { "personality.weight": { value: 0, text: "0", changed: true } } });
   await tick();
   assert.equal(s.checked(), "1");
   assert.equal(s.opener.textContent, "History (3)");
   assert.equal(s.legend.hidden, false);  // a setting differs: the dot is explained
-  assert.deepEqual(s.requests[1].values, { "my_club.soften_skin": "1" });
-  s.requests[1].reply({ fields: { "my_club.soften_skin": { value: 1, text: "1", changed: true } } });
+  assert.deepEqual(s.requests[1].values, { "personality.weight": "1" });
+  s.requests[1].reply({ fields: { "personality.weight": { value: 1, text: "1", changed: true } } });
   await tick();
   assert.equal(s.checked(), "1");
   // ↺ puts the default back and saves it; with nothing changed the legend goes.
   s.reset();
   assert.equal(s.checked(), "2");
-  assert.deepEqual(s.requests[2].values, { "my_club.soften_skin": "2" });
-  s.requests[2].reply({ fields: { "my_club.soften_skin": { value: 2, text: "2", changed: false } } });
+  assert.deepEqual(s.requests[2].values, { "personality.weight": "2" });
+  s.requests[2].reply({ fields: { "personality.weight": { value: 2, text: "2", changed: false } } });
   await tick();
   assert.equal(s.legend.hidden, true);
 

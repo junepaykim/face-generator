@@ -142,29 +142,6 @@ def test_a_stored_value_outside_the_list_stays_selectable(client: TestClient) ->
     assert "(custom)" not in client.get("/settings/advanced").text
 
 
-def test_skin_lightening_is_a_row_of_buttons(client: TestClient) -> None:
-    page = unescape(client.get("/settings/advanced").text)
-    row = re.search(
-        r'<div class="field[^"]*" data-field>\s*<span class="name">Draw tan.*?</div>',
-        page,
-        re.DOTALL,
-    )
-    assert row is not None  # a div: a label would pass a click on its name to the first button
-    assert "Draw tan and dark skin lighter <" in row[0]  # the range left the label
-    assert re.findall(r'<input type="radio" name="my_club.soften_skin" value="(\d)"', row[0]) == [
-        "0",
-        "1",
-        "2",
-    ]
-    assert re.findall(r"<span>([^<]+)</span></label>", row[0]) == ["0 (Off)", "1", "2"]
-    assert 'value="2" data-key data-default="2" checked>' in row[0]
-    assert 'role="radiogroup" aria-label="Draw tan and dark skin lighter"' in row[0]
-    data = save(client, **{"my_club.soften_skin": "0"})
-    assert data["ok"] and "Draw tan and dark skin lighter 2 → 0 (Off)" in data["message"]
-    korean = unescape(client.get("/settings/advanced", headers=KOREAN_WINDOWS).text)
-    assert "<span>0 (끔)</span>" in korean and "탄 피부와 어두운 피부를 밝게 <" in korean
-
-
 def test_the_default_is_quiet_and_a_reset_button_puts_it_back(client: TestClient) -> None:
     page = client.get("/settings/advanced").text
     shape = re.search(

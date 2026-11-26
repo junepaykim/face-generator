@@ -17,7 +17,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Literal
 
 from kitshot.core.cutoffs import Cut, Cutoffs, Met
-from kitshot.core.records import is_first_team_manager
+from kitshot.core.records import HUMAN_MANAGER_JOB, is_first_team_manager
 
 if TYPE_CHECKING:
     from kitshot.core.settings_values import Settings
@@ -88,10 +88,13 @@ class Rules:
     press_officers: bool = True
     """Settings `media.press_officers`: my club's press officers are in group B."""
 
+    include_human_manager: bool = False
+
     @classmethod
     def of(cls, settings: Settings) -> Rules:
         return cls(
             staff=settings.staff.enabled,
+            include_human_manager=settings.staff.include_human_manager,
             no_photo=settings.no_photo.enabled,
             journalists=settings.media.journalists,
             press_officers=settings.media.press_officers,
@@ -99,7 +102,7 @@ class Rules:
 
 
 ALL_RULES = Rules()
-"""Every rule on: the defaults."""
+"""The default selection rules."""
 
 
 WHO_TEXT = {"newgen": "newgen", "no_photo": "no photo"}
@@ -124,6 +127,7 @@ _TEXT = {
     "academy": "came through my academy",
     "not_mens": "not in men's football",
     "pin_never": "pinned to never",
+    "human_manager_off": "automatic portraits for my manager are off",
     "staff_off": "staff pictures are off (settings: staff)",
     "tracked_regular": "tracked: a regular at my club",
     "tracked_academy": "tracked: came through my academy",
@@ -287,15 +291,13 @@ def rule_matches(
     """Every group rule the person meets, with its reason, ignoring pins."""
     matches: list[tuple[Group, Why]] = []
     if f.is_staff:
-        if f.at_my_club and rules.staff:
+        if not rules.staff:
+            return matches
+        if f.at_my_club:
+            if f.staff_job == HUMAN_MANAGER_JOB and not rules.include_human_manager:
+                return matches
             matches.append((Group.A, Why("staff")))
-        elif (
-            not f.at_my_club
-            and rules.staff
-            and f.in_my_league
-            and is_first_team_manager(f.staff_job)
-            and f.photo is False
-        ):
+        elif f.in_my_league and is_first_team_manager(f.staff_job) and f.photo is False:
             matches.append((Group.C, Why("manager_no_photo")))
         return matches
     if f.media == "journalist":
@@ -367,7 +369,8 @@ def classify(f: PlayerFacts, cuts: Cutoffs, rules: Rules = ALL_RULES) -> Classif
     - Otherwise the person takes the highest group any rule gives.
     - Group A players are tracked; so is a player at my club while there (a loanee while I
       hold the contract), and an academy newgen, for good.
-    - My club's staff are in group A while `rules.staff` is on.
+    - My club's staff are in group A while `rules.staff` is on. My manager also needs
+      `rules.include_human_manager`.
     - Journalists and press officers are in group B (`rules.journalists`,
       `rules.press_officers`) and not tracked: their picture is drawn once. One pinned to A
       is tracked, as a regular at my club.
@@ -389,7 +392,8 @@ def classify(f: PlayerFacts, cuts: Cutoffs, rules: Rules = ALL_RULES) -> Classif
         group = min((m[0] for m in matches), key=GROUP_RANK.__getitem__)
         whys = [why for grp, why in matches if grp is group]
     elif f.is_staff and f.at_my_club:
-        return classified(None, False, [Why("staff_off")])
+        reason = "human_manager_off" if rules.staff else "staff_off"
+        return classified(None, False, [Why(reason)])
     else:
         return classified(None, False, [])
 

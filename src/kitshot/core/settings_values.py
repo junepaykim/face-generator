@@ -95,8 +95,6 @@ from `EDGE_RANGE` is accepted; a stored other one stays selectable there."""
 EDGE_RANGE = (64, 4096)
 CANDIDATE_RANGE = (1, 8)
 """`groups.*.candidates`: pictures drawn for each job to pick the best from."""
-SOFTEN_SKIN_STEPS = (0, 1, 2)
-"""`my_club.soften_skin`: how many steps lighter tan and dark skin are drawn at my club."""
 
 
 def detail_size(name: str, aspect: str) -> tuple[int, int] | None:
@@ -280,6 +278,7 @@ class StaffSettings:
 
     enabled: bool
     """False: staff are in no group unless pinned; their pictures are kept."""
+    include_human_manager: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -314,7 +313,6 @@ class MyClubSettings:
     """Prompt adjustments for players at my club (spec section 3)."""
 
     banned_traits: frozenset[str]
-    soften_skin: int
     round_eyes: float = 0.0
     """Share of sharp-eyed players drawn with round eyes (0 to 1)."""
 

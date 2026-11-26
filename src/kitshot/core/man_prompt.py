@@ -12,8 +12,8 @@ rating, framing, quality and fixed clothing terms, and a negative of every term 
 content negative plus MAN_CONTENT_NEGATIVE, with BOY_NEGATIVE under 18 (user, 2026-11-20).
 
 Players wear their kit in the shoot's look; staff and media the wardrobe's work clothes
-(wardrobe.py), worded here as sentences for photos. My club's lighter-skin, banned-trait and
-round-eye rules are the women's and do not apply to men (user, 2026-11-20).
+(wardrobe.py), worded here as sentences for photos. My club's banned-trait and round-eye
+rules are the women's and do not apply to men (user, 2026-11-20).
 """
 
 from __future__ import annotations

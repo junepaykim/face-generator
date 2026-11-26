@@ -63,6 +63,7 @@ from kitshot.persistence.sheet_store import (
     select_sheet,
 )
 from kitshot.pipeline.publish import PublishReport, publish_pack
+from kitshot.pipeline.reclassification import reconcile_human_managers
 from kitshot.platform import platform_info, procs
 from kitshot.platform.locking import LockBusy, file_lock
 from kitshot.platform.memory import release_free_memory
@@ -263,9 +264,11 @@ class Worker:
         fm_check: Callable[[], bool | None] = fm_running,
         log: LogFn = print_line,
         clock: Callable[[], float] = time.perf_counter,
+        read_settings: Callable[[], Settings] | None = None,
     ) -> None:
         self.conn = conn
         self.settings = settings
+        self._read_settings = read_settings
         self.kits = kits
         self.career = career
         self._renderer_factory = renderer_factory
@@ -415,7 +418,11 @@ class Worker:
 
         Called while holding the worker lock, so no other worker can be running them.
         """
-        return jobs.requeue_stale(self.conn)
+        stale = jobs.requeue_stale(self.conn)
+        with transaction(self.conn):
+            settings = self._read_settings() if self._read_settings else self.settings
+            reconcile_human_managers(self.conn, settings)
+        return stale
 
     def run(
         self,

@@ -25,7 +25,7 @@ MAN = sample_man_sheet("career", 7, 1, nation=765)
 KIT = Kit(shirt=("red", "white"), pattern="stripes", shorts="black")
 POSE = Pose("crossed")
 BACKDROP = Backdrop("gradient", ("blue",))
-MY_CLUB = MyClubSettings(frozenset({"freckles"}), soften_skin=2, round_eyes=1.0)
+MY_CLUB = MyClubSettings(frozenset({"freckles"}), round_eyes=1.0)
 
 
 def prompt(model: str, gender: str, **kw: object):

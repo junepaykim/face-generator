@@ -18,9 +18,13 @@ class Gender(StrEnum):
     UNKNOWN = "unknown"
 
 
+HUMAN_MANAGER_JOB = "manager (you)"
+"""Stored job title for a staff record flagged as the human manager by the save."""
+
+
 def is_first_team_manager(job: str | None) -> bool:
     """Manager title, excluding assistants; the adapter also checks the team's slot."""
-    return (job or "").strip().lower() in {"manager", "manager (you)", "head coach"}
+    return (job or "").strip().lower() in {"manager", HUMAN_MANAGER_JOB, "head coach"}
 
 
 @dataclass(frozen=True, slots=True)

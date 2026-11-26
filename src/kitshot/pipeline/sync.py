@@ -27,7 +27,7 @@ from kitshot.core.leagues import (
     clubs_in_competitions,
     continental_competitions,
 )
-from kitshot.core.records import Gender, Snapshot
+from kitshot.core.records import HUMAN_MANAGER_JOB, Gender, Snapshot
 from kitshot.core.settings_values import Eligibility, Settings
 from kitshot.core.traits import personality_to_json
 from kitshot.datasource.photos import PhotoScan
@@ -558,7 +558,7 @@ def _staff_rows(
                 first_seen_sync=sync_id,
                 last_seen_sync=sync_id,
                 is_staff=1,
-                staff_job="manager (you)" if s.is_human_manager else s.job,
+                staff_job=HUMAN_MANAGER_JOB if s.is_human_manager else s.job,
                 youth_team=0,
                 media_role=None,
                 local_media=0,

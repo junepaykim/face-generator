@@ -137,7 +137,7 @@ c_ca = "-"
 c_pa = "-"
 
 [staff]
-# My club's staff (coaches, physios, scouts, analysts, the board, and the manager: you) get
+# My club's staff (coaches, physios, scouts, analysts, and the board) get
 # pictures like the players at my club: group A quality, tracked while at my club, re-drawn
 # when their age wording changes. They wear club wear for their job (src/kitshot/core/wardrobe.py:
 # suits, coats, training wear, lab coats) with the club's colours on one piece, not the
@@ -145,6 +145,8 @@ c_pa = "-"
 # read. Pin a person to "never" on their page to leave them out. Requested by the user,
 # 2026-11-12 (docs/spec.md section 2). They are drawn as [style] gender says, like everyone.
 enabled = true
+# Include the human manager when staff portraits are enabled.
+include_human_manager = false
 
 [media]
 # Journalists and press officers (user, 2026-11-13), read from the save by
@@ -304,7 +306,6 @@ other_clubs = false                 # true: also for re-draws of players outside
 # Prompt adjustments for players at my club, applied when the prompt is built. The stored
 # character sheet is unchanged. Chosen by the user, 2026-11-11 (docs/spec.md section 3).
 banned_traits = ["freckles", "muscular"] # left out of the prompt and added to its negative
-soften_skin = 2                     # tan and dark skin drawn this many steps lighter (0-2)
 # Share of sharp-eyed players drawn with round eyes instead (0-1): the user prefers round eyes
 # at my club, and sports portraits already lean sharp (2026-11-12). Seeded per player, so a
 # player's pictures agree. At 0.2, round goes from 1 in 3 players to 2 in 5.

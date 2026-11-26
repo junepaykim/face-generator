@@ -143,7 +143,7 @@ def test_paths_name_no_windows_user():
 
 
 def test_my_clubs_staff_are_drawn_by_default():
-    assert load()["staff"] == {"enabled": True}
+    assert load()["staff"] == {"enabled": True, "include_human_manager": False}
 
 
 def test_pre_existing_players_without_a_photo_are_picked_by_default():

@@ -88,7 +88,7 @@
   </div>
 
   <div class="sheet">
-    <h2>{{ t("player.sheet") }}{% if p.at_my_club and portrait_gender == "woman" %} {{ tip(t("player.sheet_tip", steps=settings.my_club.soften_skin, percent=(settings.my_club.round_eyes * 100)|round|int)) }}{% endif %}</h2>
+    <h2>{{ t("player.sheet") }}{% if p.at_my_club and portrait_gender == "woman" %} {{ tip(t("player.sheet_tip", percent=(settings.my_club.round_eyes * 100)|round|int)) }}{% endif %}</h2>
     {% if d.sheet %}
       <table class="kv">
         {% for k, v in d.sheet.fields.items() if k != "base_seed" %}

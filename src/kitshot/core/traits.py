@@ -126,18 +126,17 @@ FIELDS: dict[str, Mapping[str, Option]] = {
 }
 
 
-# Skin, lightest to darkest. "slightly tanned skin" sits between light and tan, so a softened
-# tan or dark skin keeps some of its colour (spec section 3, players at my club).
-SKIN_SCALE = ("pale skin", "", "slightly tanned skin", "tan", "dark skin, dark-skinned female")
-_SKIN_STEP = {"fair": 0, "light": 1, "tan": 3, "dark": 4}
+_SKIN_WORDS = {
+    "fair": "pale skin",
+    "light": "",
+    "tan": "tan",
+    "dark": "dark skin, dark-skinned female",
+}
 
 
-def skin_words(skin: str, soften: int = 0) -> str:
-    """Prompt words for a skin tone; tan and dark go `soften` steps lighter, never past light."""
-    step = _SKIN_STEP[skin]
-    if step >= 3:
-        step = max(step - soften, 1)
-    return SKIN_SCALE[step]
+def skin_words(skin: str) -> str:
+    """Prompt words for a skin tone."""
+    return _SKIN_WORDS[skin]
 
 
 # Height and build are stored from player facts. Defaults describe only the outer tenths

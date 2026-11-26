@@ -123,17 +123,11 @@ def test_body_classes_have_words_only_at_the_ends() -> None:
     assert traits.HEIGHT["average"].words == traits.BUILD["average"].words == ""
 
 
-def test_skin_softening_follows_the_scale() -> None:
-    # Spec section 3: at step 2 tan becomes light and dark becomes slightly tanned.
-    assert skin_words("tan", 2) == ""
-    assert skin_words("dark", 2) == "slightly tanned skin"
-    assert skin_words("tan", 1) == "slightly tanned skin"
-    assert skin_words("dark", 1) == "tan"
-    # Never lighter than light; fair and light unchanged.
-    assert skin_words("dark", 9) == ""
-    assert skin_words("fair", 2) == "pale skin"
-    assert skin_words("light", 2) == ""
-    assert skin_words("dark", 0) == "dark skin, dark-skinned female"
+def test_each_skin_tone_has_its_words() -> None:
+    assert skin_words("fair") == "pale skin"
+    assert skin_words("light") == ""
+    assert skin_words("tan") == "tan"
+    assert skin_words("dark") == "dark skin, dark-skinned female"
 
 
 def test_picture_seeds_are_distinct_and_offset_from_the_base() -> None:

@@ -24,6 +24,7 @@ from kitshot.core.classify import (
 from kitshot.core.cutoffs import Cutoffs, effective_cutoffs
 from kitshot.core.domain import ACTIVE_JOB_STATUSES
 from kitshot.core.planner import ImageState, JobState, Plan, PlayerPlanState, plan
+from kitshot.core.records import HUMAN_MANAGER_JOB
 from kitshot.core.settings_values import Settings
 from kitshot.persistence import league_stats, photo_index
 from kitshot.persistence.db import transaction
@@ -242,6 +243,20 @@ def classify_and_plan(
     )
     apply_plan(conn, career_id, result.plan)
     return result
+
+
+def reconcile_human_managers(conn: sqlite3.Connection, settings: Settings) -> None:
+    """Bring existing saves' manager classifications and queued jobs up to date at startup.
+
+    Older versions included the human manager in automatic staff selection. The caller holds
+    the write transaction so a concurrent settings edit cannot be overwritten.
+    """
+    for career_id, ids in conn.execute(
+        "SELECT career_id, json_group_array(unique_id) FROM players"
+        " WHERE is_staff = 1 AND staff_job = ? GROUP BY career_id",
+        (HUMAN_MANAGER_JOB,),
+    ).fetchall():
+        classify_and_plan(conn, career_id, settings, only=json.loads(ids))
 
 
 def reclassify(

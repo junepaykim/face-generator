@@ -7,8 +7,8 @@ positive prompt, smart outfits to the negative. Settings cannot weaken these ter
 Every model draws women from these prompts for now; men's prompts are in man_prompt.py, and
 core/style.py picks one by `style.gender`.
 
-My-club adjustments omit banned traits and negate them, soften tan/dark skin, and draw a
-seeded share of sharp eyes round without changing the stored sheet. Players use shoots;
+My-club adjustments omit banned traits and negate them, and draw a seeded share of sharp
+eyes round without changing the stored sheet. Players use shoots;
 staff use wardrobe outfits, traits.POSE and the grey backdrop. Height/build words come
 from the sheet's derived classes. Kits may carry logos, brands, lettering and numbers.
 """
@@ -116,7 +116,6 @@ def build_prompt(
     """
     age = WORDINGS[wording]  # KeyError on an unknown wording: never guess an age
     banned = frozenset(my_club.banned_traits) & BANNABLE.keys() if my_club else frozenset()
-    soften = my_club.soften_skin if my_club else 0
 
     look = _join(
         HAIR_COLOUR[sheet.hair_colour].words,
@@ -124,7 +123,7 @@ def build_prompt(
         FRINGE[sheet.fringe].words,
         EYE_COLOUR[sheet.eye_colour].words,
         EYE_SHAPE[drawn_eye_shape(sheet, my_club)].words,
-        skin_words(sheet.skin, soften),
+        skin_words(sheet.skin),
         "" if sheet.height in banned else HEIGHT[sheet.height].words,
         "" if sheet.build in banned else BUILD[sheet.build].words,
         "" if sheet.accessory in banned else ACCESSORY[sheet.accessory].words,

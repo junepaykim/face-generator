@@ -34,6 +34,7 @@ from kitshot.core.traits import personality_from_json
 from kitshot.datasource.photos import PhotoIndex, PhotoScan
 from kitshot.persistence.db import connect
 from kitshot.persistence.settings import Settings, load_settings, set_override, set_overrides
+from kitshot.pipeline import manual, settings_history
 from kitshot.pipeline.reclassification import ChangeReport, reclassify, reclassify_with_report
 from kitshot.pipeline.sync import SyncReport, record_failed_sync, run_sync, sync_of_save
 
@@ -753,9 +754,31 @@ def test_my_clubs_staff_are_group_a_tracked_and_aged_by_the_staff_table(
     assert coach["tracked"] and coach["at_my_club"] and coach["present"]
     assert coach["reasons"] == '["on my club\'s staff"]'  # not "newgen, CA 180 > 155"
     assert (me["staff_job"], me["ca"], me["height_cm"]) == ("manager (you)", 0, None)
-    # Wide staff bands: 45 is W05 and 49 is W06 (group A at my club would say W10).
+    assert me["group_name"] is None and not me["tracked"]
+    assert json.loads(me["why"]) == [{"code": "human_manager_off"}]
     assert jobs_of(conn)[COACH] == ("initial", "a", "W05")
+    assert ME not in jobs_of(conn)
+
+
+def test_my_manager_can_be_included_automatically_or_picked_by_hand(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    career = sync(conn, snapshot(world(), staff=staff_world()), settings).career
+    settings_history.save(conn, {"staff.include_human_manager": True})
+    assert player_row(conn, ME)["tracked"]
+
     assert jobs_of(conn)[ME] == ("initial", "a", "W06")
+
+    settings_history.save(conn, {"staff.enabled": False})
+    assert ME not in jobs_of(conn)
+    settings_history.undo(conn)
+    assert ME in jobs_of(conn)
+    settings_history.undo(conn)
+    assert ME not in jobs_of(conn) and COACH in jobs_of(conn)
+
+    assert manual.generate(conn, career.id, [ME], settings, "b").queued == [ME]
+    sync(conn, snapshot(world(), staff=staff_world()), settings)
+    assert jobs_of(conn)[ME] == ("initial", "b", "W06")
 
 
 def test_a_staff_age_band_change_is_redrawn(conn: sqlite3.Connection, settings: Settings) -> None:
@@ -792,7 +815,8 @@ def test_staff_who_leave_keep_their_picture_and_are_no_longer_drawn(
     coach = player_row(conn, COACH)
     assert not coach["present"] and coach["group_name"] is None and not coach["tracked"]
     assert coach["reasons"] == '["no longer on my club\'s staff"]'
-    assert COACH not in jobs_of(conn) and ME in jobs_of(conn)
+    assert COACH not in jobs_of(conn)
+    assert player_row(conn, ME)["present"] and ME not in jobs_of(conn)
 
 
 def test_staff_stay_as_they_were_when_the_staff_reader_failed(
@@ -886,7 +910,7 @@ def test_new_staff_are_not_counted_as_arrivals(
     report = sync(conn, snapshot(world(), staff=staff_world()), settings)
     assert report.new_at_my_club == 0
     assert report.new_staff == 2  # counted on their own line
-    assert report.counts["a"] == 2 + 2 + 1  # my two players, the two staff, ABROAD_A
+    assert report.counts["a"] == 2 + 1 + 1  # my two players, the coach, ABROAD_A
     again = sync(conn, snapshot(world(), staff=staff_world()), settings)
     assert again.new_staff == 0
 

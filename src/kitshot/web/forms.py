@@ -22,7 +22,6 @@ from kitshot.core.settings_values import (
     LANGUAGE_CHOICES,
     MODEL_CHOICES,
     PICTURE_HEIGHTS,
-    SOFTEN_SKIN_STEPS,
     THEME_CHOICES,
     TIER_CHOICES,
 )
@@ -79,6 +78,7 @@ LABELLED_IN_FULL = frozenset(
         "cutoffs.light_above",
         "cutoffs.light_below",
         "staff.enabled",
+        "staff.include_human_manager",
         "no_photo.enabled",
         "media.journalists",
         "media.press_officers",
@@ -115,12 +115,11 @@ LOOK_KEYS = frozenset({"from", "to"})
 
 INT_CHOICES: dict[str, tuple[int, ...]] = {
     "published_long_edge": PICTURE_HEIGHTS,
-    "soften_skin": SOFTEN_SKIN_STEPS,
 }
 """Whole numbers offered as a short list, by the key's last part (Phase 17j). A value's label is
 the catalog's "settings.choice.<name>.<value>" if it has one, else the number. Any value the
 settings accept still is: a stored one outside the list stays selectable, marked as custom."""
-SEGMENTED = frozenset({"soften_skin", "age_mode"})
+SEGMENTED = frozenset({"age_mode"})
 """Short lists shown as a row of buttons (a radio group) instead of a drop-down list, by
 `choice_name`."""
 STEPPERS: dict[str, tuple[int, int]] = {"candidates": CANDIDATE_RANGE}

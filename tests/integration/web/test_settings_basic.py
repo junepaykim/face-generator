@@ -57,7 +57,8 @@ def test_basic_holds_who_quality_and_when_and_advanced_holds_everything(
         assert title in page, title
     assert checked(page, "reach") == ["default"] and checked(page, "quality") == ["high"]
     for key in (
-        "staff.enabled", "media.journalists", "media.press_officers", "no_photo.enabled",
+        "staff.enabled", "staff.include_human_manager", "media.journalists",
+        "media.press_officers", "no_photo.enabled",
         "schedule.generate_while_fm_running", "schedule.auto_groups",
         "notifications.new_pictures",
     ):  # fmt: skip
@@ -109,6 +110,12 @@ def test_a_threshold_set_by_hand_shows_no_preset(client: TestClient) -> None:
 def test_basic_switches_and_quality_save_like_advanced_fields(
     client: TestClient, config_file: Path
 ) -> None:
+    key = "staff.include_human_manager"
+    control = f'name="{key}" data-key'
+    assert control + " checked" not in client.get("/settings/basic").text
+    assert client.post("/settings/save", data={key: "on"}).json()["ok"]
+    assert values(config_file)[key] is True
+    assert control + " checked" in client.get("/settings/basic").text
     data = client.post("/settings/save", data={"staff.enabled": ""}).json()
     assert data["ok"] and data["fields"]["staff.enabled"]["changed"]
     data = client.post("/settings/save", data={"notifications.new_pictures": ""}).json()
@@ -124,7 +131,7 @@ def test_basic_switches_and_quality_save_like_advanced_fields(
         labels = [e.label for e in settings_history.entries(conn)]
     finally:
         conn.close()
-    assert labels == ["preset.quality.low", "edit", "edit"]
+    assert labels == ["preset.quality.low", "edit", "edit", "edit"]
 
 
 def test_the_picture_style_is_one_model_and_one_gender_for_everyone(tmp_path: Path) -> None:

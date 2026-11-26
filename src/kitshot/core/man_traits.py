@@ -9,9 +9,9 @@ are drawn too. Each field is hashed on its own (career, unique ID, sheet version
 the others unchanged. The base seed is the women's: picture seeds are derived the same way.
 
 What a picture shows also depends on the age it is drawn at (`drawn`): no facial hair under
-18, stubble at most until 21, and hair greying from the sheet's `greying_from`. My club's
-lighter-skin rule does not apply to men (user, 2026-11-20). Every option has photo words for
-the photo prompt's sentences and tags for Animagine; core/man_prompt.py builds both.
+18, stubble at most until 21, and hair greying from the sheet's `greying_from`. Every option
+has photo words for the photo prompt's sentences and tags for Animagine; core/man_prompt.py
+builds both.
 """
 
 from __future__ import annotations

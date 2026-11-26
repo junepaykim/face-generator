@@ -37,7 +37,7 @@ SHEET = CharacterSheet(
 )
 KIT = Kit(shirt=("blue", "white"), pattern="stripes", shorts="blue")
 GK = Kit(shirt=("yellow",), goalkeeper=True)
-MY_CLUB = MyClubSettings(banned_traits=frozenset({"freckles"}), soften_skin=2)
+MY_CLUB = MyClubSettings(banned_traits=frozenset({"freckles"}))
 
 
 def test_prompt_order_matches_the_recipe() -> None:
@@ -86,7 +86,7 @@ def test_unknown_wording_is_an_error() -> None:
         build_prompt(SHEET, "W11", KIT, "v")
 
 
-def test_my_club_bans_freckles_and_softens_skin() -> None:
+def test_my_club_bans_freckles() -> None:
     elsewhere = build_prompt(SHEET, "W07", KIT, "v")
     mine = build_prompt(SHEET, "W07", KIT, "v", MY_CLUB)
     assert "freckles" in elsewhere.positive and "freckles" not in elsewhere.negative
@@ -95,29 +95,21 @@ def test_my_club_bans_freckles_and_softens_skin() -> None:
     assert (
         mine.negative == f"{CONTENT_NEGATIVE}, freckles, {COMPOSITION_NEGATIVE}, {QUALITY_NEGATIVE}"
     )
-    assert "dark skin" in elsewhere.positive
-    assert "dark skin" not in mine.positive and "slightly tanned skin" in mine.positive
     # Other traits are unaffected.
+    assert "dark skin, dark-skinned female" in mine.positive
     assert "hairband" in mine.positive
 
 
 def test_banned_trait_order_with_a_young_wording() -> None:
-    mc = MyClubSettings(banned_traits=frozenset({"freckles", "glasses"}), soften_skin=0)
+    mc = MyClubSettings(banned_traits=frozenset({"freckles", "glasses"}))
     p = build_prompt(SHEET, "W02", KIT, "v", mc)
     assert p.negative == f"{CONTENT_NEGATIVE}, {YOUNG_NEGATIVE}, freckles, glasses, {COMPOSITION_NEGATIVE}, {QUALITY_NEGATIVE}"  # fmt: skip
-    assert "dark skin, dark-skinned female" in p.positive  # soften 0
 
 
 def test_banned_trait_the_sheet_lacks_still_goes_to_the_negative() -> None:
     sheet = replace(SHEET, mark="none", accessory="none")
     p = build_prompt(sheet, "W08", KIT, "v", MY_CLUB)
     assert "freckles" in p.negative and "freckles" not in p.positive
-
-
-def test_tan_skin_at_my_club_has_no_skin_term() -> None:
-    sheet = replace(SHEET, skin="tan")
-    p = build_prompt(sheet, "W08", KIT, "v", MY_CLUB)
-    assert "tan," not in p.positive and "skin" not in p.positive
 
 
 def test_goalkeeper_prompt() -> None:
@@ -170,7 +162,7 @@ def test_height_and_build_words_follow_the_skin() -> None:
 
 def test_muscular_is_banned_at_my_club_only() -> None:
     sheet = replace(SHEET, build="muscular")
-    mc = MyClubSettings(banned_traits=frozenset({"freckles", "muscular"}), soften_skin=2)
+    mc = MyClubSettings(banned_traits=frozenset({"freckles", "muscular"}))
     elsewhere = build_prompt(sheet, "W08", KIT, "v")
     mine = build_prompt(sheet, "W08", KIT, "v", mc)
     assert "muscular female" in elsewhere.positive and "muscular" not in elsewhere.negative

@@ -260,6 +260,19 @@ def test_my_clubs_staff_are_group_a_and_tracked(cuts: Cutoffs) -> None:
     assert (c.group, c.tracked, c.reasons) == (Group.A, True, ("on my club's staff",))
 
 
+def test_only_my_manager_needs_the_extra_staff_opt_in(cuts: Cutoffs) -> None:
+    me = facts(is_staff=True, at_my_club=True, staff_job="manager (you)")
+    excluded = classify(me, cuts)
+    assert (excluded.group, excluded.tracked) == (None, False)
+    assert excluded.why[0].code == "human_manager_off"
+    assert classify(me, cuts, Rules(include_human_manager=True)).group is Group.A
+    assert classify(me, cuts, Rules(staff=False, include_human_manager=True)).group is None
+    assert classify(replace(me, pin="b"), cuts).group is Group.B
+    assert classify(replace(me, staff_job="manager"), cuts).group is Group.A
+    rival = replace(me, at_my_club=False, in_my_league=True, photo=False)
+    assert classify(rival, cuts).group is Group.C
+
+
 def test_the_player_rules_never_apply_to_staff(cuts: Cutoffs) -> None:
     # A created coach with a high staff CA, in my league: none of the player rules.
     staff = {"is_staff": True, "is_newgen": True, "ca": 180, "pa": 190, "in_my_league": True}

@@ -496,6 +496,33 @@ def test_a_new_model_setting_unloads_the_old_model_before_the_next_job(env: Env)
     assert [r.key for r in built] == ["animagine", "realvis", "realvis"]
 
 
+@pytest.mark.parametrize("status", ["queued", "running"])
+@pytest.mark.parametrize("explicit", [False, True])
+def test_starting_work_reconciles_manager_jobs_from_an_older_version(
+    env: Env, status: str, explicit: bool
+) -> None:
+    from kitshot.core.records import HUMAN_MANAGER_JOB
+
+    # An old sync put the human manager in group A and tracked them as ordinary staff.
+    env.conn.execute(
+        "UPDATE players SET is_staff = 1, staff_job = ? WHERE unique_id = ?",
+        (HUMAN_MANAGER_JOB, OLD_HAND),
+    )
+    env.conn.execute(
+        "UPDATE jobs SET status = ?, manual = ? WHERE unique_id = ?",
+        (status, explicit, OLD_HAND),
+    )
+    worker, renderer, _ = env.worker()
+    worker.run(MINE, limit=0, publish=False)
+    row = env.conn.execute(
+        "SELECT group_name, tracked FROM players WHERE unique_id = ?", (OLD_HAND,)
+    ).fetchone()
+    assert tuple(row) == (None, 0)
+    assert env.jobs()[OLD_HAND] == ("queued" if explicit else "cancelled")
+    assert env.jobs()[KEEPER] == "queued"
+    assert renderer.calls == []
+
+
 def test_an_interrupted_job_goes_back_to_the_queue(env: Env) -> None:
     w, r, _ = env.worker(renderer=FakeRenderer(fail_on_call=2))
     with pytest.raises(KeyboardInterrupt):

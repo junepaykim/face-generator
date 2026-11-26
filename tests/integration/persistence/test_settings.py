@@ -32,13 +32,13 @@ def test_defaults_load_into_typed_settings() -> None:
     s = load_settings()
     assert s.cutoffs.everywhere["a_ca"] == 165
     assert s.cutoffs.my_club.academy_alumni is True
+    assert s.staff.include_human_manager is False
     assert s.groups.c.published_long_edge == 512
     assert s.age.b == ((15, "W02"), (19, "W04"), (25, "W07"), (29, "W09"))
     assert (s.reference.enabled, s.reference.scale, s.reference.other_clubs) == (True, 0.1, False)
     assert s.my_club.banned_traits == frozenset({"freckles", "muscular"})
     assert (s.body.short_below_cm, s.body.tall_from_cm) == (174, 191)
     assert (s.body.slim_strength_at_most, s.body.muscular_strength_from) == (4, 14)
-    assert s.my_club.soften_skin == 2
     assert s.personality.weight == 2
     assert s.my_club.round_eyes == 0.2
     assert s.age.a_my_club[0] == (15, "W01") and s.age.a_my_club[-1] == (34, "W10")
@@ -53,6 +53,16 @@ def test_relative_data_dir_resolves_against_the_project() -> None:
     assert s.paths.db_path == PROJECT_ROOT / "data" / "facegen.db"
     games = s.paths.games_dir
     assert games is None or games.name == "games"
+
+
+def test_older_defaults_can_opt_in_to_manager_portraits(
+    config_file: Path, conn: sqlite3.Connection
+) -> None:
+    older = config_file.read_text(encoding="utf-8").replace("include_human_manager = false\n", "")
+    config_file.write_text(older, encoding="utf-8")
+    assert load_settings(conn, config_file).staff.include_human_manager is False
+    set_override(conn, "staff.include_human_manager", True, config_file)
+    assert load_settings(conn, config_file).staff.include_human_manager is True
 
 
 # --- FM27's folders: config/local.toml, then found on this PC, then not set (Phase 8) ---------
@@ -248,7 +258,6 @@ def test_bad_overrides_are_refused(conn: sqlite3.Connection, key: str, value: ob
         ("age.c.W02", "15"),  # must be a whole number
         ("reference.scale", 0),
         ("reference.scale", 1.5),
-        ("my_club.soften_skin", 3),
         ("my_club.banned_traits", [1, 2]),  # text, not numbers
         ("my_club.banned_traits", ["Freckles"]),  # lower case
         ("ui.port", 0),

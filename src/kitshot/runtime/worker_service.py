@@ -386,6 +386,7 @@ class WorkerService:
                 renderer_factory=self._renderer_factory,
                 tagger_factory=self._tagger_factory,
                 fm_check=self._fm_check,
+                read_settings=lambda: load_settings(conn, self.defaults_path),
                 log=self.log,
             )
         else:

@@ -52,6 +52,7 @@ from kitshot.pipeline.publish import (
     publish_active,
     publish_pack,
 )
+from kitshot.pipeline.reclassification import reconcile_human_managers
 from kitshot.pipeline.sync import SyncReport
 from kitshot.pipeline.sync_operation import (
     UNSUPPORTED_ADVICE,
@@ -401,6 +402,7 @@ def cmd_run(
         renderer_factory=gpu.renderer,
         tagger_factory=gpu.tagger,
         fm_check=gpu.fm_check,
+        read_settings=lambda: load_settings(conn, args.config),
         log=lambda line, level="info": print(
             line if level == "info" else f"{level.upper()}: {line}", file=out, flush=True
         ),
@@ -417,7 +419,9 @@ def cmd_run(
         )
         return 2
     if args.dry_run:
-        previews = worker.preview(f, args.limit)
+        with db.transaction(conn, rollback=True):
+            reconcile_human_managers(conn, load_settings(conn, args.config))
+            previews = worker.preview(f, args.limit)
         print(f"DRY RUN: {len(previews)} jobs would run; nothing is drawn or stored.", file=out)
         for i, p in enumerate(previews, 1):
             j = p.job
