@@ -1,6 +1,6 @@
 [project]
 name = "kitshot"
-version = "0.1.8"
+version = "0.1.9"
 description = "Kitshot: anime or photo portraits for Football Manager 27 players."
 readme = "README.md"
 license = "MIT"

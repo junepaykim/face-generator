@@ -637,7 +637,7 @@ wheels = [
 
 [[package]]
 name = "kitshot"
-version = "0.1.8"
+version = "0.1.9"
 source = { editable = "." }
 dependencies = [
     { name = "backports-zstd", marker = "python_full_version < '3.14'" },
