@@ -23,7 +23,7 @@ from typing import Any
 from kitshot.core.age import TABLES, WORDINGS, shift_table
 from kitshot.core.cutoffs import convert_mode
 from kitshot.core.settings_values import Settings
-from kitshot.persistence import league_stats
+from kitshot.persistence import league_stats, publication
 from kitshot.persistence.db import transaction
 from kitshot.persistence.jobs import load_career
 from kitshot.persistence.settings import (
@@ -39,7 +39,9 @@ from kitshot.pipeline.reclassification import ChangeReport, reclassify_with_repo
 
 HISTORY_LIMIT = 20
 
-_RECLASSIFY_PREFIXES = ("cutoffs.", "age.", "staff.", "no_photo.", "media.")
+_RECLASSIFY_PREFIXES = ("cutoffs.", "age.", "staff.", "no_photo.", "facepacks.", "media.")
+_PUBLISH_PREFIXES = ("facepacks.",)
+"""Changes to who FM27 is shown our picture of: the pack is published again (a sync's way)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,6 +132,8 @@ def _reclassify(
     career = load_career(conn)
     if career is None:
         return None
+    if any(k.startswith(_PUBLISH_PREFIXES) for k in keys):
+        publication.mark_pending(conn)
     return reclassify_with_report(conn, career.id, settings)
 
 

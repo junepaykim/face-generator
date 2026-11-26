@@ -73,12 +73,19 @@ class Runtime:
         """Start the save watcher, the GPU worker process and the update check."""
         from contextlib import closing
 
-        from kitshot.persistence import db
+        from kitshot.persistence import db, publication
         from kitshot.persistence.settings import load_settings
-        from kitshot.pipeline.reclassification import reconcile_human_managers
+        from kitshot.pipeline.reclassification import (
+            reconcile_facepacks,
+            reconcile_human_managers,
+        )
 
         with closing(db.connect(self.context.db_path)) as conn, db.transaction(conn):
-            reconcile_human_managers(conn, load_settings(conn, self.context.defaults_path))
+            settings = load_settings(conn, self.context.defaults_path)
+            reconcile_human_managers(conn, settings)
+            if reconcile_facepacks(conn, settings):
+                # Someone's picture leaves or rejoins the pack: publish it again, as after a sync.
+                publication.mark_pending(conn)
         if self.poller is not None:
             self.poller.start()
         else:

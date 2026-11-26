@@ -148,7 +148,8 @@ def _classify(
     states: list[PlayerPlanState] = []
     player_where, player_args = _selection(only, "p.unique_id")
     for r in conn.execute(
-        "SELECT p.*, ph.unique_id IS NOT NULL AS has_photo, c.league_offset FROM players p"
+        "SELECT p.*, ph.unique_id IS NOT NULL AS has_photo, ph.facepack AS has_facepack,"
+        " c.league_offset FROM players p"
         " LEFT JOIN photos ph ON ph.unique_id = p.unique_id"
         " LEFT JOIN clubs c ON c.career_id = p.career_id AND c.club_id = p.club_id"
         " WHERE p.career_id = ?" + player_where,
@@ -180,6 +181,9 @@ def _classify(
                     and r["loan_parent_club_id"] == my_club
                     and r["club_id"] != my_club
                 ),
+                # A facepack's mapping is known from a scan that read it, whether or not
+                # FM27's own photo list could be read.
+                facepack=bool(r["has_facepack"]),
             )
             c = classify(facts, cuts, rules)
         else:
@@ -257,6 +261,22 @@ def reconcile_human_managers(conn: sqlite3.Connection, settings: Settings) -> No
         (HUMAN_MANAGER_JOB,),
     ).fetchall():
         classify_and_plan(conn, career_id, settings, only=json.loads(ids))
+
+
+def reconcile_facepacks(conn: sqlite3.Connection, settings: Settings) -> bool:
+    """Classify, at startup, everyone at my club whom a facepack maps or whose stored reason is
+    the facepack's (0.2.0 added the rule, user 2026-11-26). Returns whether anyone moved, so
+    the caller can have the pack published again. The caller holds the write transaction."""
+    moved = False
+    for career_id, ids in conn.execute(
+        "SELECT p.career_id, json_group_array(p.unique_id) FROM players p"
+        " LEFT JOIN photos ph ON ph.unique_id = p.unique_id"
+        " WHERE (p.at_my_club = 1 AND ph.facepack = 1) OR p.why LIKE '%\"facepack\"%'"
+        " GROUP BY p.career_id"
+    ).fetchall():
+        result = classify_and_plan(conn, career_id, settings, only=json.loads(ids))
+        moved = moved or bool(result.moved)
+    return moved
 
 
 def reclassify(

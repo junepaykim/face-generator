@@ -38,13 +38,14 @@ from kitshot.web.messages import band_name
 # ends with the FM27 database IDs (Phase 17k).
 SECTION_ORDER = (
     "eligibility", "cutoffs", "style", "picture", "groups", "render", "reference", "age",
-    "my_club", "body", "personality", "staff", "media", "no_photo", "schedule", "display",
+    "my_club", "body", "personality", "staff", "media", "no_photo", "facepacks", "schedule",
+    "display",
     "updates", "database_ids",
 )  # fmt: skip
 TABS: dict[str, tuple[str, ...]] = {
     "cutoffs": ("eligibility", "cutoffs"),
     "quality": ("groups", "picture", "render", "style", "reference"),
-    "targets": ("staff", "media", "no_photo"),
+    "targets": ("staff", "media", "no_photo", "facepacks"),
     "appearance": ("age", "my_club", "body", "personality"),
     "system": ("schedule", "display", "updates", "database_ids"),
 }  # fmt: skip
@@ -80,6 +81,7 @@ LABELLED_IN_FULL = frozenset(
         "staff.enabled",
         "staff.include_human_manager",
         "no_photo.enabled",
+        "facepacks.ignore_at_my_club",
         "media.journalists",
         "media.press_officers",
         "reference.enabled",

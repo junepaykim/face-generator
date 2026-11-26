@@ -8,6 +8,11 @@ Before Phase 17o the packs were in graphics/facegen/. The next publish of the ac
 writes every picture into graphics/kitshot/ (the stored published paths no longer match),
 then removes that old folder of ours (`remove_legacy_packs`).
 
+A player or staff member at my club whose facepack's picture is kept (core/classify.py, reason
+"facepack"; settings `facepacks.ignore_at_my_club` off) is left out: their picture of ours stays
+in the database, its copy in the pack is removed and config.xml does not map them, so FM27
+shows the facepack's. It comes back once the rules give them a group again.
+
 Newgen IDs repeat across careers, so only the career with the newest save maps pictures.
 Other packs keep their PNGs with empty mappings. `publish_pack` and `publish_active` hold
 `publish_lock` to serialize worker/sync writes. Under it they write the pictures that are due
@@ -29,6 +34,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from kitshot.core.classify import Why, whys_to_json
 from kitshot.core.settings_values import ASPECTS
 from kitshot.persistence import publication
 from kitshot.persistence.db import active_career_id, transaction
@@ -39,6 +45,9 @@ from kitshot.render.picture import ASPECT, Box, aspect_box, crop_to_aspect, publ
 
 if TYPE_CHECKING:
     from kitshot.core.settings_values import Settings
+
+FACEPACK_KEPT = whys_to_json((Why("facepack"),))
+"""`players.why` of someone whose facepack's picture FM27 is left to show (no group)."""
 
 RELOAD_HINT = "In FM27: Settings -> Reload Skin (스킨 다시 불러오기) to load the pictures."
 
@@ -228,10 +237,20 @@ class PublishReport:
     """Other careers' packs whose mappings were just removed."""
     legacy_removed: bool = False
     """Our pack folder from before Phase 17o (graphics/facegen/) was just removed."""
+    facepack_kept: int = 0
+    """People at my club with a picture of ours left out for their facepack's."""
+    withdrawn: int = 0
+    """Of those, the ones whose copy in the pack was just removed."""
 
     @property
     def changed(self) -> bool:
-        return bool(self.written or self.config_changed or self.deactivated or self.legacy_removed)
+        return bool(
+            self.written
+            or self.config_changed
+            or self.deactivated
+            or self.legacy_removed
+            or self.withdrawn
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -257,6 +276,8 @@ class _Plan:
     missing: tuple[int, ...]
     mapped: tuple[int, ...]
     outstanding: tuple[_Outstanding, ...]
+    kept: tuple[tuple[int, str | None], ...] = ()
+    """Image ID and published path of each current picture left out for a facepack's."""
 
 
 def _plan(
@@ -268,15 +289,21 @@ def _plan(
     data_dir: Path,
 ) -> _Plan:
     rows = conn.execute(
-        "SELECT id, unique_id, group_name, master_path, published_path, aspect FROM images"
-        " WHERE career_id = ? AND is_current = 1 ORDER BY unique_id",
-        (career_id,),
+        "SELECT i.id, i.unique_id, i.group_name, i.master_path, i.published_path, i.aspect,"
+        " COALESCE(p.group_name IS NULL AND p.why = ?, 0) AS kept FROM images i"
+        " LEFT JOIN players p ON p.career_id = i.career_id AND p.unique_id = i.unique_id"
+        " WHERE i.career_id = ? AND i.is_current = 1 ORDER BY i.unique_id",
+        (FACEPACK_KEPT, career_id),
     ).fetchall()
     in_place: list[int] = []
     missing: list[int] = []
     mapped: list[int] = []
     outstanding: list[_Outstanding] = []
+    kept: list[tuple[int, str | None]] = []
     for r in rows:
+        if r["kept"]:
+            kept.append((r["id"], r["published_path"]))
+            continue
         dest = folder / f"{r['unique_id']}.png"
         if r["published_path"] == str(dest) and dest.is_file():
             in_place.append(r["id"])
@@ -296,7 +323,28 @@ def _plan(
             )
         )
         mapped.append(r["unique_id"])
-    return _Plan(tuple(in_place), tuple(missing), tuple(mapped), tuple(outstanding))
+    return _Plan(tuple(in_place), tuple(missing), tuple(mapped), tuple(outstanding), tuple(kept))
+
+
+def _withdraw(
+    conn: sqlite3.Connection,
+    kept: Sequence[tuple[int, str | None]],
+    folder: Path,
+    fm_user_dir: Path,
+) -> int:
+    """Remove the pack's copy of each picture left out for a facepack's; returns how many had
+    one. Only a copy at its place in this pack is deleted (AGENTS.md rule 2)."""
+    withdrawn = 0
+    for image_id, published in kept:
+        if published is None:
+            continue
+        path = Path(published)
+        if path.parent == folder:
+            _guard(path, fm_user_dir)
+            path.unlink(missing_ok=True)
+        conn.execute("UPDATE images SET published_path = NULL WHERE id = ?", (image_id,))
+        withdrawn += 1
+    return withdrawn
 
 
 def _encoded(items: Sequence[_Outstanding]) -> Iterator[tuple[_Outstanding, bytes]]:
@@ -390,7 +438,8 @@ def publish_career(
         conn.execute(
             "UPDATE images SET published_path = ? WHERE id = ?", (str(item.dest), item.image_id)
         )
-    if plan.outstanding:
+    withdrawn = _withdraw(conn, plan.kept, folder, fm_user_dir)
+    if plan.outstanding or withdrawn:
         mark_pictures_changed(conn, career_id)
     restaged = len(set(plan.in_place).intersection(staged))
     shown = plan.mapped if active else ()
@@ -405,6 +454,8 @@ def publish_career(
         config_changed,
         len(shown),
         active,
+        facepack_kept=len(plan.kept),
+        withdrawn=withdrawn,
     )
 
 
@@ -634,9 +685,11 @@ def unpublish(
     ids = [
         r[0]
         for r in conn.execute(
-            "SELECT unique_id FROM images WHERE career_id = ? AND is_current = 1"
-            " AND published_path IS NOT NULL",
-            (career_id,),
+            "SELECT i.unique_id FROM images i"
+            " LEFT JOIN players p ON p.career_id = i.career_id AND p.unique_id = i.unique_id"
+            " WHERE i.career_id = ? AND i.is_current = 1 AND i.published_path IS NOT NULL"
+            " AND NOT COALESCE(p.group_name IS NULL AND p.why = ?, 0)",
+            (career_id, FACEPACK_KEPT),
         )
     ]
     changed = write_config(folder, ids if active else (), fm_user_dir) if folder.exists() else False

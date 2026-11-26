@@ -166,6 +166,14 @@ press_officers = true
 # FM27's photo list cannot be read, no one counts as without a photo.
 enabled = true
 
+[facepacks]
+# Players and staff at my club whom a facepack in FM27's graphics folder (not ours, not FM27's
+# own photos) maps a picture for. Off (the default, user 2026-11-26): they are not drawn
+# automatically, and a picture of ours already drawn stays out of the pack, so FM27 shows the
+# facepack's. On: they are drawn like everyone at my club and ours is shown. A pin to a group
+# draws someone either way. Re-read at each sync with the photo list (docs/spec.md section 2).
+ignore_at_my_club = false
+
 [age]
 # Real age (whole years) picks an age wording, W01 (youngest look) to W10 (oldest); the
 # wording text is fixed in src/kitshot/core/age.py. Each table gives, per wording, the first

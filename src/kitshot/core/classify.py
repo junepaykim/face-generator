@@ -5,7 +5,8 @@ from the effective cutoffs (core/cutoffs.py): my club's tiers, shares of my leag
 above and below and the continental competitions my club plays in, and global numbers. The
 share rules pick only candidates: newgens and, when enabled, known photo-less players; academy
 rules stay newgens' own. My-club staff are group A; the player rules never apply to staff or
-media. Eligible media are group B and untracked unless pinned to A.
+media. Eligible media are group B and untracked unless pinned to A. My club's players and staff
+whom a facepack maps get no group unless `rules.ignore_facepacks` (user, 2026-11-26).
 """
 
 from __future__ import annotations
@@ -73,6 +74,8 @@ class PlayerFacts:
     None when it is not on my nation's ladder (core/leagues.py)."""
     loaned_out: bool = False
     """A player my club has loaned out to another club."""
+    facepack: bool = False
+    """A facepack the user installed maps a picture for them (not ours, not FM27's own photo)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,12 +92,16 @@ class Rules:
     """Settings `media.press_officers`: my club's press officers are in group B."""
 
     include_human_manager: bool = False
+    ignore_facepacks: bool = False
+    """Settings `facepacks.ignore_at_my_club`: my club's players and staff whom a facepack maps
+    are drawn too. Off: the facepack's picture is kept for them."""
 
     @classmethod
     def of(cls, settings: Settings) -> Rules:
         return cls(
             staff=settings.staff.enabled,
             include_human_manager=settings.staff.include_human_manager,
+            ignore_facepacks=settings.facepacks.ignore_at_my_club,
             no_photo=settings.no_photo.enabled,
             journalists=settings.media.journalists,
             press_officers=settings.media.press_officers,
@@ -128,6 +135,7 @@ _TEXT = {
     "not_mens": "not in men's football",
     "pin_never": "pinned to never",
     "human_manager_off": "automatic portraits for my manager are off",
+    "facepack": "a facepack's picture is kept (settings: ignore facepacks at my club)",
     "staff_off": "staff pictures are off (settings: staff)",
     "tracked_regular": "tracked: a regular at my club",
     "tracked_academy": "tracked: came through my academy",
@@ -275,6 +283,12 @@ def is_candidate(f: PlayerFacts, rules: Rules = ALL_RULES) -> bool:
     return f.is_newgen or (rules.no_photo and without_photo(f))
 
 
+def keeps_facepack(f: PlayerFacts, rules: Rules = ALL_RULES) -> bool:
+    """A player or staff member at my club whom a facepack maps, with the facepack's picture
+    kept (`rules.ignore_facepacks` off): no rule picks them, only a pin does."""
+    return f.at_my_club and f.facepack and not f.media and not rules.ignore_facepacks
+
+
 def my_club_part(f: PlayerFacts) -> str | None:
     """Which part of my club a player is in: "loans", "youth" or "first_team"; None for
     someone not at my club, staff and media."""
@@ -290,6 +304,8 @@ def rule_matches(
 ) -> list[tuple[Group, Why]]:
     """Every group rule the person meets, with its reason, ignoring pins."""
     matches: list[tuple[Group, Why]] = []
+    if keeps_facepack(f, rules):
+        return matches
     if f.is_staff:
         if not rules.staff:
             return matches
@@ -371,6 +387,8 @@ def classify(f: PlayerFacts, cuts: Cutoffs, rules: Rules = ALL_RULES) -> Classif
       hold the contract), and an academy newgen, for good.
     - My club's staff are in group A while `rules.staff` is on. My manager also needs
       `rules.include_human_manager`.
+    - A player or staff member at my club whom a facepack maps is in no group (reason
+      "facepack") unless `rules.ignore_facepacks` is on; a pin still sets their group.
     - Journalists and press officers are in group B (`rules.journalists`,
       `rules.press_officers`) and not tracked: their picture is drawn once. One pinned to A
       is tracked, as a regular at my club.
@@ -391,6 +409,8 @@ def classify(f: PlayerFacts, cuts: Cutoffs, rules: Rules = ALL_RULES) -> Classif
     elif matches:
         group = min((m[0] for m in matches), key=GROUP_RANK.__getitem__)
         whys = [why for grp, why in matches if grp is group]
+    elif keeps_facepack(f, rules):
+        return classified(None, False, [Why("facepack")])
     elif f.is_staff and f.at_my_club:
         reason = "human_manager_off" if rules.staff else "staff_off"
         return classified(None, False, [Why(reason)])

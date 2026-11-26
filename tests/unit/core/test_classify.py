@@ -273,6 +273,29 @@ def test_only_my_manager_needs_the_extra_staff_opt_in(cuts: Cutoffs) -> None:
     assert classify(rival, cuts).group is Group.C
 
 
+# --- facepacks at my club (user, 2026-11-26) ------------------------------------------------------
+
+
+def test_my_clubs_people_keep_a_facepacks_picture_unless_it_is_ignored(cuts: Cutoffs) -> None:
+    mine = facts(at_my_club=True, is_newgen=False, ca=170, pa=180, in_my_league=True, photo=True)
+    staff = facts(is_staff=True, at_my_club=True, is_newgen=False, ca=30, photo=True)
+    for person in (mine, staff):
+        assert classify(person, cuts).group is not None  # no facepack: as before
+        kept = classify(replace(person, facepack=True), cuts)
+        assert (kept.group, kept.tracked) == (None, False)
+        assert [w.code for w in kept.why] == ["facepack"]
+        assert rule_matches(replace(person, facepack=True), cuts) == []
+        ignored = classify(replace(person, facepack=True), cuts, Rules(ignore_facepacks=True))
+        assert ignored == classify(person, cuts)
+        assert classify(replace(person, facepack=True, pin="b"), cuts).group is Group.B
+        assert classify(replace(person, facepack=True, pin="never"), cuts).why[0].code == (
+            "pin_never"
+        )
+    # Outside my club a facepack changes nothing: a newgen's cut still picks them.
+    elsewhere = facts(ca=170, pa=180, in_my_league=True, facepack=True)
+    assert classify(elsewhere, cuts).group is Group.A
+
+
 def test_the_player_rules_never_apply_to_staff(cuts: Cutoffs) -> None:
     # A created coach with a high staff CA, in my league: none of the player rules.
     staff = {"is_staff": True, "is_newgen": True, "ca": 180, "pa": 190, "in_my_league": True}

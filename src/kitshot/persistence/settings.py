@@ -38,6 +38,7 @@ from kitshot.core.settings_values import (
     CutoffSettings,
     DisplaySettings,
     Eligibility,
+    FacepackSettings,
     Groups,
     GroupSpec,
     MediaSettings,
@@ -148,8 +149,9 @@ def _load_defaults(path: Path | None) -> tuple[dict[str, Any], dict[str, str]]:
     source = path or DEFAULTS_PATH
     with source.open("rb") as f:
         values = flatten(tomllib.load(f))
-    # Custom defaults from older installations predate the manager switch.
+    # Custom defaults from older installations predate the manager and facepack switches.
     values.setdefault("staff.include_human_manager", False)
+    values.setdefault("facepacks.ignore_at_my_club", False)
     named = f"config/{source.name}" if path is None else str(source)
     origins = {k: named for k in values if k.startswith("paths.") and values[k]}
     local = load_local(values, local_path(path))
@@ -417,6 +419,7 @@ def build_settings(
             enabled=v["staff.enabled"], include_human_manager=v["staff.include_human_manager"]
         ),
         no_photo=NoPhotoSettings(enabled=v["no_photo.enabled"]),
+        facepacks=FacepackSettings(ignore_at_my_club=v["facepacks.ignore_at_my_club"]),
         media=MediaSettings(
             journalists=v["media.journalists"], press_officers=v["media.press_officers"]
         ),

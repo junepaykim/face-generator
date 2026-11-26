@@ -300,6 +300,16 @@ class NoPhotoSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class FacepackSettings:
+    """What a facepack's picture means at my club (user, 2026-11-26)."""
+
+    ignore_at_my_club: bool = False
+    """True: my club's players and staff are drawn and shown even where a facepack maps them.
+    False: those a facepack maps are not drawn automatically, and their picture of ours stays
+    out of the pack."""
+
+
+@dataclass(frozen=True, slots=True)
 class ReferenceSettings:
     """Re-draws may use the player's existing picture as a reference (spec section 5)."""
 
@@ -392,6 +402,7 @@ class Settings:
     cutoffs: CutoffSettings
     staff: StaffSettings
     no_photo: NoPhotoSettings
+    facepacks: FacepackSettings
     media: MediaSettings
     age: AgeSettings
     reference: ReferenceSettings

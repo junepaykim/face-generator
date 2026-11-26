@@ -718,6 +718,33 @@ def test_reclassify_with_report_lists_newly_queued_players(
     assert r.before["b"] + 3 == r.after["b"] and r.before["c"] - 1 == r.after["c"]
 
 
+def test_my_clubs_players_with_a_facepack_picture_are_left_to_it_unless_ignored(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    from kitshot.persistence import publication
+
+    scan = photo_scan(set(), {MINE_OLD})
+    report = sync(conn, snapshot(photo_world()), settings, photos=scan)
+    publication.finish(conn)
+    mine = player_row(conn, MINE_OLD)
+    assert (mine["group_name"], mine["tracked"]) == (None, 0)
+    assert json.loads(mine["why"]) == [{"code": "facepack"}]
+    assert MINE_OLD not in queued(conn) and queued(conn)[MINE_NEW] == ("initial", "a")
+
+    settings_history.save(conn, {"facepacks.ignore_at_my_club": True})
+    assert queued(conn)[MINE_OLD] == ("initial", "a")
+    assert publication.pending(conn)  # the pack is published again, as after a sync
+    publication.finish(conn)
+    settings_history.undo(conn)
+    assert MINE_OLD not in queued(conn) and publication.pending(conn)
+
+    # A pin draws them anyway; a sync that no longer finds the facepack picks them again.
+    assert manual.generate(conn, report.career.id, [MINE_OLD], settings, "b").queued == [MINE_OLD]
+    manual.set_pin(conn, report.career.id, [MINE_OLD], None, settings)
+    sync(conn, snapshot(photo_world()), settings, photos=photo_scan(set(), set(), version="v2"))
+    assert groups(conn)[MINE_OLD] == "a"
+
+
 # --- my club's staff (user, 2026-11-12) ----------------------------------------------------------
 
 COACH = NEWGEN + 100  # a created coach: the newgen rules must not apply to staff

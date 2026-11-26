@@ -52,7 +52,7 @@ from kitshot.pipeline.publish import (
     publish_active,
     publish_pack,
 )
-from kitshot.pipeline.reclassification import reconcile_human_managers
+from kitshot.pipeline.reclassification import reconcile_facepacks, reconcile_human_managers
 from kitshot.pipeline.sync import SyncReport
 from kitshot.pipeline.sync_operation import (
     UNSUPPORTED_ADVICE,
@@ -367,6 +367,11 @@ def format_publish(report: PublishReport) -> list[str]:
             lines.append(
                 "Packs       removed the old graphics/facegen folder (now graphics/kitshot)."
             )
+        if report.withdrawn:
+            lines.append(
+                f"Facepacks   took out {report.withdrawn:,} pictures of my club's people whose"
+                " facepack picture is kept (settings: facepacks.ignore_at_my_club)."
+            )
         lines.append(RELOAD_HINT)
     else:
         lines.append(f"Published   nothing changed in {report.folder} ({report.mapped:,} mapped).")
@@ -420,7 +425,9 @@ def cmd_run(
         return 2
     if args.dry_run:
         with db.transaction(conn, rollback=True):
-            reconcile_human_managers(conn, load_settings(conn, args.config))
+            settings_now = load_settings(conn, args.config)
+            reconcile_human_managers(conn, settings_now)
+            reconcile_facepacks(conn, settings_now)
             previews = worker.preview(f, args.limit)
         print(f"DRY RUN: {len(previews)} jobs would run; nothing is drawn or stored.", file=out)
         for i, p in enumerate(previews, 1):

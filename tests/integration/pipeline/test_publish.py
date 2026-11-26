@@ -295,6 +295,48 @@ def test_unpublish_removes_file_and_mapping(conn: sqlite3.Connection, tmp_path: 
     assert publish_career(conn, 1, "k", fm, SIZES, data_dir=data).written == 0
 
 
+def test_a_facepack_kept_at_my_club_takes_our_picture_out_of_the_pack(
+    conn: sqlite3.Connection, tmp_path: Path
+) -> None:
+    from kitshot.pipeline.publish import FACEPACK_KEPT
+
+    fm, data = tmp_path / "fm", tmp_path / "data"
+    (data / "masters").mkdir(parents=True)
+    Image.new("RGB", (64, 64)).save(data / "masters" / "a.png")
+    _career(conn)
+    for uid in (10, 20):
+        _image(conn, uid, "a", "masters/a.png")
+        conn.execute(
+            "INSERT INTO players (career_id, unique_id, name, ca, is_newgen, in_scope, at_my_club,"
+            " in_my_league, in_continental, academy, group_name, why)"
+            " VALUES (1, ?, 'P', 100, 0, 1, 1, 1, 0, 0, 'a', '[]')",
+            (uid,),
+        )
+    publish_career(conn, 1, "k", fm, SIZES, data_dir=data)
+    folder = pack_dir(fm, "k")
+    conn.execute(
+        "UPDATE players SET group_name = NULL, why = ? WHERE unique_id = 10", (FACEPACK_KEPT,)
+    )
+
+    report = publish_career(conn, 1, "k", fm, SIZES, data_dir=data)
+    assert (report.facepack_kept, report.withdrawn, report.mapped) == (1, 1, 1)
+    assert not (folder / "10.png").exists() and (folder / "20.png").is_file()
+    assert 'from="10"' not in (folder / "config.xml").read_text()
+    row = conn.execute(
+        "SELECT published_path, is_current FROM images WHERE unique_id = 10"
+    ).fetchone()
+    assert (row["published_path"], row["is_current"]) == (None, 1)  # kept, not shown
+    assert not publish_career(conn, 1, "k", fm, SIZES, data_dir=data).changed
+    # Removing someone else's picture keeps it out too.
+    assert unpublish(conn, 1, "k", 20, fm)
+    assert 'from="10"' not in (folder / "config.xml").read_text()
+
+    conn.execute("UPDATE players SET group_name = 'a', why = '[]' WHERE unique_id = 10")
+    back = publish_career(conn, 1, "k", fm, SIZES, data_dir=data)
+    assert back.written == 1 and (folder / "10.png").is_file()
+    assert 'from="10"' in (folder / "config.xml").read_text()
+
+
 # --- per-career packs: only the active career's pack maps anything (spec section 8) ---------
 
 

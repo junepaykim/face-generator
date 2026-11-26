@@ -195,6 +195,8 @@ def describe_activation(report: PublishReport | None) -> str | None:
         parts.append(f"other careers' packs unmapped ({', '.join(report.deactivated)})")
     if report.legacy_removed:
         parts.append("the old graphics/facegen folder removed")
+    if report.withdrawn:
+        parts.append(f"{report.withdrawn} taken out for my club's facepack pictures")
     return "; ".join(parts) + ". FM27 loads it at its next start or on Reload Skin."
 
 

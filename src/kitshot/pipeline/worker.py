@@ -63,7 +63,7 @@ from kitshot.persistence.sheet_store import (
     select_sheet,
 )
 from kitshot.pipeline.publish import PublishReport, publish_pack
-from kitshot.pipeline.reclassification import reconcile_human_managers
+from kitshot.pipeline.reclassification import reconcile_facepacks, reconcile_human_managers
 from kitshot.platform import platform_info, procs
 from kitshot.platform.locking import LockBusy, file_lock
 from kitshot.platform.memory import release_free_memory
@@ -422,6 +422,7 @@ class Worker:
         with transaction(self.conn):
             settings = self._read_settings() if self._read_settings else self.settings
             reconcile_human_managers(self.conn, settings)
+            reconcile_facepacks(self.conn, settings)
         return stale
 
     def run(
